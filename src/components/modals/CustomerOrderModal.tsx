@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { X, ShoppingBag, Trash2, Send } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, ShoppingBag, Trash2, Send, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../../store';
 
 export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
   const { currentTableId, tables, removeFromCart, sendToKitchen, addNotification } = useStore();
   const [isSending, setIsSending] = useState(false);
+  const [isSent, setIsSent] = useState(false);
   
   const table = tables.find(t => t.id === currentTableId);
   if (!table) return null;
@@ -19,8 +20,11 @@ export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
     setIsSending(true);
     try {
       await sendToKitchen(table.id, 'tablet');
-      addNotification('Seu pedido já foi enviado a nossa equipe!', 'order');
-      onClose();
+      setIsSent(true);
+      setTimeout(() => {
+        onClose();
+        setIsSent(false);
+      }, 2500);
     } catch (error) {
       addNotification('Erro ao enviar pedido. Tente novamente.', 'error');
     } finally {
@@ -38,8 +42,29 @@ export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
       <motion.div 
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
-        className="w-full max-w-3xl bg-[#0a0a0c] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-3xl bg-[#0a0a0c] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] relative"
       >
+        <AnimatePresence>
+          {isSent && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="absolute inset-0 z-[300] bg-emerald-500 flex flex-col items-center justify-center text-white p-12 text-center"
+            >
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', damping: 12 }}
+                className="w-32 h-32 bg-white/20 rounded-full flex items-center justify-center mb-8"
+              >
+                <CheckCircle2 size={80} />
+              </motion.div>
+              <h2 className="text-6xl font-black italic tracking-tighter mb-4">Sucesso!</h2>
+              <p className="text-2xl font-bold opacity-90 uppercase tracking-widest">Seu pedido foi enviado.</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="p-10 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
           <div className="flex items-center gap-6">
             <div className="w-16 h-16 bg-primary/20 rounded-3xl flex items-center justify-center text-primary">
