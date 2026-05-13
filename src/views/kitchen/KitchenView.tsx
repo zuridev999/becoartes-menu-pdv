@@ -5,13 +5,16 @@ import { useStore } from '../../store';
 function KitchenOrderCard({ order, onComplete }: { order: any, onComplete: (id: string) => void }) {
   const [elapsedMs, setElapsedMs] = useState(0);
 
+  const { serverTimeOffset } = useStore();
+
   useEffect(() => {
     const updateTimer = () => {
       if (!order.createdAt) return;
       const createdDate = new Date(order.createdAt);
       if (isNaN(createdDate.getTime())) return;
 
-      const diff = Math.max(0, new Date().getTime() - createdDate.getTime());
+      const serverNow = new Date().getTime() + serverTimeOffset;
+      const diff = Math.max(0, serverNow - createdDate.getTime());
       setElapsedMs(diff);
     };
     

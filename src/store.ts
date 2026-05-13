@@ -29,6 +29,7 @@ export interface AppState {
   activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
   isLoading: boolean;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
+  serverTimeOffset: number;
   
   currentTableId: string | null;
   setCurrentTableId: (id: string | null) => void;
@@ -96,6 +97,7 @@ export const useStore = create<AppState>((set, get) => ({
   notifications: [],
   closedBills: [],
   kitchenOrders: [],
+  serverTimeOffset: 0,
   serviceRequests: [],
   modifierGroups: [],
   menu: [], 
@@ -252,13 +254,16 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       // 2. Carregar Dados
-      const [categories, menuItems, modifierGroups, sellers, kitchenOrders] = await Promise.all([
+      const [categories, menuItems, modifierGroups, sellers, kitchenData] = await Promise.all([
         Repository.getCategories(),
         Repository.getMenu(),
         Repository.getModifierGroups(),
         Repository.getSellers(),
         Repository.getKitchenOrders()
       ]);
+
+      const { orders: kitchenOrders, serverNow } = kitchenData;
+      const serverTimeOffset = serverNow.getTime() - new Date().getTime();
       
       // Carregar Modificadores para cada produto (N:N)
       for (const item of menuItems) {
@@ -337,7 +342,8 @@ export const useStore = create<AppState>((set, get) => ({
         auditLogs,
         activeView: initialView as any,
         currentSeller,
-        tables: tables.sort((a, b) => a.number - b.number) 
+        tables: tables.sort((a, b) => a.number - b.number),
+        serverTimeOffset
       });
       
       console.log(`🚀 Sistema Becoartes Inicializado! View: ${initialView} | Host: ${hostname}`);
@@ -402,10 +408,13 @@ export const useStore = create<AppState>((set, get) => ({
 
   syncData: async () => {
     try {
-      const [kitchenOrders, tablesRes] = await Promise.all([
+      const [kitchenData, tablesRes] = await Promise.all([
         Repository.getKitchenOrders(),
         db.execute("SELECT * FROM tables")
       ]);
+
+      const { orders: kitchenOrders, serverNow } = kitchenData;
+      const serverTimeOffset = serverNow.getTime() - new Date().getTime();
 
       const updatedTables = tablesRes.rows.map((row: any) => ({
         id: row.id as string,
@@ -451,7 +460,8 @@ export const useStore = create<AppState>((set, get) => ({
 
       set({ 
         kitchenOrders, 
-        tables: finalTables.sort((a, b) => a.number - b.number) 
+        tables: finalTables.sort((a, b) => a.number - b.number),
+        serverTimeOffset
       });
     } catch (error) {
       console.error("❌ Erro no sync de dados:", error);
