@@ -10,7 +10,7 @@ import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
 
 export function QRView() {
-  const { currentTableId, tables, settings } = useStore();
+  const { currentTableId, tables } = useStore();
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);

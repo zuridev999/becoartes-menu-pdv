@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
-  X, Beer, Utensils, ScrollText, 
+  X, Utensils, ScrollText, 
   HelpCircle, AlertTriangle, MessageSquare, 
-  Wallet, CupSoap, Snowflake, Citrus 
+  Wallet, CupSoda, Snowflake, Citrus 
 } from 'lucide-react';
 import { useStore } from '../../store';
 
@@ -13,7 +13,7 @@ export function ServiceRequestModal({ onClose }: { onClose: () => void }) {
   const [isSending, setIsSending] = useState(false);
 
   const options = [
-    { id: 'glass', label: 'Pedir copo extra', icon: CupSoap },
+    { id: 'glass', label: 'Pedir copo extra', icon: CupSoda },
     { id: 'cutlery', label: 'Pedir talher', icon: Utensils },
     { id: 'napkin', label: 'Pedir guardanapo', icon: ScrollText },
     { id: 'ice', label: 'Pedir gelo', icon: Snowflake },
