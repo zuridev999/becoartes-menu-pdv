@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ShoppingBag, LayoutDashboard, Bell, FileText } from 'lucide-react';
 import { useStore, type Product } from '../../store';
-import { QrEntry } from '../entry/QrEntry';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
 import { ProductModal } from '../../components/modals/ProductModal';
 import { CustomerAccountModal } from '../../components/modals/CustomerAccountModal';
@@ -11,7 +10,6 @@ import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal
 
 export function QRView() {
   const { currentTableId, tables } = useStore();
-  const [isUnlocked, setIsUnlocked] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
