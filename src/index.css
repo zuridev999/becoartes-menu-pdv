@@ -1,0 +1,140 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  font-family: 'Outfit', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: dark;
+  color: #ffffff;
+  background-color: #050505;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  min-width: 320px;
+  min-height: 100vh;
+  background: radial-gradient(circle at top right, #1a0a2e, #050505); /* Fundo Roxo Profundo */
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+}
+
+@theme {
+  --color-background: #050505;
+  --color-foreground: #ffffff;
+  --color-card: rgba(255, 255, 255, 0.03);
+  
+  /* Cores Becoartes */
+  --color-primary: #8b5cf6; /* Roxo Becoartes */
+  --color-primary-glow: rgba(139, 92, 246, 0.5);
+  
+  --color-accent: #facc15; /* Amarelo Becoartes */
+  --color-accent-glow: rgba(250, 204, 21, 0.5);
+  
+  --color-emerald: #10b981;
+  --color-rose: #f43f5e;
+}
+
+/* Glassmorphism 2.0 */
+.glass {
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border-radius: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.glass-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.2);
+  transform: translateY(-8px) scale(1.02);
+}
+
+.glow-primary {
+  box-shadow: 0 0 25px var(--color-primary-glow);
+}
+
+.glow-accent {
+  box-shadow: 0 0 25px var(--color-accent-glow);
+}
+
+/* Botões Premium Becoartes */
+.btn-beco {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 1.2rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+}
+
+.btn-beco-purple {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.btn-beco-purple:hover {
+  filter: brightness(1.2);
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.4);
+  transform: scale(1.05);
+}
+
+.btn-beco-yellow {
+  background: linear-gradient(135deg, #facc15, #eab308);
+  color: #000000;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.btn-beco-yellow:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 30px rgba(250, 204, 21, 0.4);
+  transform: scale(1.05);
+}
+
+.btn-beco-glass {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.btn-beco-glass:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, 0.3); border-radius: 10px; }
+
+/* Animations */
+@keyframes bounce-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 2s infinite ease-in-out;
+}
