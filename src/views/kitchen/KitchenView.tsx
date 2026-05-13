@@ -32,7 +32,7 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
       className={`p-6 pt-10 cursor-pointer relative border-[3px] rounded-[2.5rem] transition-all duration-300 h-full flex flex-col shadow-lg uppercase ${
-        isDanger ? 'bg-rose-500 border-rose-600 text-black shadow-rose-200' : 
+        isDanger ? 'bg-red-600 border-red-700 text-black shadow-red-200' : 
         isWarning ? 'bg-amber-400 border-amber-500 text-black shadow-amber-100' : 
         'bg-white border-gray-100 text-black'
       }`}
