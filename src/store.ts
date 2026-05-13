@@ -22,7 +22,7 @@ export interface AppState {
   sellers: Seller[];
   notifications: { id: string; message: string; tableId: string; type: 'order' | 'bill' | 'service' | 'info' | 'error' }[];
   closedBills: ClosedBill[];
-  activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr';
+  activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
   isLoading: boolean;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
   
