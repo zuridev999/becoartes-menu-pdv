@@ -24,7 +24,8 @@ export interface AppState {
   closedBills: ClosedBill[];
   auditLogs: { id: string; action: string; details: string; table_number: string; origin: string; author_name: string; timestamp: string }[];
   fetchAuditLogs: () => Promise<void>;
-  addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string }) => Promise<void>;
+  addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string } | string, details?: string, tableNumber?: string, origin?: string) => Promise<void>;
+  activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
   isLoading: boolean;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
   
