@@ -15,7 +15,7 @@ import {
   LogOut,
   AlertCircle
 } from 'lucide-react';
-import { useStore, type Table as TableType, type Product, type Modifier } from '../../store';
+import { useStore, type Table as TableType, type Product } from '../../store';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
 
 export function PDVView() {
@@ -29,8 +29,6 @@ export function PDVView() {
     logout,
     addAuditLog,
     addToCart,
-    removeOrderItem,
-    updateTableStatus,
     setCurrentTableId,
     sendToKitchen
   } = useStore();
@@ -326,9 +324,8 @@ export function PDVView() {
                   ))}
                </div>
 
-               {/* PRODUCTS GRID */}
                <div className="flex-1 grid grid-cols-3 lg:grid-cols-4 gap-6 overflow-y-auto pr-4 custom-scrollbar">
-                  {menu.filter(p => !activeCategory || p.category_id === activeCategory).map(product => (
+                  {menu.filter(p => !activeCategory || p.categoryId === activeCategory).map(product => (
                     <motion.button
                       key={product.id}
                       whileHover={{ y: -5 }}
@@ -344,7 +341,7 @@ export function PDVView() {
                       className="glass-card p-6 border-white/5 flex flex-col justify-between items-start text-left group relative overflow-hidden"
                     >
                        <div className="relative z-10">
-                         <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-2 block">{product.category_id}</span>
+                         <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-2 block">{product.categoryId}</span>
                          <h4 className="text-xl font-black italic tracking-tighter leading-none mb-4">{product.name}</h4>
                        </div>
                        <div className="relative z-10 w-full flex justify-between items-end">
