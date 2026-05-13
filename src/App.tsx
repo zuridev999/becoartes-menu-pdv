@@ -54,7 +54,7 @@ function App() {
         {activeView === 'admin' && currentSeller && <AdminView />}
         
         {/* Fallback amigável para URLs desconhecidas */}
-        {!['tablet', 'pdv', 'kitchen', 'admin', 'qr'].includes(activeView) && (
+        {!isLoading && !['tablet', 'pdv', 'kitchen', 'admin', 'qr'].includes(activeView) && (
           <div className="flex flex-col items-center justify-center h-screen text-center p-12">
             <h2 className="text-4xl font-black italic mb-4 text-white">Módulo não encontrado</h2>
             <p className="text-gray-500 mb-8">O hostname <span className="text-primary font-bold">{window.location.hostname}</span> não está mapeado para nenhum módulo operacional.</p>

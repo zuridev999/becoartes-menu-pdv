@@ -81,7 +81,7 @@ export interface AppState {
 }
 
 export const useStore = create<AppState>((set, get) => ({
-  activeView: 'tablet',
+  activeView: '',
   isLoading: true,
   banners: [
     'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=1200&h=400&fit=crop',
