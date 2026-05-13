@@ -3,7 +3,7 @@ import { Clock, CheckCircle2, X, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
 
-function KitchenOrderCard({ order, onClick }: { order: any, onClick: () => void }) {
+function KitchenOrderCard({ order, index, onClick }: { order: any, index: number, onClick: () => void }) {
   const [elapsedMs, setElapsedMs] = useState(0);
   const { serverTimeOffset } = useStore();
 
@@ -31,12 +31,17 @@ function KitchenOrderCard({ order, onClick }: { order: any, onClick: () => void 
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className={`p-6 cursor-pointer relative border-[3px] rounded-[2.5rem] transition-all duration-300 h-full flex flex-col shadow-lg uppercase ${
+      className={`p-6 pt-10 cursor-pointer relative border-[3px] rounded-[2.5rem] transition-all duration-300 h-full flex flex-col shadow-lg uppercase ${
         isDanger ? 'bg-rose-500 border-rose-600 text-black shadow-rose-200' : 
         isWarning ? 'bg-amber-400 border-amber-500 text-black shadow-amber-100' : 
         'bg-white border-gray-100 text-black'
       }`}
     >
+      {/* Sequence Number */}
+      <div className="absolute -top-4 -left-4 w-12 h-12 bg-black text-white rounded-full flex items-center justify-center font-black text-2xl shadow-xl z-20 border-4 border-white">
+        {index}
+      </div>
+
       <div className="flex justify-between items-start mb-4">
         <h3 className="text-4xl font-black italic tracking-tighter">Mesa {order.tableNumber}</h3>
         <div className="flex items-center gap-1 font-black text-black">
@@ -189,12 +194,13 @@ export function KitchenView() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-8">
-        <div className="grid grid-rows-2 grid-flow-col gap-8 h-full" style={{ gridAutoColumns: 'calc(33.333% - 22px)', minWidth: '100%' }}>
-          {activeOrders.map((order: any) => (
+      <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-8 px-4">
+        <div className="grid grid-rows-2 grid-flow-col gap-12 h-full" style={{ gridAutoColumns: 'calc(33.333% - 32px)', minWidth: '100%' }}>
+          {activeOrders.map((order: any, idx: number) => (
             <KitchenOrderCard 
               key={order.id} 
               order={order} 
+              index={idx + 1}
               onClick={() => setSelectedOrder(order)} 
             />
           ))}
