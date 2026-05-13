@@ -649,6 +649,7 @@ export const useStore = create<AppState>((set, get) => ({
     }));
 
     get().addNotification(`Novo pedido enviado para a Cozinha!`, 'order', tableId);
+    await get().addAuditLog('order_sent', `Itens: ${table.cart.length} | Total: R$ ${total.toFixed(2)}`, table.number.toString(), origin);
   },
 
   updateKitchenOrderStatus: async (orderId, status) => {
@@ -659,9 +660,11 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   requestBill: async (tableId) => {
+    const table = get().tables.find(t => t.id === tableId);
     await db.execute({ sql: "UPDATE tables SET status = ? WHERE id = ?", args: ['bill_requested', tableId] });
     set((state) => ({ tables: state.tables.map(t => t.id === tableId ? { ...t, status: 'bill_requested' } : t) }));
-    get().addNotification(`A Mesa ${tableId} solicitou o fechamento da conta!`, 'info', tableId);
+    get().addNotification(`A Mesa ${table.number} solicitou o fechamento da conta!`, 'info', tableId);
+    await get().addAuditLog('bill_requested', 'Cliente solicitou a conta via Tablet', table?.number.toString(), 'tablet');
   },
 
   closeBill: async (data) => {
