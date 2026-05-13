@@ -11,14 +11,14 @@ interface MenuCatalogProps {
 
 export function MenuCatalog({ onProductSelect, viewMode = 'grid' }: MenuCatalogProps) {
   const { menu, categories: dbCategories } = useStore();
-  const [selectedCategory, setSelectedCategory] = useState('Todos');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const availableCategories = ['Todos', ...dbCategories.filter(c => {
+  const availableCategories = dbCategories.filter(c => {
     const { available } = isItemAvailable(c.schedule);
     if (!available && c.schedule?.hideTotally) return false;
     return true;
-  }).map(c => c.name)];
+  }).map(c => c.name);
+
+  const [selectedCategory, setSelectedCategory] = useState(availableCategories[0] || '');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const filteredMenu = menu.filter(p => {
     if (!p.visible) return false;
@@ -34,7 +34,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid' }: MenuCatalogP
     const { available } = isItemAvailable(p.schedule);
     if (!available && p.schedule?.hideTotally) return false;
 
-    return (selectedCategory === 'Todos' || p.categoryName === selectedCategory) &&
+    return (p.categoryName === selectedCategory) &&
            (p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.description || '').toLowerCase().includes(searchQuery.toLowerCase()));
   });
 
@@ -51,7 +51,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid' }: MenuCatalogP
             >
               <div>
                 <p className={`font-black text-[10px] uppercase tracking-widest ${selectedCategory === cat ? 'text-white/70' : 'text-primary'}`}>
-                  {cat === 'Todos' ? 'Menu' : 'Categoria'}
+                  Categoria
                 </p>
                 <h4 className="font-black text-lg tracking-tighter italic">{cat}</h4>
               </div>

@@ -31,7 +31,7 @@ export function PDVView() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [showProductMenu, setShowProductMenu] = useState(false);
   const [showManualLog, setShowManualLog] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(categories[0]?.id || null);
 
   // Derived state
   const currentTable = tables.find(t => t.id === selectedTable?.id);
@@ -51,6 +51,7 @@ export function PDVView() {
     setCurrentTableId(table.id);
     if (table.status === 'available') {
       setShowProductMenu(true);
+      if (categories.length > 0) setActiveCategory(categories[0].id);
     }
   };
 
@@ -301,12 +302,6 @@ export function PDVView() {
             <div className="flex-1 flex gap-8 overflow-hidden">
                {/* CATEGORIES */}
                <div className="w-64 flex flex-col gap-3 overflow-y-auto pr-2 custom-scrollbar">
-                  <button 
-                    onClick={() => setActiveCategory(null)}
-                    className={`p-6 rounded-3xl font-black text-left uppercase text-xs tracking-widest transition-all ${!activeCategory ? 'bg-primary text-white shadow-2xl shadow-primary/20' : 'glass border-white/5 opacity-40 hover:opacity-100'}`}
-                  >
-                    Todos
-                  </button>
                   {categories.map(cat => (
                     <button 
                       key={cat.id}
