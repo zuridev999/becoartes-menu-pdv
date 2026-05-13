@@ -195,14 +195,16 @@ export function KitchenView() {
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 auto-rows-fr">
-        {activeOrders.map((order: any) => (
-          <KitchenOrderCard 
-            key={order.id} 
-            order={order} 
-            onClick={() => setSelectedOrder(order)} 
-          />
-        ))}
+      <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-8">
+        <div className="grid grid-rows-2 grid-flow-col gap-8 h-full" style={{ gridAutoColumns: 'calc(33.333% - 22px)', minWidth: '100%' }}>
+          {activeOrders.map((order: any) => (
+            <KitchenOrderCard 
+              key={order.id} 
+              order={order} 
+              onClick={() => setSelectedOrder(order)} 
+            />
+          ))}
+        </div>
       </div>
 
       <AnimatePresence>
