@@ -133,11 +133,11 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
                 </div>
 
                 <button 
-                  onClick={handleAdd}
-                  className="w-full btn-beco btn-beco-purple py-6 text-xl font-black shadow-2xl shadow-primary/30 rounded-2xl active:scale-95 transition-all"
-                >
-                  Adicionar ao Carrinho
-                </button>
+                onClick={handleAdd}
+                className="w-full py-8 btn-beco btn-beco-purple text-2xl font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4"
+              >
+                ADICIONAR AO PEDIDO
+              </button>
              </div>
           </div>
         </div>

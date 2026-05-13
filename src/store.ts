@@ -59,7 +59,7 @@ export interface AppState {
   removeFromCart: (itemId: string) => void;
   sendToKitchen: (tableId: string, origin?: 'tablet' | 'pdv' | 'qr', sellerId?: string) => Promise<void>;
   requestBill: (tableId: string) => void;
-  requestService: (tableId: string, type: ServiceRequest['type']) => void;
+  requestService: (tableId: string, type: string, message?: string) => void;
   resolveService: (requestId: string) => void;
   closeBill: (data: Omit<ClosedBill, 'id' | 'closedAt'>) => Promise<void>;
   updateTableStatus: (tableId: string, status: Table['status']) => void;
@@ -458,13 +458,13 @@ export const useStore = create<AppState>((set, get) => ({
     }));
   },
 
-  requestService: async (tableId, type) => {
+  requestService: async (tableId, type, message = '') => {
     const table = get().tables.find(t => t.id === tableId);
     const id = Math.random().toString(36).substr(2, 9);
     
     await db.execute({
-      sql: "INSERT INTO service_requests (id, table_id, type, status) VALUES (?, ?, ?, ?)",
-      args: [id, tableId, type, 'pending']
+      sql: "INSERT INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
+      args: [id, tableId, type, 'pending', message]
     });
 
     const newRequest: ServiceRequest = {
@@ -472,16 +472,29 @@ export const useStore = create<AppState>((set, get) => ({
       tableId,
       tableNumber: typeof table?.number === 'number' ? table.number : 0,
       type,
+      message,
       status: 'pending',
       createdAt: new Date()
     };
     
-    const messages = { waiter: 'Chamar Garçom', napkin: 'Precisa de Guardanapos', cutlery: 'Precisa de Talheres', other: 'Solicitação Diversa' };
+    const messages: Record<string, string> = { 
+      waiter: 'Chamar Garçom', 
+      bill: 'Fechar a Conta',
+      napkin: 'Precisa de Guardanapos', 
+      cutlery: 'Precisa de Talheres', 
+      glass: 'Copo Extra',
+      ice: 'Pedir Gelo',
+      lemon: 'Pedir Limão',
+      physical_menu: 'Cardápio Físico',
+      help: 'Ajuda com Pedido',
+      problem: 'Problema com Pedido',
+      other: 'Solicitação Diversa' 
+    };
     
     set((state) => ({
       serviceRequests: [...state.serviceRequests, newRequest]
     }));
-    get().addNotification(`Mesa ${newRequest.tableNumber}: ${messages[type]}`, 'service', tableId);
+    get().addNotification(`Mesa ${newRequest.tableNumber}: ${messages[type] || type}`, 'service', tableId);
   },
 
   resolveService: async (requestId) => {

@@ -1,17 +1,21 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { ShoppingCart, LayoutDashboard, Bell, FileText } from 'lucide-react';
+import { ShoppingBag, LayoutDashboard, Bell, FileText } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import { TabletEntry } from '../entry/TabletEntry';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
 import { ProductModal } from '../../components/modals/ProductModal';
-import { CheckoutModal } from '../../components/modals/CheckoutModal';
+import { CustomerAccountModal } from '../../components/modals/CustomerAccountModal';
+import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
+import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
 
 export function TabletView() {
-  const { currentTableId, tables, requestService, addNotification, settings } = useStore();
+  const { currentTableId, tables, settings } = useStore();
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [isOrderOpen, setIsOrderOpen] = useState(false);
+  const [isServiceOpen, setIsServiceOpen] = useState(false);
 
   const currentTable = tables.find(t => t.id === currentTableId);
 
@@ -43,14 +47,14 @@ export function TabletView() {
           </div>
           <div className="flex gap-4">
             <button 
-              onClick={() => { requestService(currentTableId, 'waiter'); addNotification('Garçom chamado!'); }} 
-              className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-black text-xs uppercase tracking-widest hover:bg-white/10"
+              onClick={() => setIsServiceOpen(true)} 
+              className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-black text-xs uppercase tracking-widest hover:bg-white/10 transition-all active:scale-95"
             >
               <Bell size={18} className="text-primary" /> Chamar Garçom
             </button>
             <button 
               onClick={() => setIsAccountOpen(true)} 
-              className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-black text-xs uppercase tracking-widest hover:bg-white/10"
+              className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-black text-xs uppercase tracking-widest hover:bg-white/10 transition-all active:scale-95"
             >
               <FileText size={18} className="text-accent" /> Minha Conta
             </button>
@@ -59,14 +63,14 @@ export function TabletView() {
 
         <div className="flex items-center gap-6">
            <div className="flex flex-col items-end">
-             <p className="text-[10px] font-black uppercase text-gray-500">Total Carrinho</p>
+             <p className="text-[10px] font-black uppercase text-gray-500">Total Pedido</p>
              <p className="text-2xl font-black text-accent">R$ {cartTotal.toFixed(2)}</p>
            </div>
            <button 
-            onClick={() => setIsAccountOpen(true)} 
-            className="btn-beco btn-beco-purple px-10 py-5 relative pr-20 shadow-xl overflow-hidden group"
+            onClick={() => setIsOrderOpen(true)} 
+            className="btn-beco btn-beco-purple px-10 py-5 relative pr-20 shadow-xl overflow-hidden group active:scale-95 transition-all"
            >
-              <ShoppingCart size={22}/> <span className="font-black text-lg ml-3">CARRINHO</span>
+              <ShoppingBag size={22}/> <span className="font-black text-lg ml-3 uppercase">Pedido</span>
               <div className="absolute right-3 top-3 bottom-3 w-14 bg-white/10 rounded-2xl flex items-center justify-center font-black text-lg">
                 {currentTable?.cart.length || 0}
               </div>
@@ -85,8 +89,20 @@ export function TabletView() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {isAccountOpen && currentTable && (
-          <CheckoutModal table={currentTable} onClose={() => setIsAccountOpen(false)} />
+        {isAccountOpen && (
+          <CustomerAccountModal onClose={() => setIsAccountOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isOrderOpen && (
+          <CustomerOrderModal onClose={() => setIsOrderOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isServiceOpen && (
+          <ServiceRequestModal onClose={() => setIsServiceOpen(false)} />
         )}
       </AnimatePresence>
     </div>

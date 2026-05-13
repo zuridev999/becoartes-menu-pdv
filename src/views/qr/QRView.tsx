@@ -1,17 +1,21 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { ShoppingCart, LayoutDashboard, Bell, FileText } from 'lucide-react';
+import { ShoppingBag, LayoutDashboard, Bell, FileText } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import { QrEntry } from '../entry/QrEntry';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
 import { ProductModal } from '../../components/modals/ProductModal';
-import { CheckoutModal } from '../../components/modals/CheckoutModal';
+import { CustomerAccountModal } from '../../components/modals/CustomerAccountModal';
+import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
+import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
 
 export function QRView() {
-  const { currentTableId, tables, requestService, addNotification } = useStore();
+  const { currentTableId, tables, settings } = useStore();
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [isOrderOpen, setIsOrderOpen] = useState(false);
+  const [isServiceOpen, setIsServiceOpen] = useState(false);
 
   const currentTable = tables.find(t => t.id === currentTableId);
 
@@ -41,16 +45,16 @@ export function QRView() {
         
         <div className="flex items-center gap-2">
           <button 
-            onClick={() => { requestService(currentTableId, 'waiter'); addNotification('Garçom chamado!'); }} 
+            onClick={() => setIsServiceOpen(true)} 
             className="p-3 glass rounded-xl text-primary"
           >
             <Bell size={20} />
           </button>
           <button 
-            onClick={() => setIsAccountOpen(true)}
+            onClick={() => setIsOrderOpen(true)}
             className="btn-beco btn-beco-purple px-4 py-3 relative"
           >
-            <ShoppingCart size={20} />
+            <ShoppingBag size={20} />
             {currentTable?.cart.length > 0 && (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-accent text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-[#0a0a0c]">
                 {currentTable.cart.length}
@@ -72,7 +76,7 @@ export function QRView() {
         >
           <FileText size={20} className="text-accent" />
           <div className="text-left">
-            <p className="text-[8px] font-black uppercase text-gray-500">Total do Carrinho</p>
+            <p className="text-[8px] font-black uppercase text-gray-500">Total do Pedido</p>
             <p className="text-lg font-black text-white leading-none">R$ {cartTotal.toFixed(2)}</p>
           </div>
         </button>
@@ -85,8 +89,20 @@ export function QRView() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {isAccountOpen && currentTable && (
-          <CheckoutModal table={currentTable} onClose={() => setIsAccountOpen(false)} />
+        {isAccountOpen && (
+          <CustomerAccountModal onClose={() => setIsAccountOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isOrderOpen && (
+          <CustomerOrderModal onClose={() => setIsOrderOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isServiceOpen && (
+          <ServiceRequestModal onClose={() => setIsServiceOpen(false)} />
         )}
       </AnimatePresence>
     </div>

@@ -91,7 +91,8 @@ export interface ServiceRequest {
   id: string;
   tableId: string;
   tableNumber: number;
-  type: 'waiter' | 'bill' | 'other';
+  type: string; // 'waiter' | 'bill' | 'glass' | 'cutlery' | 'napkin' | 'ice' | 'lemon' | 'physical_menu' | 'help' | 'problem' | 'other'
+  message?: string;
   status: 'pending' | 'viewed' | 'resolved';
   createdAt: Date;
 }
