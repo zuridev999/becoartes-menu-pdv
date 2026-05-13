@@ -69,7 +69,7 @@ export function PDVView() {
                  <div><p className="font-black text-2xl tracking-tighter italic">Mesa {table.number}</p><Badge color={table.status === 'ordering' ? 'amber' : 'rose'}>{table.status}</Badge></div>
                  <div className="text-right"><p className="text-[10px] font-black uppercase text-white/50">Total</p><p className="font-black text-lg text-accent">R$ {table.orders.reduce((acc: number, o: any) => acc + (o.price * o.quantity), 0).toFixed(2)}</p></div>
               </div>
-              <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{table.orders.length} Itens no carrinho</p>
+              <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{table.orders.length} Itens no pedido</p>
             </button>
           ))}
         </div>
@@ -105,13 +105,13 @@ export function PDVView() {
       {/* Painel de Carrinho */}
       <div className="w-[450px] glass border-l border-white/5 flex flex-col z-30">
         <div className="p-10 border-b border-white/5">
-           <h3 className="text-4xl font-black italic tracking-tighter mb-2 flex items-center gap-4">Carrinho <ShoppingCart className="text-primary"/></h3>
+           <h3 className="text-4xl font-black italic tracking-tighter mb-2 flex items-center gap-4">Pedido <ShoppingCart className="text-primary"/></h3>
            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500">Mesa {currentTable?.number || '---'}</p>
         </div>
         
         <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
            {currentTable?.orders.length === 0 ? (
-             <div className="h-full flex flex-col items-center justify-center opacity-20"><ShoppingCart size={80} className="mb-6"/><p className="text-xl font-black uppercase tracking-widest">Carrinho Vazio</p></div>
+             <div className="h-full flex flex-col items-center justify-center opacity-20"><ShoppingCart size={80} className="mb-6"/><p className="text-xl font-black uppercase tracking-widest">Pedido Vazio</p></div>
            ) : (
              currentTable?.orders.map((item: any, idx: number) => (
                <div key={idx} className="flex justify-between items-center group animate-in slide-in-from-right duration-300">
