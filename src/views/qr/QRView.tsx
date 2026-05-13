@@ -19,10 +19,8 @@ export function QRView() {
 
   const currentTable = tables.find(t => t.id === currentTableId);
 
-  // Se não tem mesa, mostra o QrEntry
-  if (!currentTableId || !isUnlocked) {
-    return <QrEntry onEnter={() => setIsUnlocked(true)} />;
-  }
+  // QR View no Becoartes não trava em mesa, mostra cardápio direto.
+  // Se houver ID na URL ele vincula, se não mostra tudo livre.
 
   const cartTotal = currentTable?.cart.reduce((acc, o) => {
     const itemPrice = o.price + (o.selectedModifiers?.reduce((mAcc, m) => mAcc + m.price, 0) || 0);

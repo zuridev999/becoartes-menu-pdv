@@ -41,8 +41,8 @@ function App() {
       </AnimatePresence>
 
       <div className="min-h-screen bg-[#0a0a0c]">
-        {/* Lógica de Autenticação Global - Oculta no PDV para auto-login */}
-        {!currentSeller && activeView !== 'kitchen' && activeView !== 'tablet' && activeView !== 'pdv' && (
+        {/* Lógica de Autenticação Global - Apenas no Admin ou se explicitamente necessário */}
+        {!currentSeller && activeView === 'admin' && (
           <PinLoginModal />
         )}
 
@@ -53,12 +53,12 @@ function App() {
         {activeView === 'kitchen' && <KitchenView />}
         {activeView === 'admin' && currentSeller && <AdminView />}
         
-        {/* Fallback amigável */}
-        {!['tablet', 'pdv', 'kitchen', 'admin'].includes(activeView) && (
+        {/* Fallback amigável para URLs desconhecidas */}
+        {!['tablet', 'pdv', 'kitchen', 'admin', 'qr'].includes(activeView) && (
           <div className="flex flex-col items-center justify-center h-screen text-center p-12">
-            <h2 className="text-4xl font-black italic mb-4">Módulo não encontrado</h2>
-            <p className="text-gray-500 mb-8">A área que você tenta acessar não existe ou não está carregada.</p>
-            <button onClick={() => window.location.href = '/tablet'} className="btn-beco btn-beco-purple px-8 py-4">Voltar ao Início</button>
+            <h2 className="text-4xl font-black italic mb-4 text-white">Módulo não encontrado</h2>
+            <p className="text-gray-500 mb-8">O hostname <span className="text-primary font-bold">{window.location.hostname}</span> não está mapeado para nenhum módulo operacional.</p>
+            <button onClick={() => window.location.href = 'https://pdv.becoartes.com'} className="btn-beco btn-beco-purple px-8 py-4">Ir ao PDV Central</button>
           </div>
         )}
       </div>
