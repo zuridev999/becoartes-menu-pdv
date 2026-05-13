@@ -181,17 +181,11 @@ export function KitchenView() {
   const activeOrders = kitchenOrders.filter((o: any) => o.status !== 'ready');
   
   return (
-    <div className="p-12 bg-[#08080a] min-h-screen text-white font-['Outfit'] overflow-hidden flex flex-col">
-      <div className="flex justify-between items-center mb-12">
-        <div className="flex items-center gap-6">
-          <div className="w-16 h-16 bg-accent rounded-3xl flex items-center justify-center text-black">
-             <CheckCircle2 size={32} />
-          </div>
-          <h1 className="text-6xl font-black italic tracking-tighter uppercase">Cozinha <span className="text-accent">Live</span></h1>
-        </div>
-        <div className="glass px-8 py-4 rounded-3xl border-white/5 flex items-center gap-4">
-           <div className="w-4 h-4 bg-accent rounded-full animate-pulse shadow-[0_0_15px_rgba(255,200,0,0.5)]" />
-           <p className="text-2xl font-black uppercase tracking-widest">{activeOrders.length} Pedidos na Fila</p>
+    <div className="p-6 bg-[#08080a] h-screen text-white font-['Outfit'] overflow-hidden flex flex-col">
+      <div className="flex justify-end items-center mb-6">
+        <div className="glass px-6 py-2 rounded-2xl border-white/5 flex items-center gap-3">
+           <div className="w-3 h-3 bg-accent rounded-full animate-pulse shadow-[0_0_10px_rgba(255,200,0,0.5)]" />
+           <p className="text-lg font-black uppercase tracking-widest">{activeOrders.length} Pedidos</p>
         </div>
       </div>
 
