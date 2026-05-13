@@ -382,9 +382,19 @@ export const useStore = create<AppState>((set, get) => ({
         } else {
           // Criar novo item de bebida - Garantindo todos os campos
           const newId = Math.random().toString(36).substr(2, 9);
+          
+          // Buscar ou criar categoria 'Bebidas'
+          let cat = get().categories.find(c => c.name === 'Bebidas');
+          if (!cat) {
+             const catId = Math.random().toString(36).substr(2, 9);
+             await Repository.upsertCategory({ id: catId, name: 'Bebidas', sortOrder: 0 });
+             await get().init(); // Recarregar categorias
+             cat = get().categories.find(c => c.name === 'Bebidas');
+          }
+
           await db.execute({
-            sql: "INSERT INTO menu (id, name, description, price, category, image, visible, start_time, end_time, erp_code, remote_stock_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            args: [newId, name, 'Sincronizado do Estoque OS', price, 'Bebidas', 'https://images.unsplash.com/photo-1544145945-f904253db0ad?w=400', 1, null, null, null, remoteId]
+            sql: "INSERT INTO menu (id, name, description, price, category_id, image, visible, erp_code, remote_stock_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            args: [newId, name, 'Sincronizado do Estoque OS', price, cat?.id || 'bebidas', 'https://images.unsplash.com/photo-1544145945-f904253db0ad?w=400', 1, null, remoteId]
           });
         }
       }
