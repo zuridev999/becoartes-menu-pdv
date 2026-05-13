@@ -22,7 +22,9 @@ export interface AppState {
   sellers: Seller[];
   notifications: { id: string; message: string; tableId: string; type: 'order' | 'bill' | 'service' | 'info' | 'error' }[];
   closedBills: ClosedBill[];
-  activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
+  auditLogs: { id: string; action: string; details: string; table_number: string; origin: string; author_name: string; timestamp: string }[];
+  fetchAuditLogs: () => Promise<void>;
+  addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string }) => Promise<void>;
   isLoading: boolean;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
   
@@ -38,7 +40,6 @@ export interface AppState {
   currentSeller: Seller | null;
   login: (pin: string) => Promise<boolean>;
   logout: () => void;
-  addAuditLog: (action: string, details: string, tableNumber?: string, origin?: string) => Promise<void>;
   
   // Vendedores
   addSeller: (seller: Seller) => Promise<void>;
@@ -89,6 +90,7 @@ export const useStore = create<AppState>((set, get) => ({
     'https://images.unsplash.com/photo-1470337458703-46ad1756a187?w=1200&h=400&fit=crop'
   ],
   sellers: [],
+  auditLogs: [],
   notifications: [],
   closedBills: [],
   kitchenOrders: [],
@@ -188,16 +190,36 @@ export const useStore = create<AppState>((set, get) => ({
 
   logout: () => set({ currentSeller: null }),
 
-  addAuditLog: async (action, details, tableNumber, origin) => {
+  addAuditLog: async (logOrAction: any, details?: string, tableNumber?: string, origin?: string) => {
     const id = Math.random().toString(36).substr(2, 9);
-    const seller = get().currentSeller;
-    await Repository.addAuditLog(
-      id, action, details, 
-      tableNumber || '---', 
-      origin || (get().activeView === 'tablet' ? 'tablet' : 'pdv'), 
-      seller?.id || 'sistema', 
-      seller?.name || (get().activeView === 'tablet' ? 'Cliente' : 'Sistema')
-    );
+    const timestamp = new Date().toISOString();
+    
+    let logData;
+    if (typeof logOrAction === 'object') {
+      logData = {
+        action: logOrAction.action,
+        details: JSON.stringify(logOrAction.details || {}),
+        table_number: logOrAction.table_number || null,
+        origin: logOrAction.origin || 'pdv',
+        author_name: logOrAction.author_name || get().currentSeller?.name || 'Sistema'
+      };
+    } else {
+      logData = {
+        action: logOrAction,
+        details: details || '',
+        table_number: tableNumber || null,
+        origin: origin || 'pdv',
+        author_name: get().currentSeller?.name || 'Sistema'
+      };
+    }
+
+    await db.execute({
+      sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      args: [id, logData.action, logData.details, logData.table_number, logData.origin, logData.author_name, timestamp]
+    });
+
+    const newLog = { id, ...logData, timestamp, details: logData.details || '' };
+    set((state) => ({ auditLogs: [newLog as any, ...state.auditLogs].slice(0, 50) }));
   },
 
   init: async () => {
@@ -292,12 +314,25 @@ export const useStore = create<AppState>((set, get) => ({
         currentSeller = sellers.find(s => s.role === 'gerente' || s.permission === 'admin') || sellers[0];
       }
 
+      // 5. Fetch Audit Logs
+      const logsRes = await db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50");
+      const auditLogs = logsRes.rows.map((r: any) => ({
+        id: r.id,
+        action: r.action,
+        details: r.details,
+        table_number: r.table_number,
+        origin: r.origin,
+        author_name: r.author_name,
+        timestamp: r.timestamp
+      }));
+
       set({ 
         categories, 
         menu: menuItems, 
         modifierGroups, 
         sellers, 
         kitchenOrders, 
+        auditLogs,
         activeView: initialView as any,
         currentSeller,
         tables: tables.sort((a, b) => a.number - b.number) 
@@ -811,5 +846,10 @@ export const useStore = create<AppState>((set, get) => ({
     });
 
     set({ currentShift: null });
+  },
+
+  fetchAuditLogs: async () => {
+    const res = await db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50");
+    set({ auditLogs: res.rows as any });
   },
 }));
