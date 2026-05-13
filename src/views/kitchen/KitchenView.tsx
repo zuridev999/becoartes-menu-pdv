@@ -3,14 +3,12 @@ import { Clock } from 'lucide-react';
 import { useStore } from '../../store';
 
 function KitchenOrderCard({ order, onComplete }: { order: any, onComplete: (id: string) => void }) {
-  const [elapsed, setElapsed] = useState('');
+  const [elapsedMs, setElapsedMs] = useState(0);
 
   useEffect(() => {
     const updateTimer = () => {
-      const diff = new Date().getTime() - new Date(order.createdAt).getTime();
-      const mins = Math.floor(diff / 60000);
-      const secs = Math.floor((diff % 60000) / 1000);
-      setElapsed(`${mins}:${secs.toString().padStart(2, '0')}`);
+      const diff = Math.max(0, new Date().getTime() - new Date(order.createdAt).getTime());
+      setElapsedMs(diff);
     };
     
     updateTimer();
@@ -18,16 +16,23 @@ function KitchenOrderCard({ order, onComplete }: { order: any, onComplete: (id: 
     return () => clearInterval(timer);
   }, [order.createdAt]);
 
+  const mins = Math.floor(elapsedMs / 60000);
+  const secs = Math.floor((elapsedMs % 60000) / 1000);
+  const timeText = `${mins}:${secs.toString().padStart(2, '0')}`;
+
+  const isWarning = mins >= 10 && mins < 20;
+  const isDanger = mins >= 20;
+
   return (
-    <div className="glass-card p-10 border-t-[10px] border-accent relative">
-      <div className={`absolute top-4 right-6 flex items-center gap-2 font-black ${new Date().getTime() - new Date(order.createdAt).getTime() >= 1200000 ? 'text-rose-500' : new Date().getTime() - new Date(order.createdAt).getTime() >= 600000 ? 'text-orange-500' : 'text-accent'}`}>
+    <div className={`glass-card p-10 relative border-t-[10px] transition-all duration-500 ${isDanger ? 'bg-rose-600/40 border-rose-500 shadow-2xl shadow-rose-500/20 scale-105 z-10' : isWarning ? 'border-amber-500 bg-amber-500/5' : 'border-accent'}`}>
+      <div className={`absolute top-4 right-6 flex items-center gap-2 font-black ${isDanger ? 'text-white animate-pulse' : isWarning ? 'text-amber-500' : 'text-white/60'}`}>
         <Clock size={16} />
-        <span className="text-xl">{elapsed}</span>
+        <span className="text-xl">{timeText}</span>
       </div>
       <h3 className="text-4xl font-black mb-6 italic tracking-tighter">Mesa {order.tableNumber}</h3>
       <div className="space-y-4 mb-10">
         {order.items.map((item: any, idx: number) => (
-          <div key={idx} className="p-5 glass rounded-2xl border-white/10 group">
+          <div key={idx} className={`p-5 glass rounded-2xl border-white/10 group ${isDanger ? 'bg-white/10' : ''}`}>
             <div className="flex justify-between items-start mb-2">
               <span className="font-black text-2xl tracking-tight">{item.quantity}x {item.name}</span>
             </div>
@@ -53,7 +58,7 @@ function KitchenOrderCard({ order, onComplete }: { order: any, onComplete: (id: 
       </div>
       <button 
         onClick={() => onComplete(order.id)} 
-        className="w-full py-6 btn-beco-purple text-xl rounded-3xl font-black shadow-lg shadow-primary/20"
+        className={`w-full py-6 text-xl rounded-3xl font-black shadow-lg transition-all ${isDanger ? 'bg-white text-rose-600' : 'btn-beco-purple'}`}
       >
         Finalizar
       </button>

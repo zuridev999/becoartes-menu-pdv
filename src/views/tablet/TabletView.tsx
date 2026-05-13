@@ -24,11 +24,6 @@ export function TabletView() {
     return <TabletEntry onUnlock={() => setIsUnlocked(true)} />;
   }
 
-  const cartTotal = currentTable?.cart.reduce((acc, o) => {
-    const itemPrice = o.price + (o.selectedModifiers?.reduce((mAcc, m) => mAcc + m.price, 0) || 0);
-    return acc + (itemPrice * o.quantity);
-  }, 0) || 0;
-
   const viewMode = settings.tablet.viewMode;
 
   return (
@@ -62,10 +57,6 @@ export function TabletView() {
         </div>
 
         <div className="flex items-center gap-6">
-           <div className="flex flex-col items-end">
-             <p className="text-[10px] font-black uppercase text-gray-500">Total Pedido</p>
-             <p className="text-2xl font-black text-accent">R$ {cartTotal.toFixed(2)}</p>
-           </div>
            <button 
             onClick={() => setIsOrderOpen(true)} 
             className="btn-beco btn-beco-purple px-10 py-5 relative pr-20 shadow-xl overflow-hidden group active:scale-95 transition-all"

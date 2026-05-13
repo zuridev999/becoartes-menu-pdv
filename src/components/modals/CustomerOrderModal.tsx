@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, ShoppingBag, Trash2, Send, CheckCircle2 } from 'lucide-react';
+import { X, ShoppingBag, Trash2, Send } from 'lucide-react';
 import { useStore } from '../../store';
 
 export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
   const { currentTableId, tables, removeFromCart, sendToKitchen, addNotification } = useStore();
   const [isSending, setIsSending] = useState(false);
-  const [isConfirmed, setIsConfirmed] = useState(false);
   
   const table = tables.find(t => t.id === currentTableId);
   if (!table) return null;
@@ -17,16 +16,10 @@ export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
   }, 0);
 
   const handleSendOrder = async () => {
-    if (!isConfirmed) {
-      setIsConfirmed(true);
-      addNotification('Pedido confirmado! Clique em ENVIAR novamente.', 'info');
-      return;
-    }
-    
     setIsSending(true);
     try {
       await sendToKitchen(table.id, 'tablet');
-      addNotification('Pedido enviado para a cozinha!', 'order');
+      addNotification('Seu pedido já foi enviado a nossa equipe!', 'order');
       onClose();
     } catch (error) {
       addNotification('Erro ao enviar pedido. Tente novamente.', 'error');
@@ -107,21 +100,13 @@ export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
               </div>
            </div>
 
-           <div className="grid grid-cols-2 gap-6">
-              <button
-                onClick={() => setIsConfirmed(!isConfirmed)}
-                className={`py-8 rounded-[2rem] font-black text-xl uppercase tracking-widest transition-all flex items-center justify-center gap-4 ${isConfirmed ? 'bg-emerald-500 text-white shadow-xl shadow-emerald-500/20' : 'bg-white/5 text-white/50 border border-white/10 hover:border-emerald-500/50'}`}
-              >
-                {isConfirmed ? <CheckCircle2 size={24}/> : null}
-                {isConfirmed ? 'PEDIDO CONFIRMADO' : 'CONFIRMAR PEDIDO'}
-              </button>
-              
+           <div className="flex gap-6">
               <button
                 onClick={handleSendOrder}
                 disabled={isSending || table.cart.length === 0}
-                className={`py-8 btn-beco btn-beco-purple text-2xl font-black tracking-widest rounded-[2rem] shadow-2xl shadow-primary/30 flex items-center justify-center gap-4 transition-all ${!isConfirmed ? 'opacity-50' : 'animate-pulse-slow'}`}
+                className="flex-1 py-9 btn-beco btn-beco-purple text-3xl font-black tracking-[0.2em] rounded-[2.5rem] shadow-2xl shadow-primary/30 flex items-center justify-center gap-4 animate-pulse-slow disabled:opacity-20"
               >
-                <Send size={28} /> ENVIAR PEDIDO
+                <Send size={32} /> ENVIAR PEDIDO
               </button>
            </div>
         </div>
