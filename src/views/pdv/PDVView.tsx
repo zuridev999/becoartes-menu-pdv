@@ -2,20 +2,14 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, 
-  DollarSign, 
-  Clock, 
   History, 
   Plus, 
-  ShoppingBag, 
-  ChefHat, 
-  CreditCard,
   X,
   PlusCircle,
   LayoutDashboard,
-  LogOut,
-  AlertCircle
+  LogOut
 } from 'lucide-react';
-import { useStore, type Table as TableType, type Product } from '../../store';
+import { useStore, type Table as TableType } from '../../store';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
 
 export function PDVView() {
