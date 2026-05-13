@@ -216,7 +216,14 @@ export const Repository = {
         id: oRow.id as string,
         tableNumber: oRow.tableNumber as string,
         status: oRow.status,
-        createdAt: new Date(oRow.created_at as string),
+        createdAt: (() => {
+          const dateStr = oRow.created_at as string;
+          if (!dateStr) return new Date();
+          // SQLite/Turso format: 2023-10-27 10:00:00
+          // Add T and Z to ensure UTC interpretation in all browsers
+          const isoStr = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+          return new Date(isoStr);
+        })(),
         items: itemsRes.rows.map(iRow => ({
           id: iRow.product_id as string,
           name: iRow.name as string,
