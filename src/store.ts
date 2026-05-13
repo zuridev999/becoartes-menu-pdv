@@ -509,11 +509,12 @@ export const useStore = create<AppState>((set, get) => ({
 
   sendToKitchen: async (tableId, origin = 'pdv', sellerId) => {
     const table = get().tables.find(t => t.id === tableId);
-    if (!table || table.orders.length === 0) return;
+    if (!table || table.cart.length === 0) return;
 
     const orderId = Math.random().toString(36).substr(2, 9);
-    const total = table.orders.reduce((acc, o) => {
-      const itemPrice = o.price + o.selectedModifiers.reduce((mAcc, m) => mAcc + m.price, 0);
+    const total = table.cart.reduce((acc, o) => {
+      const modifiersTotal = o.selectedModifiers?.reduce((mAcc, m) => mAcc + m.price, 0) || 0;
+      const itemPrice = o.price + modifiersTotal;
       return acc + (itemPrice * o.quantity);
     }, 0);
 
