@@ -286,6 +286,12 @@ export const useStore = create<AppState>((set, get) => ({
         initialView = validViews.includes(path) ? path : 'tablet';
       }
 
+      // Auto-login para PDV para agilizar operação
+      let currentSeller = null;
+      if (initialView === 'pdv' && sellers.length > 0) {
+        currentSeller = sellers.find(s => s.role === 'gerente' || s.permission === 'admin') || sellers[0];
+      }
+
       set({ 
         categories, 
         menu: menuItems, 
@@ -293,6 +299,7 @@ export const useStore = create<AppState>((set, get) => ({
         sellers, 
         kitchenOrders, 
         activeView: initialView as any,
+        currentSeller,
         tables: tables.sort((a, b) => a.number - b.number) 
       });
       

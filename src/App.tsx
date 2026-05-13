@@ -41,15 +41,15 @@ function App() {
       </AnimatePresence>
 
       <div className="min-h-screen bg-[#0a0a0c]">
-        {/* Lógica de Autenticação Global */}
-        {!currentSeller && activeView !== 'kitchen' && activeView !== 'tablet' && (
+        {/* Lógica de Autenticação Global - Oculta no PDV para auto-login */}
+        {!currentSeller && activeView !== 'kitchen' && activeView !== 'tablet' && activeView !== 'pdv' && (
           <PinLoginModal />
         )}
 
         {/* Roteamento de Views com Hostname Fallback */}
         {activeView === 'tablet' && <TabletView />}
         {activeView === 'qr' && <QRView />}
-        {activeView === 'pdv' && currentSeller && <PDVView />}
+        {activeView === 'pdv' && <PDVView />}
         {activeView === 'kitchen' && <KitchenView />}
         {activeView === 'admin' && currentSeller && <AdminView />}
         
