@@ -7,7 +7,11 @@ function KitchenOrderCard({ order, onComplete }: { order: any, onComplete: (id: 
 
   useEffect(() => {
     const updateTimer = () => {
-      const diff = Math.max(0, new Date().getTime() - new Date(order.createdAt).getTime());
+      if (!order.createdAt) return;
+      const createdDate = new Date(order.createdAt);
+      if (isNaN(createdDate.getTime())) return;
+
+      const diff = Math.max(0, new Date().getTime() - createdDate.getTime());
       setElapsedMs(diff);
     };
     
