@@ -205,7 +205,7 @@ export const Repository = {
   },
 
   async getKitchenOrders() {
-    const kOrdersRes = await db.execute("SELECT o.*, t.number as tableNumber FROM orders o JOIN tables t ON o.table_id = t.id WHERE o.status != 'ready' ORDER BY o.created_at ASC");
+    const kOrdersRes = await db.execute("SELECT o.id, o.status, o.table_id, strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) as created_at, t.number as tableNumber FROM orders o JOIN tables t ON o.table_id = t.id WHERE o.status != 'ready' ORDER BY o.created_at ASC");
     const kOrders: any[] = [];
     for (const oRow of kOrdersRes.rows) {
       const itemsRes = await db.execute({
@@ -216,14 +216,7 @@ export const Repository = {
         id: oRow.id as string,
         tableNumber: oRow.tableNumber as string,
         status: oRow.status,
-        createdAt: (() => {
-          const dateStr = oRow.created_at as string;
-          if (!dateStr) return new Date();
-          // SQLite/Turso format: 2023-10-27 10:00:00
-          // Add T and Z to ensure UTC interpretation in all browsers
-          const isoStr = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
-          return new Date(isoStr);
-        })(),
+        createdAt: new Date(oRow.created_at as string),
         items: itemsRes.rows.map(iRow => ({
           id: iRow.product_id as string,
           name: iRow.name as string,
