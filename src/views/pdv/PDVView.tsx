@@ -119,7 +119,7 @@ export function PDVView() {
                 className={`h-40 rounded-[2.5rem] border-2 p-6 flex flex-col justify-between transition-all relative overflow-hidden group ${getStatusColor(table.status)}`}
               >
                 <div className="flex justify-between items-start relative z-10">
-                  <span className="text-3xl font-black italic tracking-tighter">#{table.number}</span>
+                  <span className="text-3xl font-black italic tracking-tighter">{table.number}</span>
                   {table.status !== 'available' && (
                     <Users size={20} className="opacity-40" />
                   )}

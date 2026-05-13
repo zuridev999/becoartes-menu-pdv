@@ -18,7 +18,8 @@ export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
 
   const handleSendOrder = async () => {
     if (!isConfirmed) {
-      addNotification('Por favor, confirme seu pedido antes de enviar.', 'info');
+      setIsConfirmed(true);
+      addNotification('Pedido confirmado! Clique em ENVIAR novamente.', 'info');
       return;
     }
     
@@ -117,8 +118,8 @@ export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
               
               <button
                 onClick={handleSendOrder}
-                disabled={isSending || table.cart.length === 0 || !isConfirmed}
-                className="py-8 btn-beco btn-beco-purple text-2xl font-black tracking-widest rounded-[2rem] shadow-2xl shadow-primary/30 disabled:opacity-20 flex items-center justify-center gap-4 animate-pulse-slow"
+                disabled={isSending || table.cart.length === 0}
+                className={`py-8 btn-beco btn-beco-purple text-2xl font-black tracking-widest rounded-[2rem] shadow-2xl shadow-primary/30 flex items-center justify-center gap-4 transition-all ${!isConfirmed ? 'opacity-50' : 'animate-pulse-slow'}`}
               >
                 <Send size={28} /> ENVIAR PEDIDO
               </button>

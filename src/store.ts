@@ -24,6 +24,7 @@ export interface AppState {
   closedBills: ClosedBill[];
   auditLogs: { id: string; action: string; details: string; table_number: string; origin: string; author_name: string; timestamp: string }[];
   fetchAuditLogs: () => Promise<void>;
+  syncData: () => Promise<void>;
   addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string } | string, details?: string, tableNumber?: string, origin?: string) => Promise<void>;
   activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
   isLoading: boolean;
@@ -340,6 +341,12 @@ export const useStore = create<AppState>((set, get) => ({
       });
       
       console.log(`🚀 Sistema Becoartes Inicializado! View: ${initialView} | Host: ${hostname}`);
+      
+      // Iniciar Sync Automático (a cada 10 segundos)
+      setInterval(() => {
+        get().syncData();
+      }, 10000);
+
     } catch (error) {
       console.error("❌ Falha crítica na inicialização:", error);
     } finally {
@@ -393,6 +400,63 @@ export const useStore = create<AppState>((set, get) => ({
 
 
 
+  syncData: async () => {
+    try {
+      const [kitchenOrders, tablesRes] = await Promise.all([
+        Repository.getKitchenOrders(),
+        db.execute("SELECT * FROM tables")
+      ]);
+
+      const updatedTables = tablesRes.rows.map((row: any) => ({
+        id: row.id as string,
+        number: Number(row.number),
+        status: row.status as Table['status'],
+        orders: [], // orders e cart são mantidos locais ou recarregados se necessário
+        cart: [],
+        lastActivity: row.last_activity ? new Date(row.last_activity as string) : new Date(),
+      }));
+
+      // 3. Buscar Pedidos Ativos para todas as mesas
+      const ordersRes = await db.execute(`
+        SELECT oi.*, o.table_id 
+        FROM order_items oi 
+        JOIN orders o ON oi.order_id = o.id 
+        WHERE o.status != 'closed'
+      `);
+
+      const ordersByTable: Record<string, OrderItem[]> = {};
+      ordersRes.rows.forEach((row: any) => {
+        if (!ordersByTable[row.table_id]) ordersByTable[row.table_id] = [];
+        ordersByTable[row.table_id].push({
+          id: row.product_id as string,
+          productId: row.product_id as string,
+          name: '', // Nome será preenchido pelo menu se necessário, ou podemos dar join
+          price: row.price_at_time as number,
+          quantity: row.quantity as number,
+          selectedModifiers: JSON.parse(row.selected_modifiers as string || '[]'),
+          notes: row.notes as string
+        });
+      });
+
+      // Preservar os carrinhos locais ao sincronizar mesas
+      const currentTables = get().tables;
+      const finalTables = updatedTables.map(newTable => {
+        const localTable = currentTables.find(t => t.id === newTable.id);
+        return {
+          ...newTable,
+          cart: localTable?.cart || [],
+          orders: ordersByTable[newTable.id] || []
+        };
+      });
+
+      set({ 
+        kitchenOrders, 
+        tables: finalTables.sort((a, b) => a.number - b.number) 
+      });
+    } catch (error) {
+      console.error("❌ Erro no sync de dados:", error);
+    }
+  },
 
   syncBeveragesFromInventory: async () => {
     set({ isLoading: true });
