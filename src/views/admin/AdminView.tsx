@@ -258,13 +258,12 @@ export function AdminView() {
             { id: 'categories', name: 'Categorias', icon: LayoutDashboard },
             { id: 'products', name: 'Produtos', icon: Package },
             { id: 'optionals', name: 'Opcionais', icon: Sparkles },
-            { id: 'auditoria', name: 'Auditoria', icon: Search },
             { id: 'sellers', name: 'Equipe', icon: User },
-            { id: 'movements', name: 'Auditoria Fluxo', icon: TrendingUp },
+            { id: 'movements', name: 'Auditoria', icon: TrendingUp },
           ]
           .filter(tab => {
             if (adminMode === 'menu') {
-              return ['categories', 'products', 'optionals', 'auditoria'].includes(tab.id);
+              return ['categories', 'products', 'optionals'].includes(tab.id);
             } else {
               return ['config', 'sellers', 'movements'].includes(tab.id);
             }
@@ -738,143 +737,6 @@ export function AdminView() {
                  </div>
                ))}
             </div>
-          </SectionCard>
-        </div>
-      )}
-      
-      {activeTab === 'auditoria' && (
-        <div className="space-y-12">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-             <div className="glass-card p-8 border-white/5">
-                <p className="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-2">Total Categorias</p>
-                <h4 className="text-4xl font-black">{categories.length}</h4>
-             </div>
-             <div className="glass-card p-8 border-white/5">
-                <p className="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-2">Total Produtos</p>
-                <h4 className="text-4xl font-black text-primary">{menu.length}</h4>
-             </div>
-             <div className="glass-card p-8 border-white/5">
-                <p className="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-2">Preço Zerado</p>
-                <h4 className="text-4xl font-black text-rose-500">{menu.filter(p => (Number(p.price) || 0) <= 0).length}</h4>
-             </div>
-             <div className="glass-card p-8 border-white/5">
-                <p className="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-2">Sem Imagem</p>
-                <h4 className="text-4xl font-black text-amber-500">{menu.filter(p => !p.image || p.image.includes('unsplash') && p.image.includes('placeholder')).length}</h4>
-             </div>
-          </div>
-
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-12">
-            {/* Categorias Vazias ou Redundantes */}
-            <SectionCard title="Categorias & Estrutura" icon={LayoutDashboard}>
-              <div className="space-y-6">
-                <div>
-                   <p className="text-xs font-black uppercase text-zinc-500 mb-4 tracking-widest">Categorias Vazias</p>
-                   {categories.filter(c => !menu.some(p => p.categoryId === c.id)).length > 0 ? (
-                     <div className="space-y-2">
-                       {categories.filter(c => !menu.some(p => p.categoryId === c.id)).map(c => (
-                         <div key={c.id} className="flex justify-between items-center bg-rose-500/5 p-4 rounded-xl border border-rose-500/10">
-                            <span className="font-bold text-sm">{c.name}</span>
-                            <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Vazia</span>
-                         </div>
-                       ))}
-                     </div>
-                   ) : <p className="text-xs text-zinc-600 italic">Nenhuma categoria vazia encontrada.</p>}
-                </div>
-
-                <div>
-                   <p className="text-xs font-black uppercase text-zinc-500 mb-4 tracking-widest">Possíveis Redundâncias</p>
-                   {(() => {
-                      const redundantKeywords = ['bebidas', 'drinks', 'alcoólicos', 'suco', 'burgers', 'porções', 'sobremesas', 'doces'];
-                      const found = categories.filter(c => {
-                        const name = c.name.toLowerCase();
-                        return redundantKeywords.some(k => name.includes(k)) && categories.some(c2 => c2.id !== c.id && c2.name.toLowerCase().includes(name.split(' ')[0]));
-                      });
-                      return found.length > 0 ? (
-                        <div className="space-y-2">
-                          {found.map(c => (
-                             <div key={c.id} className="flex justify-between items-center bg-amber-500/5 p-4 rounded-xl border border-amber-500/10">
-                                <span className="font-bold text-sm">{c.name}</span>
-                                <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Revisar</span>
-                             </div>
-                          ))}
-                        </div>
-                      ) : <p className="text-xs text-zinc-600 italic">Estrutura parece limpa.</p>;
-                   })()}
-                </div>
-              </div>
-            </SectionCard>
-
-            {/* Produtos com Problemas */}
-            <SectionCard title="Saúde dos Produtos" icon={Package}>
-               <div className="space-y-6">
-                  <div>
-                    <p className="text-xs font-black uppercase text-zinc-500 mb-4 tracking-widest">Preços Inválidos/Zerados</p>
-                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar space-y-2">
-                      {menu.filter(p => (Number(p.price) || 0) <= 0).map(p => (
-                        <div key={p.id} className="flex justify-between items-center bg-rose-500/5 p-4 rounded-xl border border-rose-500/10">
-                           <span className="font-bold text-sm">{p.name}</span>
-                           <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">R$ {p.price.toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-black uppercase text-zinc-500 mb-4 tracking-widest">Duplicados (Nomes Similares)</p>
-                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar space-y-2">
-                      {(() => {
-                         const seen = new Set();
-                         const dups: any[] = [];
-                         menu.forEach(p1 => {
-                           menu.forEach(p2 => {
-                             if (p1.id !== p2.id && !seen.has(p1.id) && !seen.has(p2.id)) {
-                               if (p1.name.toLowerCase().trim() === p2.name.toLowerCase().trim()) {
-                                 dups.push([p1, p2]);
-                                 seen.add(p1.id);
-                                 seen.add(p2.id);
-                               }
-                             }
-                           });
-                         });
-                         return dups.length > 0 ? dups.map(([p1, p2], idx) => (
-                            <div key={idx} className="bg-amber-500/5 p-4 rounded-xl border border-amber-500/10 space-y-2">
-                               <div className="flex justify-between items-center">
-                                  <span className="font-bold text-sm">{p1.name}</span>
-                                  <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Duplicado</span>
-                               </div>
-                               <p className="text-[9px] text-zinc-500 uppercase font-black">IDs: {p1.id} vs {p2.id}</p>
-                            </div>
-                         )) : <p className="text-xs text-zinc-600 italic">Nenhum duplicado óbvio.</p>;
-                      })()}
-                    </div>
-                  </div>
-               </div>
-            </SectionCard>
-          </div>
-
-          <SectionCard title="Conclusões e Recomendações" icon={Sparkles}>
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="p-6 bg-white/[0.02] rounded-3xl border border-white/5">
-                   <h5 className="text-primary font-black uppercase tracking-widest text-[10px] mb-4">Ação Necessária</h5>
-                   <ul className="text-xs space-y-3 font-medium text-gray-400">
-                      <li>• Corrigir {menu.filter(p => (Number(p.price) || 0) <= 0).length} produtos com preço zero.</li>
-                      <li>• Adicionar imagens em {menu.filter(p => !p.image).length} produtos para melhorar o visual do tablet.</li>
-                      <li>• Remover ou ocultar {categories.filter(c => !menu.some(p => p.categoryId === c.id)).length} categorias vazias.</li>
-                   </ul>
-                </div>
-                <div className="p-6 bg-white/[0.02] rounded-3xl border border-white/5">
-                   <h5 className="text-accent font-black uppercase tracking-widest text-[10px] mb-4">Otimização de Menu</h5>
-                   <p className="text-xs font-medium text-gray-400 leading-relaxed">
-                      Identificamos categorias que podem ser fundidas para simplificar a navegação do cliente. Agrupar subcategorias pequenas em uma categoria "Pai" melhora a conversão no tablet.
-                   </p>
-                </div>
-                <div className="p-6 bg-white/[0.02] rounded-3xl border border-white/5">
-                   <h5 className="text-emerald-500 font-black uppercase tracking-widest text-[10px] mb-4">Saúde dos Dados</h5>
-                   <p className="text-xs font-medium text-gray-400 leading-relaxed">
-                      Seu cardápio possui {menu.filter(p => !p.visible).length} produtos invisíveis. Caso não pretenda usá-los em breve, considere excluí-los para manter o banco de dados leve.
-                   </p>
-                </div>
-             </div>
           </SectionCard>
         </div>
       )}
