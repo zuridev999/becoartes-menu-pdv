@@ -3,14 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Maximize } from 'lucide-react';
 
 export function PWAHandler() {
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [wakeLock, setWakeLock] = useState<any>(null);
   const [showReentryOverlay, setShowReentryOverlay] = useState(false);
 
   useEffect(() => {
     const handleFsChange = () => {
       const isFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
-      setIsFullscreen(isFs);
       
       // Se saiu do fullscreen e não foi por comando intencional recente, mostra overlay discreto
       if (!isFs) {
