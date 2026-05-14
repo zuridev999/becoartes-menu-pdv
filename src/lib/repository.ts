@@ -201,7 +201,7 @@ export const Repository = {
 
   async getKitchenOrders() {
     const [kOrdersRes, itemsRes, nowRes] = await Promise.all([
-      db.execute("SELECT o.id, o.status, o.table_id, strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) as created_at, t.number as tableNumber FROM orders o JOIN tables t ON o.table_id = t.id WHERE o.status != 'ready' ORDER BY o.created_at ASC"),
+      db.execute("SELECT o.id, o.status, o.table_id, o.origin, strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) as created_at, t.number as tableNumber FROM orders o JOIN tables t ON o.table_id = t.id WHERE o.status != 'ready' ORDER BY o.created_at ASC"),
       db.execute("SELECT oi.*, m.name FROM order_items oi JOIN menu m ON oi.product_id = m.id"),
       db.execute("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now') as serverNow")
     ]);
@@ -223,8 +223,10 @@ export const Repository = {
 
     const kOrders = kOrdersRes.rows.map((oRow: any) => ({
       id: oRow.id as string,
+      tableId: oRow.table_id as string,
       tableNumber: oRow.tableNumber as string,
       status: oRow.status,
+      origin: (oRow.origin || 'pdv') as any,
       createdAt: new Date(oRow.created_at as string),
       items: itemsByOrder[oRow.id] || []
     }));
