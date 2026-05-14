@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Clock, CheckCircle2, X, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
@@ -180,10 +180,71 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
 }
 
 export function KitchenView() {
-  const { kitchenOrders, updateKitchenOrderStatus } = useStore();
+  const { kitchenOrders, updateKitchenOrderStatus, syncData } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const lastOrderIds = useRef<string[]>([]);
 
   const activeOrders = kitchenOrders.filter((o: any) => o.status !== 'ready');
+
+  // Auto-sync na Cozinha (30s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log("🔄 Kitchen auto-syncing...");
+      syncData();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [syncData]);
+
+  // Função para tocar o sininho (Web Audio API)
+  const playBellSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      const playDing = (time: number) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        
+        osc.type = 'sine'; // Som de sino mais puro
+        osc.frequency.setValueAtTime(1046.50, time); // C6
+        osc.frequency.exponentialRampToValueAtTime(523.25, time + 0.5); // Desce para C5
+        
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.3, time + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.6);
+        
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        osc.start(time);
+        osc.stop(time + 0.6);
+      };
+
+      let startTime = audioCtx.currentTime + 0.1;
+      // 4 sets de 3 toques
+      for (let set = 0; set < 4; set++) {
+        for (let ding = 0; ding < 3; ding++) {
+          playDing(startTime);
+          startTime += 0.25; // Intervalo entre toques no set
+        }
+        startTime += 1.5; // Intervalo entre os sets (conforme pedido: 4x)
+      }
+    } catch (e) {
+      console.warn("Erro ao reproduzir som:", e);
+    }
+  };
+
+  // Detectar Novos Pedidos
+  useEffect(() => {
+    const currentIds = activeOrders.map(o => o.id);
+    const hasNewOrder = currentIds.some(id => !lastOrderIds.current.includes(id));
+    
+    if (hasNewOrder && lastOrderIds.current.length > 0) {
+      console.log("🔔 Novo pedido detectado! Tocando sininho...");
+      playBellSound();
+    }
+    
+    lastOrderIds.current = currentIds;
+  }, [activeOrders]);
   
   return (
     <div className="p-4 bg-white h-screen text-black font-['Outfit'] overflow-hidden flex flex-col uppercase">
