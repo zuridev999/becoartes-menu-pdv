@@ -79,30 +79,33 @@ export const Repository = {
 
   // --- MODIFIERS ---
   async getModifierGroups() {
-    const res = await db.execute("SELECT * FROM modifier_groups WHERE status = 'active'");
-    const groups: any[] = [];
-    for (const row of res.rows) {
-      const modifiersRes = await db.execute({
-        sql: "SELECT * FROM modifiers WHERE group_id = ? AND status = 'active'",
-        args: [row.id as string]
+    const [groupsRes, modifiersRes] = await Promise.all([
+      db.execute("SELECT * FROM modifier_groups WHERE status = 'active'"),
+      db.execute("SELECT * FROM modifiers WHERE status = 'active' ORDER BY sort_order ASC")
+    ]);
+
+    const modifiersByGroup: Record<string, any[]> = {};
+    modifiersRes.rows.forEach((m: any) => {
+      if (!modifiersByGroup[m.group_id]) modifiersByGroup[m.group_id] = [];
+      modifiersByGroup[m.group_id].push({
+        id: m.id as string,
+        name: m.name as string,
+        price: m.price as number,
+        status: m.status as any,
+        sortOrder: m.sort_order as number
       });
-      groups.push({
-        id: row.id as string,
-        name: row.name as string,
-        description: row.description as string,
-        minChoices: row.min_choices as number,
-        maxChoices: row.max_choices as number,
-        isRequired: row.is_required === 1,
-        status: row.status as any,
-        modifiers: modifiersRes.rows.map(m => ({
-          id: m.id as string,
-          name: m.name as string,
-          price: m.price as number,
-          status: m.status as any
-        }))
-      });
-    }
-    return groups;
+    });
+
+    return groupsRes.rows.map((row: any) => ({
+      id: row.id as string,
+      name: row.name as string,
+      description: row.description as string,
+      minChoices: row.min_choices as number,
+      maxChoices: row.max_choices as number,
+      isRequired: row.is_required === 1,
+      status: row.status as any,
+      modifiers: modifiersByGroup[row.id] || []
+    }));
   },
 
   async saveModifierGroup(group: any) {
@@ -127,38 +130,21 @@ export const Repository = {
     await db.execute({ sql: "UPDATE modifier_groups SET status = 'inactive' WHERE id = ?", args: [id] });
   },
 
-  async getProductModifierGroups(productId: string) {
-    const res = await db.execute({
-      sql: `SELECT mg.* FROM modifier_groups mg 
-            JOIN product_modifier_groups pmg ON mg.id = pmg.group_id 
-            WHERE pmg.product_id = ? AND mg.status = 'active'
-            ORDER BY pmg.sort_order ASC`,
-      args: [productId]
+  async getProductModifierGroupsMapping() {
+    const res = await db.execute(`
+      SELECT pmg.*
+      FROM product_modifier_groups pmg
+      JOIN modifier_groups mg ON pmg.group_id = mg.id
+      WHERE mg.status = 'active'
+      ORDER BY pmg.product_id, pmg.sort_order
+    `);
+    
+    const mapping: Record<string, string[]> = {};
+    res.rows.forEach((row: any) => {
+      if (!mapping[row.product_id]) mapping[row.product_id] = [];
+      mapping[row.product_id].push(row.group_id as string);
     });
-    // Similar ao getModifierGroups, mas filtrado por produto
-    const groups: any[] = [];
-    for (const row of res.rows) {
-      const modifiersRes = await db.execute({
-        sql: "SELECT * FROM modifiers WHERE group_id = ? AND status = 'active'",
-        args: [row.id as string]
-      });
-      groups.push({
-        id: row.id as string,
-        name: row.name as string,
-        description: row.description as string,
-        minChoices: row.min_choices as number,
-        maxChoices: row.max_choices as number,
-        isRequired: row.is_required === 1,
-        status: row.status as any,
-        modifiers: modifiersRes.rows.map(m => ({
-          id: m.id as string,
-          name: m.name as string,
-          price: m.price as number,
-          status: m.status as any
-        }))
-      });
-    }
-    return groups;
+    return mapping;
   },
 
   async deleteProduct(id: string) {
@@ -214,32 +200,35 @@ export const Repository = {
   },
 
   async getKitchenOrders() {
-    const [kOrdersRes, nowRes] = await Promise.all([
+    const [kOrdersRes, itemsRes, nowRes] = await Promise.all([
       db.execute("SELECT o.id, o.status, o.table_id, strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) as created_at, t.number as tableNumber FROM orders o JOIN tables t ON o.table_id = t.id WHERE o.status != 'ready' ORDER BY o.created_at ASC"),
+      db.execute("SELECT oi.*, m.name FROM order_items oi JOIN menu m ON oi.product_id = m.id"),
       db.execute("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now') as serverNow")
     ]);
     
     const serverNow = new Date(nowRes.rows[0].serverNow as string);
-    const kOrders: any[] = [];
-    for (const oRow of kOrdersRes.rows) {
-      const itemsRes = await db.execute({
-        sql: "SELECT oi.*, m.name FROM order_items oi JOIN menu m ON oi.product_id = m.id WHERE oi.order_id = ?",
-        args: [oRow.id as string]
+    const itemsByOrder: Record<string, any[]> = {};
+    
+    itemsRes.rows.forEach((iRow: any) => {
+      if (!itemsByOrder[iRow.order_id]) itemsByOrder[iRow.order_id] = [];
+      itemsByOrder[iRow.order_id].push({
+        id: iRow.product_id as string,
+        name: iRow.name as string,
+        price: iRow.price_at_time as number,
+        quantity: iRow.quantity as number,
+        selectedModifiers: JSON.parse(iRow.selected_modifiers as string || '[]'),
+        notes: iRow.notes || ''
       });
-      kOrders.push({
-        id: oRow.id as string,
-        tableNumber: oRow.tableNumber as string,
-        status: oRow.status,
-        createdAt: new Date(oRow.created_at as string),
-        items: itemsRes.rows.map(iRow => ({
-          id: iRow.product_id as string,
-          name: iRow.name as string,
-          price: iRow.price_at_time as number,
-          quantity: iRow.quantity as number,
-          selectedModifiers: JSON.parse(iRow.selected_modifiers as string || '[]')
-        }))
-      });
-    }
+    });
+
+    const kOrders = kOrdersRes.rows.map((oRow: any) => ({
+      id: oRow.id as string,
+      tableNumber: oRow.tableNumber as string,
+      status: oRow.status,
+      createdAt: new Date(oRow.created_at as string),
+      items: itemsByOrder[oRow.id] || []
+    }));
+
     return { orders: kOrders, serverNow };
   },
 

@@ -305,21 +305,26 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       // 2. Carregar Dados
-      const [categories, menuItems, modifierGroups, sellers, kitchenData] = await Promise.all([
+      const [categories, menuItems, modifierGroups, sellers, kitchenData, mgMapping] = await Promise.all([
         Repository.getCategories(),
         Repository.getMenu(),
         Repository.getModifierGroups(),
         Repository.getSellers(),
-        Repository.getKitchenOrders()
+        Repository.getKitchenOrders(),
+        Repository.getProductModifierGroupsMapping()
       ]);
 
       const { orders: kitchenOrders, serverNow } = kitchenData;
       const serverTimeOffset = serverNow.getTime() - new Date().getTime();
       
-      // Carregar Modificadores para cada produto (N:N)
-      for (const item of menuItems) {
-        item.modifierGroups = await Repository.getProductModifierGroups(item.id);
-      }
+      // Associar Modificadores em memória (O(1) lookup)
+      const mgMap: Record<string, any> = {};
+      modifierGroups.forEach(g => mgMap[g.id] = g);
+      
+      menuItems.forEach(item => {
+        const groupIds = mgMapping[item.id] || [];
+        item.modifierGroups = groupIds.map(gid => mgMap[gid]).filter(Boolean);
+      });
 
       // 3. Mesas
       const tablesRes = await db.execute("SELECT * FROM tables");
@@ -520,21 +525,26 @@ export const useStore = create<AppState>((set, get) => ({
 
   syncData: async () => {
     try {
-      const [kitchenData, tablesRes, categories, menuItems, modifierGroups] = await Promise.all([
+      const [kitchenData, tablesRes, categories, menuItems, modifierGroups, mgMapping] = await Promise.all([
         Repository.getKitchenOrders(),
         db.execute("SELECT * FROM tables"),
         Repository.getCategories(),
         Repository.getMenu(),
-        Repository.getModifierGroups()
+        Repository.getModifierGroups(),
+        Repository.getProductModifierGroupsMapping()
       ]);
 
       const { orders: kitchenOrders, serverNow } = kitchenData;
       const serverTimeOffset = serverNow.getTime() - new Date().getTime();
 
-      // Recarregar Modificadores para cada produto
-      for (const item of menuItems) {
-        item.modifierGroups = await Repository.getProductModifierGroups(item.id);
-      }
+      // Associar em memória
+      const mgMap: Record<string, any> = {};
+      modifierGroups.forEach(g => mgMap[g.id] = g);
+      
+      menuItems.forEach(item => {
+        const groupIds = mgMapping[item.id] || [];
+        item.modifierGroups = groupIds.map(gid => mgMap[gid]).filter(Boolean);
+      });
 
       const updatedTables = tablesRes.rows.map((row: any) => ({
         id: row.id as string,
