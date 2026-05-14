@@ -16,7 +16,7 @@ export function AdminView() {
     settings, updateSettings,
     sellers, addSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
-    adminTab, setAdminTab
+    adminTab, setAdminTab, adminMode
   } = useStore();
 
   const activeTab = adminTab;
@@ -122,7 +122,15 @@ export function AdminView() {
             { id: 'optionals', name: 'Opcionais', icon: Sparkles },
             { id: 'sellers', name: 'Equipe', icon: User },
             { id: 'movements', name: 'Auditoria', icon: TrendingUp },
-          ].map(tab => (
+          ]
+          .filter(tab => {
+            if (adminMode === 'menu') {
+              return ['categories', 'products', 'optionals'].includes(tab.id);
+            } else {
+              return ['config', 'sellers', 'movements'].includes(tab.id);
+            }
+          })
+          .map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-8 py-4 rounded-[1.5rem] flex items-center gap-3 font-black text-xs uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-gray-500 hover:text-white'}`}>
               <tab.icon size={18}/> {tab.name}
             </button>

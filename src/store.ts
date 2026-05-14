@@ -28,6 +28,7 @@ export interface AppState {
   addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string } | string, details?: string, tableNumber?: string, origin?: string) => Promise<void>;
   activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
   adminTab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements';
+  adminMode: 'menu' | 'settings';
   isLoading: boolean;
   setAdminTab: (tab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements') => void;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
@@ -36,7 +37,7 @@ export interface AppState {
   currentTableId: string | null;
   setCurrentTableId: (id: string | null) => void;
   init: () => Promise<void>;
-  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements') => void;
+  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements', mode?: 'menu' | 'settings') => void;
   toggleProductVisibility: (id: string) => void;
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
@@ -89,6 +90,7 @@ export interface AppState {
 export const useStore = create<AppState>((set, get) => ({
   activeView: '',
   adminTab: 'config',
+  adminMode: 'settings',
   isLoading: true,
   banners: [
     'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=1200&h=400&fit=crop',
@@ -305,17 +307,26 @@ export const useStore = create<AppState>((set, get) => ({
 
       // 4. Determinar View Inicial pela URL e Hostname
       const hostname = window.location.hostname;
-      const path = window.location.pathname.replace('/', '');
       
       let initialView: any = 'tablet';
+      let initialAdminMode: any = 'settings';
       
       if (hostname.startsWith('pdv.')) initialView = 'pdv';
       else if (hostname.startsWith('coz.')) initialView = 'kitchen';
       else if (hostname.startsWith('tablet.')) initialView = 'tablet';
       else if (hostname.startsWith('qr.')) initialView = 'qr';
       else {
-        const validViews = ['tablet', 'pdv', 'admin', 'kitchen', 'qr'];
-        initialView = validViews.includes(path) ? path : 'tablet';
+        const fullPath = window.location.pathname.substring(1);
+        if (fullPath.startsWith('admin/menu')) {
+          initialView = 'admin';
+          initialAdminMode = 'menu';
+        } else if (fullPath.startsWith('admin/settings') || fullPath.startsWith('admin/config')) {
+          initialView = 'admin';
+          initialAdminMode = 'settings';
+        } else {
+          const validViews = ['tablet', 'pdv', 'admin', 'kitchen', 'qr'];
+          initialView = validViews.includes(fullPath) ? fullPath : 'tablet';
+        }
       }
 
       // Auto-login para PDV para agilizar operação
@@ -344,6 +355,8 @@ export const useStore = create<AppState>((set, get) => ({
         kitchenOrders, 
         auditLogs,
         activeView: initialView as any,
+        adminMode: initialAdminMode,
+        adminTab: initialAdminMode === 'menu' ? 'products' : 'config',
         currentSeller,
         tables: tables.sort((a, b) => a.number - b.number),
         serverTimeOffset
@@ -363,9 +376,14 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  setActiveView: (view, tab) => {
-    window.history.pushState({}, '', `/${view}`);
-    set({ activeView: view, adminTab: tab || get().adminTab });
+  setActiveView: (view, tab, mode) => {
+    const url = view === 'admin' ? `/admin/${mode || 'settings'}` : `/${view}`;
+    window.history.pushState({}, '', url);
+    set({ 
+      activeView: view, 
+      adminTab: tab || (mode === 'menu' ? 'products' : 'config'),
+      adminMode: mode || get().adminMode
+    });
   },
   setAdminTab: (tab) => set({ adminTab: tab }),
   toggleProductVisibility: async (id) => {

@@ -87,14 +87,14 @@ export function PDVView() {
             <span className="text-2xl font-black text-purple-400">{activeTablesCount}</span>
           </div>
           <button 
-            onClick={() => useStore.getState().setActiveView('admin', 'products')} 
+            onClick={() => useStore.getState().setActiveView('admin', 'products', 'menu')} 
             className="glass-card p-4 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all border-white/5"
             title="Gestão de Cardápio"
           >
             <Soup size={24} />
           </button>
           <button 
-            onClick={() => useStore.getState().setActiveView('admin', 'config')} 
+            onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')} 
             className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"
             title="Configurações Gerais"
           >
