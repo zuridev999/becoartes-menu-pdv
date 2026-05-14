@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ShoppingBag, LayoutDashboard, Bell, FileText } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import { TabletEntry } from '../entry/TabletEntry';

@@ -810,13 +810,19 @@ export const useStore = create<AppState>((set, get) => ({
       createdAt: new Date()
     };
 
+    // Atualizar Status da Mesa no DB
+    await db.execute({
+      sql: "UPDATE tables SET status = ? WHERE id = ?",
+      args: ['occupied', tableId]
+    });
+
     set((state) => ({
       kitchenOrders: [...state.kitchenOrders, newKitchenOrder],
       tables: state.tables.map(t => t.id === tableId ? { 
         ...t, 
         orders: [...t.orders, ...table.cart],
         cart: [],
-        status: 'ordering', 
+        status: 'occupied', 
         lastActivity: new Date() 
       } : t)
     }));

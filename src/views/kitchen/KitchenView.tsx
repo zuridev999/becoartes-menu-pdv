@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Clock, CheckCircle2, X, AlertCircle } from 'lucide-react';
+import { Clock, CheckCircle2, X, AlertCircle, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
 
