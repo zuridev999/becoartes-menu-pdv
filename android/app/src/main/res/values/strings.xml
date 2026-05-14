@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Becoartes</string>
+    <string name="title_activity_main">Becoartes</string>
+    <string name="package_name">com.becoartes.tablet</string>
+    <string name="custom_url_scheme">com.becoartes.tablet</string>
+</resources>

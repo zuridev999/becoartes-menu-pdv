@@ -28,6 +28,39 @@ import { db } from '../../lib/db';
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
 
+// Componente de Input fora para evitar perda de foco
+const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string }) => (
+  <div className="space-y-2">
+    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">{label}</label>
+    {type === 'checkbox' ? (
+      <button 
+        onClick={() => onChange(!value)}
+        className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between font-bold text-sm ${value ? 'bg-primary/10 text-primary border-primary/20' : 'bg-white/5 text-gray-500 border-white/5'}`}
+      >
+        {value ? 'Ativado' : 'Desativado'}
+        {value ? <CheckCircle size={18}/> : <X size={18}/>}
+      </button>
+    ) : (
+      <input 
+        type={type === 'number' ? 'text' : type} 
+        value={value} 
+        placeholder={placeholder}
+        onChange={(e) => {
+          let val = e.target.value;
+          if (type === 'number') {
+            // Permite apenas números, ponto e vírgula
+            val = val.replace(/[^0-9,.]/g, '');
+            onChange(val);
+          } else {
+            onChange(val);
+          }
+        }}
+        className="w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 focus:border-primary/40 focus:bg-white/[0.05] outline-none font-bold text-sm transition-all placeholder:text-zinc-700"
+      />
+    )}
+  </div>
+);
+
 function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSchedulingItem, toggleCategoryVisibility }: any) {
   const {
     attributes,
@@ -108,10 +141,6 @@ export function AdminView() {
   const setActiveTab = setAdminTab;
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  console.log("🛠️ AdminView Render - Tab:", activeTab);
-  console.log("📦 Menu:", menu.length, "🏷️ Categories:", categories.length);
-  console.log("⚙️ Settings:", settings);
-  
   const [schedulingItem, setSchedulingItem] = useState<{ type: 'product' | 'category', id: string, name: string, config?: ScheduleConfig } | null>(null);
 
   const [newSellerName, setNewSellerName] = useState('');
@@ -177,37 +206,6 @@ export function AdminView() {
     </motion.div>
   );
 
-  const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string }) => (
-    <div className="space-y-2">
-      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">{label}</label>
-      {type === 'checkbox' ? (
-        <button 
-          onClick={() => onChange(!value)}
-          className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between font-bold text-sm ${value ? 'bg-primary/10 text-primary border-primary/20' : 'bg-white/5 text-gray-500 border-white/5'}`}
-        >
-          {value ? 'Ativado' : 'Desativado'}
-          {value ? <CheckCircle size={18}/> : <X size={18}/>}
-        </button>
-      ) : (
-        <input 
-          type={type === 'number' ? 'text' : type} 
-          value={value} 
-          placeholder={placeholder}
-          onChange={(e) => {
-            let val = e.target.value;
-            if (type === 'number') {
-              val = val.replace(/[^0-9,.]/g, '');
-              onChange(val);
-            } else {
-              onChange(val);
-            }
-          }}
-          className="w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 focus:border-primary/40 focus:bg-white/[0.05] outline-none font-bold text-sm transition-all placeholder:text-zinc-700"
-        />
-      )}
-    </div>
-  );
-
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -217,7 +215,7 @@ export function AdminView() {
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          const max = 800; // Resolução máxima para PDV/Tablet
+          const max = 800;
           
           if (width > height) {
             if (width > max) {
@@ -235,7 +233,7 @@ export function AdminView() {
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.7)); // 70% qualidade JPEG
+          resolve(canvas.toDataURL('image/jpeg', 0.7));
         };
         img.src = e.target?.result as string;
       };
@@ -416,7 +414,7 @@ export function AdminView() {
                           <div>
                             <p className="font-black text-xl tracking-tight">{p.name}</p>
                             <div className="flex items-center gap-3 mt-1">
-                              <span className="text-xs font-black text-gray-400">R$ {p.price.toFixed(2)}</span>
+                              <span className="text-xs font-black text-gray-400">R$ {typeof p.price === 'number' ? p.price.toFixed(2) : p.price}</span>
                               {p.cost > 0 && <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 rounded text-[9px] font-black uppercase">Lucro R$ {(p.price - p.cost).toFixed(2)}</span>}
                             </div>
                           </div>
@@ -567,14 +565,12 @@ export function AdminView() {
                       try {
                         const cleanProduct = {
                           ...editingProduct,
-                          // Normalização de Números (Lida com vírgula e ponto)
                           price: typeof editingProduct.price === 'string' 
                             ? parseFloat(String(editingProduct.price).replace(',', '.')) || 0 
                             : Number(editingProduct.price) || 0,
                           cost: typeof editingProduct.cost === 'string'
                             ? parseFloat(String(editingProduct.cost).replace(',', '.')) || 0
                             : Number(editingProduct.cost) || 0,
-                          // Normalização de Strings (Evita null)
                           description: editingProduct.description || "",
                           image: editingProduct.image || "",
                           erpCode: editingProduct.erpCode || "",
@@ -590,6 +586,7 @@ export function AdminView() {
                         setEditingProduct(null);
                       } catch (err: any) {
                         console.error("Erro no form:", err);
+                        alert(`Erro ao salvar: ${err.message}`);
                       }
                     }} 
                     className="w-full btn-beco btn-beco-purple py-6 font-black shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all"

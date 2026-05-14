@@ -54,10 +54,10 @@ export const Repository = {
 
   async upsertProduct(p: any) {
     await db.execute({
-      sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category_id, image, visible, erp_code, remote_stock_id, schedule_config, cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category, category_id, image, visible, erp_code, remote_stock_id, schedule_config, cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       args: [
         p.id, p.name, p.description || '', p.price, 
-        p.categoryId, p.image, p.visible ? 1 : 0, 
+        p.categoryId, p.categoryId, p.image, p.visible ? 1 : 0, 
         p.erpCode || null, p.remoteStockId || null,
         p.schedule ? JSON.stringify(p.schedule) : null,
         p.cost || 0
