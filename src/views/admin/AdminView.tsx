@@ -341,7 +341,7 @@ export function AdminView() {
             <div className="flex justify-between items-center mb-8 px-4">
               <h3 className="text-3xl font-black flex items-center gap-4"><LayoutDashboard size={28}/> Categorias</h3>
               <button 
-                onClick={() => upsertCategory({ id: Math.random().toString(36).substr(2, 9), name: 'Nova Categoria', sortOrder: categories.length })} 
+                onClick={() => upsertCategory({ id: Math.random().toString(36).substr(2, 9), name: 'Nova Categoria', sortOrder: categories.length, visible: true })} 
                 className="p-3 bg-primary text-white rounded-xl"
               >
                 <Plus size={20}/>
