@@ -444,25 +444,49 @@ export const useStore = create<AppState>((set, get) => ({
     const product = get().menu.find(p => p.id === id);
     if (!product) return;
     const newVisible = !product.visible;
-    await db.execute({
-      sql: "UPDATE menu SET visible = ? WHERE id = ?",
-      args: [newVisible ? 1 : 0, id]
-    });
+
+    // 1. Atualização Otimista (Interface responde na hora)
     set((state) => ({
       menu: state.menu.map(p => p.id === id ? { ...p, visible: newVisible } : p)
     }));
+
+    try {
+      // 2. Persistir no Banco
+      await db.execute({
+        sql: "UPDATE menu SET visible = ? WHERE id = ?",
+        args: [newVisible ? 1 : 0, id]
+      });
+    } catch (e) {
+      // 3. Reverter se falhar
+      console.error("❌ Falha ao sincronizar visibilidade:", e);
+      set((state) => ({
+        menu: state.menu.map(p => p.id === id ? { ...p, visible: !newVisible } : p)
+      }));
+      get().addNotification("Falha na rede ao ocultar produto. Tente novamente.", "error");
+    }
   },
   toggleCategoryVisibility: async (id) => {
     const category = get().categories.find(c => c.id === id);
     if (!category) return;
     const newVisible = !category.visible;
-    await db.execute({
-      sql: "UPDATE categories SET visible = ? WHERE id = ?",
-      args: [newVisible ? 1 : 0, id]
-    });
+
+    // 1. Atualização Otimista
     set((state) => ({
       categories: state.categories.map(c => c.id === id ? { ...c, visible: newVisible } : c)
     }));
+
+    try {
+      await db.execute({
+        sql: "UPDATE categories SET visible = ? WHERE id = ?",
+        args: [newVisible ? 1 : 0, id]
+      });
+    } catch (e) {
+      console.error("❌ Falha ao sincronizar visibilidade da categoria:", e);
+      set((state) => ({
+        categories: state.categories.map(c => c.id === id ? { ...c, visible: !newVisible } : c)
+      }));
+      get().addNotification("Falha na rede ao ocultar categoria.", "error");
+    }
   },
   updateProduct: async (id, data) => {
     try {
