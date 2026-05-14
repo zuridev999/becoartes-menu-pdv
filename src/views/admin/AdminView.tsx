@@ -399,8 +399,7 @@ export function AdminView() {
                 const items = menu.filter(p => p.categoryId === cat.id);
                 const filteredItems = items.filter((p: any) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
                 if (filteredItems.length === 0 && (items.length > 0 || !searchTerm)) return null;
-                if (items.length === 0 && !searchTerm) return null;
-
+                if (items.length === 0) return null;
                 return (
                   <div key={cat.id}>
                     <div className="bg-white/5 px-8 py-4 border-y border-white/5 flex justify-between items-center">
@@ -408,30 +407,31 @@ export function AdminView() {
                       {!cat.visible && <span className="text-[9px] font-black uppercase text-gray-500 bg-white/5 px-2 py-0.5 rounded">Invisível</span>}
                     </div>
                     {filteredItems.map((p: any) => (
-                    <div key={p.id} className={`flex items-center justify-between p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group ${!p.visible ? 'opacity-40 grayscale' : ''}`}>
-                      <div className="flex items-center gap-6">
-                        <div className="relative">
-                          <img src={p.image} className="w-20 h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
-                          {!p.visible && <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center"><EyeOff size={20} className="text-white/40" /></div>}
-                        </div>
-                        <div>
-                          <p className="font-black text-xl tracking-tight">{p.name}</p>
-                          <div className="flex items-center gap-3 mt-1">
-                            <span className="text-xs font-black text-gray-400">R$ {p.price.toFixed(2)}</span>
-                            {p.cost > 0 && <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 rounded text-[9px] font-black uppercase">Lucro R$ {(p.price - p.cost).toFixed(2)}</span>}
+                      <div key={p.id} className={`flex items-center justify-between p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group ${!p.visible ? 'opacity-40 grayscale' : ''}`}>
+                        <div className="flex items-center gap-6">
+                          <div className="relative">
+                            <img src={p.image} className="w-20 h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
+                            {!p.visible && <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center"><EyeOff size={20} className="text-white/40" /></div>}
+                          </div>
+                          <div>
+                            <p className="font-black text-xl tracking-tight">{p.name}</p>
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="text-xs font-black text-gray-400">R$ {p.price.toFixed(2)}</span>
+                              {p.cost > 0 && <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 rounded text-[9px] font-black uppercase">Lucro R$ {(p.price - p.cost).toFixed(2)}</span>}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all">
-                        <button 
-                          onClick={() => toggleProductVisibility(p.id)}
-                          className={`p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
-                          title={p.visible ? 'Ocultar do Cardápio' : 'Mostrar no Cardápio'}
-                        >
-                          {p.visible ? <Eye size={20}/> : <EyeOff size={20}/>}
-                        </button>
-                        <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
-                        <button onClick={() => setEditingProduct(p)} className="p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
+                        <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all">
+                          <button 
+                            onClick={() => toggleProductVisibility(p.id)}
+                            className={`p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
+                            title={p.visible ? 'Ocultar do Cardápio' : 'Mostrar no Cardápio'}
+                          >
+                            {p.visible ? <Eye size={20}/> : <EyeOff size={20}/>}
+                          </button>
+                          <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
+                          <button onClick={() => setEditingProduct(p)} className="p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
+                        </div>
                       </div>
                     ))}
                   </div>
