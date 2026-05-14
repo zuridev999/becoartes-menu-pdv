@@ -27,17 +27,17 @@ export interface AppState {
   syncData: () => Promise<void>;
   addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string } | string, details?: string, tableNumber?: string, origin?: string) => Promise<void>;
   activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
-  adminTab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements';
+  adminTab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'auditoria';
   adminMode: 'menu' | 'settings';
   isLoading: boolean;
-  setAdminTab: (tab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements') => void;
+  setAdminTab: (tab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'auditoria') => void;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
   serverTimeOffset: number;
   
   currentTableId: string | null;
   setCurrentTableId: (id: string | null) => void;
   init: () => Promise<void>;
-  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements', mode?: 'menu' | 'settings') => void;
+  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'auditoria', mode?: 'menu' | 'settings') => void;
   toggleProductVisibility: (id: string) => void;
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
