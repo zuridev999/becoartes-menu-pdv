@@ -131,10 +131,12 @@ export function PDVView() {
         </div>
 
         <div className="flex gap-6">
-          <div className="glass-card px-8 py-4 flex flex-col items-end border-white/5">
-            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Vendas Hoje</span>
-            <span className="text-2xl font-black text-emerald-400">R$ {totalToday.toFixed(2)}</span>
-          </div>
+          {currentSeller?.permission === 'admin' && (
+            <div className="glass-card px-8 py-4 flex flex-col items-end border-white/5">
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Vendas Hoje</span>
+              <span className="text-2xl font-black text-emerald-400">R$ {totalToday.toFixed(2)}</span>
+            </div>
+          )}
           <div className="glass-card px-8 py-4 flex flex-col items-end border-white/5">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Mesas Ativas</span>
             <span className="text-2xl font-black text-purple-400">{activeTablesCount}</span>
