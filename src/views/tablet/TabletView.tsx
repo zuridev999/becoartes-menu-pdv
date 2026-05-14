@@ -8,9 +8,11 @@ import { ProductModal } from '../../components/modals/ProductModal';
 import { CustomerAccountModal } from '../../components/modals/CustomerAccountModal';
 import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
+import { PWAHandler } from '../../components/common/PWAHandler';
 
 export function TabletView() {
   const { currentTableId, tables, settings, syncData } = useStore();
+  const [logoClicks, setLogoClicks] = useState(0);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
@@ -44,7 +46,16 @@ export function TabletView() {
             <div className="w-14 h-14 bg-primary/20 rounded-3xl flex items-center justify-center text-primary">
               <LayoutDashboard size={28} />
             </div>
-            <div>
+            <div 
+              onClick={() => {
+                setLogoClicks(prev => prev + 1);
+                if (logoClicks + 1 >= 5) {
+                  document.documentElement.requestFullscreen();
+                  setLogoClicks(0);
+                }
+              }}
+              className="cursor-pointer select-none"
+            >
               <p className="text-[10px] font-black uppercase text-gray-500">Mesa</p>
               <h2 className="text-3xl font-black tracking-tighter">{currentTable?.number}</h2>
             </div>
@@ -115,6 +126,8 @@ export function TabletView() {
           <ServiceRequestModal onClose={() => setIsServiceOpen(false)} />
         )}
       </AnimatePresence>
+
+      <PWAHandler />
     </div>
   );
 }

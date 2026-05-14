@@ -23,6 +23,11 @@ body {
   min-height: 100vh;
   background: radial-gradient(circle at top right, #1a0a2e, #050505); /* Fundo Roxo Profundo */
   overflow: hidden;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #root {

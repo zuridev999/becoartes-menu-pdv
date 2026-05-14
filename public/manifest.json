@@ -1,0 +1,25 @@
+{
+  "name": "Becoartes Tablet",
+  "short_name": "Becoartes",
+  "start_url": "/",
+  "display": "fullscreen",
+  "background_color": "#0a0a0c",
+  "theme_color": "#8b5cf6",
+  "orientation": "landscape",
+  "scope": "/",
+  "description": "Sistema de Cardápio Digital e Pedidos Becoartes",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -52,11 +52,11 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
 
       <div className="flex-1 overflow-hidden mt-4">
         <p className="text-sm font-black uppercase tracking-[0.3em] mb-4 opacity-40">{order.items.length} Itens no Pedido</p>
-        <div className="space-y-4">
+        <div className={`mt-2 ${order.items.length > 5 ? 'grid grid-cols-2 gap-x-8 gap-y-3' : 'space-y-3'}`}>
           {order.items.slice(0, 10).map((item: any, idx: number) => (
-            <div key={idx} className="flex gap-4 items-center">
-              <span className="font-black text-3xl text-black shrink-0">{item.quantity}X</span>
-              <span className="font-black text-2xl tracking-tighter truncate leading-tight">{item.name}</span>
+            <div key={idx} className="flex gap-3 items-center min-w-0">
+              <span className="font-black text-2xl text-black shrink-0">{item.quantity}X</span>
+              <span className="font-black text-lg tracking-tighter truncate leading-none">{item.name}</span>
             </div>
           ))}
           {order.items.length > 10 && (

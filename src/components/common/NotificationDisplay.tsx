@@ -26,7 +26,7 @@ export function NotificationDisplay() {
   };
 
   return (
-    <div className="fixed top-8 right-8 z-[1000] flex flex-col gap-4 w-80 pointer-events-none font-['Outfit']">
+    <div className="fixed bottom-8 right-8 z-[1000] flex flex-col-reverse gap-4 w-80 pointer-events-none font-['Outfit']">
       <AnimatePresence>
         {notifications.map((notif) => (
           <motion.div
