@@ -353,41 +353,42 @@ export function AdminView() {
       )}
 
       {activeTab === 'categories' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
-          <div className="space-y-6">
-            <div className="flex justify-between items-center mb-8 px-4">
-              <h3 className="text-3xl font-black flex items-center gap-4"><LayoutDashboard size={28}/> Categorias</h3>
-              <button 
-                onClick={() => upsertCategory({ id: Math.random().toString(36).substr(2, 9), name: 'Nova Categoria', sortOrder: categories.length, visible: true })} 
-                className="p-3 bg-primary text-white rounded-xl"
-              >
-                <Plus size={20}/>
-              </button>
+        <div className="max-w-6xl mx-auto space-y-6">
+          <div className="flex justify-between items-center mb-12 px-8">
+            <div>
+              <h3 className="text-4xl font-black flex items-center gap-4"><LayoutDashboard size={36}/> Gestão de Categorias</h3>
+              <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] mt-2 italic">Arraste para reordenar a exibição no Tablet</p>
             </div>
-            <div className="glass rounded-[3rem] border-white/5 overflow-hidden">
-              <DndContext 
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
+            <button 
+              onClick={() => upsertCategory({ id: Math.random().toString(36).substr(2, 9), name: 'Nova Categoria', sortOrder: categories.length, visible: true })} 
+              className="px-8 py-4 bg-primary text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all flex items-center gap-3"
+            >
+              <Plus size={20}/> Adicionar Categoria
+            </button>
+          </div>
+          <div className="glass rounded-[3rem] border-white/5 overflow-hidden shadow-2xl">
+            <DndContext 
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext 
+                items={categories.map(c => c.id)}
+                strategy={verticalListSortingStrategy}
               >
-                <SortableContext 
-                  items={categories.map(c => c.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {categories.map((cat) => (
-                    <SortableCategoryItem 
-                      key={cat.id} 
-                      cat={cat} 
-                      menu={menu} 
-                      upsertCategory={upsertCategory} 
-                      deleteCategory={deleteCategory}
-                      setSchedulingItem={setSchedulingItem}
-                      toggleCategoryVisibility={toggleCategoryVisibility}
-                    />
-                  ))}
-                </SortableContext>
-              </DndContext>
-            </div>
+                {categories.map((cat) => (
+                  <SortableCategoryItem 
+                    key={cat.id} 
+                    cat={cat} 
+                    menu={menu} 
+                    upsertCategory={upsertCategory} 
+                    deleteCategory={deleteCategory}
+                    setSchedulingItem={setSchedulingItem}
+                    toggleCategoryVisibility={toggleCategoryVisibility}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
           </div>
         </div>
       )}
