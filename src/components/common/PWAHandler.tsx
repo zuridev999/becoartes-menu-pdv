@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Maximize, Download, Smartphone } from 'lucide-react';
+import { Maximize } from 'lucide-react';
 
 export function PWAHandler() {
   const [isFullscreen, setIsFullscreen] = useState(document.fullscreenElement !== null);
