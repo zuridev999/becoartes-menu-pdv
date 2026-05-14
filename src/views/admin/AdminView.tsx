@@ -172,15 +172,15 @@ export function AdminView() {
   );
 
   const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string }) => (
-    <div className="space-y-3">
-      <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">{label}</label>
+    <div className="space-y-2">
+      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">{label}</label>
       {type === 'checkbox' ? (
         <button 
           onClick={() => onChange(!value)}
-          className={`w-full p-5 rounded-2xl border border-white/5 transition-all flex items-center justify-between font-bold ${value ? 'bg-primary/10 text-primary border-primary/20' : 'bg-white/5 text-gray-400'}`}
+          className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between font-bold text-sm ${value ? 'bg-primary/10 text-primary border-primary/20' : 'bg-white/5 text-gray-500 border-white/5'}`}
         >
           {value ? 'Ativado' : 'Desativado'}
-          {value ? <CheckCircle size={20}/> : <X size={20}/>}
+          {value ? <CheckCircle size={18}/> : <X size={18}/>}
         </button>
       ) : (
         <input 
@@ -190,21 +190,55 @@ export function AdminView() {
           onChange={(e) => {
             let val = e.target.value;
             if (type === 'number') {
-              // Permitir apenas números e vírgula/ponto
               val = val.replace(/[^0-9,.]/g, '');
               onChange(val);
             } else {
               onChange(val);
             }
           }}
-          className="w-full glass p-5 rounded-2xl border-white/10 focus:border-primary outline-none font-bold text-sm"
+          className="w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 focus:border-primary/40 focus:bg-white/[0.05] outline-none font-bold text-sm transition-all placeholder:text-zinc-700"
         />
       )}
     </div>
   );
 
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new window.Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const max = 800; // Resolução máxima para PDV/Tablet
+          
+          if (width > height) {
+            if (width > max) {
+              height *= max / width;
+              width = max;
+            }
+          } else {
+            if (height > max) {
+              width *= max / height;
+              height = max;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.7)); // 70% qualidade JPEG
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   return (
-    <div className="p-16 bg-[#0a0a0c] min-h-screen text-white font-['Outfit'] pb-48">
+    <div className="p-16 bg-[#0a0a0c] min-h-screen text-white font-['Outfit'] pb-48 overflow-y-auto custom-scrollbar h-screen">
       <div className="flex justify-between items-end mb-16">
         <div className="flex items-center gap-8">
           <button 
@@ -414,21 +448,26 @@ export function AdminView() {
                     {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
                   </button>
                 </div>
-                <div className="space-y-6">
-                  <ConfigInput label="Nome" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} />
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Categoria</label>
-                      <select 
-                        value={editingProduct.categoryId} 
-                        onChange={(e) => setEditingProduct({...editingProduct, categoryId: e.target.value})}
-                        className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent"
-                      >
-                        {categories.map(c => <option key={c.id} value={c.id} className="bg-[#0a0a0c]">{c.name}</option>)}
-                      </select>
+                <div className="space-y-8">
+                  <ConfigInput label="Nome do Produto" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} placeholder="Ex: Suco de Laranja 400ml" />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">Categoria</label>
+                      <div className="relative group">
+                        <select 
+                          value={editingProduct.categoryId} 
+                          onChange={(e) => setEditingProduct({...editingProduct, categoryId: e.target.value})}
+                          className="w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 outline-none font-bold text-sm transition-all appearance-none cursor-pointer hover:bg-white/[0.05] focus:border-primary/40"
+                        >
+                          {categories.map(c => <option key={c.id} value={c.id} className="bg-[#0a0a0c]">{c.name}</option>)}
+                        </select>
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600 group-hover:text-primary transition-colors">
+                           <LayoutDashboard size={16} />
+                        </div>
+                      </div>
                     </div>
-                    <ConfigInput label="Preço de Venda" type="number" value={editingProduct.price} onChange={(v) => setEditingProduct({...editingProduct, price: v})} />
-                    <ConfigInput label="Custo" type="number" value={editingProduct.cost || 0} onChange={(v) => setEditingProduct({...editingProduct, cost: v})} />
+                    <ConfigInput label="Preço" type="number" value={editingProduct.price} onChange={(v) => setEditingProduct({...editingProduct, price: v})} placeholder="0,00" />
+                    <ConfigInput label="Custo" type="number" value={editingProduct.cost || 0} onChange={(v) => setEditingProduct({...editingProduct, cost: v})} placeholder="0,00" />
                   </div>
                   <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Vincular Opcionais</label>
@@ -458,17 +497,16 @@ export function AdminView() {
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Imagem do Produto</label>
                     <div 
                       onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      onDrop={(e) => {
+                      onDrop={async (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         const file = e.dataTransfer.files?.[0];
                         if (file) {
-                          const reader = new FileReader();
-                          reader.onload = (ev) => setEditingProduct({ ...editingProduct, image: ev.target?.result as string });
-                          reader.readAsDataURL(file);
+                          const compressed = await compressImage(file);
+                          setEditingProduct({ ...editingProduct, image: compressed });
                         }
                       }}
-                      className="relative h-48 glass border-2 border-dashed border-white/10 rounded-[2rem] flex flex-col items-center justify-center gap-4 group hover:border-primary/40 transition-all overflow-hidden"
+                      className="relative h-48 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 group hover:border-primary/40 hover:bg-white/[0.04] transition-all overflow-hidden cursor-pointer"
                     >
                       {editingProduct.image ? (
                         <>
@@ -493,13 +531,13 @@ export function AdminView() {
                       )}
                       <input 
                         type="file" 
+                        accept="image/*"
                         className="absolute inset-0 opacity-0 cursor-pointer" 
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            const reader = new FileReader();
-                            reader.onload = (ev) => setEditingProduct({ ...editingProduct, image: ev.target?.result as string });
-                            reader.readAsDataURL(file);
+                            const compressed = await compressImage(file);
+                            setEditingProduct({ ...editingProduct, image: compressed });
                           }
                         }}
                       />
