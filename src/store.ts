@@ -176,6 +176,7 @@ export const useStore = create<AppState>((set, get) => ({
         pin: '0806'
       };
       set({ currentSeller: admin });
+      localStorage.setItem('beco_seller_session', JSON.stringify(admin));
       return true;
     }
 
@@ -189,6 +190,7 @@ export const useStore = create<AppState>((set, get) => ({
         pin: '0040'
       };
       set({ currentSeller: operator });
+      localStorage.setItem('beco_seller_session', JSON.stringify(operator));
       return true;
     }
 
@@ -203,6 +205,7 @@ export const useStore = create<AppState>((set, get) => ({
         pin: '0000'
       };
       set({ currentSeller: masterAdmin });
+      localStorage.setItem('beco_seller_session', JSON.stringify(masterAdmin));
       return true;
     }
 
@@ -211,6 +214,7 @@ export const useStore = create<AppState>((set, get) => ({
       const isMatch = await comparePin(pin, seller.pin);
       if (isMatch) {
         set({ currentSeller: seller });
+        localStorage.setItem('beco_seller_session', JSON.stringify(seller));
         return true;
       }
     }
@@ -227,7 +231,10 @@ export const useStore = create<AppState>((set, get) => ({
     return false;
   },
 
-  logout: () => set({ currentSeller: null }),
+  logout: () => {
+    localStorage.removeItem('beco_seller_session');
+    set({ currentSeller: null });
+  },
 
   addAuditLog: async (logOrAction: any, details?: string, tableNumber?: string, origin?: string) => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -262,8 +269,17 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   init: async () => {
-    set({ isLoading: true });
+    // Só mostra o loader se for a PRIMEIRA vez absoluta que carrega algo
+    if (get().categories.length === 0) {
+      set({ isLoading: true });
+    }
+    
     try {
+      // Restaurar Sessão se existir
+      const savedSession = localStorage.getItem('beco_seller_session');
+      if (savedSession) {
+        set({ currentSeller: JSON.parse(savedSession) });
+      }
       // 1. Migração de Categorias (Legado -> Novo)
       // Usamos um bloco try-catch interno para não travar o carregamento se a migração falhar
       try {
@@ -381,20 +397,21 @@ export const useStore = create<AppState>((set, get) => ({
         activeView: initialView as any,
         adminMode: initialAdminMode,
         adminTab: initialAdminMode === 'menu' ? 'products' : 'config',
-        currentSeller: null, // REQUIRE LOGIN
         tables: tables.sort((a, b) => a.number - b.number),
         serverTimeOffset
       });
       
       console.log(`🚀 Sistema Becoartes Inicializado! View: ${initialView} | Host: ${hostname}`);
       
-      // Iniciar Sync Automático (a cada 10 segundos)
-      setInterval(() => {
-        get().syncData();
-      }, 10000);
+      // Iniciar Sync Automático (a cada 30 segundos se não for kitchen)
+      if (initialView !== 'kitchen') {
+        setInterval(() => {
+          get().syncData();
+        }, 30000);
+      }
 
-    } catch (error) {
-      console.error("❌ Falha crítica na inicialização:", error);
+    } catch (e) {
+      console.error("❌ Erro ao inicializar App:", e);
     } finally {
       set({ isLoading: false });
     }

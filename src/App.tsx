@@ -20,7 +20,10 @@ function App() {
   const { 
     init, isLoading, activeView
   } = useStore();
-  const [animationFinished, setAnimationFinished] = useState(false);
+  const [animationFinished, setAnimationFinished] = useState(() => {
+    // Skip animation if already shown in this session for this hostname
+    return sessionStorage.getItem(`beco_anim_done_${window.location.hostname}`) === 'true';
+  });
 
   useEffect(() => {
     const start = async () => {
@@ -28,13 +31,18 @@ function App() {
       await init();
     };
     start();
-  }, []);
+  }, [init]);
+
+  const handleAnimationComplete = () => {
+    setAnimationFinished(true);
+    sessionStorage.setItem(`beco_anim_done_${window.location.hostname}`, 'true');
+  };
 
   return (
     <AntigravityErrorBoundary>
       <AnimatePresence>
         {(!animationFinished || isLoading) && (
-          <PremiumLoader onComplete={() => setAnimationFinished(true)} isLoading={isLoading} />
+          <PremiumLoader onComplete={handleAnimationComplete} isLoading={isLoading} />
         )}
       </AnimatePresence>
 
