@@ -1,0 +1,97 @@
+
+### BEBIDAS
+- AGUA C/GÁS: R$ 0.00
+- COCA COLA LATA: R$ 0.00
+- COCA COLA ZERO LATA: R$ 0.00
+- CORONA LONGNECK 330ML: R$ 18.00
+- EISENBAHN 600ML: R$ 0.00
+- HEINEKEN 600ML: R$ 0.00
+- HEINEKEN LONG : R$ 0.00
+- HEINEKEN LONG ZERO: R$ 0.00
+- MANGO LOKO : R$ 0.00
+- MONSTER ENERGY ZERO : R$ 0.00
+- ORIGINAL 600ML: R$ 20.00
+- SCHWEPPES LATA: R$ 0.00
+- Suco de Laranja 400ml: R$ 12.00
+- ÁGUA S/GÁS: R$ 0.00
+
+### BURGUERS BECO
+- BATE BURGUER: R$ 55.00
+- ROBIN VEGGIE: R$ 50.00
+
+### COMBOS
+- Combo Bom Dia Brasil: R$ 54.90
+
+### LANCHES
+- Sanduba das Artes: R$ 32.00
+
+### PORÇÕES
+- Batata Frita: R$ 35.00
+- Batata Frita Queijo Cremoso c/ Bacon: R$ 42.00
+- Bolinho De Feijoada (5 uni): R$ 45.00
+- Bolinho de Bacalhau: R$ 45.00
+- Bolinho de Queijo: R$ 35.00
+- Carne Acebolada: R$ 65.00
+- Frango a Passarinho: R$ 58.00
+- Isca de Frango: R$ 55.00
+- Mini Coxinha: R$ 35.00
+- Mini Coxinha de Jaca: R$ 38.00
+- Pastelzinho: R$ 35.00
+- Salada de Frango: R$ 42.00
+
+### BRASILEIROS
+- Calabresa: R$ 54.00
+- Contra Filé Acebolado: R$ 69.90
+- Filé de Frango: R$ 59.90
+- Omelete: R$ 45.00
+- Parmegiana de Carne: R$ 76.99
+- Picanha Brasileira: R$ 98.00
+
+### SOBREMESAS
+- Açaí: R$ 25.00
+- Açaí Tradicional: R$ 28.00
+- Bowl de Açaí Especial: R$ 28.00
+- Churros: R$ 22.00
+- Churros: R$ 22.00
+
+### ESPECIAIS BECOARTES
+- Baião do Beco: R$ 55.00
+- Carreteiro das Artes: R$ 52.00
+- Pincelada de Mignon: R$ 68.00
+
+### DRINKS
+- Aperol Spritz: R$ 35.00
+- Caipirinha Limão: R$ 25.00
+- Gin Tônica: R$ 32.00
+
+### LONGNECKS
+- Corona: R$ 18.00
+- Heineken: R$ 18.00
+- Heineken: R$ 18.00
+
+### 600ML
+- Heineken 600ml: R$ 22.00
+- Original 600ml: R$ 18.00
+- Spaten 600ml: R$ 18.00
+
+### DOSES
+- Cachaça Artesanal: R$ 20.00
+- Campari: R$ 20.00
+- Gin Premium: R$ 30.00
+- Red Label Whisky: R$ 30.00
+- Saquê: R$ 25.00
+- Vodka Premium: R$ 25.00
+
+### NÃO ALCOÓLICOS
+- Coca-Cola Lata: R$ 7.00
+- Guaraná Antarctica: R$ 7.00
+- Água Com Gás: R$ 6.00
+- Água Sem Gás: R$ 5.00
+
+### BOMBONIERE
+- Paçoca: R$ 1.50
+- Sonho de Valsa: R$ 3.50
+
+### FEIJOADA
+- Feijoada: R$ 65.00
+- Feijoada P/ 2: R$ 110.00
