@@ -7,7 +7,8 @@ import {
   X,
   PlusCircle,
   LayoutDashboard,
-  LogOut
+  LogOut,
+  Settings
 } from 'lucide-react';
 import { useStore, type Table as TableType } from '../../store';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
@@ -84,6 +85,15 @@ export function PDVView() {
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Mesas Ativas</span>
             <span className="text-2xl font-black text-purple-400">{activeTablesCount}</span>
           </div>
+          {currentSeller?.permission === 'admin' && (
+            <button 
+              onClick={() => useStore.getState().setActiveView('admin')} 
+              className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"
+              title="Configurações do Cardápio"
+            >
+              <Settings size={24} />
+            </button>
+          )}
           <button onClick={logout} className="glass-card p-4 hover:bg-rose-500/10 hover:text-rose-500 transition-all border-white/5">
             <LogOut size={24} />
           </button>

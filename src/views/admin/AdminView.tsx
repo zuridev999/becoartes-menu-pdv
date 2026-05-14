@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Settings, Package, User, TrendingUp, Plus, Trash2, 
-  CheckCircle, X, ChefHat, Image, LayoutDashboard, Sparkles, Clock
+  CheckCircle, X, ChefHat, Image, LayoutDashboard, Sparkles, Clock, ArrowLeft
 } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import { db } from '../../lib/db';
@@ -100,9 +100,17 @@ export function AdminView() {
   return (
     <div className="p-16 bg-[#0a0a0c] min-h-screen text-white font-['Outfit'] pb-48">
       <div className="flex justify-between items-end mb-16">
-        <div>
-          <h1 className="text-7xl font-black tracking-tighter">Beco <span className="text-primary">Control</span></h1>
-          <p className="text-gray-500 font-bold uppercase tracking-[0.4em] text-[10px] mt-3 ml-2 italic">Administração e Governança do PDV</p>
+        <div className="flex items-center gap-8">
+          <button 
+            onClick={() => useStore.getState().setActiveView('pdv')}
+            className="w-16 h-16 glass rounded-2xl flex items-center justify-center text-zinc-500 hover:text-white transition-all border-white/5"
+          >
+            <ArrowLeft size={32} />
+          </button>
+          <div>
+            <h1 className="text-7xl font-black tracking-tighter">Beco <span className="text-primary">Control</span></h1>
+            <p className="text-gray-500 font-bold uppercase tracking-[0.4em] text-[10px] mt-3 ml-2 italic">Administração e Governança do PDV</p>
+          </div>
         </div>
         <div className="flex glass p-2 rounded-[2rem] border-white/5">
           {[
