@@ -49,4 +49,20 @@ Focamos hoje em estabilizar o Modo Quiosque para tablets Android.
 - Ajustar layouts caso surjam problemas de visualização em tablets específicos (landscape).
 
 ---
-*Este arquivo serve como ponte de memória entre sessões.*
+
+## 🏗️ Outros Projetos Relacionados
+
+### 🏢 Becoartes OS (Sistema Interno)
+- **Tecnologia:** Next.js + Turso Database (SQLite/libSQL).
+- **Infraestrutura:** Vercel (Frontend/API).
+- **Banco de Dados:** Turso (Token de acesso configurado no Vercel).
+- **Funcionalidades:** Controle financeiro, DRE, auditagem de estoque, relatórios de ponto.
+- **Atenção:** Em caso de erro 401 no banco de dados, verificar o token nas variáveis de ambiente do Vercel.
+
+### 🌐 Site Becoartes (Institucional)
+- **Foco:** Guia histórico do Beco do Batman e informações para turistas.
+- **Deploy:** Deploy via Vercel ou VPS dependendo da versão.
+- **Atenção:** Verifique sempre o path das imagens (caminhos relativos vs absolutos) para evitar erros de exibição.
+
+---
+*Este arquivo serve como ponte de memória mestre entre sessões para todo o ecossistema Becoartes.*
