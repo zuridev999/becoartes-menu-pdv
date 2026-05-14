@@ -70,7 +70,7 @@ export function TabletView() {
             onClick={() => setIsOrderOpen(true)} 
             className="btn-beco btn-beco-purple px-10 py-5 relative pr-20 shadow-xl overflow-hidden group active:scale-95 transition-all"
            >
-              <ShoppingBag size={22}/> <span className="font-black text-lg ml-3 uppercase">Pedido</span>
+              <ShoppingBag size={22}/> <span className="font-black text-lg ml-3 uppercase">Enviar Pedido</span>
               <div className="absolute right-3 top-3 bottom-3 w-14 bg-white/10 rounded-2xl flex items-center justify-center font-black text-lg">
                 {currentTable?.cart.length || 0}
               </div>
