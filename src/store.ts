@@ -27,14 +27,16 @@ export interface AppState {
   syncData: () => Promise<void>;
   addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string } | string, details?: string, tableNumber?: string, origin?: string) => Promise<void>;
   activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
+  adminTab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements';
   isLoading: boolean;
+  setAdminTab: (tab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements') => void;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
   serverTimeOffset: number;
   
   currentTableId: string | null;
   setCurrentTableId: (id: string | null) => void;
   init: () => Promise<void>;
-  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr') => void;
+  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements') => void;
   toggleProductVisibility: (id: string) => void;
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
@@ -86,6 +88,7 @@ export interface AppState {
 
 export const useStore = create<AppState>((set, get) => ({
   activeView: '',
+  adminTab: 'config',
   isLoading: true,
   banners: [
     'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=1200&h=400&fit=crop',
@@ -360,11 +363,11 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  setActiveView: (view) => {
+  setActiveView: (view, tab) => {
     window.history.pushState({}, '', `/${view}`);
-    set({ activeView: view });
+    set({ activeView: view, adminTab: tab || get().adminTab });
   },
-  
+  setAdminTab: (tab) => set({ adminTab: tab }),
   toggleProductVisibility: async (id) => {
     const product = get().menu.find(p => p.id === id);
     if (!product) return;

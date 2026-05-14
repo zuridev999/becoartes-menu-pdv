@@ -15,10 +15,12 @@ export function AdminView() {
     menu, updateProduct, addProduct, deleteProduct,
     settings, updateSettings,
     sellers, addSeller, toggleSellerStatus, deleteSeller,
-    categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup
+    categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
+    adminTab, setAdminTab
   } = useStore();
 
-  const [activeTab, setActiveTab] = useState<'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements'>('config');
+  const activeTab = adminTab;
+  const setActiveTab = setAdminTab;
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   console.log("🛠️ AdminView Render - Tab:", activeTab);
