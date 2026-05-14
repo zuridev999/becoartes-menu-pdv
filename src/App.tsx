@@ -13,6 +13,7 @@ import { PDVView } from './views/pdv/PDVView';
 import { KitchenView } from './views/kitchen/KitchenView';
 import { AdminView } from './views/admin/AdminView';
 import { QRView } from './views/qr/QRView';
+import { NotificationDisplay } from './components/common/NotificationDisplay';
 
 // Componentes de Autenticação
 function App() {
@@ -38,6 +39,7 @@ function App() {
       </AnimatePresence>
 
       <div className="min-h-screen bg-[#0a0a0c]">
+        <NotificationDisplay />
         {/* Roteamento de Views com Hostname Fallback */}
         {activeView === 'tablet' && <TabletView />}
         {activeView === 'qr' && <QRView />}

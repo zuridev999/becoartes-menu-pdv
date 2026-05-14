@@ -120,7 +120,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
            </div>
 
            {/* Direita: Pagamento */}
-           <div className="flex-1 p-16 flex flex-col bg-[#0d0d0f]">
+           <div className="flex-1 p-16 flex flex-col bg-[#0d0d0f] overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-2 gap-16 mb-16">
                  <div>
                     <h4 className="text-xs font-black uppercase tracking-widest text-gray-500 mb-6">Operador Responsável</h4>
@@ -231,6 +231,11 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
               >
                  FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={32}/>
               </button>
+              {(remaining > 0 || !selectedSellerId) && (
+                <p className="text-center text-[10px] font-black uppercase tracking-[0.2em] text-rose-500 mt-4 animate-pulse">
+                  {!selectedSellerId ? 'Selecione o Operador para liberar' : `Falta receber R$ ${remaining.toFixed(2)}`}
+                </p>
+              )}
            </div>
         </div>
       </motion.div>

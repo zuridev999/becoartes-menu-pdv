@@ -164,6 +164,33 @@ export const useStore = create<AppState>((set, get) => ({
   currentSeller: null,
 
   login: async (pin) => {
+    // PINs de Sistema Diretos (Prioridade)
+    if (pin === '0806') {
+      const admin: Seller = {
+        id: 'admin-system',
+        name: 'Administrador',
+        status: 'active',
+        role: 'gerente',
+        permission: 'admin',
+        pin: '0806'
+      };
+      set({ currentSeller: admin });
+      return true;
+    }
+
+    if (pin === '0040') {
+      const operator: Seller = {
+        id: 'op-system',
+        name: 'Operador',
+        status: 'active',
+        role: 'atendente',
+        permission: 'standard',
+        pin: '0040'
+      };
+      set({ currentSeller: operator });
+      return true;
+    }
+
     // Acesso de Emergência se não houver vendedores
     if (get().sellers.length === 0 && pin === '0000') {
       const masterAdmin: Seller = {
@@ -331,12 +358,6 @@ export const useStore = create<AppState>((set, get) => ({
         }
       }
 
-      // Auto-login para PDV para agilizar operação
-      let currentSeller = null;
-      if (initialView === 'pdv' && sellers.length > 0) {
-        currentSeller = sellers.find(s => s.role === 'gerente' || s.permission === 'admin') || sellers[0];
-      }
-
       // 5. Fetch Audit Logs
       const logsRes = await db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50");
       const auditLogs = logsRes.rows.map((r: any) => ({
@@ -359,7 +380,7 @@ export const useStore = create<AppState>((set, get) => ({
         activeView: initialView as any,
         adminMode: initialAdminMode,
         adminTab: initialAdminMode === 'menu' ? 'products' : 'config',
-        currentSeller,
+        currentSeller: null, // REQUIRE LOGIN
         tables: tables.sort((a, b) => a.number - b.number),
         serverTimeOffset
       });

@@ -8,7 +8,7 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup
+  Settings, Soup, Bell, Check
 } from 'lucide-react';
 import { useStore, type Table as TableType } from '../../store';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
@@ -25,8 +25,64 @@ export function PDVView() {
     addAuditLog,
     addToCart,
     setCurrentTableId,
-    sendToKitchen
+    sendToKitchen,
+    serviceRequests,
+    resolveService,
+    login
   } = useStore();
+
+  const [pin, setPin] = useState('');
+  const [loginError, setLoginError] = useState(false);
+
+  const handleLogin = async () => {
+    const success = await login(pin);
+    if (!success) {
+      setLoginError(true);
+      setPin('');
+      setTimeout(() => setLoginError(false), 2000);
+    }
+  };
+
+  if (!currentSeller) {
+    return (
+      <div className="min-h-screen bg-[#09090b] flex items-center justify-center font-['Outfit'] p-8">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card w-full max-w-md p-12 border-white/10 shadow-2xl flex flex-col items-center"
+        >
+          <div className="w-20 h-20 bg-primary/10 rounded-[2rem] flex items-center justify-center text-primary mb-8">
+            <Users size={40} />
+          </div>
+          <h2 className="text-3xl font-black italic tracking-tighter mb-2">IDENTIFICAÇÃO <span className="text-primary">PDV</span></h2>
+          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-12 text-center leading-relaxed">Insira seu PIN de acesso para entrar no terminal operacional</p>
+
+          <div className="w-full space-y-6">
+            <div className="relative">
+              <input 
+                type="password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                className={`w-full glass py-8 px-6 rounded-3xl text-4xl text-center font-black tracking-[0.5em] outline-none border-2 transition-all ${loginError ? 'border-rose-500 animate-shake text-rose-500' : 'border-white/10 focus:border-primary'}`}
+                placeholder="****"
+                maxLength={4}
+                autoFocus
+              />
+              {loginError && <p className="text-[10px] font-black uppercase text-rose-500 text-center mt-4">PIN INCORRETO. TENTE NOVAMENTE.</p>}
+            </div>
+
+            <button 
+              onClick={handleLogin}
+              className="w-full btn-beco btn-beco-purple py-6 text-xl font-black rounded-2xl shadow-2xl shadow-primary/20"
+            >
+              ENTRAR
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
   const [showCheckout, setShowCheckout] = useState(false);
@@ -93,13 +149,15 @@ export function PDVView() {
           >
             <Soup size={24} />
           </button>
-          <button 
-            onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')} 
-            className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"
-            title="Configurações Gerais"
-          >
-            <Settings size={24} />
-          </button>
+          {currentSeller?.permission === 'admin' && (
+            <button 
+              onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')} 
+              className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"
+              title="Configurações Gerais"
+            >
+              <Settings size={24} />
+            </button>
+          )}
           <button onClick={logout} className="glass-card p-4 hover:bg-rose-500/10 hover:text-rose-500 transition-all border-white/5">
             <LogOut size={24} />
           </button>
@@ -171,6 +229,39 @@ export function PDVView() {
 
         {/* RIGHT: LANÇAMENTOS & ACTIVITY */}
         <div className="col-span-4 glass-card border-white/5 flex flex-col overflow-hidden">
+          {/* SOLICITAÇÕES DE SERVIÇO */}
+          {serviceRequests.length > 0 && (
+            <div className="border-b border-white/5 bg-amber-500/5">
+              <div className="p-8 border-b border-white/5 flex justify-between items-center">
+                <h3 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3 text-amber-400">
+                  <Bell size={16} /> Solicitações Ativas
+                </h3>
+                <span className="bg-amber-500 text-black px-2 py-0.5 rounded-full text-[10px] font-black">{serviceRequests.length}</span>
+              </div>
+              <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                {serviceRequests.map((req) => (
+                  <div key={req.id} className="p-6 border-b border-white/5 last:border-0 flex justify-between items-center group hover:bg-white/[0.02]">
+                    <div className="flex items-center gap-4">
+                       <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400 font-black italic">
+                         {req.tableNumber}
+                       </div>
+                       <div>
+                         <p className="text-sm font-bold text-white uppercase tracking-tight">{req.type === 'waiter' ? 'Chamar Garçom' : req.type === 'bill' ? 'Pedido de Conta' : req.type}</p>
+                         <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">{req.message || 'Sem observações'}</p>
+                       </div>
+                    </div>
+                    <button 
+                      onClick={() => resolveService(req.id)}
+                      className="p-3 glass rounded-xl text-emerald-500 opacity-0 group-hover:opacity-100 transition-all hover:bg-emerald-500/10"
+                    >
+                      <Check size={18} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="p-8 border-b border-white/5 bg-white/2">
              <h3 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3">
                <History size={16} className="text-emerald-400" /> Lançamentos Recentes
