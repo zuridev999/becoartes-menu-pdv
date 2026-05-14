@@ -31,7 +31,7 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className={`p-6 pt-10 cursor-pointer relative border-[3px] rounded-[2.5rem] transition-all duration-300 h-full flex flex-col shadow-lg uppercase ${
+      className={`p-6 pt-6 cursor-pointer relative border-[3px] rounded-[2.5rem] transition-all duration-300 h-full flex flex-col shadow-lg uppercase ${
         isDanger ? 'bg-red-600 border-red-700 text-black shadow-red-200' : 
         isWarning ? 'bg-amber-400 border-amber-500 text-black shadow-amber-100' : 
         'bg-white border-gray-100 text-black'
@@ -186,16 +186,9 @@ export function KitchenView() {
   const activeOrders = kitchenOrders.filter((o: any) => o.status !== 'ready');
   
   return (
-    <div className="p-6 bg-white h-screen text-black font-['Outfit'] overflow-hidden flex flex-col uppercase">
-      <div className="flex justify-end items-center mb-6">
-        <div className="bg-gray-100 px-6 py-2 rounded-2xl border border-gray-200 flex items-center gap-3">
-           <div className="w-3 h-3 bg-black rounded-full animate-pulse shadow-[0_0_10px_rgba(0,0,0,0.2)]" />
-           <p className="text-lg font-black uppercase tracking-widest text-black">{activeOrders.length} Pedidos</p>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar pb-8 px-4">
-        <div className="grid grid-rows-2 grid-flow-col gap-12 h-full" style={{ gridAutoColumns: 'calc(33.333% - 32px)', minWidth: '100%' }}>
+    <div className="p-4 bg-white h-screen text-black font-['Outfit'] overflow-hidden flex flex-col uppercase">
+      <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar py-4 px-4">
+        <div className="grid grid-rows-2 grid-flow-col gap-8 h-full" style={{ gridAutoColumns: 'calc(33.333% - 24px)', minWidth: '100%' }}>
           {activeOrders.map((order: any, idx: number) => (
             <KitchenOrderCard 
               key={order.id} 
