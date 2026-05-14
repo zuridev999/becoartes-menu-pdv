@@ -65,17 +65,27 @@ export function TabletView() {
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
-           <button 
-            onClick={() => setIsOrderOpen(true)} 
-            className="btn-beco btn-beco-purple px-10 py-5 relative pr-20 shadow-xl overflow-hidden group active:scale-95 transition-all"
-           >
-              <ShoppingBag size={22}/> <span className="font-black text-lg ml-3 uppercase">Enviar Pedido</span>
-              <div className="absolute right-3 top-3 bottom-3 w-14 bg-white/10 rounded-2xl flex items-center justify-center font-black text-lg">
-                {currentTable?.cart.length || 0}
-              </div>
-           </button>
-        </div>
+         <div className="flex items-center gap-6">
+            <motion.button 
+             onClick={() => setIsOrderOpen(true)} 
+             animate={currentTable?.cart.length > 0 ? {
+               scale: [1, 1.05, 1],
+               transition: { duration: 0.8, repeat: Infinity }
+             } : { scale: 1 }}
+             className={`px-10 py-5 relative pr-20 shadow-xl overflow-hidden group active:scale-95 transition-all rounded-[2rem] font-black flex items-center ${
+               currentTable?.cart.length > 0 
+                 ? 'bg-rose-600 text-white shadow-rose-500/30' 
+                 : 'bg-primary text-white shadow-primary/30'
+             }`}
+            >
+               <ShoppingBag size={22}/> <span className="font-black text-lg ml-3 uppercase">Enviar Pedido</span>
+               <div className={`absolute right-3 top-3 bottom-3 w-14 rounded-2xl flex items-center justify-center font-black text-lg transition-colors ${
+                 currentTable?.cart.length > 0 ? 'bg-white/20' : 'bg-black/10'
+               }`}>
+                 {currentTable?.cart.length || 0}
+               </div>
+            </motion.button>
+         </div>
       </div>
 
       <div className="flex-1 pt-24 h-full">

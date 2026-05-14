@@ -180,6 +180,7 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
 export function KitchenView() {
   const { kitchenOrders, updateKitchenOrderStatus, syncData } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
   const lastOrderIds = useRef<string[]>([]);
 
   const activeOrders = kitchenOrders.filter((o: any) => o.status !== 'ready');
@@ -194,17 +195,24 @@ export function KitchenView() {
   }, [syncData]);
 
   // Função para tocar o sininho (Web Audio API)
-  const playBellSound = () => {
+  const playBellSound = async () => {
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+      const audioCtx = new AudioContextClass();
       
+      // Se estiver suspenso, não adianta tentar tocar agora (precisa de clique)
+      if (audioCtx.state === 'suspended') {
+        console.warn("⚠️ AudioContext suspenso. Clique na tela para ativar o som.");
+        return;
+      }
+
       const playDing = (time: number) => {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         
-        osc.type = 'sine'; // Som de sino mais puro
-        osc.frequency.setValueAtTime(1046.50, time); // C6
-        osc.frequency.exponentialRampToValueAtTime(523.25, time + 0.5); // Desce para C5
+        osc.type = 'sine'; 
+        osc.frequency.setValueAtTime(1046.50, time); 
+        osc.frequency.exponentialRampToValueAtTime(523.25, time + 0.5); 
         
         gain.gain.setValueAtTime(0, time);
         gain.gain.linearRampToValueAtTime(0.3, time + 0.02);
@@ -218,13 +226,12 @@ export function KitchenView() {
       };
 
       let startTime = audioCtx.currentTime + 0.1;
-      // 4 sets de 3 toques
       for (let set = 0; set < 4; set++) {
         for (let ding = 0; ding < 3; ding++) {
           playDing(startTime);
-          startTime += 0.25; // Intervalo entre toques no set
+          startTime += 0.25;
         }
-        startTime += 1.5; // Intervalo entre os sets (conforme pedido: 4x)
+        startTime += 1.5;
       }
     } catch (e) {
       console.warn("Erro ao reproduzir som:", e);
@@ -246,6 +253,27 @@ export function KitchenView() {
   
   return (
     <div className="p-4 bg-white h-screen text-black font-['Outfit'] overflow-hidden flex flex-col uppercase">
+      {!audioUnlocked && (
+        <div className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-12 text-center">
+           <div className="w-32 h-32 bg-primary/20 rounded-full flex items-center justify-center text-primary mb-8 animate-pulse">
+              <Bell size={64} />
+           </div>
+           <h2 className="text-5xl font-black text-white mb-6">Modo Cozinha</h2>
+           <p className="text-gray-400 text-xl max-w-md mb-12 uppercase font-bold tracking-widest leading-relaxed">O navegador exige um clique para ativar os alertas sonoros de novos pedidos.</p>
+           <button 
+             onClick={() => {
+               const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+               const audioCtx = new AudioContextClass();
+               audioCtx.resume();
+               setAudioUnlocked(true);
+             }}
+             className="btn-beco btn-beco-purple px-16 py-8 text-2xl font-black rounded-[2.5rem] shadow-2xl shadow-primary/40 active:scale-95 transition-all"
+           >
+             ATIVAR ALERTAS SONOROS
+           </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar py-4 px-4">
         <div className="grid grid-rows-2 grid-flow-col gap-10 h-full" style={{ gridAutoColumns: 'calc(40% - 24px)', minWidth: '100%' }}>
           {activeOrders.map((order: any, idx: number) => (
