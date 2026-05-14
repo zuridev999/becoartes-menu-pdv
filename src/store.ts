@@ -813,7 +813,7 @@ export const useStore = create<AppState>((set, get) => ({
     // Atualizar Status da Mesa no DB
     await db.execute({
       sql: "UPDATE tables SET status = ? WHERE id = ?",
-      args: ['occupied', tableId]
+      args: ['ordering', tableId]
     });
 
     set((state) => ({
@@ -822,7 +822,7 @@ export const useStore = create<AppState>((set, get) => ({
         ...t, 
         orders: [...t.orders, ...table.cart],
         cart: [],
-        status: 'occupied', 
+        status: 'ordering', 
         lastActivity: new Date() 
       } : t)
     }));
