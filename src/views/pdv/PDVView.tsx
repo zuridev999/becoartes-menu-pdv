@@ -33,6 +33,7 @@ export function PDVView() {
   const [showProductMenu, setShowProductMenu] = useState(false);
   const [showManualLog, setShowManualLog] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(categories[0]?.id || null);
+  const [showOnlyActive, setShowOnlyActive] = useState(true);
 
   // Derived state
   const currentTable = tables.find(t => t.id === selectedTable?.id);
@@ -85,15 +86,13 @@ export function PDVView() {
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Mesas Ativas</span>
             <span className="text-2xl font-black text-purple-400">{activeTablesCount}</span>
           </div>
-          {currentSeller?.permission === 'admin' && (
-            <button 
-              onClick={() => useStore.getState().setActiveView('admin')} 
-              className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"
-              title="Configurações do Cardápio"
-            >
-              <Settings size={24} />
-            </button>
-          )}
+          <button 
+            onClick={() => useStore.getState().setActiveView('admin')} 
+            className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"
+            title="Configurações do Cardápio"
+          >
+            <Settings size={24} />
+          </button>
           <button onClick={logout} className="glass-card p-4 hover:bg-rose-500/10 hover:text-rose-500 transition-all border-white/5">
             <LogOut size={24} />
           </button>
@@ -108,6 +107,12 @@ export function PDVView() {
               <LayoutDashboard size={20} className="text-primary" /> Mapa de Mesas
             </h2>
             <div className="flex gap-4">
+              <button 
+                onClick={() => setShowOnlyActive(!showOnlyActive)}
+                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${showOnlyActive ? 'bg-primary text-black' : 'bg-white/5 text-zinc-500'}`}
+              >
+                {showOnlyActive ? 'Apenas Ativas' : 'Todas as Mesas'}
+              </button>
               <span className="flex items-center gap-2 text-[10px] font-black uppercase text-zinc-500">
                 <div className="w-3 h-3 rounded-full bg-zinc-800 border border-zinc-700" /> Livre
               </span>
@@ -121,7 +126,9 @@ export function PDVView() {
           </div>
 
           <div className="grid grid-cols-4 lg:grid-cols-5 gap-4">
-            {tables.map((table) => (
+            {tables
+              .filter(t => !showOnlyActive || t.status !== 'available')
+              .map((table) => (
               <motion.button
                 key={table.id}
                 whileHover={{ scale: 1.02 }}
