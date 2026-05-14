@@ -305,13 +305,15 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       // 2. Carregar Dados
-      const [categories, menuItems, modifierGroups, sellers, kitchenData, mgMapping] = await Promise.all([
+      const [categories, menuItems, modifierGroups, sellers, kitchenData, mgMapping, tablesRes, logsRes] = await Promise.all([
         Repository.getCategories(),
         Repository.getMenu(),
         Repository.getModifierGroups(),
         Repository.getSellers(),
         Repository.getKitchenOrders(),
-        Repository.getProductModifierGroupsMapping()
+        Repository.getProductModifierGroupsMapping(),
+        db.execute("SELECT * FROM tables"),
+        db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50")
       ]);
 
       const { orders: kitchenOrders, serverNow } = kitchenData;
@@ -327,7 +329,6 @@ export const useStore = create<AppState>((set, get) => ({
       });
 
       // 3. Mesas
-      const tablesRes = await db.execute("SELECT * FROM tables");
       let tables: Table[] = tablesRes.rows.map(row => ({
         id: row.id as string,
         number: Number(row.number),
@@ -388,8 +389,7 @@ export const useStore = create<AppState>((set, get) => ({
         }
       }
 
-      // 5. Fetch Audit Logs
-      const logsRes = await db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50");
+      // 5. Audit Logs
       const auditLogs = logsRes.rows.map((r: any) => ({
         id: r.id,
         action: r.action,

@@ -16,7 +16,7 @@ export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => voi
       const timer = setTimeout(() => {
         sessionStorage.setItem('beco_loaded', 'true');
         onComplete();
-      }, 5000); // 5 segundos de "show" na primeira carga
+      }, 3000); // 3 segundos de "show" na primeira carga
       return () => clearTimeout(timer);
     }
   }, [onComplete, isLoading]);
