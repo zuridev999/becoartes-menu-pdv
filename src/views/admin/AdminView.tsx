@@ -395,21 +395,19 @@ export function AdminView() {
               <button onClick={() => setEditingProduct({ id: Math.random().toString(36).substr(2, 9), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
             </div>
             <div className="glass rounded-[3rem] border-white/5 overflow-hidden max-h-[60vh] overflow-y-auto custom-scrollbar">
-              {Object.entries(
-                (menu || []).reduce((acc: Record<string, any[]>, p: any) => {
-                  const catName = p.categoryName || p.category || 'Sem Categoria';
-                  if (!acc[catName]) acc[catName] = [];
-                  acc[catName].push(p);
-                  return acc;
-                }, {} as Record<string, any[]>)
-              ).map(([category, items]) => (
-                <div key={category}>
-                  <div className="bg-white/5 px-8 py-4 border-y border-white/5">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-primary">{category}</h4>
-                  </div>
-                  {items
-                    .filter((p: any) => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
-                    .map((p: any) => (
+              {categories.map((cat) => {
+                const items = menu.filter(p => p.categoryId === cat.id);
+                const filteredItems = items.filter((p: any) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+                if (filteredItems.length === 0 && (items.length > 0 || !searchTerm)) return null;
+                if (items.length === 0 && !searchTerm) return null;
+
+                return (
+                  <div key={cat.id}>
+                    <div className="bg-white/5 px-8 py-4 border-y border-white/5 flex justify-between items-center">
+                      <h4 className="text-xs font-black uppercase tracking-widest text-primary">{cat.name}</h4>
+                      {!cat.visible && <span className="text-[9px] font-black uppercase text-gray-500 bg-white/5 px-2 py-0.5 rounded">Invisível</span>}
+                    </div>
+                    {filteredItems.map((p: any) => (
                     <div key={p.id} className={`flex items-center justify-between p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group ${!p.visible ? 'opacity-40 grayscale' : ''}`}>
                       <div className="flex items-center gap-6">
                         <div className="relative">
@@ -435,10 +433,10 @@ export function AdminView() {
                         <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
                         <button onClick={() => setEditingProduct(p)} className="p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           </div>
 

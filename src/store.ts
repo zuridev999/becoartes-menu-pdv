@@ -489,9 +489,16 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   deleteProduct: async (id) => {
-    await Repository.deleteProduct(id);
-    set((state) => ({ menu: state.menu.filter(x => x.id !== id) }));
-    get().addNotification("Produto removido com sucesso", 'info');
+    try {
+      await Repository.deleteProduct(id);
+      set((state) => ({ menu: state.menu.filter(x => x.id !== id) }));
+      get().addNotification("Produto removido definitivamente", 'info');
+    } catch (e: any) {
+      console.error("❌ Erro ao deletar produto:", e);
+      // Se houver erro de constraint (pedido vinculado), apenas ocultamos
+      await get().toggleProductVisibility(id);
+      get().addNotification("Produto possui histórico e não pode ser deletado. Ele foi ocultado do cardápio.", 'info');
+    }
   },
 
   syncData: async () => {
