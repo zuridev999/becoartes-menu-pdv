@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, LayoutDashboard, Bell, FileText } from 'lucide-react';
+import { ShoppingBag, Tablet as TabletIcon, Bell, FileText } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import { TabletEntry } from '../entry/TabletEntry';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
@@ -44,7 +44,7 @@ export function TabletView() {
         <div className="flex items-center gap-12">
           <div className="flex items-center gap-6">
             <div className="w-14 h-14 bg-primary/20 rounded-3xl flex items-center justify-center text-primary">
-              <LayoutDashboard size={28} />
+              <TabletIcon size={28} />
             </div>
             <div 
               onClick={() => {

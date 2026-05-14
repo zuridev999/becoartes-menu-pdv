@@ -41,12 +41,11 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
                 <h2 className="text-7xl font-black tracking-tighter italic text-white mb-4 leading-none">{product.name}</h2>
                 <p className="text-gray-400 text-xl font-medium max-w-md italic">"{product.description || 'Uma obra prima gastronômica curada especialmente para o Becoartes.'}"</p>
              </div>
-             <button onClick={onClose} className="absolute top-8 left-8 p-4 glass rounded-full hover:bg-white/10 text-white"><X size={32}/></button>
           </div>
-          <div className="w-full lg:w-1/2 p-12 flex flex-col overflow-hidden bg-[#0a0a0c]/80">
+          <div className="w-full lg:w-1/2 p-12 flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative">
+             <button onClick={onClose} className="absolute top-8 right-8 p-4 glass rounded-full hover:bg-white/10 text-white z-[400]"><X size={32}/></button>
              <div className="flex justify-between items-center mb-8 lg:hidden">
                 <h2 className="text-4xl font-black italic">{product.name}</h2>
-                <button onClick={onClose} className="p-2 glass rounded-full"><X size={24}/></button>
              </div>
 
              <div className="flex-1 overflow-y-auto custom-scrollbar pr-4 space-y-10">
