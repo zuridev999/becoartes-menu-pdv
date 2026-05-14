@@ -38,29 +38,29 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
       }`}
     >
       {/* Sequence Number */}
-      <div className="absolute -top-4 -left-4 w-12 h-12 bg-black text-white rounded-full flex items-center justify-center font-black text-2xl shadow-xl z-20 border-4 border-white">
+      <div className="absolute -top-6 -left-6 w-16 h-16 bg-black text-white rounded-full flex items-center justify-center font-black text-4xl shadow-2xl z-20 border-4 border-white">
         {index}
       </div>
 
-      <div className="flex justify-between items-start mb-4">
-        <h3 className="text-4xl font-black italic tracking-tighter">Mesa {order.tableNumber}</h3>
-        <div className="flex items-center gap-1 font-black text-black">
-          <Clock size={18} />
-          <span className="text-xl">{timeText}</span>
+      <div className="flex justify-between items-start mb-6">
+        <h3 className="text-6xl font-black italic tracking-tighter">Mesa {order.tableNumber}</h3>
+        <div className="flex items-center gap-2 font-black text-black">
+          <Clock size={28} />
+          <span className="text-3xl">{timeText}</span>
         </div>
       </div>
 
-      <div className="flex-1">
-        <p className="text-xs font-black uppercase tracking-widest mb-3 opacity-60">{order.items.length} Itens</p>
-        <div className="space-y-2">
-          {order.items.slice(0, 3).map((item: any, idx: number) => (
-            <div key={idx} className="flex gap-2 items-center">
-              <span className="font-black text-lg text-black">{item.quantity}x</span>
-              <span className="font-bold text-lg truncate">{item.name}</span>
+      <div className="flex-1 overflow-hidden mt-4">
+        <p className="text-sm font-black uppercase tracking-[0.3em] mb-4 opacity-40">{order.items.length} Itens no Pedido</p>
+        <div className="space-y-4">
+          {order.items.slice(0, 10).map((item: any, idx: number) => (
+            <div key={idx} className="flex gap-4 items-center">
+              <span className="font-black text-3xl text-black shrink-0">{item.quantity}X</span>
+              <span className="font-black text-2xl tracking-tighter truncate leading-tight">{item.name}</span>
             </div>
           ))}
-          {order.items.length > 3 && (
-            <p className="text-xs font-bold ml-8 opacity-40">+ {order.items.length - 3} outros itens...</p>
+          {order.items.length > 10 && (
+            <p className="text-xl font-black mt-4 ml-12 text-red-600 animate-pulse">+ {order.items.length - 10} OUTROS ITENS...</p>
           )}
         </div>
       </div>
@@ -100,24 +100,22 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
           <button onClick={onClose} className="p-6 bg-gray-100 rounded-full hover:bg-rose-50 text-black transition-all">
             <X size={40} />
           </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-12 custom-scrollbar bg-white">
-            <div className="grid grid-cols-2 gap-4">
+        </div>         <div className="flex-1 overflow-y-auto p-12 custom-scrollbar bg-white">
+            <div className="grid grid-cols-1 gap-6">
                {order.items.map((item: any, idx: number) => (
-                 <div key={idx} className="p-5 bg-gray-50 rounded-[2rem] border border-gray-100 flex flex-col justify-between">
+                 <div key={idx} className="p-8 bg-gray-50 rounded-[2.5rem] border-2 border-gray-100 flex flex-col justify-between shadow-sm">
                     <div>
-                      <div className="flex items-center gap-4">
-                         <div className="w-12 h-12 shrink-0 bg-white shadow-sm border border-gray-100 rounded-xl flex items-center justify-center text-xl font-black text-black">
-                           {item.quantity}x
+                      <div className="flex items-center gap-8">
+                         <div className="w-20 h-20 shrink-0 bg-white shadow-md border-2 border-gray-100 rounded-[1.5rem] flex items-center justify-center text-4xl font-black text-black">
+                           {item.quantity}X
                          </div>
-                         <h4 className="text-xl font-black tracking-tight text-black leading-tight truncate">{item.name}</h4>
+                         <h4 className="text-5xl font-black tracking-tighter text-black leading-tight uppercase">{item.name}</h4>
                       </div>
 
                       {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2 ml-14">
+                        <div className="mt-6 flex flex-wrap gap-3 ml-28">
                            {item.selectedModifiers.map((m: any, mIdx: number) => (
-                             <span key={mIdx} className="px-3 py-1 bg-black/5 text-black rounded-lg text-[10px] font-black uppercase tracking-widest border border-black/10">
+                             <span key={mIdx} className="px-5 py-2 bg-black text-white rounded-xl text-xl font-black uppercase tracking-widest">
                                + {m.name}
                              </span>
                            ))}
@@ -126,9 +124,9 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
                     </div>
 
                     {item.notes && (
-                      <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-xl ml-14">
-                         <p className="text-[9px] font-black uppercase text-black mb-1 tracking-widest">Obs:</p>
-                         <p className="text-sm font-bold text-black italic">"{item.notes}"</p>
+                      <div className="mt-6 p-6 bg-rose-50 border-2 border-rose-100 rounded-[1.5rem] ml-28">
+                         <p className="text-xs font-black uppercase text-rose-600 mb-2 tracking-[0.3em]">Observação do Cliente:</p>
+                         <p className="text-2xl font-bold text-black italic">"{item.notes}"</p>
                       </div>
                     )}
                  </div>
@@ -249,7 +247,7 @@ export function KitchenView() {
   return (
     <div className="p-4 bg-white h-screen text-black font-['Outfit'] overflow-hidden flex flex-col uppercase">
       <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar py-4 px-4">
-        <div className="grid grid-rows-2 grid-flow-col gap-8 h-full" style={{ gridAutoColumns: 'calc(33.333% - 24px)', minWidth: '100%' }}>
+        <div className="grid grid-rows-2 grid-flow-col gap-10 h-full" style={{ gridAutoColumns: 'calc(40% - 24px)', minWidth: '100%' }}>
           {activeOrders.map((order: any, idx: number) => (
             <KitchenOrderCard 
               key={order.id} 

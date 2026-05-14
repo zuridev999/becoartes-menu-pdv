@@ -446,7 +446,14 @@ export function AdminView() {
                 <div className="flex justify-between items-start mb-10">
                   <h3 className="text-3xl font-black">Editar Produto</h3>
                   <button 
-                    onClick={() => setEditingProduct({...editingProduct, visible: !editingProduct.visible})}
+                    onClick={async () => {
+                      if (editingProduct.id.startsWith('new_')) {
+                        setEditingProduct({...editingProduct, visible: !editingProduct.visible});
+                      } else {
+                        await toggleProductVisibility(editingProduct.id);
+                        setEditingProduct({...editingProduct, visible: !editingProduct.visible});
+                      }
+                    }}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
                   >
                     {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
