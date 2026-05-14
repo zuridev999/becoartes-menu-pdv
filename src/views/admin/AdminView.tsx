@@ -29,37 +29,56 @@ import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
 
 // Componente de Input fora para evitar perda de foco
-const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string }) => (
-  <div className="space-y-2">
-    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">{label}</label>
-    {type === 'checkbox' ? (
-      <button 
-        onClick={() => onChange(!value)}
-        className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between font-bold text-sm ${value ? 'bg-primary/10 text-primary border-primary/20' : 'bg-white/5 text-gray-500 border-white/5'}`}
-      >
-        {value ? 'Ativado' : 'Desativado'}
-        {value ? <CheckCircle size={18}/> : <X size={18}/>}
-      </button>
-    ) : (
-      <input 
-        type={type === 'number' ? 'text' : type} 
-        value={value} 
-        placeholder={placeholder}
-        onChange={(e) => {
-          let val = e.target.value;
-          if (type === 'number') {
-            // Permite apenas números, ponto e vírgula
-            val = val.replace(/[^0-9,.]/g, '');
-            onChange(val);
-          } else {
-            onChange(val);
-          }
-        }}
-        className="w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 focus:border-primary/40 focus:bg-white/[0.05] outline-none font-bold text-sm transition-all placeholder:text-zinc-700"
-      />
-    )}
-  </div>
-);
+const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string }) => {
+  const isMoney = label.toLowerCase().includes('preço') || label.toLowerCase().includes('custo') || label.toLowerCase().includes('taxa');
+
+  // Formata o valor para exibição (ex: 12.50 -> "12,50")
+  const formatMoney = (val: any) => {
+    const num = typeof val === 'number' ? val : parseFloat(String(val).replace(',', '.')) || 0;
+    return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value;
+    if (isMoney) {
+      // Máscara de dinheiro: remove tudo que não é número e divide por 100
+      const digits = val.replace(/\D/g, '');
+      const num = parseInt(digits || '0') / 100;
+      onChange(num);
+    } else if (type === 'number') {
+      val = val.replace(/[^0-9,.]/g, '');
+      onChange(val);
+    } else {
+      onChange(val);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">{label}</label>
+      {type === 'checkbox' ? (
+        <button 
+          onClick={() => onChange(!value)}
+          className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between font-bold text-sm ${value ? 'bg-primary/10 text-primary border-primary/20' : 'bg-white/5 text-gray-500 border-white/5'}`}
+        >
+          {value ? 'Ativado' : 'Desativado'}
+          {value ? <CheckCircle size={18}/> : <X size={18}/>}
+        </button>
+      ) : (
+        <div className="relative">
+          <input 
+            type="text" 
+            value={isMoney ? formatMoney(value) : value} 
+            placeholder={placeholder}
+            onChange={handleInputChange}
+            className={`w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 focus:border-primary/40 focus:bg-white/[0.05] outline-none font-bold text-sm transition-all placeholder:text-zinc-700 ${isMoney ? 'text-right pr-12' : ''}`}
+          />
+          {isMoney && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-600">R$</span>}
+        </div>
+      )}
+    </div>
+  );
+};
 
 function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSchedulingItem, toggleCategoryVisibility }: any) {
   const {
