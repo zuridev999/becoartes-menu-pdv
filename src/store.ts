@@ -340,7 +340,6 @@ export const useStore = create<AppState>((set, get) => ({
       // Garantir 50 mesas para o Becoartes
       if (tables.length < 50) {
         console.log("🛠️ Gerando mesas iniciais...");
-        const missing = 50 - tables.length;
         const values: any[] = [];
         const placeholders: string[] = [];
         
