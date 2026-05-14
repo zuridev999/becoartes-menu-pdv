@@ -90,24 +90,23 @@ export function PWAHandler() {
           <motion.div 
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            className="fixed bottom-12 left-12 right-12 z-[5000] glass p-8 rounded-[2.5rem] border border-white/10 flex items-center justify-between shadow-3xl bg-black/60 backdrop-blur-3xl"
+            className="fixed bottom-12 left-12 right-12 z-[5000] glass p-10 rounded-[3rem] border-2 border-primary/30 flex items-center justify-between shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-black/80 backdrop-blur-3xl"
           >
-            <div className="flex items-center gap-6">
-               <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center text-primary">
-                  <Smartphone size={32} />
+            <div className="flex items-center gap-8">
+               <div className="w-20 h-20 bg-primary/20 rounded-3xl flex items-center justify-center text-primary animate-bounce-slow">
+                  <Smartphone size={40} />
                </div>
                <div>
-                  <h4 className="text-xl font-black text-white uppercase tracking-tighter">Instalar Aplicativo</h4>
-                  <p className="text-sm text-gray-400 font-bold uppercase tracking-widest">Para usar em modo quiosque, instale na tela inicial.</p>
+                  <h4 className="text-3xl font-black text-white uppercase tracking-tighter mb-1">Configuração do Tablet</h4>
+                  <p className="text-lg text-gray-400 font-bold uppercase tracking-widest">Instale este cardápio na tela inicial para bloquear o acesso ao navegador.</p>
                </div>
             </div>
             <div className="flex gap-4">
-               <button onClick={() => setShowInstallBanner(false)} className="px-8 py-4 text-xs font-black uppercase text-gray-500 hover:text-white transition-colors">Depois</button>
                <button 
                  onClick={handleInstall}
-                 className="btn-beco btn-beco-purple px-10 py-5 text-sm font-black rounded-2xl flex items-center gap-3"
+                 className="btn-beco btn-beco-purple px-14 py-7 text-xl font-black rounded-3xl flex items-center gap-4 shadow-2xl shadow-primary/40"
                >
-                 <Download size={18} /> INSTALAR AGORA
+                 <Download size={24} /> INSTALAR AGORA
                </button>
             </div>
           </motion.div>
