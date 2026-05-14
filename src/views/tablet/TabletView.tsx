@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ShoppingBag, LayoutDashboard, Bell, FileText } from 'lucide-react';
 import { useStore, type Product } from '../../store';
@@ -10,12 +10,21 @@ import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
 
 export function TabletView() {
-  const { currentTableId, tables, settings } = useStore();
+  const { currentTableId, tables, settings, syncData } = useStore();
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
+
+  // Sincronização Automática (60s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log("🔄 Tablet auto-syncing...");
+      syncData();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [syncData]);
 
   const currentTable = tables.find(t => t.id === currentTableId);
 

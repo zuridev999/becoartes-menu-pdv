@@ -3,16 +3,16 @@ import { z } from 'zod';
 export const ProductSchema = z.object({
   id: z.string(),
   name: z.string().min(2, "Nome muito curto"),
-  description: z.string().optional(),
+  description: z.string().nullish(),
   price: z.number().min(0),
   categoryId: z.string(),
-  categoryName: z.string().optional(),
-  image: z.string(),
-  cost: z.number().optional(),
+  categoryName: z.string().nullish(),
+  image: z.string().nullish().default(''),
+  cost: z.number().nullish().default(0),
   visible: z.boolean().default(true),
   modifierGroups: z.array(z.any()).default([]),
-  erpCode: z.string().optional(),
-  remoteStockId: z.string().optional(),
+  erpCode: z.string().nullish(),
+  remoteStockId: z.string().nullish(),
   schedule: z.any().optional(),
 });
 

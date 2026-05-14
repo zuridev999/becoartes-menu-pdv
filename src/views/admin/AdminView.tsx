@@ -171,7 +171,7 @@ export function AdminView() {
     </motion.div>
   );
 
-  const ConfigInput = ({ label, value, onChange, type = 'text' }: { label: string, value: any, onChange: (val: any) => void, type?: string }) => (
+  const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string }) => (
     <div className="space-y-3">
       <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">{label}</label>
       {type === 'checkbox' ? (
@@ -184,9 +184,19 @@ export function AdminView() {
         </button>
       ) : (
         <input 
-          type={type} 
+          type={type === 'number' ? 'text' : type} 
           value={value} 
-          onChange={(e) => onChange(type === 'number' ? Number(e.target.value) : e.target.value)}
+          placeholder={placeholder}
+          onChange={(e) => {
+            let val = e.target.value;
+            if (type === 'number') {
+              // Permitir apenas números e vírgula/ponto
+              val = val.replace(/[^0-9,.]/g, '');
+              onChange(val);
+            } else {
+              onChange(val);
+            }
+          }}
           className="w-full glass p-5 rounded-2xl border-white/10 focus:border-primary outline-none font-bold text-sm"
         />
       )}
@@ -496,10 +506,47 @@ export function AdminView() {
                     </div>
                   </div>
                   <ConfigInput label="Descrição" value={editingProduct.description || ''} onChange={(v) => setEditingProduct({...editingProduct, description: v})} />
-                  <div className="relative group">
-                    <ConfigInput label="Ou cole a URL da Imagem" value={editingProduct.image} onChange={(v) => setEditingProduct({...editingProduct, image: v})} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <ConfigInput label="Código ERP" value={editingProduct.erpCode || ''} onChange={(v) => setEditingProduct({...editingProduct, erpCode: v})} placeholder="Ex: PRD-001" />
+                    <ConfigInput label="ID Estoque Remoto" value={editingProduct.remoteStockId || ''} onChange={(v) => setEditingProduct({...editingProduct, remoteStockId: v})} placeholder="Ex: stock_abc" />
                   </div>
-                  <button onClick={async () => { const exists = menu.find(p => p.id === editingProduct.id); if (exists) await updateProduct(editingProduct.id, editingProduct); else await addProduct(editingProduct); setEditingProduct(null); }} className="w-full btn-beco btn-beco-purple py-6 font-black">Salvar</button>
+                  <div className="relative group">
+                    <ConfigInput label="Ou cole a URL da Imagem" value={editingProduct.image || ''} onChange={(v) => setEditingProduct({...editingProduct, image: v})} />
+                  </div>
+                  <button 
+                    onClick={async () => { 
+                      try {
+                        const cleanProduct = {
+                          ...editingProduct,
+                          // Normalização de Números (Lida com vírgula e ponto)
+                          price: typeof editingProduct.price === 'string' 
+                            ? parseFloat(String(editingProduct.price).replace(',', '.')) || 0 
+                            : Number(editingProduct.price) || 0,
+                          cost: typeof editingProduct.cost === 'string'
+                            ? parseFloat(String(editingProduct.cost).replace(',', '.')) || 0
+                            : Number(editingProduct.cost) || 0,
+                          // Normalização de Strings (Evita null)
+                          description: editingProduct.description || "",
+                          image: editingProduct.image || "",
+                          erpCode: editingProduct.erpCode || "",
+                          remoteStockId: editingProduct.remoteStockId || "",
+                        };
+
+                        const exists = menu.find(p => p.id === editingProduct.id);
+                        if (exists) {
+                          await updateProduct(editingProduct.id, cleanProduct);
+                        } else {
+                          await addProduct(cleanProduct);
+                        }
+                        setEditingProduct(null);
+                      } catch (err: any) {
+                        console.error("Erro no form:", err);
+                      }
+                    }} 
+                    className="w-full btn-beco btn-beco-purple py-6 font-black shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all"
+                  >
+                    SALVAR ALTERAÇÕES
+                  </button>
                 </div>
               </motion.div>
             )}

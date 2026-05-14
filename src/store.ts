@@ -424,57 +424,90 @@ export const useStore = create<AppState>((set, get) => ({
   updateProduct: async (id, data) => {
     try {
       const category = get().categories.find(c => c.id === data.categoryId);
-      const validated = ProductSchema.parse({ ...data, id, categoryName: category?.name });
+      // Limpeza profunda para evitar nulos em campos obrigatórios do schema
+      const cleanData = {
+        ...data,
+        description: data.description || "",
+        erpCode: data.erpCode || "",
+        remoteStockId: data.remoteStockId || "",
+        image: data.image || "",
+        cost: Number(data.cost) || 0,
+        price: Number(data.price) || 0
+      };
+
+      const validated = ProductSchema.parse({ ...cleanData, id, categoryName: category?.name });
       await Repository.upsertProduct(validated as Product);
       set((state) => ({ 
         menu: state.menu.map(p => p.id === id ? validated as Product : p) 
       }));
+      get().addNotification(`Produto "${validated.name}" atualizado com sucesso!`, 'info');
     } catch (e: any) {
       console.error("❌ Erro ao atualizar produto:", e);
-      get().addNotification(e.message || "Dados inválidos", 'error');
+      // Se for erro do Zod, extrair a mensagem amigável
+      const msg = e.errors ? e.errors.map((err: any) => `${err.path}: ${err.message}`).join(', ') : e.message;
+      get().addNotification(msg || "Dados inválidos", 'error');
+      throw e;
     }
   },
 
   addProduct: async (product) => {
     try {
       const category = get().categories.find(c => c.id === product.categoryId);
-      const validated = ProductSchema.parse({ ...product, categoryName: category?.name });
+      const cleanData = {
+        ...product,
+        description: product.description || "",
+        erpCode: product.erpCode || "",
+        remoteStockId: product.remoteStockId || "",
+        image: product.image || "",
+        cost: Number(product.cost) || 0,
+        price: Number(product.price) || 0
+      };
+
+      const validated = ProductSchema.parse({ ...cleanData, categoryName: category?.name });
       await Repository.upsertProduct(validated as Product);
       set((state) => ({ menu: [...state.menu, validated as Product] }));
+      get().addNotification(`Produto "${validated.name}" adicionado!`, 'info');
     } catch (e: any) {
       console.error("❌ Erro ao adicionar produto:", e);
-      get().addNotification(e.message || "Dados inválidos", 'error');
+      const msg = e.errors ? e.errors.map((err: any) => `${err.path}: ${err.message}`).join(', ') : e.message;
+      get().addNotification(msg || "Dados inválidos", 'error');
+      throw e;
     }
   },
 
   deleteProduct: async (id) => {
     await Repository.deleteProduct(id);
     set((state) => ({ menu: state.menu.filter(x => x.id !== id) }));
+    get().addNotification("Produto removido com sucesso", 'info');
   },
-
-
-
 
   syncData: async () => {
     try {
-      const [kitchenData, tablesRes] = await Promise.all([
+      const [kitchenData, tablesRes, categories, menuItems, modifierGroups] = await Promise.all([
         Repository.getKitchenOrders(),
-        db.execute("SELECT * FROM tables")
+        db.execute("SELECT * FROM tables"),
+        Repository.getCategories(),
+        Repository.getMenu(),
+        Repository.getModifierGroups()
       ]);
 
       const { orders: kitchenOrders, serverNow } = kitchenData;
       const serverTimeOffset = serverNow.getTime() - new Date().getTime();
 
+      // Recarregar Modificadores para cada produto
+      for (const item of menuItems) {
+        item.modifierGroups = await Repository.getProductModifierGroups(item.id);
+      }
+
       const updatedTables = tablesRes.rows.map((row: any) => ({
         id: row.id as string,
         number: Number(row.number),
         status: row.status as Table['status'],
-        orders: [], // orders e cart são mantidos locais ou recarregados se necessário
+        orders: [],
         cart: [],
         lastActivity: row.last_activity ? new Date(row.last_activity as string) : new Date(),
       }));
 
-      // 3. Buscar Pedidos Ativos para todas as mesas
       const ordersRes = await db.execute(`
         SELECT oi.*, o.table_id 
         FROM order_items oi 
@@ -486,9 +519,9 @@ export const useStore = create<AppState>((set, get) => ({
       ordersRes.rows.forEach((row: any) => {
         if (!ordersByTable[row.table_id]) ordersByTable[row.table_id] = [];
         ordersByTable[row.table_id].push({
-          id: row.product_id as string,
+          id: row.id as string,
           productId: row.product_id as string,
-          name: '', // Nome será preenchido pelo menu se necessário, ou podemos dar join
+          name: row.name || '', 
           price: row.price_at_time as number,
           quantity: row.quantity as number,
           selectedModifiers: JSON.parse(row.selected_modifiers as string || '[]'),
@@ -496,7 +529,6 @@ export const useStore = create<AppState>((set, get) => ({
         });
       });
 
-      // Preservar os carrinhos locais ao sincronizar mesas
       const currentTables = get().tables;
       const finalTables = updatedTables.map(newTable => {
         const localTable = currentTables.find(t => t.id === newTable.id);
@@ -508,6 +540,9 @@ export const useStore = create<AppState>((set, get) => ({
       });
 
       set({ 
+        categories,
+        menu: menuItems,
+        modifierGroups,
         kitchenOrders, 
         tables: finalTables.sort((a, b) => a.number - b.number),
         serverTimeOffset
