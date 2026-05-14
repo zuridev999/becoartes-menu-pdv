@@ -224,8 +224,8 @@ export const Repository = {
     const kOrders = kOrdersRes.rows.map((oRow: any) => ({
       id: oRow.id as string,
       tableId: oRow.table_id as string,
-      tableNumber: oRow.tableNumber as string,
-      status: oRow.status,
+      tableNumber: Number(oRow.tableNumber),
+      status: oRow.status as any,
       origin: (oRow.origin || 'pdv') as any,
       createdAt: new Date(oRow.created_at as string),
       items: itemsByOrder[oRow.id] || []
