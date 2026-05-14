@@ -24,15 +24,25 @@ export function PWAHandler() {
     document.addEventListener('MSFullscreenChange', handleFsChange);
 
     const requestWakeLock = async () => {
+      // 1. Suporte para Fully Kiosk Browser (API Nativa)
+      if (typeof (window as any).fully !== 'undefined') {
+        const fully = (window as any).fully;
+        try {
+          fully.startScreensaver(); // Exemplo
+          fully.setKeepScreenOn(true);
+          fully.setKioskMode(true);
+          fully.lockDown(true);
+          console.log('🛡️ Fully Kiosk Mode ATIVADO via API');
+        } catch (e) {}
+      }
+
+      // 2. Wake Lock padrão (Navegador)
       try {
         if ('wakeLock' in navigator) {
           const wl = await (navigator as any).wakeLock.request('screen');
           setWakeLock(wl);
-          console.log('💡 Wake Lock ativo');
         }
-      } catch (err) {
-        console.error('Wake Lock error:', err);
-      }
+      } catch (err) {}
     };
 
     requestWakeLock();
