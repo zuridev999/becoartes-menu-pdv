@@ -398,23 +398,28 @@ export const useStore = create<AppState>((set, get) => ({
       menu: state.menu.map(p => p.id === id ? { ...p, visible: newVisible } : p)
     }));
   },
-
   updateProduct: async (id, data) => {
     try {
-      const validated = ProductSchema.parse({ ...data, id });
-      await Repository.upsertProduct(validated);
-      set((state) => ({ menu: state.menu.map(p => p.id === id ? validated as Product : p) }));
+      const category = get().categories.find(c => c.id === data.categoryId);
+      const validated = ProductSchema.parse({ ...data, id, categoryName: category?.name });
+      await Repository.upsertProduct(validated as Product);
+      set((state) => ({ 
+        menu: state.menu.map(p => p.id === id ? validated as Product : p) 
+      }));
     } catch (e: any) {
+      console.error("❌ Erro ao atualizar produto:", e);
       get().addNotification(e.message || "Dados inválidos", 'error');
     }
   },
 
-  addProduct: async (p) => {
+  addProduct: async (product) => {
     try {
-      const validated = ProductSchema.parse(p);
-      await Repository.upsertProduct(validated);
+      const category = get().categories.find(c => c.id === product.categoryId);
+      const validated = ProductSchema.parse({ ...product, categoryName: category?.name });
+      await Repository.upsertProduct(validated as Product);
       set((state) => ({ menu: [...state.menu, validated as Product] }));
     } catch (e: any) {
+      console.error("❌ Erro ao adicionar produto:", e);
       get().addNotification(e.message || "Dados inválidos", 'error');
     }
   },

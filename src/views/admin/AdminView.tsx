@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Settings, Package, User, TrendingUp, Plus, Trash2, 
-  CheckCircle, X, ChefHat, Image, LayoutDashboard, Sparkles, Clock, ArrowLeft
+  CheckCircle, X, ChefHat, Image, LayoutDashboard, Sparkles, Clock, ArrowLeft,
+  Eye, EyeOff, Search
 } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import { db } from '../../lib/db';
@@ -16,7 +17,7 @@ export function AdminView() {
     settings, updateSettings,
     sellers, addSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
-    adminTab, setAdminTab, adminMode
+    adminTab, setAdminTab, adminMode, toggleProductVisibility
   } = useStore();
 
   const activeTab = adminTab;
@@ -38,6 +39,7 @@ export function AdminView() {
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null);
 
   const [movements, setMovements] = useState<any[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     if (activeTab === 'movements') {
@@ -237,9 +239,21 @@ export function AdminView() {
       {activeTab === 'products' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
           <div className="space-y-6">
-            <div className="flex justify-between items-center mb-8 px-4">
-              <h3 className="text-3xl font-black flex items-center gap-4"><Package size={28}/> Catálogo Ativo</h3>
-              <button onClick={() => setEditingProduct({ id: Math.random().toString(36).substr(2, 9), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl"><Plus size={20}/></button>
+            <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 px-4">
+              <div className="flex items-center gap-4">
+                <h3 className="text-3xl font-black flex items-center gap-4"><Package size={28}/> Catálogo</h3>
+                <div className="relative">
+                  <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input 
+                    type="text" 
+                    placeholder="Buscar produto..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="glass pl-12 pr-6 py-3 rounded-2xl text-xs font-bold border-white/10 outline-none w-64 focus:border-primary transition-all"
+                  />
+                </div>
+              </div>
+              <button onClick={() => setEditingProduct({ id: Math.random().toString(36).substr(2, 9), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
             </div>
             <div className="glass rounded-[3rem] border-white/5 overflow-hidden max-h-[60vh] overflow-y-auto custom-scrollbar">
               {Object.entries(
@@ -254,19 +268,34 @@ export function AdminView() {
                   <div className="bg-white/5 px-8 py-4 border-y border-white/5">
                     <h4 className="text-xs font-black uppercase tracking-widest text-primary">{category}</h4>
                   </div>
-                  {items.map((p: any) => (
-                    <div key={p.id} className="flex items-center justify-between p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group">
+                  {items
+                    .filter((p: any) => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                    .map((p: any) => (
+                    <div key={p.id} className={`flex items-center justify-between p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group ${!p.visible ? 'opacity-40 grayscale' : ''}`}>
                       <div className="flex items-center gap-6">
-                        <img src={p.image} className="w-16 h-16 rounded-2xl object-cover" />
+                        <div className="relative">
+                          <img src={p.image} className="w-20 h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
+                          {!p.visible && <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center"><EyeOff size={20} className="text-white/40" /></div>}
+                        </div>
                         <div>
-                          <p className="font-black text-lg">{p.name}</p>
-                          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">R$ {p.price.toFixed(2)} {p.cost > 0 && <span className="text-emerald-500 ml-2">Lucro: R$ {(p.price - p.cost).toFixed(2)}</span>}</p>
+                          <p className="font-black text-xl tracking-tight">{p.name}</p>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-xs font-black text-gray-400">R$ {p.price.toFixed(2)}</span>
+                            {p.cost > 0 && <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 rounded text-[9px] font-black uppercase">Lucro R$ {(p.price - p.cost).toFixed(2)}</span>}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-all">
-                        <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-4 glass rounded-xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={18}/></button>
-                        <button onClick={() => setEditingProduct(p)} className="p-4 glass rounded-xl text-primary"><Settings size={18}/></button>
-                        <button onClick={() => deleteProduct(p.id)} className="p-4 glass rounded-xl text-rose-500"><Trash2 size={18}/></button>
+                      <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all">
+                        <button 
+                          onClick={() => toggleProductVisibility(p.id)}
+                          className={`p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
+                          title={p.visible ? 'Ocultar do Cardápio' : 'Mostrar no Cardápio'}
+                        >
+                          {p.visible ? <Eye size={20}/> : <EyeOff size={20}/>}
+                        </button>
+                        <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
+                        <button onClick={() => setEditingProduct(p)} className="p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
+                        <button onClick={() => deleteProduct(p.id)} className="p-4 glass rounded-2xl text-rose-500 hover:bg-rose-500/10"><Trash2 size={20}/></button>
                       </div>
                     </div>
                   ))}
@@ -277,8 +306,16 @@ export function AdminView() {
 
           <AnimatePresence>
             {editingProduct && (
-              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-12 border-primary/20 sticky top-12 h-fit shadow-2xl shadow-primary/10">
-                <h3 className="text-3xl font-black mb-10">Editar Produto</h3>
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-12 border-primary/20 sticky top-12 h-fit shadow-2xl shadow-primary/10 overflow-hidden">
+                <div className="flex justify-between items-start mb-10">
+                  <h3 className="text-3xl font-black">Editar Produto</h3>
+                  <button 
+                    onClick={() => setEditingProduct({...editingProduct, visible: !editingProduct.visible})}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
+                  >
+                    {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
+                  </button>
+                </div>
                 <div className="space-y-6">
                   <ConfigInput label="Nome" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} />
                   <div className="grid grid-cols-2 gap-4">
@@ -319,8 +356,61 @@ export function AdminView() {
                       })}
                     </div>
                   </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Imagem do Produto</label>
+                    <div 
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setEditingProduct({ ...editingProduct, image: ev.target?.result as string });
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="relative h-48 glass border-2 border-dashed border-white/10 rounded-[2rem] flex flex-col items-center justify-center gap-4 group hover:border-primary/40 transition-all overflow-hidden"
+                    >
+                      {editingProduct.image ? (
+                        <>
+                          <img src={editingProduct.image} className="absolute inset-0 w-full h-full object-cover opacity-40" />
+                          <div className="relative z-10 flex flex-col items-center gap-2">
+                             <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md group-hover:scale-110 transition-all">
+                               <Plus size={24} />
+                             </div>
+                             <span className="text-[10px] font-black uppercase tracking-widest">Trocar Imagem</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-16 h-16 bg-white/5 rounded-3xl flex items-center justify-center text-gray-500 group-hover:text-primary transition-all">
+                            <Image size={32} />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs font-black uppercase tracking-widest">Arraste a foto aqui</p>
+                            <p className="text-[10px] font-bold text-gray-500 mt-1">ou clique para selecionar</p>
+                          </div>
+                        </>
+                      )}
+                      <input 
+                        type="file" 
+                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => setEditingProduct({ ...editingProduct, image: ev.target?.result as string });
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
                   <ConfigInput label="Descrição" value={editingProduct.description || ''} onChange={(v) => setEditingProduct({...editingProduct, description: v})} />
-                  <ConfigInput label="URL da Imagem" value={editingProduct.image} onChange={(v) => setEditingProduct({...editingProduct, image: v})} />
+                  <div className="relative group">
+                    <ConfigInput label="Ou cole a URL da Imagem" value={editingProduct.image} onChange={(v) => setEditingProduct({...editingProduct, image: v})} />
+                  </div>
                   <button onClick={async () => { const exists = menu.find(p => p.id === editingProduct.id); if (exists) await updateProduct(editingProduct.id, editingProduct); else await addProduct(editingProduct); setEditingProduct(null); }} className="w-full btn-beco btn-beco-purple py-6 font-black">Salvar</button>
                 </div>
               </motion.div>
