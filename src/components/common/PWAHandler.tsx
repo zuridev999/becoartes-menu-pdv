@@ -1,42 +1,38 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState } from 'react';
 
 export function PWAHandler() {
-  const [isFullscreen, setIsFullscreen] = useState(document.fullscreenElement !== null);
   const [wakeLock, setWakeLock] = useState<any>(null);
 
   useEffect(() => {
-    const handleFsChange = () => setIsFullscreen(document.fullscreenElement !== null);
-    document.addEventListener('fullscreenchange', handleFsChange);
-    document.addEventListener('webkitfullscreenchange', handleFsChange);
-
     const requestWakeLock = async () => {
       try {
         if ('wakeLock' in navigator) {
           const wl = await (navigator as any).wakeLock.request('screen');
           setWakeLock(wl);
+          console.log('💡 Wake Lock ativo');
         }
-      } catch (err) {}
+      } catch (err) {
+        console.error('Wake Lock error:', err);
+      }
     };
 
     requestWakeLock();
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
-      document.removeEventListener('fullscreenchange', handleFsChange);
-      document.removeEventListener('webkitfullscreenchange', handleFsChange);
-      if (wakeLock) wakeLock.release();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLock) {
+        wakeLock.release();
+      }
     };
   }, []);
-
-  const enterFullscreen = () => {
-    const doc = document.documentElement as any;
-    const request = doc.requestFullscreen || doc.webkitRequestFullscreen || doc.mozRequestFullScreen || doc.msRequestFullscreen;
-    if (request) {
-      request.call(doc).catch(() => {
-        // Fallback or ignore if denied
-      });
-    }
-  };
 
   return null;
 }
