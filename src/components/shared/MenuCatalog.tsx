@@ -74,7 +74,20 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid' }: MenuCatalogP
                 type="text" 
                 placeholder="Pesquisar..." 
                 value={searchQuery} 
-                onChange={(e) => setSearchQuery(e.target.value)} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '0044') {
+                    window.dispatchEvent(new CustomEvent('beco-fullscreen', { detail: 'request' }));
+                    setSearchQuery('');
+                    return;
+                  }
+                  if (val === '0040') {
+                    window.dispatchEvent(new CustomEvent('beco-fullscreen', { detail: 'exit' }));
+                    setSearchQuery('');
+                    return;
+                  }
+                  setSearchQuery(val);
+                }} 
                 className="w-full glass p-6 pl-14 rounded-3xl border-white/10 text-xl font-bold focus:border-primary outline-none transition-all" 
                />
                <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-500" size={20} />

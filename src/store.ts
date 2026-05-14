@@ -416,11 +416,15 @@ export const useStore = create<AppState>((set, get) => ({
       
       console.log(`🚀 Sistema Becoartes Inicializado! View: ${initialView} | Host: ${hostname}`);
       
-      // Iniciar Sync Automático (a cada 30 segundos se não for kitchen)
+      // NOTA TÉCNICA MODO KIOSK: 
+      // Para bloqueio total do hardware (botão Home, recentes, etc) no Android,
+      // utilize o "Fully Kiosk Browser" apontando para este URL com "Kiosk Mode" ATIVO.
+      
+      // Iniciar Sync Automático (a cada 60 segundos se não for kitchen)
       if (initialView !== 'kitchen') {
         setInterval(() => {
           get().syncData();
-        }, 30000);
+        }, 60000);
       }
 
     } catch (e) {

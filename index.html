@@ -10,14 +10,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Becoartes Tablet</title>
     <script>
-      // Unregister Service Workers (Fix for blank screens)
+      // Register Service Worker
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(registrations => {
-          for (let registration of registrations) {
-            registration.unregister();
-          }
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js');
         });
       }
+      // Unregister old ones if any (cleanup)
+      // navigator.serviceWorker.getRegistrations().then(...) // Keep it simple for now
       // Bloquear menu de contexto (clique direito / toque longo)
       document.addEventListener('contextmenu', e => e.preventDefault());
 
