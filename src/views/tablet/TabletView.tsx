@@ -8,6 +8,7 @@ import { ProductModal } from '../../components/modals/ProductModal';
 import { CustomerAccountModal } from '../../components/modals/CustomerAccountModal';
 import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
+import { PWAHandler } from '../../components/common/PWAHandler';
 
 export function TabletView() {
   const { currentTableId, tables, settings, syncData } = useStore();
@@ -125,6 +126,8 @@ export function TabletView() {
           <ServiceRequestModal onClose={() => setIsServiceOpen(false)} />
         )}
       </AnimatePresence>
+
+      <PWAHandler />
     </div>
   );
 }

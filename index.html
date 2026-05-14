@@ -20,6 +20,20 @@
       }
       // Bloquear menu de contexto (clique direito / toque longo)
       document.addEventListener('contextmenu', e => e.preventDefault());
+
+      // Bloquear o "arrastar para baixo" (Pull-to-refresh)
+      window.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 1) e.preventDefault(); 
+      }, { passive: false });
+
+      window.addEventListener('touchmove', (e) => {
+        // Safe check for composedPath
+        const path = e.composedPath ? e.composedPath() : [];
+        const hasScrollable = path.some(el => el.classList && el.classList.contains('custom-scrollbar'));
+        if (!hasScrollable) {
+          e.preventDefault();
+        }
+      }, { passive: false });
     </script>
   </head>
   <body>
