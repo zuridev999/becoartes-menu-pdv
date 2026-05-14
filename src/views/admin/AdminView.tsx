@@ -28,7 +28,7 @@ import { db } from '../../lib/db';
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
 
-function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSchedulingItem }: any) {
+function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSchedulingItem, toggleCategoryVisibility }: any) {
   const {
     attributes,
     listeners,
@@ -65,6 +65,12 @@ function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSc
       </div>
       <div className="flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-all">
         <button 
+          onClick={() => toggleCategoryVisibility(cat.id)} 
+          className={`p-4 glass rounded-xl transition-all ${cat.visible ? 'text-primary' : 'text-gray-500 opacity-50'}`}
+        >
+          {cat.visible ? <Eye size={18}/> : <EyeOff size={18}/>}
+        </button>
+        <button 
           onClick={() => setSchedulingItem({ type: 'category', id: cat.id, name: cat.name, config: cat.schedule })} 
           className={`p-4 glass rounded-xl ${cat.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}
         >
@@ -95,7 +101,7 @@ export function AdminView() {
     settings, updateSettings,
     sellers, addSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
-    adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories
+    adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, toggleCategoryVisibility
   } = useStore();
 
   const activeTab = adminTab;
@@ -359,6 +365,7 @@ export function AdminView() {
                       upsertCategory={upsertCategory} 
                       deleteCategory={deleteCategory}
                       setSchedulingItem={setSchedulingItem}
+                      toggleCategoryVisibility={toggleCategoryVisibility}
                     />
                   ))}
                 </SortableContext>

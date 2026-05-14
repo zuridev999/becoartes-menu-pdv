@@ -12,6 +12,7 @@ interface MenuCatalogProps {
 export function MenuCatalog({ onProductSelect, viewMode = 'grid' }: MenuCatalogProps) {
   const { menu, categories: dbCategories } = useStore();
   const availableCategories = dbCategories.filter(c => {
+    if (c.visible === false) return false;
     const { available } = isItemAvailable(c.schedule);
     if (!available && c.schedule?.hideTotally) return false;
     return true;

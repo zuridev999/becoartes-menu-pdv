@@ -39,6 +39,7 @@ export interface AppState {
   init: () => Promise<void>;
   setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements', mode?: 'menu' | 'settings') => void;
   toggleProductVisibility: (id: string) => void;
+  toggleCategoryVisibility: (id: string) => void;
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
@@ -419,6 +420,18 @@ export const useStore = create<AppState>((set, get) => ({
     });
     set((state) => ({
       menu: state.menu.map(p => p.id === id ? { ...p, visible: newVisible } : p)
+    }));
+  },
+  toggleCategoryVisibility: async (id) => {
+    const category = get().categories.find(c => c.id === id);
+    if (!category) return;
+    const newVisible = !category.visible;
+    await db.execute({
+      sql: "UPDATE categories SET visible = ? WHERE id = ?",
+      args: [newVisible ? 1 : 0, id]
+    });
+    set((state) => ({
+      categories: state.categories.map(c => c.id === id ? { ...c, visible: newVisible } : c)
     }));
   },
   updateProduct: async (id, data) => {

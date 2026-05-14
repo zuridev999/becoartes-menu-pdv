@@ -11,13 +11,14 @@ export const Repository = {
       name: row.name as string,
       schedule: row.schedule_config ? JSON.parse(row.schedule_config as string) : undefined,
       sortOrder: row.sort_order as number,
+      visible: row.visible === 1,
     }));
   },
 
   async upsertCategory(cat: any) {
     await db.execute({
-      sql: "INSERT OR REPLACE INTO categories (id, name, schedule_config, sort_order) VALUES (?, ?, ?, ?)",
-      args: [cat.id, cat.name, cat.schedule ? JSON.stringify(cat.schedule) : null, cat.sortOrder || 0]
+      sql: "INSERT OR REPLACE INTO categories (id, name, schedule_config, sort_order, visible) VALUES (?, ?, ?, ?, ?)",
+      args: [cat.id, cat.name, cat.schedule ? JSON.stringify(cat.schedule) : null, cat.sortOrder || 0, cat.visible ? 1 : 0]
     });
   },
 

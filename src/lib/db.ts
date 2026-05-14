@@ -16,7 +16,8 @@ export const initDB = async () => {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         schedule_config TEXT, -- JSON com dias e horários
-        sort_order INTEGER DEFAULT 0
+        sort_order INTEGER DEFAULT 0,
+        visible INTEGER DEFAULT 1
       )
     `);
 
@@ -163,6 +164,10 @@ export const initDB = async () => {
 
     try {
       await db.execute("ALTER TABLE menu ADD COLUMN schedule_config TEXT");
+    } catch (e) {}
+
+    try {
+      await db.execute("ALTER TABLE categories ADD COLUMN visible INTEGER DEFAULT 1");
     } catch (e) {}
 
     try {

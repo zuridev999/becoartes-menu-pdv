@@ -18,6 +18,7 @@ export interface Category {
   name: string;
   schedule?: ScheduleConfig;
   sortOrder: number;
+  visible: boolean;
 }
 
 export interface Modifier {
