@@ -7,9 +7,6 @@ import { AnimatePresence } from 'framer-motion';
 import { AntigravityErrorBoundary } from './components/common/UI';
 import { PremiumLoader } from './components/common/Loaders';
 
-// Componentes de Autenticação
-import { PinLoginModal } from './components/auth/PinLoginModal';
-
 // Visualizações
 import { TabletView } from './views/tablet/TabletView';
 import { PDVView } from './views/pdv/PDVView';
@@ -17,10 +14,10 @@ import { KitchenView } from './views/kitchen/KitchenView';
 import { AdminView } from './views/admin/AdminView';
 import { QRView } from './views/qr/QRView';
 
+// Componentes de Autenticação
 function App() {
   const { 
-    init, isLoading, activeView, 
-    currentSeller
+    init, isLoading, activeView
   } = useStore();
   const [animationFinished, setAnimationFinished] = useState(false);
 
@@ -41,17 +38,12 @@ function App() {
       </AnimatePresence>
 
       <div className="min-h-screen bg-[#0a0a0c]">
-        {/* Lógica de Autenticação Global - Apenas no Admin ou se explicitamente necessário */}
-        {!currentSeller && activeView === 'admin' && (
-          <PinLoginModal />
-        )}
-
         {/* Roteamento de Views com Hostname Fallback */}
         {activeView === 'tablet' && <TabletView />}
         {activeView === 'qr' && <QRView />}
         {activeView === 'pdv' && <PDVView />}
         {activeView === 'kitchen' && <KitchenView />}
-        {activeView === 'admin' && currentSeller && <AdminView />}
+        {activeView === 'admin' && <AdminView />}
         
         {/* Fallback amigável para URLs desconhecidas */}
         {!isLoading && !['tablet', 'pdv', 'kitchen', 'admin', 'qr'].includes(activeView) && (
