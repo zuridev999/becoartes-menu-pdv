@@ -242,7 +242,7 @@ export function AdminView() {
                         <img src={p.image} className="w-16 h-16 rounded-2xl object-cover" />
                         <div>
                           <p className="font-black text-lg">{p.name}</p>
-                          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">R$ {p.price.toFixed(2)}</p>
+                          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">R$ {p.price.toFixed(2)} {p.cost > 0 && <span className="text-emerald-500 ml-2">Lucro: R$ {(p.price - p.cost).toFixed(2)}</span>}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-all">
@@ -274,7 +274,8 @@ export function AdminView() {
                         {categories.map(c => <option key={c.id} value={c.id} className="bg-[#0a0a0c]">{c.name}</option>)}
                       </select>
                     </div>
-                    <ConfigInput label="Preço" type="number" value={editingProduct.price} onChange={(v) => setEditingProduct({...editingProduct, price: v})} />
+                    <ConfigInput label="Preço de Venda" type="number" value={editingProduct.price} onChange={(v) => setEditingProduct({...editingProduct, price: v})} />
+                    <ConfigInput label="Custo" type="number" value={editingProduct.cost || 0} onChange={(v) => setEditingProduct({...editingProduct, cost: v})} />
                   </div>
                   <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Vincular Opcionais</label>

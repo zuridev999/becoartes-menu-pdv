@@ -40,18 +40,20 @@ export const Repository = {
       schedule: row.schedule_config ? JSON.parse(row.schedule_config as string) : undefined,
       erpCode: row.erp_code as string,
       remoteStockId: row.remote_stock_id as string,
+      cost: row.cost as number,
       modifierGroups: [] // Carregado separadamente se necessário
     }));
   },
 
   async upsertProduct(p: any) {
     await db.execute({
-      sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category_id, image, visible, erp_code, remote_stock_id, schedule_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category_id, image, visible, erp_code, remote_stock_id, schedule_config, cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       args: [
         p.id, p.name, p.description || '', p.price, 
         p.categoryId, p.image, p.visible ? 1 : 0, 
         p.erpCode || null, p.remoteStockId || null,
-        p.schedule ? JSON.stringify(p.schedule) : null
+        p.schedule ? JSON.stringify(p.schedule) : null,
+        p.cost || 0
       ]
     });
 
