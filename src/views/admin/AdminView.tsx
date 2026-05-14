@@ -427,7 +427,6 @@ export function AdminView() {
                         </button>
                         <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
                         <button onClick={() => setEditingProduct(p)} className="p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
-                        <button onClick={() => deleteProduct(p.id)} className="p-4 glass rounded-2xl text-rose-500 hover:bg-rose-500/10"><Trash2 size={20}/></button>
                       </div>
                     </div>
                   ))}
@@ -585,6 +584,26 @@ export function AdminView() {
                   >
                     SALVAR ALTERAÇÕES
                   </button>
+
+                  <div className="pt-6 border-t border-white/5 flex flex-col items-center gap-4">
+                    <button 
+                      onClick={() => {
+                        const pin = prompt('Esta é uma ação crítica. Digite o PIN de Administrador para excluir este produto:');
+                        if (pin === '0806') {
+                          if (confirm(`Tem certeza que deseja excluir permanentemente o produto "${editingProduct.name}"?`)) {
+                            deleteProduct(editingProduct.id);
+                            setEditingProduct(null);
+                          }
+                        } else if (pin !== null) {
+                          alert('PIN incorreto. Apenas Administradores podem excluir produtos.');
+                        }
+                      }}
+                      className="text-[10px] font-black text-rose-500/40 hover:text-rose-500 uppercase tracking-[0.2em] transition-all flex items-center gap-2"
+                    >
+                      <Trash2 size={12} /> Excluir Produto do Cardápio
+                    </button>
+                    <p className="text-[9px] text-zinc-700 font-bold uppercase italic">Ação irreversível • Requer autorização nível Admin</p>
+                  </div>
                 </div>
               </motion.div>
             )}
