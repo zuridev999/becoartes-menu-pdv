@@ -339,12 +339,21 @@ export const useStore = create<AppState>((set, get) => ({
 
       // Garantir 50 mesas para o Becoartes
       if (tables.length < 50) {
+        console.log("🛠️ Gerando mesas iniciais...");
+        const missing = 50 - tables.length;
+        const values: any[] = [];
+        const placeholders: string[] = [];
+        
         for (let i = tables.length + 1; i <= 50; i++) {
-          await db.execute({ 
-            sql: "INSERT OR IGNORE INTO tables (id, number, status) VALUES (?, ?, ?)", 
-            args: [`${i}`, `${i}`, 'available'] 
-          });
+          placeholders.push("(?, ?, ?)");
+          values.push(`${i}`, `${i}`, 'available');
         }
+
+        await db.execute({ 
+          sql: `INSERT OR IGNORE INTO tables (id, number, status) VALUES ${placeholders.join(', ')}`, 
+          args: values 
+        });
+
         const freshTables = await db.execute("SELECT * FROM tables");
         tables = freshTables.rows.map(row => ({
           id: row.id as string,
