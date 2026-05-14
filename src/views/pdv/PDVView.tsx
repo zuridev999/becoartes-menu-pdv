@@ -33,6 +33,15 @@ export function PDVView() {
 
   const [pin, setPin] = useState('');
   const [loginError, setLoginError] = useState(false);
+  const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [showProductMenu, setShowProductMenu] = useState(false);
+  const [showManualLog, setShowManualLog] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(categories[0]?.id || null);
+  const [showOnlyActive, setShowOnlyActive] = useState(true);
+  const [logAction, setLogAction] = useState('');
+  const [logDetails, setLogDetails] = useState('');
+  const [logTable, setLogTable] = useState('');
 
   const handleLogin = async () => {
     const success = await login(pin);
@@ -84,21 +93,9 @@ export function PDVView() {
     );
   }
 
-  const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
-  const [showCheckout, setShowCheckout] = useState(false);
-  const [showProductMenu, setShowProductMenu] = useState(false);
-  const [showManualLog, setShowManualLog] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<string | null>(categories[0]?.id || null);
-  const [showOnlyActive, setShowOnlyActive] = useState(true);
-
   // Derived state
   const currentTable = tables.find(t => t.id === selectedTable?.id);
   const cart = currentTable?.cart || [];
-
-  // Manual Log Form
-  const [logAction, setLogAction] = useState('');
-  const [logDetails, setLogDetails] = useState('');
-  const [logTable, setLogTable] = useState('');
 
   // Stats
   const activeTablesCount = tables.filter(t => t.status === 'ordering' || t.status === 'bill_requested').length;
