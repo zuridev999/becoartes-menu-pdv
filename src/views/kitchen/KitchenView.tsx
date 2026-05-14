@@ -103,37 +103,37 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
         </div>
 
         <div className="flex-1 overflow-y-auto p-12 custom-scrollbar bg-white">
-           <div className="grid grid-cols-1 gap-6">
-              {order.items.map((item: any, idx: number) => (
-                <div key={idx} className="p-8 bg-gray-50 rounded-[2.5rem] border border-gray-100">
-                   <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-6">
-                         <div className="w-16 h-16 bg-white shadow-sm border border-gray-100 rounded-2xl flex items-center justify-center text-3xl font-black text-black">
+            <div className="grid grid-cols-2 gap-4">
+               {order.items.map((item: any, idx: number) => (
+                 <div key={idx} className="p-5 bg-gray-50 rounded-[2rem] border border-gray-100 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-4">
+                         <div className="w-12 h-12 shrink-0 bg-white shadow-sm border border-gray-100 rounded-xl flex items-center justify-center text-xl font-black text-black">
                            {item.quantity}x
                          </div>
-                         <h4 className="text-4xl font-black tracking-tight text-black">{item.name}</h4>
+                         <h4 className="text-xl font-black tracking-tight text-black leading-tight truncate">{item.name}</h4>
                       </div>
-                   </div>
 
-                   {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                     <div className="mt-6 flex flex-wrap gap-3 ml-20">
-                        {item.selectedModifiers.map((m: any, mIdx: number) => (
-                          <span key={mIdx} className="px-5 py-2 bg-black/5 text-black rounded-xl text-sm font-black uppercase tracking-widest border border-black/10">
-                            + {m.name}
-                          </span>
-                        ))}
-                     </div>
-                   )}
+                      {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2 ml-14">
+                           {item.selectedModifiers.map((m: any, mIdx: number) => (
+                             <span key={mIdx} className="px-3 py-1 bg-black/5 text-black rounded-lg text-[10px] font-black uppercase tracking-widest border border-black/10">
+                               + {m.name}
+                             </span>
+                           ))}
+                        </div>
+                      )}
+                    </div>
 
-                   {item.notes && (
-                     <div className="mt-6 p-6 bg-rose-50 border border-rose-100 rounded-2xl ml-20">
-                        <p className="text-xs font-black uppercase text-black mb-2 tracking-widest">Observação do Item:</p>
-                        <p className="text-2xl font-bold text-black italic">"{item.notes}"</p>
-                     </div>
-                   )}
-                </div>
-              ))}
-           </div>
+                    {item.notes && (
+                      <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-xl ml-14">
+                         <p className="text-[9px] font-black uppercase text-black mb-1 tracking-widest">Obs:</p>
+                         <p className="text-sm font-bold text-black italic">"{item.notes}"</p>
+                      </div>
+                    )}
+                 </div>
+               ))}
+            </div>
         </div>
 
         <div className="p-10 bg-gray-50 border-t border-gray-100">
