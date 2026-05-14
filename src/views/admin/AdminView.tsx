@@ -3,13 +3,91 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Settings, Package, User, TrendingUp, Plus, Trash2, 
   CheckCircle, X, ChefHat, Image, LayoutDashboard, Sparkles, Clock, ArrowLeft,
-  Eye, EyeOff, Search
+  Eye, EyeOff, Search, GripVertical
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useStore, type Product } from '../../store';
 import { db } from '../../lib/db';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
+
+function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSchedulingItem }: any) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: cat.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 100 : 1,
+    opacity: isDragging ? 0.5 : 1
+  };
+
+  return (
+    <div 
+      ref={setNodeRef} 
+      style={style} 
+      className="flex items-center justify-between p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group relative"
+    >
+      <div className="flex items-center gap-6">
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-2 hover:bg-white/5 rounded-lg transition-all text-gray-600 hover:text-primary">
+          <GripVertical size={20} />
+        </div>
+        <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center font-black text-primary">{cat.sortOrder}</div>
+        <div>
+          <p className="font-black text-lg">{cat.name}</p>
+          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+            {menu.filter((p: any) => p.categoryId === cat.id).length} Produtos
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-all">
+        <button 
+          onClick={() => setSchedulingItem({ type: 'category', id: cat.id, name: cat.name, config: cat.schedule })} 
+          className={`p-4 glass rounded-xl ${cat.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}
+        >
+          <Clock size={18}/>
+        </button>
+        <button onClick={() => {
+          const newName = prompt('Novo nome da categoria:', cat.name);
+          if (newName) upsertCategory({ ...cat, name: newName });
+        }} className="p-4 glass rounded-xl text-primary"><Settings size={18}/></button>
+        <button 
+          onClick={() => {
+            if (confirm(`Tem certeza que deseja excluir a categoria "${cat.name}"? Os produtos vinculados ficarão sem categoria.`)) {
+              deleteCategory(cat.id);
+            }
+          }} 
+          className="p-4 glass rounded-xl text-rose-500 hover:bg-rose-500/10"
+        >
+          <Trash2 size={18}/>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function AdminView() {
   const { 
@@ -17,7 +95,7 @@ export function AdminView() {
     settings, updateSettings,
     sellers, addSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
-    adminTab, setAdminTab, adminMode, toggleProductVisibility
+    adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories
   } = useStore();
 
   const activeTab = adminTab;
@@ -40,6 +118,20 @@ export function AdminView() {
 
   const [movements, setMovements] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = categories.findIndex(c => c.id === active.id);
+      const newIndex = categories.findIndex(c => c.id === over.id);
+      reorderCategories(arrayMove(categories, oldIndex, newIndex));
+    }
+  };
 
   useEffect(() => {
     if (activeTab === 'movements') {
@@ -206,31 +298,27 @@ export function AdminView() {
               </button>
             </div>
             <div className="glass rounded-[3rem] border-white/5 overflow-hidden">
-              {categories.map((cat) => (
-                <div key={cat.id} className="flex items-center justify-between p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group">
-                  <div className="flex items-center gap-6">
-                    <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center font-black text-primary">{cat.sortOrder}</div>
-                    <div>
-                      <p className="font-black text-lg">{cat.name}</p>
-                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                        {menu.filter(p => p.categoryId === cat.id).length} Produtos
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-all">
-                    <button 
-                      onClick={() => setSchedulingItem({ type: 'category', id: cat.id, name: cat.name, config: cat.schedule })} 
-                      className={`p-4 glass rounded-xl ${cat.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}
-                    >
-                      <Clock size={18}/>
-                    </button>
-                    <button onClick={() => {
-                      const newName = prompt('Novo nome da categoria:', cat.name);
-                      if (newName) upsertCategory({ ...cat, name: newName });
-                    }} className="p-4 glass rounded-xl text-primary"><Settings size={18}/></button>
-                  </div>
-                </div>
-              ))}
+              <DndContext 
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext 
+                  items={categories.map(c => c.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {categories.map((cat) => (
+                    <SortableCategoryItem 
+                      key={cat.id} 
+                      cat={cat} 
+                      menu={menu} 
+                      upsertCategory={upsertCategory} 
+                      deleteCategory={deleteCategory}
+                      setSchedulingItem={setSchedulingItem}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
             </div>
           </div>
         </div>

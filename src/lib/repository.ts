@@ -21,6 +21,12 @@ export const Repository = {
     });
   },
 
+  async deleteCategory(id: string) {
+    await db.execute({ sql: "DELETE FROM categories WHERE id = ?", args: [id] });
+    // Opcional: Atualizar produtos da categoria deletada?
+    await db.execute({ sql: "UPDATE menu SET category_id = NULL WHERE category_id = ?", args: [id] });
+  },
+
   // --- MENU ---
   async getMenu() {
     const res = await db.execute(`

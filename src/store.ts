@@ -59,6 +59,8 @@ export interface AppState {
   deleteModifierGroup: (id: string) => Promise<void>;
   linkGroupToProduct: (productId: string, groupId: string) => Promise<void>;
   upsertCategory: (cat: Category) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
+  reorderCategories: (categories: Category[]) => Promise<void>;
   syncBeveragesFromInventory: () => Promise<void>;
 
   addToCart: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
@@ -814,11 +816,30 @@ export const useStore = create<AppState>((set, get) => ({
     await Repository.upsertCategory(cat);
     set((state) => {
       const exists = state.categories.find(c => c.id === cat.id);
+      let newCats;
       if (exists) {
-        return { categories: state.categories.map(c => c.id === cat.id ? cat : c) };
+        newCats = state.categories.map(c => c.id === cat.id ? cat : c);
+      } else {
+        newCats = [...state.categories, cat];
       }
-      return { categories: [...state.categories, cat] };
+      return { categories: newCats.sort((a, b) => a.sortOrder - b.sortOrder) };
     });
+  },
+
+  deleteCategory: async (id) => {
+    await Repository.deleteCategory(id);
+    set((state) => ({
+      categories: state.categories.filter(c => c.id !== id),
+      menu: state.menu.map(p => p.categoryId === id ? { ...p, categoryId: '', categoryName: 'Sem Categoria' } : p)
+    }));
+  },
+
+  reorderCategories: async (newCategories) => {
+    const ordered = newCategories.map((c, idx) => ({ ...c, sortOrder: idx }));
+    set({ categories: ordered });
+    for (const cat of ordered) {
+      await Repository.upsertCategory(cat);
+    }
   },
 
   // --- MODIFIERS ---
