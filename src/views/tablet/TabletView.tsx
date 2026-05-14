@@ -126,8 +126,6 @@ export function TabletView() {
           <ServiceRequestModal onClose={() => setIsServiceOpen(false)} />
         )}
       </AnimatePresence>
-
-      <PWAHandler />
     </div>
   );
 }

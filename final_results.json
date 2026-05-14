@@ -1,0 +1,604 @@
+[
+  {
+    "category": "PORÇÕES",
+    "product": "Isca de Frango",
+    "oldPrice": 55.9,
+    "newPrice": 55.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PORÇÕES",
+    "product": "Carne Acebolada",
+    "oldPrice": 65.9,
+    "newPrice": 65.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PORÇÕES",
+    "product": "Pastelzinho",
+    "oldPrice": 35.9,
+    "newPrice": 35.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PORÇÕES",
+    "product": "Batata Frita Queijo Cremoso c/ Bacon",
+    "oldPrice": 42.9,
+    "newPrice": 42.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PORÇÕES",
+    "product": "Batata Frita",
+    "oldPrice": 35.9,
+    "newPrice": 35.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PORÇÕES",
+    "product": "Bolinho de Bacalhau",
+    "oldPrice": 45.9,
+    "newPrice": 45.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PORÇÕES",
+    "product": "Bolinho de Feijoada 5 uni",
+    "oldPrice": "-",
+    "newPrice": 45.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PORÇÕES",
+    "product": "Coxinha de Frango 8 uni",
+    "oldPrice": "-",
+    "newPrice": 38.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PORÇÕES",
+    "product": "Bolinho de Queijo",
+    "oldPrice": 38.9,
+    "newPrice": 38.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PORÇÕES",
+    "product": "Frango a Passarinho Becoartes",
+    "oldPrice": "-",
+    "newPrice": 38.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "CERVEJAS 600ML",
+    "product": "Original",
+    "oldPrice": "-",
+    "newPrice": 20.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "CERVEJAS 600ML",
+    "product": "Heineken",
+    "oldPrice": 25.9,
+    "newPrice": 25.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "CERVEJAS 600ML",
+    "product": "Eisenbahn Pilsen",
+    "oldPrice": "-",
+    "newPrice": 17.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DRINKS",
+    "product": "Caipirinha",
+    "oldPrice": "-",
+    "newPrice": 16.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DRINKS",
+    "product": "Caipiroska",
+    "oldPrice": "-",
+    "newPrice": 38.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DRINKS",
+    "product": "Saquerinha",
+    "oldPrice": "-",
+    "newPrice": 40.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DRINKS",
+    "product": "Aperol Spritz",
+    "oldPrice": 48.9,
+    "newPrice": 48.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DRINKS",
+    "product": "Gin Mango Loco",
+    "oldPrice": "-",
+    "newPrice": 48.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DRINKS",
+    "product": "Gin Tonic Nacional",
+    "oldPrice": "-",
+    "newPrice": 40.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DRINKS",
+    "product": "Negroni",
+    "oldPrice": "-",
+    "newPrice": 48.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DRINKS",
+    "product": "Gin Tonic Importado",
+    "oldPrice": "-",
+    "newPrice": 48.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DRINKS",
+    "product": "Double Gin Nacional",
+    "oldPrice": "-",
+    "newPrice": 45.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PRATOS BRASILEIROS",
+    "product": "Parmegiana de Carne",
+    "oldPrice": 76.9,
+    "newPrice": 76.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PRATOS BRASILEIROS",
+    "product": "Contra Filé Acebolado",
+    "oldPrice": 69.9,
+    "newPrice": 69.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PRATOS BRASILEIROS",
+    "product": "Filé de Frango",
+    "oldPrice": 59.9,
+    "newPrice": 59.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PRATOS BRASILEIROS",
+    "product": "Calabresa",
+    "oldPrice": 54.9,
+    "newPrice": 54.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PRATOS BRASILEIROS",
+    "product": "Omelete",
+    "oldPrice": 49.9,
+    "newPrice": 49.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "PRATOS BRASILEIROS",
+    "product": "Adicional Ovo",
+    "oldPrice": "-",
+    "newPrice": 3.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "BURGUERS BECO",
+    "product": "Bate Burguer",
+    "oldPrice": 55.9,
+    "newPrice": 55.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "BURGUERS BECO",
+    "product": "Robin Veggie",
+    "oldPrice": 50.9,
+    "newPrice": 50.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "NÃO ALCOÓLICOS",
+    "product": "Refrigerantes",
+    "oldPrice": "-",
+    "newPrice": 10.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "NÃO ALCOÓLICOS",
+    "product": "Água sem gás",
+    "oldPrice": 7.9,
+    "newPrice": 7.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "NÃO ALCOÓLICOS",
+    "product": "Suco",
+    "oldPrice": "-",
+    "newPrice": 10.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "NÃO ALCOÓLICOS",
+    "product": "Água com Gás",
+    "oldPrice": 7.9,
+    "newPrice": 7.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "NÃO ALCOÓLICOS",
+    "product": "Água de Coco",
+    "oldPrice": "-",
+    "newPrice": 10.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "NÃO ALCOÓLICOS",
+    "product": "Monster Melancia",
+    "oldPrice": "-",
+    "newPrice": 21.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "NÃO ALCOÓLICOS",
+    "product": "Café",
+    "oldPrice": "-",
+    "newPrice": 7.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "NÃO ALCOÓLICOS",
+    "product": "Monster Mango Loko",
+    "oldPrice": "-",
+    "newPrice": 19.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "LONG NECKS",
+    "product": "Corona",
+    "oldPrice": 18.9,
+    "newPrice": 18.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "LONG NECKS",
+    "product": "Heineken Long Neck",
+    "oldPrice": "-",
+    "newPrice": 18.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "LONG NECKS",
+    "product": "Heineken Zero Álcool",
+    "oldPrice": "-",
+    "newPrice": 18.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "LONG NECKS",
+    "product": "Spaten Long Neck",
+    "oldPrice": "-",
+    "newPrice": 18.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "LONG NECKS",
+    "product": "Amstel Puro Malte",
+    "oldPrice": "-",
+    "newPrice": 16.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "SOBREMESAS",
+    "product": "Açaí",
+    "oldPrice": 25.9,
+    "newPrice": 25.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "SOBREMESAS",
+    "product": "Churros",
+    "oldPrice": 25.9,
+    "newPrice": 25.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DOSES",
+    "product": "Gin",
+    "oldPrice": "-",
+    "newPrice": 30.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DOSES",
+    "product": "Cachaça",
+    "oldPrice": "-",
+    "newPrice": 20.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "DOSES",
+    "product": "Red Label Whisky",
+    "oldPrice": 30.9,
+    "newPrice": 30.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "CAFÉ DA MANHÃ",
+    "product": "Bowl de Açaí",
+    "oldPrice": "-",
+    "newPrice": 25.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "CAFÉ DA MANHÃ",
+    "product": "Café Preto",
+    "oldPrice": "-",
+    "newPrice": 7.9,
+    "status": "atualizado"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Combo Bom Dia Brasil",
+    "oldPrice": 54.9,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Suco de Laranja 400ml",
+    "oldPrice": 12,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Sanduba das Artes",
+    "oldPrice": 32,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "HEINEKEN 600ML",
+    "oldPrice": 0,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "HEINEKEN LONG ZERO",
+    "oldPrice": 0,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "ÁGUA S/GÁS",
+    "oldPrice": 7,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "MONSTER ENERGY ZERO ",
+    "oldPrice": 0,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "COCA COLA LATA",
+    "oldPrice": 0,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "CORONA LONGNECK 330ML",
+    "oldPrice": 18,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Picanha Brasileira",
+    "oldPrice": 98,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Bolinho De Feijoada (5 uni)",
+    "oldPrice": 45,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Frango a Passarinho",
+    "oldPrice": 58,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Açaí Tradicional",
+    "oldPrice": 28,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Cachaça Artesanal",
+    "oldPrice": 20,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Vodka Premium",
+    "oldPrice": 25,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Saquê",
+    "oldPrice": 25,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Gin Premium",
+    "oldPrice": 30,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Campari",
+    "oldPrice": 20,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Heineken 600ml",
+    "oldPrice": 22,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Original 600ml",
+    "oldPrice": 18,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Spaten 600ml",
+    "oldPrice": 18,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Caipirinha Limão",
+    "oldPrice": 25,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Gin Tônica",
+    "oldPrice": 32,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Coca-Cola Lata",
+    "oldPrice": 10,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Guaraná Antarctica",
+    "oldPrice": 10,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Sonho de Valsa",
+    "oldPrice": 3.5,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Paçoca",
+    "oldPrice": 1.5,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Mini Coxinha",
+    "oldPrice": 35,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Baião do Beco",
+    "oldPrice": 55,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Carreteiro das Artes",
+    "oldPrice": 52,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Pincelada de Mignon",
+    "oldPrice": 68,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Mini Coxinha de Jaca",
+    "oldPrice": 38,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Feijoada",
+    "oldPrice": 65,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Feijoada P/ 2",
+    "oldPrice": 110,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Salada de Frango",
+    "oldPrice": 42,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  },
+  {
+    "category": "OUTROS",
+    "product": "Coca-Cola Zero Lata",
+    "oldPrice": 10,
+    "newPrice": "-",
+    "status": "ocultado do tablet"
+  }
+]
