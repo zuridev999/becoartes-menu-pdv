@@ -58,7 +58,8 @@ export interface AppState {
   addModifierGroup: (group: ModifierGroup) => Promise<void>;
   updateModifierGroup: (id: string, group: Partial<ModifierGroup>) => Promise<void>;
   deleteModifierGroup: (id: string) => Promise<void>;
-  linkGroupToProduct: (productId: string, groupId: string) => Promise<void>;
+  linkGroupToProduct: (productId: string, groupId: string, linked: boolean) => Promise<void>;
+  linkGroupToCategory: (categoryId: string, groupId: string, linked: boolean) => Promise<void>;
   upsertCategory: (cat: Category) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
   reorderCategories: (categories: Category[]) => Promise<void>;
@@ -305,13 +306,14 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       // 2. Carregar Dados
-      const [categories, menuItems, modifierGroups, sellers, kitchenData, mgMapping, tablesRes, logsRes] = await Promise.all([
+      const [categories, menuItems, modifierGroups, sellers, kitchenData, mgMapping, catMgMapping, tablesRes, logsRes] = await Promise.all([
         Repository.getCategories(),
         Repository.getMenu(),
         Repository.getModifierGroups(),
         Repository.getSellers(),
         Repository.getKitchenOrders(),
         Repository.getProductModifierGroupsMapping(),
+        Repository.getCategoryModifierGroupsMapping(),
         db.execute("SELECT * FROM tables"),
         db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50")
       ]);
@@ -324,8 +326,11 @@ export const useStore = create<AppState>((set, get) => ({
       modifierGroups.forEach(g => mgMap[g.id] = g);
       
       menuItems.forEach(item => {
-        const groupIds = mgMapping[item.id] || [];
-        item.modifierGroups = groupIds.map(gid => mgMap[gid]).filter(Boolean);
+        const prodGroupIds = mgMapping[item.id] || [];
+        const catGroupIds = catMgMapping[item.categoryId] || [];
+        // Unir grupos da categoria e do produto (evitando duplicatas)
+        const allGroupIds = Array.from(new Set([...catGroupIds, ...prodGroupIds]));
+        item.modifierGroups = allGroupIds.map(gid => mgMap[gid]).filter(Boolean);
       });
 
       // 3. Mesas
@@ -561,13 +566,14 @@ export const useStore = create<AppState>((set, get) => ({
 
   syncData: async () => {
     try {
-      const [kitchenData, tablesRes, categories, menuItems, modifierGroups, mgMapping] = await Promise.all([
+      const [kitchenData, tablesRes, categories, menuItems, modifierGroups, mgMapping, catMgMapping] = await Promise.all([
         Repository.getKitchenOrders(),
         db.execute("SELECT * FROM tables"),
         Repository.getCategories(),
         Repository.getMenu(),
         Repository.getModifierGroups(),
-        Repository.getProductModifierGroupsMapping()
+        Repository.getProductModifierGroupsMapping(),
+        Repository.getCategoryModifierGroupsMapping()
       ]);
 
       const { orders: kitchenOrders, serverNow } = kitchenData;
@@ -578,8 +584,10 @@ export const useStore = create<AppState>((set, get) => ({
       modifierGroups.forEach(g => mgMap[g.id] = g);
       
       menuItems.forEach(item => {
-        const groupIds = mgMapping[item.id] || [];
-        item.modifierGroups = groupIds.map(gid => mgMap[gid]).filter(Boolean);
+        const prodGroupIds = mgMapping[item.id] || [];
+        const catGroupIds = catMgMapping[item.categoryId] || [];
+        const allGroupIds = Array.from(new Set([...catGroupIds, ...prodGroupIds]));
+        item.modifierGroups = allGroupIds.map(gid => mgMap[gid]).filter(Boolean);
       });
 
       const updatedTables = tablesRes.rows.map((row: any) => ({
@@ -1013,18 +1021,14 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
 
-  linkGroupToProduct: async (productId, groupId) => {
-    set((state) => ({
-      menu: state.menu.map(p => {
-        if (p.id === productId) {
-          const group = state.modifierGroups.find(g => g.id === groupId);
-          if (group && !p.modifierGroups.some(mg => mg.id === groupId)) {
-            return { ...p, modifierGroups: [...p.modifierGroups, group] };
-          }
-        }
-        return p;
-      })
-    }));
+  linkGroupToProduct: async (productId, groupId, linked) => {
+    await Repository.linkGroupToProduct(productId, groupId, linked);
+    await get().syncData();
+  },
+
+  linkGroupToCategory: async (categoryId, groupId, linked) => {
+    await Repository.linkGroupToCategory(categoryId, groupId, linked);
+    await get().syncData();
   },
 
   openTable: async (tableId, initialItems = [], origin = 'pdv', sellerId) => {

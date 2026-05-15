@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Clock, CheckCircle2, X, AlertCircle, Bell } from 'lucide-react';
+import { Clock, CheckCircle2, X, AlertCircle, Bell, ChefHat } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
 
@@ -252,39 +252,35 @@ export function KitchenView() {
   }, [activeOrders]);
   
   return (
-    <div className="p-4 bg-white h-screen text-black font-['Outfit'] overflow-hidden flex flex-col uppercase">
-      {!audioUnlocked && (
-        <div className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-12 text-center">
-           <div className="w-32 h-32 bg-primary/20 rounded-full flex items-center justify-center text-primary mb-8 animate-pulse">
-              <Bell size={64} />
-           </div>
-           <h2 className="text-5xl font-black text-white mb-6">Modo Cozinha</h2>
-           <p className="text-gray-400 text-xl max-w-md mb-12 uppercase font-bold tracking-widest leading-relaxed">O navegador exige um clique para ativar os alertas sonoros de novos pedidos.</p>
-           <button 
-             onClick={() => {
-               const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
-               const audioCtx = new AudioContextClass();
-               audioCtx.resume();
-               setAudioUnlocked(true);
-             }}
-             className="btn-beco btn-beco-purple px-16 py-8 text-2xl font-black rounded-[2.5rem] shadow-2xl shadow-primary/40 active:scale-95 transition-all"
-           >
-             ATIVAR ALERTAS SONOROS
-           </button>
+    <div className="p-4 bg-[#09090b] h-screen text-white font-['Outfit'] overflow-hidden flex flex-col uppercase">
+      {/* Status Indicator */}
+      <div className="fixed top-8 right-8 z-[400] flex items-center gap-4 px-6 py-3 glass rounded-2xl border-white/5 shadow-2xl">
+        <div className="relative">
+          <div className="w-3 h-3 bg-emerald-500 rounded-full" />
+          <div className="absolute inset-0 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
         </div>
-      )}
+        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Sistema Ativo</span>
+      </div>
 
       <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar py-4 px-4">
-        <div className="grid grid-rows-2 grid-flow-col gap-10 h-full" style={{ gridAutoColumns: 'calc(40% - 24px)', minWidth: '100%' }}>
-          {activeOrders.map((order: any, idx: number) => (
-            <KitchenOrderCard 
-              key={order.id} 
-              order={order} 
-              index={idx + 1}
-              onClick={() => setSelectedOrder(order)} 
-            />
-          ))}
-        </div>
+        {activeOrders.length > 0 ? (
+          <div className="grid grid-rows-2 grid-flow-col gap-10 h-full" style={{ gridAutoColumns: 'calc(40% - 24px)', minWidth: '100%' }}>
+            {activeOrders.map((order: any, idx: number) => (
+              <KitchenOrderCard 
+                key={order.id} 
+                order={order} 
+                index={idx + 1}
+                onClick={() => setSelectedOrder(order)} 
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center text-center opacity-30">
+            <ChefHat size={80} className="mb-8" />
+            <h2 className="text-5xl font-black italic tracking-tighter mb-4">Nenhum Pedido Pendente</h2>
+            <p className="text-[10px] font-black uppercase tracking-[0.4em]">Aguardando novas comandas da cozinha...</p>
+          </div>
+        )}
       </div>
 
       <AnimatePresence>

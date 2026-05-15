@@ -8,15 +8,17 @@ const db = createClient({
   authToken: authToken,
 });
 
-async function checkSchema() {
-  const tables = await db.execute("SELECT name FROM sqlite_master WHERE type='table'");
-  for (const table of tables.rows) {
-    const tableName = table.name as string;
-    const schema = await db.execute(`SELECT sql FROM sqlite_master WHERE type='table' AND name='${tableName}'`);
-    console.log(`--- ${tableName} ---`);
-    console.log(schema.rows[0].sql);
-  }
+async function listData() {
+  const cats = await db.execute("SELECT id, name FROM categories");
+  const menu = await db.execute("SELECT id, name, category_id, image FROM menu");
+  
+  console.log("🏷️ CATEGORIAS:");
+  console.table(cats.rows);
+  
+  console.log("🍔 PRODUTOS:");
+  console.table(menu.rows);
+  
   process.exit(0);
 }
 
-checkSchema();
+listData();

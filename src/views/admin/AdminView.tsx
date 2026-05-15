@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Settings, Package, User, TrendingUp, Plus, Trash2, 
-  CheckCircle, X, ChefHat, Image, LayoutDashboard, Sparkles, Clock, ArrowLeft,
-  Eye, EyeOff, Search, GripVertical
+  Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp, 
+  ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
+  GripVertical, ChevronRight, Check
 } from 'lucide-react';
 import {
   DndContext,
@@ -80,7 +80,7 @@ const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { l
   );
 };
 
-function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSchedulingItem, toggleCategoryVisibility }: any) {
+function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSchedulingItem, toggleCategoryVisibility, isExpanded, onToggleExpand, updateProduct, categories }: any) {
   const {
     attributes,
     listeners,
@@ -97,52 +97,94 @@ function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSc
     opacity: isDragging ? 0.5 : 1
   };
 
+  const categoryProducts = menu.filter((p: any) => p.categoryId === cat.id);
+
   return (
     <div 
       ref={setNodeRef} 
       style={style} 
-      className="flex items-center justify-between p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group relative"
+      className="border-b border-white/5 hover:bg-white/[0.01] transition-all group relative"
     >
-      <div className="flex items-center gap-6">
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-2 hover:bg-white/5 rounded-lg transition-all text-gray-600 hover:text-primary">
-          <GripVertical size={20} />
+      <div className="flex items-center justify-between p-8">
+        <div className="flex items-center gap-6 flex-1 cursor-pointer" onClick={() => onToggleExpand(cat.id)}>
+          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-2 hover:bg-white/5 rounded-lg transition-all text-gray-600 hover:text-primary" onClick={(e) => e.stopPropagation()}>
+            <GripVertical size={20} />
+          </div>
+          <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center font-black text-primary">{cat.sortOrder}</div>
+          <div>
+            <p className="font-black text-lg">{cat.name}</p>
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+              {categoryProducts.length} Produtos • {isExpanded ? 'Clique para recolher' : 'Clique para ver itens'}
+            </p>
+          </div>
         </div>
-        <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center font-black text-primary">{cat.sortOrder}</div>
-        <div>
-          <p className="font-black text-lg">{cat.name}</p>
-          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-            {menu.filter((p: any) => p.categoryId === cat.id).length} Produtos
-          </p>
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => toggleCategoryVisibility(cat.id)} 
+            className={`p-4 glass rounded-xl transition-all ${cat.visible ? 'text-primary' : 'text-gray-500 opacity-50'}`}
+          >
+            {cat.visible ? <Eye size={18}/> : <EyeOff size={18}/>}
+          </button>
+          <button 
+            onClick={() => setSchedulingItem({ type: 'category', id: cat.id, name: cat.name, config: cat.schedule })} 
+            className={`p-4 glass rounded-xl ${cat.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}
+          >
+            <Clock size={18}/>
+          </button>
+          <button onClick={() => {
+            const newName = prompt('Novo nome da categoria:', cat.name);
+            if (newName) upsertCategory({ ...cat, name: newName });
+          }} className="p-4 glass rounded-xl text-primary"><Settings size={18}/></button>
+          <button 
+            onClick={() => {
+              if (confirm(`Tem certeza que deseja excluir a categoria "${cat.name}"? Os produtos vinculados ficarão sem categoria.`)) {
+                deleteCategory(cat.id);
+              }
+            }} 
+            className="p-4 glass rounded-xl text-rose-500 hover:bg-rose-500/10"
+          >
+            <Trash2 size={18}/>
+          </button>
         </div>
       </div>
-      <div className="flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-all">
-        <button 
-          onClick={() => toggleCategoryVisibility(cat.id)} 
-          className={`p-4 glass rounded-xl transition-all ${cat.visible ? 'text-primary' : 'text-gray-500 opacity-50'}`}
-        >
-          {cat.visible ? <Eye size={18}/> : <EyeOff size={18}/>}
-        </button>
-        <button 
-          onClick={() => setSchedulingItem({ type: 'category', id: cat.id, name: cat.name, config: cat.schedule })} 
-          className={`p-4 glass rounded-xl ${cat.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}
-        >
-          <Clock size={18}/>
-        </button>
-        <button onClick={() => {
-          const newName = prompt('Novo nome da categoria:', cat.name);
-          if (newName) upsertCategory({ ...cat, name: newName });
-        }} className="p-4 glass rounded-xl text-primary"><Settings size={18}/></button>
-        <button 
-          onClick={() => {
-            if (confirm(`Tem certeza que deseja excluir a categoria "${cat.name}"? Os produtos vinculados ficarão sem categoria.`)) {
-              deleteCategory(cat.id);
-            }
-          }} 
-          className="p-4 glass rounded-xl text-rose-500 hover:bg-rose-500/10"
-        >
-          <Trash2 size={18}/>
-        </button>
-      </div>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }} 
+            animate={{ height: 'auto', opacity: 1 }} 
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden bg-black/20"
+          >
+            <div className="p-8 pt-0 space-y-2">
+              {categoryProducts.length === 0 ? (
+                <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest p-4 text-center">Nenhum produto nesta categoria</p>
+              ) : (
+                categoryProducts.map((p: any) => (
+                  <div key={p.id} className="flex items-center justify-between p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all">
+                    <div className="flex items-center gap-4">
+                      <img src={p.image} className="w-10 h-10 rounded-lg object-cover" />
+                      <p className="font-bold text-sm">{p.name}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <label className="text-[9px] font-black uppercase text-zinc-500">Mover para:</label>
+                      <select 
+                        value={cat.id}
+                        onChange={(e) => updateProduct(p.id, { categoryId: e.target.value })}
+                        className="bg-white/5 p-2 rounded-lg text-[10px] font-bold outline-none border border-white/5 focus:border-primary/40"
+                      >
+                        {categories.map((c: any) => (
+                          <option key={c.id} value={c.id} className="bg-[#0a0a0c]">{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -159,6 +201,8 @@ export function AdminView() {
   const activeTab = adminTab;
   const setActiveTab = setAdminTab;
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingGroup, setEditingGroup] = useState<string | null>(null);
+
 
   const [schedulingItem, setSchedulingItem] = useState<{ type: 'product' | 'category', id: string, name: string, config?: ScheduleConfig } | null>(null);
 
@@ -224,6 +268,8 @@ export function AdminView() {
       </div>
     </motion.div>
   );
+
+  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
 
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
@@ -385,6 +431,10 @@ export function AdminView() {
                     deleteCategory={deleteCategory}
                     setSchedulingItem={setSchedulingItem}
                     toggleCategoryVisibility={toggleCategoryVisibility}
+                    isExpanded={expandedCategoryId === cat.id}
+                    onToggleExpand={(id: string) => setExpandedCategoryId(expandedCategoryId === id ? null : id)}
+                    updateProduct={updateProduct}
+                    categories={categories}
                   />
                 ))}
               </SortableContext>
@@ -641,86 +691,154 @@ export function AdminView() {
       )}
 
       {activeTab === 'optionals' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
-          <div className="space-y-6">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
+          <div className="xl:col-span-1 space-y-6">
             <div className="flex justify-between items-center mb-8 px-4">
-              <h3 className="text-3xl font-black flex items-center gap-4"><Sparkles size={28}/> Grupos de Opcionais</h3>
+              <h3 className="text-3xl font-black flex items-center gap-4"><Sparkles size={28}/> Grupos</h3>
               <button 
                 onClick={() => addModifierGroup({ id: Math.random().toString(36).substr(2, 9), name: 'Novo Grupo', minChoices: 0, maxChoices: 1, isRequired: false, status: 'active', modifiers: [] })}
-                className="p-3 bg-primary text-white rounded-xl"
+                className="p-3 bg-primary text-white rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all"
               >
                 <Plus size={20}/>
               </button>
             </div>
-            <div className="glass rounded-[3rem] border-white/5 overflow-hidden">
+            <div className="glass rounded-[3rem] border-white/5 overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar">
               {(modifierGroups || []).map((group) => (
-                <div key={group.id} className="p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group">
-                  <div className="flex justify-between items-start mb-4">
+                <button 
+                  key={group.id} 
+                  onClick={() => setEditingGroup(group.id)}
+                  className={`w-full p-8 border-b border-white/5 text-left transition-all group ${editingGroup === group.id ? 'bg-primary/10 border-primary/20' : 'hover:bg-white/[0.02]'}`}
+                >
+                  <div className="flex justify-between items-start">
                     <div>
-                      <h4 className="font-black text-xl">{group.name}</h4>
-                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                        {group.isRequired ? 'Obrigatório' : 'Opcional'} • {group.minChoices} a {group.maxChoices} escolhas
+                      <h4 className={`font-black text-xl ${editingGroup === group.id ? 'text-primary' : ''}`}>{group.name}</h4>
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-1">
+                        {group.isRequired ? 'Obrigatório' : 'Opcional'} • {group.modifiers.length} Opções
                       </p>
                     </div>
-                    <div className="flex gap-2">
-                       <button onClick={() => deleteModifierGroup(group.id)} className="p-3 glass rounded-xl text-rose-500"><Trash2 size={16}/></button>
-                    </div>
+                    {editingGroup === group.id && <ChevronRight size={20} className="text-primary animate-pulse" />}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {group.modifiers.map((m, idx) => (
-                      <span key={idx} className="px-3 py-1 bg-white/5 rounded-lg text-[10px] font-bold border border-white/5 flex items-center gap-2">
-                        {m.name} (+R$ {m.price.toFixed(2)})
-                        <button onClick={() => {
-                          const newModifiers = group.modifiers.filter((_, i) => i !== idx);
-                          updateModifierGroup(group.id, { modifiers: newModifiers });
-                        }} className="text-rose-500 hover:text-rose-400">×</button>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    {addingToGroup === group.id ? (
-                      <div className="flex gap-2 w-full animate-in slide-in-from-top-2 duration-300">
-                        <input 
-                          autoFocus
-                          placeholder="Nome..." 
-                          value={newModifierName} 
-                          onChange={(e) => setNewModifierName(e.target.value)}
-                          className="flex-1 glass px-4 py-2 rounded-xl text-xs font-bold border-white/10 outline-none"
-                        />
-                        <input 
-                          placeholder="R$..." 
-                          value={newModifierPrice} 
-                          onChange={(e) => setNewModifierPrice(e.target.value)}
-                          className="w-20 glass px-4 py-2 rounded-xl text-xs font-bold border-white/10 outline-none"
-                        />
-                        <button 
-                          onClick={() => {
-                            if (newModifierName) {
-                              const newModifiers = [...group.modifiers, { id: Math.random().toString(36).substr(2, 9), name: newModifierName, price: Number(newModifierPrice) || 0, status: 'active' as const }];
-                              updateModifierGroup(group.id, { modifiers: newModifiers });
-                              setNewModifierName('');
-                              setNewModifierPrice('');
-                              setAddingToGroup(null);
-                            }
-                          }}
-                          className="px-4 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase"
-                        >
-                          OK
-                        </button>
-                        <button onClick={() => setAddingToGroup(null)} className="px-4 py-2 glass rounded-xl text-[10px] font-black uppercase">Cancelar</button>
-                      </div>
-                    ) : (
-                      <button 
-                        onClick={() => setAddingToGroup(group.id)}
-                        className="px-3 py-1 bg-primary/10 text-primary rounded-lg text-[10px] font-black border border-primary/20 hover:bg-primary/20 transition-all"
-                      >
-                        + Add Opção
-                      </button>
-                    )}
-                  </div>
-                </div>
+                </button>
               ))}
             </div>
+          </div>
+
+          <div className="xl:col-span-2">
+            {editingGroup ? (
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+                {modifierGroups.filter(g => g.id === editingGroup).map(group => (
+                  <div key={group.id} className="space-y-12">
+                    {/* Configuração Básica */}
+                    <div className="glass-card p-10 border-white/5 shadow-2xl">
+                      <div className="flex justify-between items-center mb-8">
+                        <h4 className="text-2xl font-black tracking-tighter">Configurar "{group.name}"</h4>
+                        <button onClick={() => { if(confirm('Excluir este grupo?')) { deleteModifierGroup(group.id); setEditingGroup(null); } }} className="p-4 glass rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all"><Trash2 size={18}/></button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <ConfigInput label="Nome do Grupo" value={group.name} onChange={(v) => updateModifierGroup(group.id, { name: v })} />
+                        <div className="grid grid-cols-2 gap-4">
+                          <ConfigInput label="Min" type="number" value={group.minChoices} onChange={(v) => updateModifierGroup(group.id, { minChoices: Number(v) })} />
+                          <ConfigInput label="Max" type="number" value={group.maxChoices} onChange={(v) => updateModifierGroup(group.id, { maxChoices: Number(v) })} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Opções */}
+                    <div className="glass-card p-10 border-white/5">
+                      <h4 className="text-xl font-black mb-8 flex items-center gap-3"><Plus size={20} className="text-primary"/> Opções de Escolha</h4>
+                      <div className="space-y-3">
+                        {group.modifiers.map((m, idx) => (
+                          <div key={m.id || idx} className="flex items-center gap-4 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all">
+                            <input 
+                              value={m.name} 
+                              onChange={(e) => {
+                                const newMods = [...group.modifiers];
+                                newMods[idx] = { ...m, name: e.target.value };
+                                updateModifierGroup(group.id, { modifiers: newMods });
+                              }}
+                              className="flex-1 bg-transparent outline-none font-bold text-sm"
+                            />
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-gray-500 uppercase">R$</span>
+                              <input 
+                                type="number"
+                                value={m.price} 
+                                onChange={(e) => {
+                                  const newMods = [...group.modifiers];
+                                  newMods[idx] = { ...m, price: Number(e.target.value) || 0 };
+                                  updateModifierGroup(group.id, { modifiers: newMods });
+                                }}
+                                className="w-20 bg-transparent outline-none font-bold text-sm text-right"
+                              />
+                            </div>
+                            <button onClick={() => {
+                              const newMods = group.modifiers.filter((_, i) => i !== idx);
+                              updateModifierGroup(group.id, { modifiers: newMods });
+                            }} className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"><X size={16}/></button>
+                          </div>
+                        ))}
+                        <button 
+                          onClick={() => {
+                            const newMods = [...group.modifiers, { id: Math.random().toString(36).substr(2, 9), name: 'Nova Opção', price: 0, status: 'active' as const }];
+                            updateModifierGroup(group.id, { modifiers: newMods });
+                          }}
+                          className="w-full p-4 glass border-dashed border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white/5 text-primary transition-all"
+                        >
+                          + Adicionar Nova Opção
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Vínculos */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="glass-card p-10 border-white/5">
+                        <h4 className="text-xl font-black mb-6 flex items-center gap-3 text-primary"><LayoutDashboard size={20}/> Aplicar em Categorias</h4>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-6 leading-relaxed">Atrelar a uma categoria inteira (todos os produtos herdam)</p>
+                        <div className="space-y-2">
+                          {categories.map(cat => (
+                            <button 
+                              key={cat.id}
+                              onClick={() => linkGroupToCategory(cat.id, group.id, true)} 
+                              className="w-full p-4 glass rounded-xl text-left flex justify-between items-center group hover:border-primary/40 transition-all"
+                            >
+                              <span className="font-bold text-sm">{cat.name}</span>
+                              <Plus size={16} className="text-gray-500 group-hover:text-primary" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="glass-card p-10 border-white/5">
+                        <h4 className="text-xl font-black mb-6 flex items-center gap-3 text-accent"><Package size={20}/> Aplicar em Produtos</h4>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-6 leading-relaxed">Escolher apenas itens específicos</p>
+                        <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-2 pr-2">
+                          {menu.map(p => (
+                            <button 
+                              key={p.id}
+                              onClick={() => linkGroupToProduct(p.id, group.id, !p.modifierGroups.some(mg => mg.id === group.id))}
+                              className={`w-full p-4 glass rounded-xl text-left flex justify-between items-center transition-all ${p.modifierGroups.some(mg => mg.id === group.id) ? 'bg-primary/5 border-primary/20' : 'hover:border-white/20'}`}
+                            >
+                              <span className="font-bold text-sm">{p.name}</span>
+                              {p.modifierGroups.some(mg => mg.id === group.id) ? <Check size={16} className="text-primary"/> : <Plus size={16} className="text-gray-500"/>}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center glass rounded-[3rem] border-white/5 border-dashed p-20 text-center">
+                <div className="w-24 h-24 bg-white/5 rounded-[2rem] flex items-center justify-center text-gray-700 mb-8">
+                  <Sparkles size={48} />
+                </div>
+                <h3 className="text-3xl font-black mb-4 tracking-tighter">Selecione um Grupo</h3>
+                <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] max-w-xs leading-relaxed">
+                  Escolha um grupo à esquerda para configurar opções, preços e onde ele deve aparecer no cardápio.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

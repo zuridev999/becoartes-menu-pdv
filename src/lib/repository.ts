@@ -147,6 +147,51 @@ export const Repository = {
     return mapping;
   },
 
+  async getCategoryModifierGroupsMapping() {
+    const res = await db.execute(`
+      SELECT cmg.*
+      FROM category_modifier_groups cmg
+      JOIN modifier_groups mg ON cmg.group_id = mg.id
+      WHERE mg.status = 'active'
+      ORDER BY cmg.category_id, cmg.sort_order
+    `);
+    
+    const mapping: Record<string, string[]> = {};
+    res.rows.forEach((row: any) => {
+      if (!mapping[row.category_id]) mapping[row.category_id] = [];
+      mapping[row.category_id].push(row.group_id as string);
+    });
+    return mapping;
+  },
+
+  async linkGroupToCategory(categoryId: string, groupId: string, linked: boolean) {
+    if (linked) {
+      await db.execute({
+        sql: "INSERT OR IGNORE INTO category_modifier_groups (category_id, group_id) VALUES (?, ?)",
+        args: [categoryId, groupId]
+      });
+    } else {
+      await db.execute({
+        sql: "DELETE FROM category_modifier_groups WHERE category_id = ? AND group_id = ?",
+        args: [categoryId, groupId]
+      });
+    }
+  },
+
+  async linkGroupToProduct(productId: string, groupId: string, linked: boolean) {
+    if (linked) {
+      await db.execute({
+        sql: "INSERT OR IGNORE INTO product_modifier_groups (product_id, group_id) VALUES (?, ?)",
+        args: [productId, groupId]
+      });
+    } else {
+      await db.execute({
+        sql: "DELETE FROM product_modifier_groups WHERE product_id = ? AND group_id = ?",
+        args: [productId, groupId]
+      });
+    }
+  },
+
   async deleteProduct(id: string) {
     await db.execute({ sql: "DELETE FROM menu WHERE id = ?", args: [id] });
   },
