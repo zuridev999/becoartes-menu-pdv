@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Clock, CheckCircle2, X, AlertCircle, Bell, ChefHat } from 'lucide-react';
+import { Clock, CheckCircle2, X, AlertCircle, ChefHat } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
 
@@ -180,7 +180,6 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
 export function KitchenView() {
   const { kitchenOrders, updateKitchenOrderStatus, syncData } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
-  const [audioUnlocked, setAudioUnlocked] = useState(false);
   const lastOrderIds = useRef<string[]>([]);
 
   const activeOrders = kitchenOrders.filter((o: any) => o.status !== 'ready');

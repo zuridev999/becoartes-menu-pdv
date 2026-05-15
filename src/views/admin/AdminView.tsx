@@ -195,7 +195,8 @@ export function AdminView() {
     settings, updateSettings,
     sellers, addSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
-    adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, toggleCategoryVisibility
+    adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, toggleCategoryVisibility,
+    linkGroupToCategory, linkGroupToProduct
   } = useStore();
 
   const activeTab = adminTab;
@@ -212,7 +213,6 @@ export function AdminView() {
   const [newSellerPin, setNewSellerPin] = useState('1234');
   const [newModifierName, setNewModifierName] = useState('');
   const [newModifierPrice, setNewModifierPrice] = useState('');
-  const [addingToGroup, setAddingToGroup] = useState<string | null>(null);
 
   const [movements, setMovements] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
