@@ -211,8 +211,6 @@ export function AdminView() {
   const [newSellerRole, setNewSellerRole] = useState<'garçom' | 'atendente' | 'gerente' | 'outro'>('garçom');
   const [newSellerPermission, setNewSellerPermission] = useState<'admin' | 'standard' | 'restricted'>('standard');
   const [newSellerPin, setNewSellerPin] = useState('1234');
-  const [newModifierName, setNewModifierName] = useState('');
-  const [newModifierPrice, setNewModifierPrice] = useState('');
 
   const [movements, setMovements] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
