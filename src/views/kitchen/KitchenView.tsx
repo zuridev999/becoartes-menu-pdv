@@ -66,6 +66,19 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
             <p className="text-xl font-black mt-4 ml-12 text-red-600 animate-pulse">+ {order.items.length - 10} OUTROS ITENS...</p>
           )}
         </div>
+        
+        {order.items.some((i: any) => i.notes) && (
+          <div className="mt-6 p-5 bg-red-600 rounded-3xl shadow-xl border-4 border-white animate-pulse">
+            <p className="text-[10px] font-black uppercase text-white mb-2 tracking-[0.2em]">Observações do Pedido:</p>
+            <div className="space-y-1">
+              {order.items.filter((i: any) => i.notes).map((item: any, idx: number) => (
+                <p key={idx} className="text-2xl font-black text-white leading-tight">
+                  !! {item.name}: {item.notes}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className={`mt-4 pt-4 border-t flex justify-between items-center ${isDanger ? 'border-black/20' : 'border-black/5'}`}>

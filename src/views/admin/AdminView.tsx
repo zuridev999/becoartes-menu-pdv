@@ -545,7 +545,15 @@ export function AdminView() {
             </div>
             {canAddProduct && (
               <button 
-                onClick={() => upsertCategory({ id: createId(), name: 'Nova Categoria', sortOrder: categories.length, visible: true })} 
+                onClick={() => setAdminDialog({
+                  title: 'Nova Categoria',
+                  description: 'Digite o nome da categoria para o cardápio.',
+                  confirmLabel: 'Criar Categoria',
+                  input: { label: 'Nome da Categoria', placeholder: 'Ex: Entradas, Bebidas...' },
+                  onConfirm: (name) => {
+                    if (name) upsertCategory({ id: createId(), name, sortOrder: categories.length, visible: true });
+                  }
+                })} 
                 className="px-8 py-4 bg-primary text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all flex items-center gap-3"
               >
                 <Plus size={20}/> Adicionar Categoria
@@ -660,22 +668,34 @@ export function AdminView() {
             {editingProduct && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-12 border-primary/20 sticky top-12 h-fit shadow-2xl shadow-primary/10 overflow-hidden">
                 <div className="flex justify-between items-start mb-10">
-                  <h3 className="text-3xl font-black">Editar Produto</h3>
-                  {canToggleVisibility && (
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-3xl font-black">
+                      {menu.some(p => p.id === editingProduct.id) ? 'Editar Produto' : 'Novo Produto'}
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {canToggleVisibility && (
+                      <button 
+                        onClick={async () => {
+                          if (editingProduct.id.startsWith('new_')) {
+                            setEditingProduct({...editingProduct, visible: !editingProduct.visible});
+                          } else {
+                            await toggleProductVisibility(editingProduct.id);
+                            setEditingProduct({...editingProduct, visible: !editingProduct.visible});
+                          }
+                        }}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
+                      >
+                        {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
+                      </button>
+                    )}
                     <button 
-                      onClick={async () => {
-                        if (editingProduct.id.startsWith('new_')) {
-                          setEditingProduct({...editingProduct, visible: !editingProduct.visible});
-                        } else {
-                          await toggleProductVisibility(editingProduct.id);
-                          setEditingProduct({...editingProduct, visible: !editingProduct.visible});
-                        }
-                      }}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
+                      onClick={() => setEditingProduct(null)}
+                      className="w-10 h-10 glass rounded-full flex items-center justify-center hover:bg-rose-500/10 hover:text-rose-500 transition-all"
                     >
-                      {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
+                      <X size={20} />
                     </button>
-                  )}
+                  </div>
                 </div>
                 <div className="space-y-8">
                   <ConfigInput label="Nome do Produto" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} placeholder="Ex: Suco de Laranja 400ml" />
