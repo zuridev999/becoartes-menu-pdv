@@ -913,17 +913,20 @@ export const useStore = create<AppState>((set, get) => ({
 
     const orderId = createId();
     const total = getOrderItemsTotal(table.cart);
+    const persistedItems: OrderItem[] = table.cart.map(item => ({
+      ...item,
+      id: createId(),
+      orderId
+    }));
 
-    // Repositório
-    await Repository.createOrder(orderId, tableId, total, origin, sellerId || null);
-
-    // Salvar Itens do Pedido (Mover do Carrinho)
-    const persistedItems: OrderItem[] = [];
-    for (const item of table.cart) {
-      const itemId = createId();
-      await Repository.addOrderItem(itemId, orderId, item.productId, item.quantity, item.price, JSON.stringify(item.selectedModifiers), item.notes || '');
-      persistedItems.push({ ...item, id: itemId, orderId });
-    }
+    await Repository.createKitchenOrderWithItems({
+      orderId,
+      tableId,
+      total,
+      origin,
+      sellerId: sellerId || null,
+      items: persistedItems
+    });
 
     const newKitchenOrder: KitchenOrder = {
       id: orderId,
@@ -934,12 +937,6 @@ export const useStore = create<AppState>((set, get) => ({
       origin: origin as 'tablet' | 'pdv',
       createdAt: new Date()
     };
-
-    // Atualizar Status da Mesa no DB
-    await db.execute({
-      sql: "UPDATE tables SET status = ? WHERE id = ?",
-      args: ['ordering', tableId]
-    });
 
     set((state) => ({
       kitchenOrders: [...state.kitchenOrders, newKitchenOrder],

@@ -2,7 +2,7 @@ import { db } from './db';
 import type { SellerInput } from './schemas';
 import { createId } from './id';
 import { getOrderItemsTotal } from './totals';
-import type { ClosedBill } from '../types';
+import type { ClosedBill, OrderItem } from '../types';
 
 const OS_EMPRESA_ID = import.meta.env.VITE_OS_EMPRESA_ID || 'e19cbcce-b2a7-4cc1-bf70-c06d2f8feb8a';
 const OS_TENANT_SLUG = import.meta.env.VITE_OS_TENANT_SLUG || 'becoartes';
@@ -369,6 +369,40 @@ export const Repository = {
       sql: "INSERT INTO order_items (id, order_id, product_id, quantity, price_at_time, selected_modifiers, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
       args: [id, orderId, productId, qty, price, modifiers, notes]
     });
+  },
+
+  async createKitchenOrderWithItems(input: {
+    orderId: string;
+    tableId: string;
+    total: number;
+    origin: string;
+    sellerId: string | null;
+    items: OrderItem[];
+  }) {
+    const batch = [
+      {
+        sql: "INSERT INTO orders (id, table_id, total, status, origin, created_by_id) VALUES (?, ?, ?, ?, ?, ?)",
+        args: [input.orderId, input.tableId, input.total, 'pending', input.origin, input.sellerId]
+      },
+      ...input.items.map(item => ({
+        sql: "INSERT INTO order_items (id, order_id, product_id, quantity, price_at_time, selected_modifiers, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        args: [
+          item.id,
+          input.orderId,
+          item.productId,
+          item.quantity,
+          item.price,
+          JSON.stringify(item.selectedModifiers || []),
+          item.notes || ''
+        ]
+      })),
+      {
+        sql: "UPDATE tables SET status = ? WHERE id = ?",
+        args: ['ordering', input.tableId]
+      }
+    ];
+
+    await db.batch(batch, 'write');
   },
 
   async getKitchenOrders() {

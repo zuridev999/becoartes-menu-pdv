@@ -3,6 +3,8 @@ import { Clock, CheckCircle2, X, AlertCircle, ChefHat } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
 
+const KITCHEN_SYNC_INTERVAL_MS = 5000;
+
 function KitchenOrderCard({ order, index, onClick }: { order: any, index: number, onClick: () => void }) {
   const [elapsedMs, setElapsedMs] = useState(0);
   const { serverTimeOffset } = useStore();
@@ -180,30 +182,103 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
 export function KitchenView() {
   const { kitchenOrders, updateKitchenOrderStatus, syncData } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [soundReady, setSoundReady] = useState(false);
   const lastOrderIds = useRef<string[]>([]);
+  const hasInitializedOrderTracking = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   const activeOrders = kitchenOrders.filter((o: any) => o.status !== 'ready');
+  const activeOrderIds = activeOrders.map((o: any) => o.id).join('|');
 
-  // Auto-sync na Cozinha (30s)
+  // Auto-sync curto: a cozinha precisa reagir em segundos, não em ciclos longos.
   useEffect(() => {
+    let isSyncing = false;
+
+    const runSync = async (reason: string) => {
+      if (isSyncing) return;
+      isSyncing = true;
+      try {
+        console.log(`Kitchen syncing: ${reason}`);
+        await syncData();
+      } catch (error) {
+        console.warn('Falha ao sincronizar cozinha:', error);
+      } finally {
+        isSyncing = false;
+      }
+    };
+
     const interval = setInterval(() => {
-      console.log("🔄 Kitchen auto-syncing...");
-      syncData();
-    }, 30000);
-    return () => clearInterval(interval);
+      runSync('interval');
+    }, KITCHEN_SYNC_INTERVAL_MS);
+
+    const handleResume = () => {
+      if (!document.hidden) runSync('resume');
+    };
+
+    window.addEventListener('focus', handleResume);
+    window.addEventListener('online', handleResume);
+    document.addEventListener('visibilitychange', handleResume);
+    runSync('mount');
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleResume);
+      window.removeEventListener('online', handleResume);
+      document.removeEventListener('visibilitychange', handleResume);
+    };
   }, [syncData]);
+
+  const getAudioContext = async (shouldResume = false) => {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return null;
+
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioContextClass();
+    }
+
+    if (shouldResume && audioCtxRef.current.state === 'suspended') {
+      await audioCtxRef.current.resume();
+    }
+
+    return audioCtxRef.current;
+  };
+
+  const unlockKitchenSound = async () => {
+    try {
+      const audioCtx = await getAudioContext(true);
+      setSoundReady(audioCtx?.state === 'running');
+    } catch (error) {
+      console.warn('Falha ao ativar som da cozinha:', error);
+      setSoundReady(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      unlockKitchenSound();
+    };
+
+    window.addEventListener('pointerdown', handleFirstInteraction, { once: true });
+    window.addEventListener('keydown', handleFirstInteraction, { once: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', handleFirstInteraction);
+      window.removeEventListener('keydown', handleFirstInteraction);
+    };
+  }, []);
 
   // Função para tocar o sininho (Web Audio API)
   const playBellSound = async () => {
     try {
-      const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
-      const audioCtx = new AudioContextClass();
+      const audioCtx = await getAudioContext(true);
+      if (!audioCtx) return;
       
-      // Se estiver suspenso, não adianta tentar tocar agora (precisa de clique)
       if (audioCtx.state === 'suspended') {
-        console.warn("⚠️ AudioContext suspenso. Clique na tela para ativar o som.");
+        console.warn("AudioContext suspenso. Clique em Ativar Som na cozinha.");
+        setSoundReady(false);
         return;
       }
+      setSoundReady(true);
 
       const playDing = (time: number) => {
         const osc = audioCtx.createOscillator();
@@ -242,13 +317,19 @@ export function KitchenView() {
     const currentIds = activeOrders.map(o => o.id);
     const hasNewOrder = currentIds.some(id => !lastOrderIds.current.includes(id));
     
-    if (hasNewOrder && lastOrderIds.current.length > 0) {
-      console.log("🔔 Novo pedido detectado! Tocando sininho...");
+    if (!hasInitializedOrderTracking.current) {
+      lastOrderIds.current = currentIds;
+      hasInitializedOrderTracking.current = true;
+      return;
+    }
+
+    if (hasNewOrder) {
+      console.log("Novo pedido detectado. Tocando sininho...");
       playBellSound();
     }
     
     lastOrderIds.current = currentIds;
-  }, [activeOrders]);
+  }, [activeOrderIds]);
   
   return (
     <div className="p-4 bg-[#09090b] h-screen text-white font-['Outfit'] overflow-hidden flex flex-col uppercase">
@@ -259,6 +340,14 @@ export function KitchenView() {
           <div className="absolute inset-0 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
         </div>
         <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Sistema Ativo</span>
+        <button
+          onClick={unlockKitchenSound}
+          className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+            soundReady ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-400 text-black'
+          }`}
+        >
+          {soundReady ? 'Som Ativo' : 'Ativar Som'}
+        </button>
       </div>
 
       <div className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar py-4 px-4">
