@@ -1045,7 +1045,7 @@ export const Repository = {
       SELECT sr.*, t.number as tableNumber
       FROM service_requests sr
       LEFT JOIN tables t ON sr.table_id = t.id
-      WHERE sr.status IN ('pending', 'viewed')
+      WHERE sr.status IN ('pending', 'viewed', 'resolved')
       ORDER BY sr.created_at ASC
     `);
 
