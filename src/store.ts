@@ -44,6 +44,33 @@ const parseJsonArray = (value: unknown): any[] => {
   }
 };
 
+const loadActiveOrdersByTable = async () => {
+  const ordersRes = await db.execute(`
+    SELECT oi.*, o.table_id, m.name
+    FROM order_items oi
+    JOIN orders o ON oi.order_id = o.id
+    LEFT JOIN menu m ON oi.product_id = m.id
+    WHERE o.status != 'closed'
+  `);
+
+  const ordersByTable: Record<string, OrderItem[]> = {};
+  ordersRes.rows.forEach((row: any) => {
+    if (!ordersByTable[row.table_id]) ordersByTable[row.table_id] = [];
+    ordersByTable[row.table_id].push({
+      id: row.id as string,
+      orderId: row.order_id as string,
+      productId: row.product_id as string,
+      name: row.name || '',
+      price: row.price_at_time as number,
+      quantity: row.quantity as number,
+      selectedModifiers: parseJsonArray(row.selected_modifiers),
+      notes: row.notes as string
+    });
+  });
+
+  return ordersByTable;
+};
+
 const attachModifierGroupsToMenu = (
   menuItems: Product[],
   modifierGroups: ModifierGroup[],
@@ -454,6 +481,12 @@ export const useStore = create<AppState>((set, get) => ({
         }));
       }
 
+      const ordersByTable = await loadActiveOrdersByTable();
+      tables = tables.map(table => ({
+        ...table,
+        orders: ordersByTable[table.id] || []
+      }));
+
       // 4. Determinar View Inicial pela URL e Hostname
       const hostname = window.location.hostname;
       const fullPath = window.location.pathname.substring(1);
@@ -696,28 +729,7 @@ export const useStore = create<AppState>((set, get) => ({
         lastActivity: row.last_activity ? new Date(row.last_activity as string) : new Date(),
       }));
 
-      const ordersRes = await db.execute(`
-        SELECT oi.*, o.table_id, m.name
-        FROM order_items oi 
-        JOIN orders o ON oi.order_id = o.id 
-        LEFT JOIN menu m ON oi.product_id = m.id
-        WHERE o.status != 'closed'
-      `);
-
-      const ordersByTable: Record<string, OrderItem[]> = {};
-      ordersRes.rows.forEach((row: any) => {
-        if (!ordersByTable[row.table_id]) ordersByTable[row.table_id] = [];
-        ordersByTable[row.table_id].push({
-          id: row.id as string,
-          orderId: row.order_id as string,
-          productId: row.product_id as string,
-          name: row.name || '', 
-          price: row.price_at_time as number,
-          quantity: row.quantity as number,
-          selectedModifiers: parseJsonArray(row.selected_modifiers),
-          notes: row.notes as string
-        });
-      });
+      const ordersByTable = await loadActiveOrdersByTable();
 
       const currentTables = get().tables;
       const finalTables = updatedTables.map(newTable => {
