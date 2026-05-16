@@ -7,7 +7,7 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles
+  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight
 } from 'lucide-react';
 import { useStore, type OrderItem, type Product, type Table as TableType } from '../../store';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
@@ -47,6 +47,38 @@ export function PDVView() {
   const [logDetails, setLogDetails] = useState('');
   const [logTable, setLogTable] = useState('');
   const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableNumber: number } | null>(null);
+  
+  const [selectedRequestForDetails, setSelectedRequestForDetails] = useState<any>(null);
+  const [isPanicDismissed, setIsPanicDismissed] = useState(false);
+  const [hasPanicAlert, setHasPanicAlert] = useState(false);
+
+  // Verificação de Modo Pânico (5 minutos)
+  useEffect(() => {
+    const checkPanic = () => {
+      const now = new Date();
+      const hasOldAlert = serviceRequests.some(req => {
+        if (req.status === 'resolved') return false;
+        const createdAt = req.createdAt instanceof Date ? req.createdAt : new Date(req.createdAt);
+        const diffMinutes = (now.getTime() - createdAt.getTime()) / (1000 * 60);
+        return diffMinutes >= 5;
+      });
+
+      if (hasOldAlert) {
+        if (!isPanicDismissed) setHasPanicAlert(true);
+      } else {
+        setHasPanicAlert(false);
+        setIsPanicDismissed(false);
+      }
+    };
+
+    const interval = setInterval(checkPanic, 5000);
+    return () => clearInterval(interval);
+  }, [serviceRequests, isPanicDismissed]);
+
+  // Se o número de solicitações mudar, reseta o dismiss para reavaliar
+  useEffect(() => {
+    setIsPanicDismissed(false);
+  }, [serviceRequests.length]);
 
   useEffect(() => {
     if (!categories.length) return;
@@ -142,7 +174,34 @@ export function PDVView() {
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white font-['Outfit'] p-8">
+    <div 
+      className="min-h-screen bg-[#09090b] text-white font-['Outfit'] p-8 relative overflow-hidden"
+      onClick={() => {
+        if (hasPanicAlert) {
+          setHasPanicAlert(false);
+          setIsPanicDismissed(true);
+        }
+      }}
+    >
+      {/* MODO PÂNICO OVERLAY */}
+      <AnimatePresence>
+        {hasPanicAlert && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[999] bg-rose-600/95 backdrop-blur-2xl flex flex-col items-center justify-center"
+          >
+            <div className="animate-pulse flex flex-col items-center text-center p-12">
+               <AlertTriangle size={120} className="text-white mb-8 animate-bounce" />
+               <h1 className="text-8xl font-black italic tracking-tighter text-white mb-4">ATENÇÃO CRÍTICA!</h1>
+               <p className="text-2xl font-black uppercase tracking-[0.3em] text-white/80">EXISTEM SOLICITAÇÕES PENDENTES HÁ MAIS DE 5 MINUTOS</p>
+               <p className="mt-12 text-sm font-bold bg-white text-rose-600 px-8 py-4 rounded-full uppercase tracking-widest shadow-2xl">Clique em qualquer lugar para silenciar</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* HEADER */}
       <header className="flex justify-between items-center mb-12">
         <div>
@@ -265,40 +324,78 @@ export function PDVView() {
         <div className="col-span-4 glass-card border-white/5 flex flex-col overflow-hidden">
           {/* SOLICITAÇÕES DE SERVIÇO */}
           {serviceRequests.length > 0 && (
-            <motion.div 
-              animate={{ y: [0, -4, 0] }}
-              transition={{ repeat: Infinity, duration: 1, ease: "easeInOut" }}
-              className="border-b border-rose-500 bg-rose-600 shadow-[0_0_50px_rgba(225,29,72,0.3)] relative z-10"
-            >
-              <div className="p-8 border-b border-white/20 flex justify-between items-center animate-pulse">
+            <div className="border-b border-white/5 relative z-10">
+              <div className={`p-8 border-b border-white/20 flex justify-between items-center ${serviceRequests.some(r => r.status !== 'resolved') ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'}`}>
                 <h3 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3 text-white">
-                  <Bell size={16} className="animate-bounce" /> Novas Solicitações
+                  <Bell size={16} className={serviceRequests.some(r => r.status !== 'resolved') ? 'animate-bounce' : ''} /> 
+                  {serviceRequests.some(r => r.status !== 'resolved') ? 'Novas Solicitações' : 'Solicitações Atendidas'}
                 </h3>
-                <span className="bg-white text-rose-600 px-3 py-1 rounded-full text-xs font-black shadow-xl">{serviceRequests.length}</span>
+                <span className="bg-white text-zinc-900 px-3 py-1 rounded-full text-xs font-black shadow-xl">
+                  {serviceRequests.filter(r => r.status !== 'resolved').length || serviceRequests.length}
+                </span>
               </div>
-              <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
-                {serviceRequests.map((req) => (
-                  <div key={req.id} className="p-6 border-b border-white/10 last:border-0 flex justify-between items-center group hover:bg-black/10">
-                    <div className="flex items-center gap-4">
-                       <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-white font-black italic text-xl shadow-inner">
-                         {req.tableNumber}
-                       </div>
-                       <div>
-                         <p className="text-base font-black text-white uppercase tracking-tight">{req.type === 'waiter' ? 'Chamar Garçom' : req.type === 'bill' ? 'Pedido de Conta' : req.type}</p>
-                         <p className="text-[10px] text-white/60 font-black uppercase tracking-widest">{req.message || 'Aguardando atendimento'}</p>
-                       </div>
-                    </div>
-                    <button 
-                      onClick={() => resolveService(req.id)}
-                      className="w-12 h-12 bg-white rounded-2xl text-rose-600 flex items-center justify-center shadow-2xl hover:scale-110 active:scale-90 transition-all"
-                      title="Dar Ciente"
+              <div className="max-h-[400px] overflow-y-auto custom-scrollbar bg-[#0d0d0f]">
+                {serviceRequests.map((req) => {
+                  const isResolved = req.status === 'resolved';
+                  return (
+                    <motion.div 
+                      key={req.id} 
+                      animate={!isResolved ? { y: [0, -4, 0] } : { y: 0 }}
+                      transition={{ repeat: Infinity, duration: 1, ease: "easeInOut" }}
+                      onClick={() => {
+                        if (req.type === 'order_ready' && !isResolved) {
+                          setSelectedRequestForDetails(req);
+                        }
+                      }}
+                      className={`p-6 border-b border-white/10 last:border-0 flex justify-between items-center group transition-colors ${isResolved ? 'bg-emerald-500/20' : 'bg-rose-600'} ${(!isResolved && req.type === 'order_ready') ? 'cursor-pointer hover:bg-rose-500' : ''}`}
                     >
-                      <Check size={24} strokeWidth={4} />
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-4">
+                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black italic text-xl shadow-inner ${isResolved ? 'bg-emerald-500 text-white' : 'bg-white/20 text-white'}`}>
+                           {req.tableNumber}
+                         </div>
+                         <div>
+                           <div className="flex items-center gap-2 mb-1">
+                             <p className="text-base font-black text-white uppercase tracking-tight">
+                               {req.type === 'waiter' ? 'Chamar Garçom' : 
+                                req.type === 'bill' ? 'Pedido de Conta' : 
+                                req.type === 'glass' ? 'Copo Extra' :
+                                req.type === 'cutlery' ? 'Pedir Talher' :
+                                req.type === 'order_ready' ? 'Pedido Pronto' :
+                                req.type}
+                             </p>
+                             {req.type === 'order_ready' && (
+                               <span className="bg-white/20 text-[9px] px-2 py-0.5 rounded-full font-black uppercase">Entrega</span>
+                             )}
+                           </div>
+                           <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${isResolved ? 'text-emerald-400' : 'text-white/60'}`}>
+                             <Clock size={10} /> 
+                             {new Date(req.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • 
+                             {isResolved ? 'Atendimento Concluído' : (req.type === 'order_ready' ? 'Retirar na Cozinha' : (req.message || 'Aguardando atendimento'))}
+                           </p>
+                           {!isResolved && req.type === 'order_ready' && (
+                             <div className="mt-2 p-3 bg-white/10 rounded-xl border border-white/5">
+                               <p className="text-[10px] font-bold text-white/80 leading-relaxed italic line-clamp-2">
+                                 {req.message}
+                               </p>
+                               <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-white/40 uppercase">
+                                 Clique para ver detalhes <ChevronRight size={8} />
+                               </div>
+                             </div>
+                           )}
+                         </div>
+                      </div>
+                      <button 
+                        onClick={() => resolveService(req.id)}
+                        className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-all ${isResolved ? 'bg-emerald-500 text-white hover:scale-105' : 'bg-white text-rose-600 hover:scale-110 active:scale-90'}`}
+                        title={isResolved ? "Desmarcar" : "Dar Ciente"}
+                      >
+                        <Check size={24} strokeWidth={4} />
+                      </button>
+                    </motion.div>
+                  );
+                })}
               </div>
-            </motion.div>
+            </div>
           )}
 
           <div className="flex-1 flex flex-col justify-end">
@@ -658,6 +755,53 @@ export function PDVView() {
         )}
       </AnimatePresence>
 
+      {/* MODAL DE DETALHES DA SOLICITAÇÃO (PEDIDO PRONTO) */}
+      <AnimatePresence>
+        {selectedRequestForDetails && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-md flex items-center justify-center p-8"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
+              className="w-full max-w-2xl bg-[#111115] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden"
+            >
+              <div className="p-10 border-b border-white/5 flex justify-between items-center bg-rose-600">
+                <div>
+                  <h2 className="text-4xl font-black italic tracking-tighter text-white">Mesa <span className="text-white/60">{selectedRequestForDetails.tableNumber}</span></h2>
+                  <p className="text-white/80 font-black uppercase tracking-widest text-[10px] mt-1 flex items-center gap-2">
+                    <Clock size={12} /> {new Date(selectedRequestForDetails.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • Pedido Pronto
+                  </p>
+                </div>
+                <button onClick={() => setSelectedRequestForDetails(null)} className="p-4 bg-white/20 rounded-full text-white hover:bg-white/30 transition-all">
+                  <X size={28} />
+                </button>
+              </div>
+
+              <div className="p-10">
+                <div className="bg-white/5 rounded-[2rem] p-8 border border-white/5">
+                   <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-6">Itens para entrega:</h3>
+                   <p className="text-3xl font-black text-white leading-relaxed italic">
+                     {selectedRequestForDetails.message}
+                   </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 mt-10">
+                  <button 
+                    onClick={() => {
+                      resolveService(selectedRequestForDetails.id);
+                      setSelectedRequestForDetails(null);
+                    }}
+                    className="w-full py-8 bg-emerald-500 text-white rounded-[2rem] text-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-4"
+                  >
+                    <Check size={32} strokeWidth={4} /> DAR CIENTE
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

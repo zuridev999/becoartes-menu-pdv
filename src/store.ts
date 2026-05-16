@@ -915,12 +915,20 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   resolveService: async (requestId) => {
+    const request = get().serviceRequests.find(r => r.id === requestId);
+    if (!request) return;
+
+    const newStatus = request.status === 'resolved' ? 'pending' : 'resolved';
+
     await db.execute({
       sql: "UPDATE service_requests SET status = ? WHERE id = ?",
-      args: ['resolved', requestId]
+      args: [newStatus, requestId]
     });
+
     set((state) => ({
-      serviceRequests: state.serviceRequests.filter(r => r.id !== requestId)
+      serviceRequests: state.serviceRequests.map(r => 
+        r.id === requestId ? { ...r, status: newStatus } : r
+      )
     }));
   },
 
@@ -972,6 +980,43 @@ export const useStore = create<AppState>((set, get) => ({
 
   updateKitchenOrderStatus: async (orderId, status) => {
     await Repository.updateOrderStatus(orderId, status);
+    
+    // Se o pedido ficou pronto, cria uma solicitação de serviço automática para o PDV
+    if (status === 'ready') {
+      const order = get().kitchenOrders.find(o => o.id === orderId);
+      if (order) {
+        const id = createId();
+        const itemsList = order.items.map(i => `${i.quantity}x ${i.name}`).join(', ');
+        
+        await db.execute({
+          sql: "INSERT INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
+          args: [id, order.tableId, 'order_ready', 'pending', itemsList]
+        });
+
+        const newRequest: ServiceRequest = {
+          id,
+          tableId: order.tableId,
+          tableNumber: order.tableNumber,
+          type: 'order_ready',
+          message: itemsList,
+          status: 'pending',
+          createdAt: new Date()
+        };
+
+        set((state) => ({
+          serviceRequests: [newRequest, ...state.serviceRequests]
+        }));
+
+        postOSMessage('table_alert', {
+          tableId: order.tableId,
+          tableNumber: order.tableNumber,
+          alertType: 'order_ready',
+          message: `Pedido da Mesa ${order.tableNumber} está PRONTO!`,
+          createdAt: new Date().toISOString()
+        });
+      }
+    }
+
     set((state) => ({
       kitchenOrders: state.kitchenOrders.map(o => o.id === orderId ? { ...o, status } : o)
     }));
