@@ -19,6 +19,8 @@ const BOOTSTRAP_ADMIN_PIN = import.meta.env.VITE_BOOTSTRAP_ADMIN_PIN || '';
 const DEFAULT_MANAGER_PIN = import.meta.env.VITE_DEFAULT_MANAGER_PIN || '2020';
 const DEFAULT_OPERATOR_PIN = import.meta.env.VITE_DEFAULT_OPERATOR_PIN || '0040';
 let syncIntervalId: number | undefined;
+let lastCatalogSyncAt = 0;
+const CATALOG_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 const toSessionSeller = (seller: Seller): Seller => ({ ...seller, pin: '' });
 
@@ -40,6 +42,29 @@ const parseJsonArray = (value: unknown): any[] => {
   }
 };
 
+const attachModifierGroupsToMenu = (
+  menuItems: Product[],
+  modifierGroups: ModifierGroup[],
+  productMapping: Record<string, string[]>,
+  categoryMapping: Record<string, string[]>
+) => {
+  const groupById: Record<string, ModifierGroup> = {};
+  modifierGroups.forEach(group => {
+    groupById[group.id] = group;
+  });
+
+  return menuItems.map(item => {
+    const productGroupIds = productMapping[item.id] || [];
+    const categoryGroupIds = categoryMapping[item.categoryId] || [];
+    const allGroupIds = Array.from(new Set([...categoryGroupIds, ...productGroupIds]));
+
+    return {
+      ...item,
+      modifierGroups: allGroupIds.map(groupId => groupById[groupId]).filter(Boolean)
+    };
+  });
+};
+
 
 export interface AppState {
   menu: Product[];
@@ -54,7 +79,7 @@ export interface AppState {
   closedBills: ClosedBill[];
   auditLogs: { id: string; action: string; details: string; table_number: string; origin: string; author_name: string; timestamp: string }[];
   fetchAuditLogs: () => Promise<void>;
-  syncData: () => Promise<void>;
+  syncData: (options?: { includeCatalog?: boolean }) => Promise<void>;
   addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string } | string, details?: string, tableNumber?: string, origin?: string) => Promise<void>;
   activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
   adminTab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance';
@@ -385,17 +410,8 @@ export const useStore = create<AppState>((set, get) => ({
       const { orders: kitchenOrders, serverNow } = kitchenData;
       const serverTimeOffset = serverNow.getTime() - new Date().getTime();
       
-      // Associar Modificadores em memória (O(1) lookup)
-      const mgMap: Record<string, any> = {};
-      modifierGroups.forEach(g => mgMap[g.id] = g);
-      
-      menuItems.forEach(item => {
-        const prodGroupIds = mgMapping[item.id] || [];
-        const catGroupIds = catMgMapping[item.categoryId] || [];
-        // Unir grupos da categoria e do produto (evitando duplicatas)
-        const allGroupIds = Array.from(new Set([...catGroupIds, ...prodGroupIds]));
-        item.modifierGroups = allGroupIds.map(gid => mgMap[gid]).filter(Boolean);
-      });
+      const menuWithModifierGroups = attachModifierGroupsToMenu(menuItems, modifierGroups, mgMapping, catMgMapping);
+      lastCatalogSyncAt = Date.now();
 
       // 3. Mesas
       let tables: Table[] = tablesRes.rows.map(row => ({
@@ -471,7 +487,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       set({ 
         categories, 
-        menu: menuItems, 
+        menu: menuWithModifierGroups,
         modifierGroups, 
         sellers, 
         kitchenOrders, 
@@ -632,33 +648,39 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  syncData: async () => {
+  syncData: async (options = {}) => {
     try {
-      const [kitchenData, serviceRequests, closedBills, tablesRes, categories, menuItems, modifierGroups, mgMapping, catMgMapping] = await Promise.all([
+      const shouldRefreshCatalog = Boolean(options.includeCatalog) || Date.now() - lastCatalogSyncAt > CATALOG_SYNC_INTERVAL_MS;
+      const [kitchenData, serviceRequests, closedBills, tablesRes, catalogData] = await Promise.all([
         Repository.getKitchenOrders(),
         Repository.getServiceRequests(),
         Repository.getClosedBills(),
         db.execute("SELECT * FROM tables"),
-        Repository.getCategories(),
-        Repository.getMenu(),
-        Repository.getModifierGroups(),
-        Repository.getProductModifierGroupsMapping(),
-        Repository.getCategoryModifierGroupsMapping()
+        shouldRefreshCatalog
+          ? Promise.all([
+              Repository.getCategories(),
+              Repository.getMenu(),
+              Repository.getModifierGroups(),
+              Repository.getProductModifierGroupsMapping(),
+              Repository.getCategoryModifierGroupsMapping()
+            ])
+          : Promise.resolve(null)
       ]);
 
       const { orders: kitchenOrders, serverNow } = kitchenData;
       const serverTimeOffset = serverNow.getTime() - new Date().getTime();
-
-      // Associar em memória
-      const mgMap: Record<string, any> = {};
-      modifierGroups.forEach(g => mgMap[g.id] = g);
       
-      menuItems.forEach(item => {
-        const prodGroupIds = mgMapping[item.id] || [];
-        const catGroupIds = catMgMapping[item.categoryId] || [];
-        const allGroupIds = Array.from(new Set([...catGroupIds, ...prodGroupIds]));
-        item.modifierGroups = allGroupIds.map(gid => mgMap[gid]).filter(Boolean);
-      });
+      const catalogUpdate = catalogData
+        ? (() => {
+            const [categories, menuItems, modifierGroups, productMapping, categoryMapping] = catalogData;
+            lastCatalogSyncAt = Date.now();
+            return {
+              categories,
+              menu: attachModifierGroupsToMenu(menuItems, modifierGroups, productMapping, categoryMapping),
+              modifierGroups
+            };
+          })()
+        : null;
 
       const updatedTables = tablesRes.rows.map((row: any) => ({
         id: row.id as string,
@@ -703,9 +725,7 @@ export const useStore = create<AppState>((set, get) => ({
       });
 
       set({ 
-        categories,
-        menu: menuItems,
-        modifierGroups,
+        ...(catalogUpdate || {}),
         kitchenOrders, 
         serviceRequests,
         closedBills,
@@ -1132,12 +1152,12 @@ export const useStore = create<AppState>((set, get) => ({
 
   linkGroupToProduct: async (productId, groupId, linked) => {
     await Repository.linkGroupToProduct(productId, groupId, linked);
-    await get().syncData();
+    await get().syncData({ includeCatalog: true });
   },
 
   linkGroupToCategory: async (categoryId, groupId, linked) => {
     await Repository.linkGroupToCategory(categoryId, groupId, linked);
-    await get().syncData();
+    await get().syncData({ includeCatalog: true });
   },
 
   openTable: async (tableId, initialItems = [], origin = 'pdv', sellerId) => {
