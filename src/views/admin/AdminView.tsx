@@ -207,7 +207,8 @@ export function AdminView() {
     sellers, addSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
     adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, toggleCategoryVisibility,
-    linkGroupToCategory, linkGroupToProduct, currentSeller, closedBills, addNotification
+    linkGroupToCategory, linkGroupToProduct, currentSeller, closedBills, addNotification,
+    productModifierMapping, categoryModifierMapping
   } = useStore();
 
   const activeTab = adminTab;
@@ -391,6 +392,18 @@ export function AdminView() {
         setEditingGroup(null);
       }
     });
+  };
+
+  const isGroupLinkedToCategory = (categoryId: string, groupId: string) => {
+    return Boolean(categoryModifierMapping[categoryId]?.includes(groupId));
+  };
+
+  const isGroupLinkedDirectlyToProduct = (productId: string, groupId: string) => {
+    return Boolean(productModifierMapping[productId]?.includes(groupId));
+  };
+
+  const isGroupInheritedByProduct = (product: Product, groupId: string) => {
+    return Boolean(categoryModifierMapping[product.categoryId]?.includes(groupId));
   };
 
   const compressImage = (file: File): Promise<string> => {
@@ -869,6 +882,13 @@ export function AdminView() {
                           <ConfigInput label="Min" type="number" value={group.minChoices} onChange={(v) => updateModifierGroup(group.id, { minChoices: Number(v) })} />
                           <ConfigInput label="Max" type="number" value={group.maxChoices} onChange={(v) => updateModifierGroup(group.id, { maxChoices: Number(v) })} />
                         </div>
+                        <button
+                          onClick={() => updateModifierGroup(group.id, { isRequired: !group.isRequired })}
+                          className={`md:col-span-2 p-5 rounded-2xl border text-left transition-all ${group.isRequired ? 'bg-primary/10 border-primary/30 text-primary' : 'glass border-white/5 text-gray-500 hover:text-white'}`}
+                        >
+                          <span className="block text-[10px] font-black uppercase tracking-[0.2em] mb-1">Obrigatoriedade</span>
+                          <span className="font-black text-sm">{group.isRequired ? 'Cliente precisa escolher dentro deste grupo' : 'Opcional livre, cliente escolhe se quiser'}</span>
+                        </button>
                       </div>
                     </div>
 
@@ -924,35 +944,66 @@ export function AdminView() {
                         <h4 className="text-xl font-black mb-6 flex items-center gap-3 text-primary"><LayoutDashboard size={20}/> Aplicar em Categorias</h4>
                         <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-6 leading-relaxed">Atrelar a uma categoria inteira (todos os produtos herdam)</p>
                         <div className="space-y-2">
-                          {categories.map(cat => (
-                            <button 
-                              key={cat.id}
-                              onClick={() => linkGroupToCategory(cat.id, group.id, true)} 
-                              className="w-full p-4 glass rounded-xl text-left flex justify-between items-center group hover:border-primary/40 transition-all"
-                            >
-                              <span className="font-bold text-sm">{cat.name}</span>
-                              <Plus size={16} className="text-gray-500 group-hover:text-primary" />
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+	                          {categories.map(cat => {
+                              const linked = isGroupLinkedToCategory(cat.id, group.id);
+                              const productCount = menu.filter(p => p.categoryId === cat.id).length;
+                              return (
+	                            <button 
+	                              key={cat.id}
+	                              onClick={() => linkGroupToCategory(cat.id, group.id, !linked)} 
+	                              className={`w-full p-4 rounded-xl text-left flex justify-between items-center group transition-all border ${linked ? 'bg-primary/10 border-primary/30 text-primary' : 'glass border-white/5 hover:border-primary/40'}`}
+	                            >
+                                <div>
+	                                <span className="font-bold text-sm block">{cat.name}</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">{productCount} produto(s)</span>
+                                </div>
+                                <span className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${linked ? 'text-primary' : 'text-gray-500 group-hover:text-primary'}`}>
+                                  {linked ? 'Aplicado' : 'Aplicar'}
+                                  {linked ? <Check size={16} /> : <Plus size={16} />}
+                                </span>
+	                            </button>
+                              );
+                            })}
+	                        </div>
+	                      </div>
 
                       <div className="glass-card p-10 border-white/5">
                         <h4 className="text-xl font-black mb-6 flex items-center gap-3 text-accent"><Package size={20}/> Aplicar em Produtos</h4>
                         <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-6 leading-relaxed">Escolher apenas itens específicos</p>
                         <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-2 pr-2">
-                          {menu.map(p => (
-                            <button 
-                              key={p.id}
-                              onClick={() => linkGroupToProduct(p.id, group.id, !p.modifierGroups.some(mg => mg.id === group.id))}
-                              className={`w-full p-4 glass rounded-xl text-left flex justify-between items-center transition-all ${p.modifierGroups.some(mg => mg.id === group.id) ? 'bg-primary/5 border-primary/20' : 'hover:border-white/20'}`}
-                            >
-                              <span className="font-bold text-sm">{p.name}</span>
-                              {p.modifierGroups.some(mg => mg.id === group.id) ? <Check size={16} className="text-primary"/> : <Plus size={16} className="text-gray-500"/>}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+	                          {menu.map(p => {
+                              const direct = isGroupLinkedDirectlyToProduct(p.id, group.id);
+                              const inherited = isGroupInheritedByProduct(p, group.id);
+                              const lockedByCategory = inherited && !direct;
+                              return (
+	                            <button 
+	                              key={p.id}
+	                              onClick={() => {
+                                  if (lockedByCategory) return;
+                                  linkGroupToProduct(p.id, group.id, !direct);
+                                }}
+                                disabled={lockedByCategory}
+	                              className={`w-full p-4 rounded-xl text-left flex justify-between items-center transition-all border ${
+                                  direct
+                                    ? 'bg-accent/10 border-accent/30 text-accent'
+                                    : lockedByCategory
+                                      ? 'bg-primary/5 border-primary/20 text-gray-400 cursor-not-allowed'
+                                      : 'glass border-white/5 hover:border-white/20'
+                                }`}
+	                            >
+                                <div>
+	                                <span className="font-bold text-sm block">{p.name}</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">{p.categoryName || p.categoryId}</span>
+                                </div>
+                                <span className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${direct ? 'text-accent' : inherited ? 'text-primary' : 'text-gray-500'}`}>
+                                  {direct ? 'Direto' : inherited ? 'Herdado' : 'Aplicar'}
+                                  {(direct || inherited) ? <Check size={16} /> : <Plus size={16} />}
+                                </span>
+	                            </button>
+                              );
+                            })}
+	                        </div>
+	                      </div>
                     </div>
                   </div>
                 ))}

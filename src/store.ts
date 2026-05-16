@@ -75,6 +75,8 @@ export interface AppState {
   kitchenOrders: KitchenOrder[];
   serviceRequests: ServiceRequest[];
   modifierGroups: ModifierGroup[];
+  productModifierMapping: Record<string, string[]>;
+  categoryModifierMapping: Record<string, string[]>;
   banners: string[];
   sellers: Seller[];
   notifications: { id: string; message: string; tableId: string; type: 'order' | 'bill' | 'service' | 'info' | 'error' }[];
@@ -166,6 +168,8 @@ export const useStore = create<AppState>((set, get) => ({
   serverTimeOffset: 0,
   serviceRequests: [],
   modifierGroups: [],
+  productModifierMapping: {},
+  categoryModifierMapping: {},
   menu: [], 
   categories: [],
   tables: [],
@@ -488,6 +492,8 @@ export const useStore = create<AppState>((set, get) => ({
         categories, 
         menu: menuWithModifierGroups,
         modifierGroups, 
+        productModifierMapping: productMapping,
+        categoryModifierMapping: categoryMapping,
         sellers, 
         kitchenOrders, 
         serviceRequests,
@@ -674,7 +680,9 @@ export const useStore = create<AppState>((set, get) => ({
             return {
               categories: catalogData.categories,
               menu: attachModifierGroupsToMenu(catalogData.menuItems, catalogData.modifierGroups, catalogData.productMapping, catalogData.categoryMapping),
-              modifierGroups: catalogData.modifierGroups
+              modifierGroups: catalogData.modifierGroups,
+              productModifierMapping: catalogData.productMapping,
+              categoryModifierMapping: catalogData.categoryMapping
             };
           })()
         : null;

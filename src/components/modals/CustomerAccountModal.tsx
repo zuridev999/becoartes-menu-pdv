@@ -77,7 +77,7 @@ export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
               <span>R$ {subtotal.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-center text-gray-500 font-black uppercase tracking-[0.2em] text-sm">
-              <span>Taxa de serviço ({settings.serviceTax}%)</span>
+              <span>Taxa de serviço</span>
               <span>R$ {serviceFee.toFixed(2)}</span>
             </div>
             <div className="pt-6 border-t border-white/10 flex justify-between items-center">
