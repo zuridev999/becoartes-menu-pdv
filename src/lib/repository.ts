@@ -3,6 +3,26 @@ import type { SellerInput } from './schemas';
 import { createId } from './id';
 import { getOrderItemsTotal } from './totals';
 
+const OS_EMPRESA_ID = import.meta.env.VITE_OS_EMPRESA_ID || 'e19cbcce-b2a7-4cc1-bf70-c06d2f8feb8a';
+const OS_TENANT_SLUG = import.meta.env.VITE_OS_TENANT_SLUG || 'becoartes';
+const OS_SYSTEM_USER_ID = import.meta.env.VITE_OS_SYSTEM_USER_ID || '';
+
+type ActiveOrderItemRow = {
+  id: string;
+  orderId: string;
+  productId: string;
+  name: string;
+  remoteStockId: string;
+  quantity: number;
+  selectedModifiers: Array<{ id: string; name: string; price?: number }>;
+};
+
+type InventorySyncResult = {
+  movementCount: number;
+  unmatched: string[];
+  insufficient: string[];
+};
+
 const parseJsonArray = (value: unknown) => {
   if (!value || typeof value !== 'string') return [];
   try {
@@ -12,6 +32,8 @@ const parseJsonArray = (value: unknown) => {
     return [];
   }
 };
+
+const toStockAmount = (value: unknown) => Math.max(0, Math.trunc(Number(value || 0)));
 
 export const Repository = {
   // --- MENU ---
@@ -342,6 +364,258 @@ export const Repository = {
       sql: "UPDATE orders SET total = ? WHERE id = ?",
       args: [getOrderItemsTotal(remainingItems), orderId]
     });
+  },
+
+  async getActiveOrderItemsForTable(tableId: string): Promise<ActiveOrderItemRow[]> {
+    const res = await db.execute({
+      sql: `
+        SELECT
+          oi.id,
+          oi.order_id,
+          oi.product_id,
+          oi.quantity,
+          oi.selected_modifiers,
+          m.name,
+          m.remote_stock_id
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.id
+        LEFT JOIN menu m ON oi.product_id = m.id
+        WHERE o.table_id = ? AND o.status != 'closed'
+        ORDER BY o.created_at ASC
+      `,
+      args: [tableId]
+    });
+
+    return res.rows.map((row: any) => ({
+      id: row.id as string,
+      orderId: row.order_id as string,
+      productId: row.product_id as string,
+      name: row.name as string || '',
+      remoteStockId: row.remote_stock_id as string || '',
+      quantity: Number(row.quantity || 0),
+      selectedModifiers: parseJsonArray(row.selected_modifiers)
+    }));
+  },
+
+  async claimIntegrationEvent(id: string, type: string, tableId: string, payload: unknown) {
+    const now = Date.now();
+    const existing = await db.execute({ sql: "SELECT status FROM integration_events WHERE id = ? LIMIT 1", args: [id] });
+    const status = existing.rows[0]?.status as string | undefined;
+
+    if (status === 'completed' || status === 'processing') {
+      return false;
+    }
+
+    await db.execute({
+      sql: `
+        INSERT OR REPLACE INTO integration_events
+          (id, type, status, table_id, payload, error, created_at, updated_at)
+        VALUES (?, ?, 'processing', ?, ?, NULL, COALESCE((SELECT created_at FROM integration_events WHERE id = ?), ?), ?)
+      `,
+      args: [id, type, tableId, JSON.stringify(payload), id, now, now]
+    });
+
+    return true;
+  },
+
+  async completeIntegrationEvent(id: string, payload: unknown) {
+    await db.execute({
+      sql: "UPDATE integration_events SET status = 'completed', payload = ?, error = NULL, updated_at = ? WHERE id = ?",
+      args: [JSON.stringify(payload), Date.now(), id]
+    });
+  },
+
+  async failIntegrationEvent(id: string, error: unknown) {
+    await db.execute({
+      sql: "UPDATE integration_events SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",
+      args: [error instanceof Error ? error.message : String(error), Date.now(), id]
+    });
+  },
+
+  async resolveOSContext() {
+    let empresaId = OS_EMPRESA_ID;
+    if (!empresaId) {
+      const empresaRes = await db.execute("SELECT id FROM empresas WHERE slug = 'becoartes' LIMIT 1");
+      empresaId = empresaRes.rows[0]?.id as string || '';
+    }
+
+    if (!empresaId) {
+      throw new Error('Empresa do OS não encontrada para sincronização de estoque.');
+    }
+
+    let userId = OS_SYSTEM_USER_ID;
+    if (!userId) {
+      const userRes = await db.execute({
+        sql: "SELECT id FROM users WHERE empresa_id = ? AND role IN ('admin', 'super_admin') ORDER BY created_at ASC LIMIT 1",
+        args: [empresaId]
+      });
+      userId = userRes.rows[0]?.id as string || '';
+    }
+
+    if (!userId) {
+      throw new Error('Usuário responsável do OS não encontrado para movimentação de estoque.');
+    }
+
+    return { empresaId, userId, slug: OS_TENANT_SLUG };
+  },
+
+  async createOSNotification(data: { empresaId: string; title: string; message: string; type?: 'info' | 'warning' | 'error' | 'alert'; link?: string }) {
+    await db.execute({
+      sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [createId(), data.empresaId, null, data.title, data.message, data.type || 'info', 0, data.link || null, Date.now()]
+    });
+  },
+
+  async findStockProduct(empresaId: string, candidates: { id?: string; name: string }) {
+    const ids = [candidates.id].filter(Boolean) as string[];
+
+    for (const id of ids) {
+      const byId = await db.execute({
+        sql: "SELECT * FROM estoque_produtos WHERE empresa_id = ? AND ativo = 1 AND id = ? LIMIT 1",
+        args: [empresaId, id]
+      });
+      if (byId.rows[0]) return byId.rows[0] as any;
+    }
+
+    if (!candidates.name.trim()) return null;
+
+    const byName = await db.execute({
+      sql: "SELECT * FROM estoque_produtos WHERE empresa_id = ? AND ativo = 1 AND lower(trim(nome)) = lower(trim(?)) LIMIT 1",
+      args: [empresaId, candidates.name]
+    });
+
+    return byName.rows[0] as any || null;
+  },
+
+  async decrementStock(params: {
+    empresaId: string;
+    userId: string;
+    stock: any;
+    requestedQuantity: number;
+    reason: string;
+  }) {
+    const currentQuantity = toStockAmount(params.stock.quantidade_atual);
+    const requestedQuantity = toStockAmount(params.requestedQuantity);
+    const appliedQuantity = Math.min(currentQuantity, requestedQuantity);
+    const newQuantity = Math.max(0, currentQuantity - requestedQuantity);
+
+    await db.execute({
+      sql: `
+        UPDATE estoque_produtos
+        SET quantidade_atual = MAX(0, quantidade_atual - ?),
+            status = CASE WHEN MAX(0, quantidade_atual - ?) <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
+            updated_at = ?
+        WHERE id = ?
+      `,
+      args: [requestedQuantity, requestedQuantity, Date.now(), params.stock.id]
+    });
+
+    if (appliedQuantity > 0) {
+      await db.execute({
+        sql: `
+          INSERT INTO estoque_movimentacoes
+            (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova, motivo, responsavel_id, created_at)
+          VALUES (?, ?, ?, 'saida', ?, ?, ?, ?, ?, ?)
+        `,
+        args: [
+          createId(),
+          params.empresaId,
+          params.stock.id,
+          appliedQuantity,
+          currentQuantity,
+          newQuantity,
+          params.reason,
+          params.userId,
+          Date.now()
+        ]
+      });
+    }
+
+    return {
+      appliedQuantity,
+      newQuantity,
+      insufficient: requestedQuantity > currentQuantity
+    };
+  },
+
+  async syncInventoryForClosedBill(data: {
+    tableNumber: number;
+    closedBillId: string;
+    orderItems: ActiveOrderItemRow[];
+  }): Promise<InventorySyncResult> {
+    const { empresaId, userId, slug } = await this.resolveOSContext();
+    const result: InventorySyncResult = { movementCount: 0, unmatched: [], insufficient: [] };
+    const reason = `Venda PDV Mesa ${data.tableNumber} | Fechamento ${data.closedBillId}`;
+
+    for (const item of data.orderItems) {
+      const productStock = await this.findStockProduct(empresaId, {
+        id: item.remoteStockId || item.productId,
+        name: item.name
+      });
+
+      if (!productStock) {
+        result.unmatched.push(`${item.quantity}x ${item.name}`);
+      } else {
+        const movement = await this.decrementStock({
+          empresaId,
+          userId,
+          stock: productStock,
+          requestedQuantity: item.quantity,
+          reason
+        });
+        if (movement.appliedQuantity > 0) result.movementCount++;
+        if (movement.insufficient) result.insufficient.push(`${item.name} (estoque insuficiente)`);
+      }
+
+      for (const modifier of item.selectedModifiers || []) {
+        const modifierStock = await this.findStockProduct(empresaId, {
+          id: modifier.id,
+          name: modifier.name
+        });
+
+        if (!modifierStock) continue;
+
+        const movement = await this.decrementStock({
+          empresaId,
+          userId,
+          stock: modifierStock,
+          requestedQuantity: item.quantity,
+          reason: `${reason} | Opcional ${modifier.name}`
+        });
+        if (movement.appliedQuantity > 0) result.movementCount++;
+        if (movement.insufficient) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
+      }
+    }
+
+    if (result.unmatched.length > 0) {
+      await this.createOSNotification({
+        empresaId,
+        title: 'Itens do PDV sem vínculo de estoque',
+        message: `Mesa ${data.tableNumber}: ${result.unmatched.slice(0, 8).join(', ')}`,
+        type: 'alert',
+        link: `/${slug}/estoque`
+      });
+    }
+
+    if (result.insufficient.length > 0) {
+      await this.createOSNotification({
+        empresaId,
+        title: 'Estoque insuficiente em venda PDV',
+        message: `Mesa ${data.tableNumber}: ${result.insufficient.slice(0, 8).join(', ')}`,
+        type: 'warning',
+        link: `/${slug}/estoque`
+      });
+    }
+
+    await this.createOSNotification({
+      empresaId,
+      title: 'Conta fechada no PDV',
+      message: `Mesa ${data.tableNumber}: ${result.movementCount} movimentações de estoque registradas.`,
+      type: result.unmatched.length > 0 ? 'warning' : 'info',
+      link: `/${slug}/dinheiro`
+    });
+
+    return result;
   },
 
   async getSettings() {

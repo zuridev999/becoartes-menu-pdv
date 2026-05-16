@@ -930,15 +930,31 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   closeBill: async (data) => {
+    const activeOrderItems = await Repository.getActiveOrderItemsForTable(data.tableId);
+    const orderIds = Array.from(new Set(activeOrderItems.map(item => item.orderId))).sort();
+    const integrationId = `pdv_close_${data.tableId}_${orderIds.join('_') || 'no_orders'}`;
+
+    const claimed = await Repository.claimIntegrationEvent(integrationId, 'pdv_close_bill', data.tableId, {
+      tableNumber: data.tableNumber,
+      orderIds,
+      total: data.total
+    });
+
+    if (!claimed) {
+      get().addNotification("Este fechamento já foi processado ou está em andamento.", "info");
+      await get().syncData();
+      return;
+    }
+
     try {
       await get().addAuditLog('bill_closed', `Fechamento: R$ ${data.total.toFixed(2)}`, data.tableNumber.toString(), 'pdv');
-      const id = createId();
+      const id = integrationId;
       const closedAt = new Date();
       const closedBill: ClosedBill = { ...data, id, closedAt };
 
       // Salvar no DB
       await db.execute({
-        sql: "INSERT INTO closed_bills (id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        sql: "INSERT OR REPLACE INTO closed_bills (id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         args: [
           id, 
           data.tableId,
@@ -953,6 +969,12 @@ export const useStore = create<AppState>((set, get) => ({
           JSON.stringify(data.payments), 
           closedAt.toISOString()
         ]
+      });
+
+      const inventorySync = await Repository.syncInventoryForClosedBill({
+        tableNumber: data.tableNumber,
+        closedBillId: id,
+        orderItems: activeOrderItems
       });
 
       // Liberar mesa no DB
@@ -970,10 +992,20 @@ export const useStore = create<AppState>((set, get) => ({
         closedBills: [...state.closedBills, closedBill],
         tables: state.tables.map(t => t.id === data.tableId ? { ...t, status: 'available', orders: [] } : t)
       }));
+
+      await Repository.completeIntegrationEvent(id, {
+        tableNumber: data.tableNumber,
+        orderIds,
+        inventorySync
+      });
       
-      get().addNotification(`Conta Lançada! Mesa ${data.tableNumber} finalizada com sucesso!`, 'info');
+      const inventorySuffix = inventorySync.unmatched.length > 0
+        ? ` ${inventorySync.unmatched.length} item(ns) sem vínculo de estoque.`
+        : '';
+      get().addNotification(`Conta Lançada! Mesa ${data.tableNumber} finalizada com sucesso!${inventorySuffix}`, 'info');
     } catch (error) {
       console.error("Erro ao fechar conta:", error);
+      await Repository.failIntegrationEvent(integrationId, error);
       get().addNotification("Erro ao lançar conta. Tente novamente.", "error");
     }
   },
