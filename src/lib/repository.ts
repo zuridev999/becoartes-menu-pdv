@@ -73,12 +73,14 @@ export const Repository = {
       sql: "INSERT OR REPLACE INTO categories (id, name, schedule_config, sort_order, visible) VALUES (?, ?, ?, ?, ?)",
       args: [cat.id, cat.name, cat.schedule ? JSON.stringify(cat.schedule) : null, cat.sortOrder || 0, cat.visible ? 1 : 0]
     });
+    await this.bumpCatalogVersion();
   },
 
   async deleteCategory(id: string) {
     await db.execute({ sql: "DELETE FROM categories WHERE id = ?", args: [id] });
     // Opcional: Atualizar produtos da categoria deletada?
     await db.execute({ sql: "UPDATE menu SET category_id = NULL WHERE category_id = ?", args: [id] });
+    await this.bumpCatalogVersion();
   },
 
   // --- MENU ---
@@ -128,6 +130,7 @@ export const Repository = {
         });
       }
     }
+    await this.bumpCatalogVersion();
   },
 
   // --- MODIFIERS ---
@@ -177,10 +180,12 @@ export const Repository = {
         });
       }
     }
+    await this.bumpCatalogVersion();
   },
 
   async deleteModifierGroup(id: string) {
     await db.execute({ sql: "UPDATE modifier_groups SET status = 'inactive' WHERE id = ?", args: [id] });
+    await this.bumpCatalogVersion();
   },
 
   async getProductModifierGroupsMapping() {
@@ -217,6 +222,32 @@ export const Repository = {
     return mapping;
   },
 
+  async getModifierLinkMappings() {
+    const res = await db.execute(`
+      SELECT 'product' as scope, pmg.product_id as scope_id, pmg.group_id
+      FROM product_modifier_groups pmg
+      JOIN modifier_groups mg ON pmg.group_id = mg.id
+      WHERE mg.status = 'active'
+      UNION ALL
+      SELECT 'category' as scope, cmg.category_id as scope_id, cmg.group_id
+      FROM category_modifier_groups cmg
+      JOIN modifier_groups mg ON cmg.group_id = mg.id
+      WHERE mg.status = 'active'
+      ORDER BY scope, scope_id
+    `);
+
+    const productMapping: Record<string, string[]> = {};
+    const categoryMapping: Record<string, string[]> = {};
+
+    res.rows.forEach((row: any) => {
+      const target = row.scope === 'product' ? productMapping : categoryMapping;
+      if (!target[row.scope_id]) target[row.scope_id] = [];
+      target[row.scope_id].push(row.group_id as string);
+    });
+
+    return { productMapping, categoryMapping };
+  },
+
   async linkGroupToCategory(categoryId: string, groupId: string, linked: boolean) {
     if (linked) {
       await db.execute({
@@ -229,6 +260,7 @@ export const Repository = {
         args: [categoryId, groupId]
       });
     }
+    await this.bumpCatalogVersion();
   },
 
   async linkGroupToProduct(productId: string, groupId: string, linked: boolean) {
@@ -243,10 +275,38 @@ export const Repository = {
         args: [productId, groupId]
       });
     }
+    await this.bumpCatalogVersion();
   },
 
   async deleteProduct(id: string) {
     await db.execute({ sql: "DELETE FROM menu WHERE id = ?", args: [id] });
+    await this.bumpCatalogVersion();
+  },
+
+  async getCatalogVersion() {
+    const res = await db.execute("SELECT value FROM app_settings WHERE key = 'catalog_version' LIMIT 1");
+    return String(res.rows[0]?.value || '0');
+  },
+
+  async bumpCatalogVersion() {
+    const version = String(Date.now());
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('catalog_version', ?, CURRENT_TIMESTAMP)",
+      args: [version]
+    });
+    return version;
+  },
+
+  async getCatalogData() {
+    const [categories, menuItems, modifierGroups, modifierMappings, catalogVersion] = await Promise.all([
+      this.getCategories(),
+      this.getMenu(),
+      this.getModifierGroups(),
+      this.getModifierLinkMappings(),
+      this.getCatalogVersion()
+    ]);
+
+    return { categories, menuItems, modifierGroups, ...modifierMappings, catalogVersion };
   },
 
   // --- SELLERS ---

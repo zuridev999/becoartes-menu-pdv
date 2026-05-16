@@ -8,6 +8,7 @@ import { AntigravityErrorBoundary } from './components/common/UI';
 import { PremiumLoader } from './components/common/Loaders';
 
 import { NotificationDisplay } from './components/common/NotificationDisplay';
+import { postOSMessage, subscribeOSMessages } from './lib/osBridge';
 
 const TabletView = lazy(() => import('./views/tablet/TabletView').then(module => ({ default: module.TabletView })));
 const PDVView = lazy(() => import('./views/pdv/PDVView').then(module => ({ default: module.PDVView })));
@@ -17,7 +18,7 @@ const QRView = lazy(() => import('./views/qr/QRView').then(module => ({ default:
 
 function App() {
   const { 
-    init, isLoading, activeView
+    init, isLoading, activeView, syncData, setActiveView
   } = useStore();
   const [animationFinished, setAnimationFinished] = useState(() => {
     // Skip animation if already shown in this session for this hostname
@@ -28,9 +29,36 @@ function App() {
     const start = async () => {
       await initDB();
       await init();
+      postOSMessage('ready', {
+        view: useStore.getState().activeView,
+        path: window.location.pathname
+      });
     };
     start();
   }, [init]);
+
+  useEffect(() => {
+    return subscribeOSMessages((message) => {
+      if (message.type === 'context') {
+        sessionStorage.setItem('beco_os_context', JSON.stringify(message.payload || {}));
+        return;
+      }
+
+      if (message.type === 'sync') {
+        syncData({ includeCatalog: Boolean(message.payload?.includeCatalog) });
+        return;
+      }
+
+      if (message.type === 'refresh_catalog') {
+        syncData({ includeCatalog: true });
+        return;
+      }
+
+      if (message.type === 'navigate' && message.payload?.view) {
+        setActiveView(message.payload.view, message.payload.tab, message.payload.mode);
+      }
+    });
+  }, [setActiveView, syncData]);
 
   const handleAnimationComplete = () => {
     setAnimationFinished(true);

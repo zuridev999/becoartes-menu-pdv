@@ -5,6 +5,7 @@ import { ProductSchema, SellerSchema } from './lib/schemas';
 import { hashPin, comparePin } from './lib/security';
 import { createId } from './lib/id';
 import { getOrderItemsTotal } from './lib/totals';
+import { postOSMessage } from './lib/osBridge';
 import type { 
   Product, Table, OrderItem, KitchenOrder, 
   ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category
@@ -20,6 +21,7 @@ const DEFAULT_MANAGER_PIN = import.meta.env.VITE_DEFAULT_MANAGER_PIN || '2020';
 const DEFAULT_OPERATOR_PIN = import.meta.env.VITE_DEFAULT_OPERATOR_PIN || '0040';
 let syncIntervalId: number | undefined;
 let lastCatalogSyncAt = 0;
+let lastCatalogVersion = '0';
 const CATALOG_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 const toSessionSeller = (seller: Seller): Seller => ({ ...seller, pin: '' });
@@ -348,20 +350,17 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       // 2. Carregar Dados
-      const [categories, menuItems, modifierGroups, loadedSellers, kitchenData, serviceRequests, closedBills, savedSettings, mgMapping, catMgMapping, tablesRes, logsRes] = await Promise.all([
-        Repository.getCategories(),
-        Repository.getMenu(),
-        Repository.getModifierGroups(),
+      const [catalogData, loadedSellers, kitchenData, serviceRequests, closedBills, savedSettings, tablesRes, logsRes] = await Promise.all([
+        Repository.getCatalogData(),
         Repository.getSellers(),
         Repository.getKitchenOrders(),
         Repository.getServiceRequests(),
         Repository.getClosedBills(),
         Repository.getSettings(),
-        Repository.getProductModifierGroupsMapping(),
-        Repository.getCategoryModifierGroupsMapping(),
         db.execute("SELECT * FROM tables"),
         db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50")
       ]);
+      const { categories, menuItems, modifierGroups, productMapping, categoryMapping, catalogVersion } = catalogData;
 
       let sellers: Seller[] = loadedSellers;
       const defaultUsers = [
@@ -410,8 +409,9 @@ export const useStore = create<AppState>((set, get) => ({
       const { orders: kitchenOrders, serverNow } = kitchenData;
       const serverTimeOffset = serverNow.getTime() - new Date().getTime();
       
-      const menuWithModifierGroups = attachModifierGroupsToMenu(menuItems, modifierGroups, mgMapping, catMgMapping);
+      const menuWithModifierGroups = attachModifierGroupsToMenu(menuItems, modifierGroups, productMapping, categoryMapping);
       lastCatalogSyncAt = Date.now();
+      lastCatalogVersion = catalogVersion;
 
       // 3. Mesas
       let tables: Table[] = tablesRes.rows.map(row => ({
@@ -549,6 +549,7 @@ export const useStore = create<AppState>((set, get) => ({
         sql: "UPDATE menu SET visible = ? WHERE id = ?",
         args: [newVisible ? 1 : 0, id]
       });
+      lastCatalogVersion = await Repository.bumpCatalogVersion();
     } catch (e) {
       // 3. Reverter se falhar
       console.error("❌ Falha ao sincronizar visibilidade:", e);
@@ -573,6 +574,7 @@ export const useStore = create<AppState>((set, get) => ({
         sql: "UPDATE categories SET visible = ? WHERE id = ?",
         args: [newVisible ? 1 : 0, id]
       });
+      lastCatalogVersion = await Repository.bumpCatalogVersion();
     } catch (e) {
       console.error("❌ Falha ao sincronizar visibilidade da categoria:", e);
       set((state) => ({
@@ -650,21 +652,17 @@ export const useStore = create<AppState>((set, get) => ({
 
   syncData: async (options = {}) => {
     try {
-      const shouldRefreshCatalog = Boolean(options.includeCatalog) || Date.now() - lastCatalogSyncAt > CATALOG_SYNC_INTERVAL_MS;
+      const catalogVersion = await Repository.getCatalogVersion();
+      const shouldRefreshCatalog =
+        Boolean(options.includeCatalog)
+        || catalogVersion !== lastCatalogVersion
+        || Date.now() - lastCatalogSyncAt > CATALOG_SYNC_INTERVAL_MS;
       const [kitchenData, serviceRequests, closedBills, tablesRes, catalogData] = await Promise.all([
         Repository.getKitchenOrders(),
         Repository.getServiceRequests(),
         Repository.getClosedBills(),
         db.execute("SELECT * FROM tables"),
-        shouldRefreshCatalog
-          ? Promise.all([
-              Repository.getCategories(),
-              Repository.getMenu(),
-              Repository.getModifierGroups(),
-              Repository.getProductModifierGroupsMapping(),
-              Repository.getCategoryModifierGroupsMapping()
-            ])
-          : Promise.resolve(null)
+        shouldRefreshCatalog ? Repository.getCatalogData() : Promise.resolve(null)
       ]);
 
       const { orders: kitchenOrders, serverNow } = kitchenData;
@@ -672,12 +670,12 @@ export const useStore = create<AppState>((set, get) => ({
       
       const catalogUpdate = catalogData
         ? (() => {
-            const [categories, menuItems, modifierGroups, productMapping, categoryMapping] = catalogData;
             lastCatalogSyncAt = Date.now();
+            lastCatalogVersion = catalogData.catalogVersion;
             return {
-              categories,
-              menu: attachModifierGroupsToMenu(menuItems, modifierGroups, productMapping, categoryMapping),
-              modifierGroups
+              categories: catalogData.categories,
+              menu: attachModifierGroupsToMenu(catalogData.menuItems, catalogData.modifierGroups, catalogData.productMapping, catalogData.categoryMapping),
+              modifierGroups: catalogData.modifierGroups
             };
           })()
         : null;
@@ -777,6 +775,7 @@ export const useStore = create<AppState>((set, get) => ({
           });
         }
       }
+      lastCatalogVersion = await Repository.bumpCatalogVersion();
       
       // Recarregar o menu
       await get().init();
@@ -882,6 +881,13 @@ export const useStore = create<AppState>((set, get) => ({
       serviceRequests: [...state.serviceRequests, newRequest]
     }));
     get().addNotification(`Mesa ${newRequest.tableNumber}: ${messages[type] || type}`, 'service', tableId);
+    postOSMessage('table_alert', {
+      tableId,
+      tableNumber: newRequest.tableNumber,
+      alertType: type,
+      message: message || messages[type] || type,
+      createdAt: newRequest.createdAt.toISOString()
+    });
   },
 
   resolveService: async (requestId) => {
@@ -955,6 +961,13 @@ export const useStore = create<AppState>((set, get) => ({
     await db.execute({ sql: "UPDATE tables SET status = ? WHERE id = ?", args: ['bill_requested', tableId] });
     set((state) => ({ tables: state.tables.map(t => t.id === tableId ? { ...t, status: 'bill_requested' } : t) }));
     get().addNotification(`A Mesa ${table?.number || tableId} solicitou o fechamento da conta!`, 'info', tableId);
+    postOSMessage('table_alert', {
+      tableId,
+      tableNumber: table?.number || tableId,
+      alertType: 'bill_requested',
+      message: 'Cliente solicitou o fechamento da conta.',
+      createdAt: new Date().toISOString()
+    });
     await get().addAuditLog('bill_requested', 'Cliente solicitou a conta via Tablet', table?.number.toString(), 'tablet');
   },
 
@@ -972,6 +985,16 @@ export const useStore = create<AppState>((set, get) => ({
         closedBills: [...state.closedBills, closeResult.closedBill],
         tables: state.tables.map(t => t.id === data.tableId ? { ...t, status: 'available', orders: [] } : t)
       }));
+      postOSMessage('bill_closed', {
+        tableId: data.tableId,
+        tableNumber: data.tableNumber,
+        total: data.total,
+        sellerId: data.sellerId,
+        sellerName: data.sellerName,
+        closedBillId: closeResult.closedBill.id,
+        inventorySync: closeResult.inventorySync,
+        closedAt: closeResult.closedBill.closedAt.toISOString()
+      });
       
       const inventorySuffix = closeResult.inventorySync.unmatched.length > 0
         ? ` ${closeResult.inventorySync.unmatched.length} item(ns) sem vínculo de estoque.`
