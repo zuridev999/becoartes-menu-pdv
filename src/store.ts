@@ -158,7 +158,7 @@ export interface AppState {
   requestBill: (tableId: string) => void;
   requestService: (tableId: string, type: string, message?: string) => void;
   resolveService: (requestId: string) => void;
-  closeBill: (data: Omit<ClosedBill, 'id' | 'closedAt'>) => Promise<void>;
+  closeBill: (data: Omit<ClosedBill, 'id' | 'closedAt'>) => Promise<boolean>;
   updateTableStatus: (tableId: string, status: Table['status']) => void;
   updateKitchenOrderStatus: (orderId: string, status: KitchenOrder['status']) => void;
   addNotification: (message: string, type?: 'info' | 'error' | 'order' | 'service', tableId?: string) => void;
@@ -994,7 +994,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (closeResult.skipped || !closeResult.closedBill || !closeResult.inventorySync) {
         get().addNotification("Este fechamento já foi processado ou está em andamento.", "info");
         await get().syncData();
-        return;
+        return false;
       }
 
       set((state) => ({
@@ -1016,9 +1016,11 @@ export const useStore = create<AppState>((set, get) => ({
         ? ` ${closeResult.inventorySync.unmatched.length} item(ns) sem vínculo de estoque.`
         : '';
       get().addNotification(`Conta Lançada! Mesa ${data.tableNumber} finalizada com sucesso!${inventorySuffix}`, 'info');
+      return true;
     } catch (error) {
       console.error("Erro ao fechar conta:", error);
       get().addNotification("Erro ao lançar conta. Tente novamente.", "error");
+      return false;
     }
   },
 
@@ -1153,6 +1155,14 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   openTable: async (tableId, initialItems = [], origin = 'pdv', sellerId) => {
+    const currentTable = get().tables.find(t => t.id === tableId);
+    if (currentTable?.status === 'available') {
+      await db.execute({
+        sql: "UPDATE orders SET status = 'closed' WHERE table_id = ? AND status != 'closed'",
+        args: [tableId]
+      });
+    }
+
     await db.execute({
       sql: "UPDATE tables SET status = 'ordering', last_activity = CURRENT_TIMESTAMP WHERE id = ?",
       args: [tableId]

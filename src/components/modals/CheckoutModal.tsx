@@ -9,7 +9,7 @@ interface Payment {
 }
 
 export function CheckoutModal({ table, onClose }: { table: TableType, onClose: () => void }) {
-  const { closeBill, settings, addNotification, sellers, currentSeller } = useStore();
+  const { closeBill, settings, sellers, currentSeller } = useStore();
   const [selectedSellerId, setSelectedSellerId] = useState<string>(currentSeller?.id || '');
   const [serviceFeeEnabled, setServiceFeeEnabled] = useState(true);
   const [serviceFeePercent] = useState(settings.serviceTax || 13);
@@ -51,7 +51,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
 
   const handleFinish = async () => {
     const seller = sellerOptions.find(s => s.id === selectedSellerId);
-    await closeBill({
+    const success = await closeBill({
       tableId: table.id,
       tableNumber: table.number,
       sellerId: selectedSellerId,
@@ -63,8 +63,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       total: totalFinal,
       payments
     });
-    addNotification(`Conta da Mesa ${table.number} fechada com sucesso!`, 'info');
-    onClose();
+
+    if (success) {
+      onClose();
+    }
   };
 
   return (
