@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, 
-  History, 
   Plus, 
   X,
   PlusCircle,
@@ -22,7 +21,6 @@ export function PDVView() {
     tables, 
     menu, 
     categories, 
-    auditLogs, 
     closedBills, 
     currentSeller, 
     logout,
