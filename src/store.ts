@@ -963,8 +963,28 @@ export const useStore = create<AppState>((set, get) => ({
       createdAt: new Date()
     };
 
+    // Criar uma solicitação de serviço imediata para o PDV (para drinks/bebidas)
+    const requestId = createId();
+    const itemsList = table.cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
+    
+    await db.execute({
+      sql: "INSERT INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
+      args: [requestId, tableId, 'new_order', 'pending', itemsList]
+    });
+
+    const newRequest: ServiceRequest = {
+      id: requestId,
+      tableId,
+      tableNumber: table.number,
+      type: 'new_order',
+      message: itemsList,
+      status: 'pending',
+      createdAt: new Date()
+    };
+
     set((state) => ({
       kitchenOrders: [...state.kitchenOrders, newKitchenOrder],
+      serviceRequests: [newRequest, ...state.serviceRequests],
       tables: state.tables.map(t => t.id === tableId ? { 
         ...t, 
         orders: [...t.orders, ...persistedItems],
@@ -974,7 +994,16 @@ export const useStore = create<AppState>((set, get) => ({
       } : t)
     }));
 
-    get().addNotification(`Novo pedido enviado para a Cozinha!`, 'order', tableId);
+    get().addNotification(`Novo pedido da Mesa ${table.number}!`, 'order', tableId);
+    
+    postOSMessage('table_alert', {
+      tableId,
+      tableNumber: table.number,
+      alertType: 'new_order',
+      message: `Novo pedido realizado!`,
+      createdAt: new Date().toISOString()
+    });
+
     await get().addAuditLog('order_sent', `Itens: ${table.cart.length} | Total: R$ ${total.toFixed(2)}`, table.number.toString(), origin);
   },
 
