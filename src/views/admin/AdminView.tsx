@@ -293,13 +293,30 @@ export function AdminView() {
   const canDeleteProduct = can(currentSeller, 'deleteProduct');
   const canToggleVisibility = can(currentSeller, 'toggleProductVisibility');
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
+  const canAccessProducts =
+    (adminMode === 'menu' && canToggleVisibility)
+    || canAddProduct
+    || canEditProductPrice
+    || canDeleteProduct;
 
-  if (adminMode === 'settings' && !canManageSettings && activeTab === 'config') {
+  const allowedTabIds = new Set([
+    ...(canAccessProducts ? ['products'] : []),
+    ...(canAddProduct ? ['categories'] : []),
+    ...(canManageOptionals ? ['optionals'] : []),
+    ...(canManageSettings ? ['config'] : []),
+    ...(canManageTeam ? ['sellers'] : []),
+    ...(canViewSalesTotals ? ['finance', 'movements'] : []),
+  ]);
+  const isActiveTabAllowed = allowedTabIds.has(activeTab);
+
+  if (!isActiveTabAllowed) {
     return (
       <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-12">
         <div className="glass-card max-w-lg p-10 text-center border-white/10">
           <h2 className="text-3xl font-black tracking-tighter mb-4">Acesso restrito</h2>
-          <p className="text-zinc-500 font-bold text-sm leading-relaxed mb-8">Configurações gerais exigem permissão de administrador.</p>
+          <p className="text-zinc-500 font-bold text-sm leading-relaxed mb-8">
+            Seu perfil {getPermissionLabel(currentSeller)} não tem permissão para acessar esta área administrativa.
+          </p>
           <button onClick={() => useStore.getState().setActiveView('pdv')} className="btn-beco btn-beco-purple px-8 py-4 rounded-2xl font-black">
             Voltar ao PDV
           </button>
@@ -327,14 +344,6 @@ export function AdminView() {
   }, {} as Record<string, { total: number; count: number }>);
 
   const closedBillsTotal = closedBills.reduce((acc, bill) => acc + bill.total, 0);
-  const allowedTabIds = new Set([
-    ...(adminMode === 'menu' ? ['products'] : []),
-    ...(canAddProduct ? ['categories'] : []),
-    ...(canManageOptionals ? ['optionals'] : []),
-    ...(canManageSettings ? ['config'] : []),
-    ...(canManageTeam ? ['sellers'] : []),
-    ...(canViewSalesTotals ? ['finance', 'movements'] : []),
-  ]);
 
   const requestCategoryRename = (cat: any) => {
     setAdminDialog({
@@ -557,7 +566,7 @@ export function AdminView() {
         </div>
       )}
 
-      {activeTab === 'products' && (
+      {activeTab === 'products' && canAccessProducts && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 px-4">

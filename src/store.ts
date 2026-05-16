@@ -452,26 +452,25 @@ export const useStore = create<AppState>((set, get) => ({
 
       // 4. Determinar View Inicial pela URL e Hostname
       const hostname = window.location.hostname;
+      const fullPath = window.location.pathname.substring(1);
       
       let initialView: any = 'tablet';
       let initialAdminMode: any = 'settings';
       
-      if (hostname.startsWith('pdv.')) initialView = 'pdv';
+      if (fullPath.startsWith('admin/menu')) {
+        initialView = 'admin';
+        initialAdminMode = 'menu';
+      } else if (fullPath.startsWith('admin/settings') || fullPath.startsWith('admin/config')) {
+        initialView = 'admin';
+        initialAdminMode = 'settings';
+      } else if (['tablet', 'pdv', 'admin', 'kitchen', 'qr'].includes(fullPath)) {
+        initialView = fullPath;
+      } else if (hostname.startsWith('pdv.')) initialView = 'pdv';
       else if (hostname.startsWith('coz.')) initialView = 'kitchen';
       else if (hostname.startsWith('tablet.')) initialView = 'tablet';
       else if (hostname.startsWith('qr.')) initialView = 'qr';
       else {
-        const fullPath = window.location.pathname.substring(1);
-        if (fullPath.startsWith('admin/menu')) {
-          initialView = 'admin';
-          initialAdminMode = 'menu';
-        } else if (fullPath.startsWith('admin/settings') || fullPath.startsWith('admin/config')) {
-          initialView = 'admin';
-          initialAdminMode = 'settings';
-        } else {
-          const validViews = ['tablet', 'pdv', 'admin', 'kitchen', 'qr'];
-          initialView = validViews.includes(fullPath) ? fullPath : 'tablet';
-        }
+        initialView = 'tablet';
       }
 
       // 5. Audit Logs
