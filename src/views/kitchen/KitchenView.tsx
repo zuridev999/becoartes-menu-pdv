@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Clock, CheckCircle2, X, AlertCircle, ChefHat } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
+import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
 
 const KITCHEN_SYNC_INTERVAL_MS = 5000;
 
@@ -339,7 +340,9 @@ export function KitchenView() {
           <div className="w-3 h-3 bg-emerald-500 rounded-full" />
           <div className="absolute inset-0 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
         </div>
-        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Sistema Ativo</span>
+        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
+          {getAppLabel()} {APP_BUILD_LABEL}
+        </span>
         <button
           onClick={unlockKitchenSound}
           className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${

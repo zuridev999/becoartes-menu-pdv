@@ -29,7 +29,7 @@ import { ActionDialog } from '../../components/common/ActionDialog';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { createId } from '../../lib/id';
 import { getImageSrc } from '../../lib/image';
-import { APP_BUILD_LABEL } from '../../lib/version';
+import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
@@ -458,7 +458,7 @@ export function AdminView() {
               {currentSeller.name} • {getPermissionLabel(currentSeller)}
             </p>
             <p className="text-zinc-700 font-black uppercase tracking-[0.25em] text-[9px] mt-2 ml-2">
-              PDV {APP_BUILD_LABEL}
+              {getAppLabel()} {APP_BUILD_LABEL}
             </p>
           </div>
         </div>
