@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, 
@@ -8,11 +8,12 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup, Bell, Check, Trash2, Wallet
+  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles
 } from 'lucide-react';
-import { useStore, type OrderItem, type Table as TableType } from '../../store';
+import { useStore, type OrderItem, type Product, type Table as TableType } from '../../store';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
 import { ActionDialog } from '../../components/common/ActionDialog';
+import { ProductModal } from '../../components/modals/ProductModal';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 
@@ -42,11 +43,19 @@ export function PDVView() {
   const [showProductMenu, setShowProductMenu] = useState(false);
   const [showManualLog, setShowManualLog] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(categories[0]?.id || null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showOnlyActive, setShowOnlyActive] = useState(true);
   const [logAction, setLogAction] = useState('');
   const [logDetails, setLogDetails] = useState('');
   const [logTable, setLogTable] = useState('');
   const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableNumber: number } | null>(null);
+
+  useEffect(() => {
+    if (!categories.length) return;
+    if (!activeCategory || !categories.some(category => category.id === activeCategory)) {
+      setActiveCategory(categories[0].id);
+    }
+  }, [categories, activeCategory]);
 
   const handleLogin = async () => {
     const success = await login(pin);
@@ -125,6 +134,13 @@ export function PDVView() {
       case 'bill_requested': return 'bg-amber-600/20 border-amber-500/30 text-amber-400';
       default: return 'bg-zinc-800/50 border-zinc-700/50 text-zinc-500';
     }
+  };
+
+  const getModifierGroupsLabel = (product: Product) => {
+    const groupCount = product.modifierGroups?.length || 0;
+    if (groupCount === 0) return 'Sem opcionais';
+    if (groupCount === 1) return '1 grupo de opcionais';
+    return `${groupCount} grupos de opcionais`;
   };
 
   return (
@@ -378,8 +394,13 @@ export function PDVView() {
                     <div key={idx} className="glass-card p-6 border-white/5 flex justify-between items-center gap-4">
                       <div>
                         <p className="font-bold text-lg">{o.quantity}x {o.name}</p>
+                        {(o.categoryName || o.categoryId) && (
+                          <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mt-1">
+                            {o.categoryName || o.categoryId}
+                          </p>
+                        )}
                         <div className="flex gap-2 mt-1">
-                          {o.selectedModifiers.map(m => (
+                          {(o.selectedModifiers || []).map(m => (
                             <span key={m.id} className="text-[9px] font-black bg-white/5 px-2 py-0.5 rounded text-zinc-500">+{m.name}</span>
                           ))}
                         </div>
@@ -475,6 +496,11 @@ export function PDVView() {
                         key={product.id}
                         whileHover={{ x: 10 }}
                         onClick={() => {
+                          if (product.modifierGroups?.length) {
+                            setSelectedProduct(product);
+                            return;
+                          }
+
                           addToCart(product, 1, []);
                           addAuditLog({
                             action: 'item_added',
@@ -485,15 +511,27 @@ export function PDVView() {
                         }}
                         className="glass-card p-4 border-white/5 flex justify-between items-center group relative overflow-hidden text-left"
                       >
-                         <div className="flex items-center gap-4">
-                           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-black transition-all">
-                              <Plus size={20} />
+                         <div className="flex items-center gap-4 min-w-0">
+                           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-black transition-all shrink-0">
+                              {product.modifierGroups?.length ? <Sparkles size={20} /> : <Plus size={20} />}
                            </div>
-                           <h4 className="text-xl font-bold italic tracking-tight leading-none text-white">{product.name}</h4>
+                           <div className="min-w-0">
+                             <h4 className="text-xl font-bold italic tracking-tight leading-none text-white truncate">{product.name}</h4>
+                             <div className="flex flex-wrap items-center gap-2 mt-2">
+                               <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
+                                 {product.categoryName || product.categoryId}
+                               </span>
+                               <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                 product.modifierGroups?.length ? 'text-primary' : 'text-zinc-600'
+                               }`}>
+                                 {getModifierGroupsLabel(product)}
+                               </span>
+                             </div>
+                           </div>
                          </div>
                          
-                         <div className="flex items-center gap-6">
-                           <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">{product.categoryId}</span>
+                         <div className="flex items-center gap-6 shrink-0">
+                           <span className="text-lg font-black italic tracking-tighter text-emerald-400">R$ {product.price.toFixed(2)}</span>
                          </div>
                       </motion.button>
                     ))}
@@ -543,6 +581,15 @@ export function PDVView() {
       </AnimatePresence>
 
       {/* CHECKOUT MODAL */}
+      <AnimatePresence>
+        {selectedProduct && (
+          <ProductModal
+            product={selectedProduct}
+            onClose={() => setSelectedProduct(null)}
+          />
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {cancelItemDialog && (
           <ActionDialog

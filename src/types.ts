@@ -59,6 +59,8 @@ export interface OrderItem {
   id: string; // Unique ID for this item in the cart
   orderId?: string;
   productId: string;
+  categoryId?: string;
+  categoryName?: string;
   name: string;
   price: number;
   quantity: number;

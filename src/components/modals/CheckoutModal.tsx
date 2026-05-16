@@ -23,7 +23,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     : currentSeller ? [currentSeller, ...sellers] : sellers;
   
   const subtotal = table.orders.reduce((acc: number, o: any) => {
-    const itemPrice = o.price + o.selectedModifiers.reduce((mAcc: number, m: any) => mAcc + m.price, 0);
+    const itemPrice = o.price + (o.selectedModifiers || []).reduce((mAcc: number, m: any) => mAcc + m.price, 0);
     return acc + (itemPrice * o.quantity);
   }, 0);
 

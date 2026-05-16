@@ -46,10 +46,11 @@ const parseJsonArray = (value: unknown): any[] => {
 
 const loadActiveOrdersByTable = async () => {
   const ordersRes = await db.execute(`
-    SELECT oi.*, o.table_id, m.name
+    SELECT oi.*, o.table_id, m.name, m.category_id, c.name as category_name
     FROM order_items oi
     JOIN orders o ON oi.order_id = o.id
     LEFT JOIN menu m ON oi.product_id = m.id
+    LEFT JOIN categories c ON m.category_id = c.id
     WHERE o.status != 'closed'
   `);
 
@@ -60,6 +61,8 @@ const loadActiveOrdersByTable = async () => {
       id: row.id as string,
       orderId: row.order_id as string,
       productId: row.product_id as string,
+      categoryId: row.category_id as string,
+      categoryName: row.category_name as string,
       name: row.name || '',
       price: row.price_at_time as number,
       quantity: row.quantity as number,
@@ -813,6 +816,8 @@ export const useStore = create<AppState>((set, get) => ({
     const newItem: OrderItem = {
       id: createId(),
       productId: product.id,
+      categoryId: product.categoryId,
+      categoryName: product.categoryName,
       name: product.name,
       price: product.price,
       quantity,

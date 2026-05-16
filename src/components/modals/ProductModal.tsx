@@ -31,8 +31,8 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
 
   return (
     <>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[300]" />
-      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="fixed inset-0 z-[350] flex items-center justify-center p-12 pointer-events-none font-['Outfit']">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[700]" />
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="fixed inset-0 z-[750] flex items-center justify-center p-12 pointer-events-none font-['Outfit']">
         <div className="glass-card w-full max-w-6xl h-[85vh] flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl">
           <div className="w-1/2 relative hidden lg:block">
              <img src={getImageSrc(product.image)} className="w-full h-full object-cover" />
