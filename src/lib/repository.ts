@@ -2,6 +2,7 @@ import { db } from './db';
 import type { SellerInput } from './schemas';
 import { createId } from './id';
 import { getOrderItemsTotal } from './totals';
+import type { ClosedBill } from '../types';
 
 const OS_EMPRESA_ID = import.meta.env.VITE_OS_EMPRESA_ID || 'e19cbcce-b2a7-4cc1-bf70-c06d2f8feb8a';
 const OS_TENANT_SLUG = import.meta.env.VITE_OS_TENANT_SLUG || 'becoartes';
@@ -21,6 +22,23 @@ type InventorySyncResult = {
   movementCount: number;
   unmatched: string[];
   insufficient: string[];
+  critical: string[];
+};
+
+type CloseBillInput = Omit<ClosedBill, 'id' | 'closedAt'>;
+
+type InventoryMovementPlan = {
+  movementId: string;
+  stockId: string;
+  stockName: string;
+  orderId: string;
+  orderItemId: string;
+  sourceItemId: string;
+  sourceItemKind: 'product' | 'modifier';
+  requestedQuantity: number;
+  previousQuantity: number;
+  nextQuantity: number;
+  reason: string;
 };
 
 const parseJsonArray = (value: unknown) => {
@@ -539,13 +557,270 @@ export const Repository = {
     };
   },
 
+  async closeBillWithInventorySync(data: CloseBillInput) {
+    const activeOrderItems = await this.getActiveOrderItemsForTable(data.tableId);
+    const orderIds = Array.from(new Set(activeOrderItems.map(item => item.orderId))).sort();
+    const integrationId = `pdv_close_${data.tableId}_${orderIds.join('_') || 'no_orders'}`;
+
+    const claimed = await this.claimIntegrationEvent(integrationId, 'pdv_close_bill', data.tableId, {
+      tableNumber: data.tableNumber,
+      orderIds,
+      total: data.total
+    });
+
+    if (!claimed) {
+      return {
+        skipped: true,
+        integrationId,
+        closedBill: null,
+        inventorySync: null
+      };
+    }
+
+    try {
+      const closedAt = new Date();
+      const closedBill: ClosedBill = { ...data, id: integrationId, closedAt };
+      const { empresaId, userId, slug } = await this.resolveOSContext();
+      const movementPlans: InventoryMovementPlan[] = [];
+      const result: InventorySyncResult = { movementCount: 0, unmatched: [], insufficient: [], critical: [] };
+      const baseReason = `Venda PDV Mesa ${data.tableNumber} | Fechamento ${integrationId}`;
+
+    for (const item of activeOrderItems) {
+      const requestedQuantity = toStockAmount(item.quantity);
+      const productStock = await this.findStockProduct(empresaId, {
+        id: item.remoteStockId || item.productId,
+        name: item.name
+      });
+
+      if (!productStock) {
+        result.unmatched.push(`${item.quantity}x ${item.name}`);
+      } else {
+        const currentQuantity = toStockAmount(productStock.quantidade_atual);
+        const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
+        if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
+        if (nextQuantity <= toStockAmount(productStock.estoque_minimo)) result.critical.push(item.name);
+        if (currentQuantity > 0 && requestedQuantity > 0) {
+          movementPlans.push({
+            movementId: createId(),
+            stockId: productStock.id as string,
+            stockName: productStock.nome as string || item.name,
+            orderId: item.orderId,
+            orderItemId: item.id,
+            sourceItemId: item.productId,
+            sourceItemKind: 'product',
+            requestedQuantity,
+            previousQuantity: currentQuantity,
+            nextQuantity,
+            reason: baseReason
+          });
+        }
+      }
+
+      for (const modifier of item.selectedModifiers || []) {
+        const modifierStock = await this.findStockProduct(empresaId, {
+          id: modifier.id,
+          name: modifier.name
+        });
+
+        if (!modifierStock) continue;
+
+        const currentQuantity = toStockAmount(modifierStock.quantidade_atual);
+        const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
+        if (requestedQuantity > currentQuantity) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
+        if (nextQuantity <= toStockAmount(modifierStock.estoque_minimo)) result.critical.push(modifier.name);
+        if (currentQuantity > 0 && requestedQuantity > 0) {
+          movementPlans.push({
+            movementId: createId(),
+            stockId: modifierStock.id as string,
+            stockName: modifierStock.nome as string || modifier.name,
+            orderId: item.orderId,
+            orderItemId: item.id,
+            sourceItemId: modifier.id,
+            sourceItemKind: 'modifier',
+            requestedQuantity,
+            previousQuantity: currentQuantity,
+            nextQuantity,
+            reason: `${baseReason} | Opcional ${modifier.name}`
+          });
+        }
+      }
+    }
+
+    result.movementCount = movementPlans.length;
+
+    const now = osTimestamp();
+    const batch: Array<{ sql: string; args?: any[] }> = [
+      {
+        sql: "INSERT OR REPLACE INTO closed_bills (id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        args: [
+          integrationId,
+          data.tableId,
+          data.tableNumber,
+          data.sellerId,
+          data.sellerName,
+          data.subtotal,
+          data.serviceFee,
+          data.discount,
+          data.discountReason || null,
+          data.total,
+          JSON.stringify(data.payments),
+          closedAt.toISOString()
+        ]
+      }
+    ];
+
+    for (const movement of movementPlans) {
+      batch.push(
+        {
+          sql: `
+            INSERT OR IGNORE INTO estoque_movimentacoes
+              (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova, motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
+            SELECT ?, empresa_id, id, 'saida', MIN(quantidade_atual, ?), quantidade_atual, MAX(0, quantidade_atual - ?), ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
+            FROM estoque_produtos
+            WHERE id = ? AND empresa_id = ? AND ativo = 1 AND quantidade_atual > 0
+          `,
+          args: [
+            movement.movementId,
+            movement.requestedQuantity,
+            movement.requestedQuantity,
+            movement.reason,
+            userId,
+            now,
+            integrationId,
+            movement.orderId,
+            movement.orderItemId,
+            integrationId,
+            movement.sourceItemId,
+            movement.sourceItemKind,
+            movement.stockId,
+            empresaId
+          ]
+        },
+        {
+          sql: `
+            UPDATE estoque_produtos
+            SET quantidade_atual = MAX(0, quantidade_atual - ?),
+                status = CASE WHEN MAX(0, quantidade_atual - ?) <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
+                updated_at = ?
+            WHERE id = ? AND changes() > 0
+          `,
+          args: [movement.requestedQuantity, movement.requestedQuantity, now, movement.stockId]
+        }
+      );
+    }
+
+    batch.push(
+      {
+        sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'bill_closed', ?, ?, 'pdv', ?, ?, ?)",
+        args: [
+          createId(),
+          `Fechamento: R$ ${data.total.toFixed(2)} | Estoque: ${result.movementCount} movimentação(ões) | Evento: ${integrationId}`,
+          data.tableNumber.toString(),
+          data.sellerId,
+          data.sellerName,
+          closedAt.toISOString()
+        ]
+      },
+      {
+        sql: "UPDATE tables SET status = 'available', last_activity = ? WHERE id = ?",
+        args: [closedAt.toISOString(), data.tableId]
+      },
+      {
+        sql: "UPDATE orders SET status = 'closed' WHERE table_id = ? AND status != 'closed'",
+        args: [data.tableId]
+      }
+    );
+
+    if (result.unmatched.length > 0) {
+      batch.push({
+        sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, NULL, ?, ?, 'alert', 0, ?, ?)",
+        args: [
+          createId(),
+          empresaId,
+          'Itens do PDV sem vínculo de estoque',
+          `Mesa ${data.tableNumber}: ${result.unmatched.slice(0, 8).join(', ')}`,
+          `/${slug}/estoque`,
+          now
+        ]
+      });
+    }
+
+    if (result.insufficient.length > 0) {
+      batch.push({
+        sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, NULL, ?, ?, 'warning', 0, ?, ?)",
+        args: [
+          createId(),
+          empresaId,
+          'Estoque insuficiente em venda PDV',
+          `Mesa ${data.tableNumber}: ${result.insufficient.slice(0, 8).join(', ')}`,
+          `/${slug}/estoque`,
+          now
+        ]
+      });
+    }
+
+    if (result.critical.length > 0) {
+      batch.push({
+        sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, NULL, ?, ?, 'warning', 0, ?, ?)",
+        args: [
+          createId(),
+          empresaId,
+          'Estoque crítico após venda PDV',
+          `Mesa ${data.tableNumber}: ${Array.from(new Set(result.critical)).slice(0, 8).join(', ')}`,
+          `/${slug}/estoque`,
+          now
+        ]
+      });
+    }
+
+    batch.push(
+      {
+        sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, NULL, 'Conta fechada no PDV', ?, ?, 0, ?, ?)",
+        args: [
+          createId(),
+          empresaId,
+          `Mesa ${data.tableNumber}: ${result.movementCount} movimentações de estoque registradas.`,
+          result.unmatched.length > 0 ? 'warning' : 'info',
+          `/${slug}/dinheiro`,
+          now
+        ]
+      },
+      {
+        sql: "UPDATE integration_events SET status = 'completed', payload = ?, error = NULL, updated_at = ? WHERE id = ?",
+        args: [
+          JSON.stringify({
+            tableNumber: data.tableNumber,
+            orderIds,
+            inventorySync: result,
+            movementIds: movementPlans.map(movement => movement.movementId)
+          }),
+          Date.now(),
+          integrationId
+        ]
+      }
+    );
+
+    await db.batch(batch, 'write');
+
+      return {
+        skipped: false,
+        integrationId,
+        closedBill,
+        inventorySync: result
+      };
+    } catch (error) {
+      await this.failIntegrationEvent(integrationId, error);
+      throw error;
+    }
+  },
+
   async syncInventoryForClosedBill(data: {
     tableNumber: number;
     closedBillId: string;
     orderItems: ActiveOrderItemRow[];
   }): Promise<InventorySyncResult> {
     const { empresaId, userId, slug } = await this.resolveOSContext();
-    const result: InventorySyncResult = { movementCount: 0, unmatched: [], insufficient: [] };
+    const result: InventorySyncResult = { movementCount: 0, unmatched: [], insufficient: [], critical: [] };
     const reason = `Venda PDV Mesa ${data.tableNumber} | Fechamento ${data.closedBillId}`;
 
     for (const item of data.orderItems) {

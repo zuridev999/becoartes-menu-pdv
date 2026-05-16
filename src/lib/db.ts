@@ -55,7 +55,14 @@ export const initDB = async () => {
       "ALTER TABLE product_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
       "ALTER TABLE category_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
       "ALTER TABLE service_requests ADD COLUMN message TEXT",
-      "ALTER TABLE closed_bills ADD COLUMN table_id TEXT"
+      "ALTER TABLE closed_bills ADD COLUMN table_id TEXT",
+      "ALTER TABLE estoque_movimentacoes ADD COLUMN closed_bill_id TEXT",
+      "ALTER TABLE estoque_movimentacoes ADD COLUMN order_id TEXT",
+      "ALTER TABLE estoque_movimentacoes ADD COLUMN order_item_id TEXT",
+      "ALTER TABLE estoque_movimentacoes ADD COLUMN origem TEXT",
+      "ALTER TABLE estoque_movimentacoes ADD COLUMN integration_event_id TEXT",
+      "ALTER TABLE estoque_movimentacoes ADD COLUMN source_item_id TEXT",
+      "ALTER TABLE estoque_movimentacoes ADD COLUMN source_item_kind TEXT"
     ];
 
     for (const sql of migrations) {
@@ -71,7 +78,9 @@ export const initDB = async () => {
       "CREATE INDEX IF NOT EXISTS idx_notif_empresa_created ON notificacoes(empresa_id, created_at)",
       "CREATE INDEX IF NOT EXISTS idx_category_modifiers_category ON category_modifier_groups(category_id)",
       "CREATE INDEX IF NOT EXISTS idx_product_modifiers_product ON product_modifier_groups(product_id)",
-      "CREATE INDEX IF NOT EXISTS idx_integration_events_type_status ON integration_events(type, status)"
+      "CREATE INDEX IF NOT EXISTS idx_integration_events_type_status ON integration_events(type, status)",
+      "CREATE INDEX IF NOT EXISTS idx_stock_mov_integration_event ON estoque_movimentacoes(integration_event_id)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_mov_pdv_once ON estoque_movimentacoes(integration_event_id, order_item_id, produto_id, source_item_kind, source_item_id) WHERE origem = 'pdv' AND integration_event_id IS NOT NULL AND order_item_id IS NOT NULL"
     ];
 
     for (const sql of indexes) {
