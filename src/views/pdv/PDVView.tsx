@@ -323,6 +323,7 @@ export function PDVView() {
           </div>
         </div>
       </div>
+    </div>
 
       {/* SELECTED TABLE OVERLAY (Management) */}
       <AnimatePresence>
