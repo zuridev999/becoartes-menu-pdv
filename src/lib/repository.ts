@@ -34,6 +34,7 @@ const parseJsonArray = (value: unknown) => {
 };
 
 const toStockAmount = (value: unknown) => Math.max(0, Math.trunc(Number(value || 0)));
+const osTimestamp = () => Math.floor(Date.now() / 1000);
 
 export const Repository = {
   // --- MENU ---
@@ -462,7 +463,7 @@ export const Repository = {
   async createOSNotification(data: { empresaId: string; title: string; message: string; type?: 'info' | 'warning' | 'error' | 'alert'; link?: string }) {
     await db.execute({
       sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      args: [createId(), data.empresaId, null, data.title, data.message, data.type || 'info', 0, data.link || null, Date.now()]
+      args: [createId(), data.empresaId, null, data.title, data.message, data.type || 'info', 0, data.link || null, osTimestamp()]
     });
   },
 
@@ -507,7 +508,7 @@ export const Repository = {
             updated_at = ?
         WHERE id = ?
       `,
-      args: [requestedQuantity, requestedQuantity, Date.now(), params.stock.id]
+      args: [requestedQuantity, requestedQuantity, osTimestamp(), params.stock.id]
     });
 
     if (appliedQuantity > 0) {
@@ -526,7 +527,7 @@ export const Repository = {
           newQuantity,
           params.reason,
           params.userId,
-          Date.now()
+          osTimestamp()
         ]
       });
     }
