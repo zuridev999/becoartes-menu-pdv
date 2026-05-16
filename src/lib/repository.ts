@@ -1041,6 +1041,24 @@ export const Repository = {
   },
 
   async getServiceRequests() {
+    await db.execute(`
+      INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message, created_at)
+      SELECT
+        'new_order_' || o.id,
+        o.table_id,
+        'new_order',
+        'pending',
+        COALESCE((
+          SELECT group_concat(oi.quantity || 'x ' || COALESCE(m.name, 'Item'), ', ')
+          FROM order_items oi
+          LEFT JOIN menu m ON oi.product_id = m.id
+          WHERE oi.order_id = o.id
+        ), 'Novo pedido'),
+        o.created_at
+      FROM orders o
+      WHERE o.status IN ('pending', 'preparing')
+    `);
+
     const res = await db.execute(`
       SELECT sr.*, t.number as tableNumber
       FROM service_requests sr
