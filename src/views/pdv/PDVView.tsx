@@ -267,78 +267,44 @@ export function PDVView() {
         <div className="col-span-4 glass-card border-white/5 flex flex-col overflow-hidden">
           {/* SOLICITAÇÕES DE SERVIÇO */}
           {serviceRequests.length > 0 && (
-            <div className="border-b border-white/5 bg-amber-500/5">
-              <div className="p-8 border-b border-white/5 flex justify-between items-center">
-                <h3 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3 text-amber-400">
-                  <Bell size={16} /> Solicitações Ativas
+            <motion.div 
+              animate={{ y: [0, -4, 0] }}
+              transition={{ repeat: Infinity, duration: 1, ease: "easeInOut" }}
+              className="border-b border-rose-500 bg-rose-600 shadow-[0_0_50px_rgba(225,29,72,0.3)] relative z-10"
+            >
+              <div className="p-8 border-b border-white/20 flex justify-between items-center animate-pulse">
+                <h3 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3 text-white">
+                  <Bell size={16} className="animate-bounce" /> Novas Solicitações
                 </h3>
-                <span className="bg-amber-500 text-black px-2 py-0.5 rounded-full text-[10px] font-black">{serviceRequests.length}</span>
+                <span className="bg-white text-rose-600 px-3 py-1 rounded-full text-xs font-black shadow-xl">{serviceRequests.length}</span>
               </div>
-              <div className="max-h-64 overflow-y-auto custom-scrollbar">
+              <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
                 {serviceRequests.map((req) => (
-                  <div key={req.id} className="p-6 border-b border-white/5 last:border-0 flex justify-between items-center group hover:bg-white/[0.02]">
+                  <div key={req.id} className="p-6 border-b border-white/10 last:border-0 flex justify-between items-center group hover:bg-black/10">
                     <div className="flex items-center gap-4">
-                       <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400 font-black italic">
+                       <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-white font-black italic text-xl shadow-inner">
                          {req.tableNumber}
                        </div>
                        <div>
-                         <p className="text-sm font-bold text-white uppercase tracking-tight">{req.type === 'waiter' ? 'Chamar Garçom' : req.type === 'bill' ? 'Pedido de Conta' : req.type}</p>
-                         <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">{req.message || 'Sem observações'}</p>
+                         <p className="text-base font-black text-white uppercase tracking-tight">{req.type === 'waiter' ? 'Chamar Garçom' : req.type === 'bill' ? 'Pedido de Conta' : req.type}</p>
+                         <p className="text-[10px] text-white/60 font-black uppercase tracking-widest">{req.message || 'Aguardando atendimento'}</p>
                        </div>
                     </div>
                     <button 
                       onClick={() => resolveService(req.id)}
-                      className="p-3 glass rounded-xl text-emerald-500 opacity-0 group-hover:opacity-100 transition-all hover:bg-emerald-500/10"
+                      className="w-12 h-12 bg-white rounded-2xl text-rose-600 flex items-center justify-center shadow-2xl hover:scale-110 active:scale-90 transition-all"
+                      title="Dar Ciente"
                     >
-                      <Check size={18} />
+                      <Check size={24} strokeWidth={4} />
                     </button>
                   </div>
                 ))}
               </div>
-            </div>
+            </motion.div>
           )}
 
-          <div className="p-8 border-b border-white/5 bg-white/2">
-             <h3 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3">
-               <History size={16} className="text-emerald-400" /> Lançamentos Recentes
-             </h3>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
-            {auditLogs.length > 0 ? auditLogs.map((log) => (
-              <div key={log.id} className="flex gap-4 group">
-                <div className="flex flex-col items-center">
-                  <div className="w-2 h-2 rounded-full bg-zinc-700 mt-2 group-hover:bg-primary transition-colors" />
-                  <div className="w-[1px] flex-1 bg-zinc-800/50 my-2" />
-                </div>
-                <div className="flex-1 pb-4">
-                  <div className="flex justify-between items-start">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                      {new Date(log.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                    <span className="text-[9px] font-black bg-white/5 px-2 py-0.5 rounded text-zinc-500 uppercase">{log.origin}</span>
-                  </div>
-                  <h4 className="text-sm font-bold mt-1 text-zinc-300">
-                    {log.action === 'table_opened' && 'Abertura de Mesa'}
-                    {log.action === 'item_added' && 'Novo Pedido'}
-                    {log.action === 'bill_requested' && 'Pedido de Conta'}
-                    {log.action === 'bill_closed' && 'Fechamento'}
-                    {!['table_opened', 'item_added', 'bill_requested', 'bill_closed'].includes(log.action) && log.action}
-                  </h4>
-                  <p className="text-[11px] text-zinc-500 mt-1">
-                    {log.author_name} na Mesa {log.table_number || '---'}
-                  </p>
-                </div>
-              </div>
-            )) : (
-              <div className="h-full flex flex-col items-center justify-center opacity-20 text-center px-12">
-                <History size={48} className="mb-4" />
-                <p className="text-xs font-black uppercase tracking-widest">Nenhuma atividade registrada ainda</p>
-              </div>
-            )}
-          </div>
-
-          <div className="p-8 border-t border-white/5 space-y-4">
+          <div className="flex-1 flex flex-col justify-end">
+            <div className="p-8 border-t border-white/5 space-y-4">
              <button 
                onClick={() => {
                  setShowOnlyActive(false);
