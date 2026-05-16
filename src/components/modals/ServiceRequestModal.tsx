@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
-  X, Utensils, ScrollText, 
-  HelpCircle, AlertTriangle, MessageSquare, 
-  Wallet, CupSoda, Snowflake, Citrus, Users 
+  X, Utensils, 
+  Wallet, CupSoda, Users 
 } from 'lucide-react';
 import { useStore } from '../../store';
 
