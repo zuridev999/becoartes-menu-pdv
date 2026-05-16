@@ -52,14 +52,22 @@ export function PDVView() {
   const [isPanicDismissed, setIsPanicDismissed] = useState(false);
   const [hasPanicAlert, setHasPanicAlert] = useState(false);
 
-  // Verificação de Modo Pânico (5 minutos)
+  // Filtra solicitações das últimas 2 horas para manter a tela limpa
+  const now = new Date();
+  const visibleRequests = serviceRequests.filter(req => {
+    const createdAt = req.createdAt instanceof Date ? req.createdAt : new Date(req.createdAt);
+    const diffHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+    return diffHours < 2;
+  });
+
+  // Verificação de Modo Pânico (5 minutos) - considerando apenas as visíveis
   useEffect(() => {
     const checkPanic = () => {
-      const now = new Date();
-      const hasOldAlert = serviceRequests.some(req => {
+      const nowCheck = new Date();
+      const hasOldAlert = visibleRequests.some(req => {
         if (req.status === 'resolved') return false;
         const createdAt = req.createdAt instanceof Date ? req.createdAt : new Date(req.createdAt);
-        const diffMinutes = (now.getTime() - createdAt.getTime()) / (1000 * 60);
+        const diffMinutes = (nowCheck.getTime() - createdAt.getTime()) / (1000 * 60);
         return diffMinutes >= 5;
       });
 
@@ -73,12 +81,12 @@ export function PDVView() {
 
     const interval = setInterval(checkPanic, 5000);
     return () => clearInterval(interval);
-  }, [serviceRequests, isPanicDismissed]);
+  }, [visibleRequests, isPanicDismissed]);
 
-  // Se o número de solicitações mudar, reseta o dismiss para reavaliar
+  // Se o número de solicitações visíveis mudar, reseta o dismiss
   useEffect(() => {
     setIsPanicDismissed(false);
-  }, [serviceRequests.length]);
+  }, [visibleRequests.length]);
 
   useEffect(() => {
     if (!categories.length) return;
@@ -323,19 +331,19 @@ export function PDVView() {
         {/* RIGHT: LANÇAMENTOS & ACTIVITY */}
         <div className="col-span-4 glass-card border-white/5 flex flex-col overflow-hidden">
           {/* SOLICITAÇÕES DE SERVIÇO */}
-          {serviceRequests.length > 0 && (
+          {visibleRequests.length > 0 && (
             <div className="border-b border-white/5 relative z-10">
-              <div className={`p-8 border-b border-white/20 flex justify-between items-center ${serviceRequests.some(r => r.status !== 'resolved') ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'}`}>
+              <div className={`p-8 border-b border-white/20 flex justify-between items-center ${visibleRequests.some(r => r.status !== 'resolved') ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'}`}>
                 <h3 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3 text-white">
-                  <Bell size={16} className={serviceRequests.some(r => r.status !== 'resolved') ? 'animate-bounce' : ''} /> 
-                  {serviceRequests.some(r => r.status !== 'resolved') ? 'Novas Solicitações' : 'Solicitações Atendidas'}
+                  <Bell size={16} className={visibleRequests.some(r => r.status !== 'resolved') ? 'animate-bounce' : ''} /> 
+                  {visibleRequests.some(r => r.status !== 'resolved') ? 'Novas Solicitações' : 'Solicitações Atendidas'}
                 </h3>
                 <span className="bg-white text-zinc-900 px-3 py-1 rounded-full text-xs font-black shadow-xl">
-                  {serviceRequests.filter(r => r.status !== 'resolved').length || serviceRequests.length}
+                  {visibleRequests.filter(r => r.status !== 'resolved').length || visibleRequests.length}
                 </span>
               </div>
               <div className="max-h-[400px] overflow-y-auto custom-scrollbar bg-[#0d0d0f]">
-                {serviceRequests.map((req) => {
+                {visibleRequests.map((req) => {
                   const isResolved = req.status === 'resolved';
                   return (
                     <motion.div 
