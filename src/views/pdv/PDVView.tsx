@@ -31,7 +31,8 @@ export function PDVView() {
     sendToKitchen,
     serviceRequests,
     resolveService,
-    login
+    login,
+    syncData
   } = useStore();
 
   const [pin, setPin] = useState('');
@@ -87,6 +88,44 @@ export function PDVView() {
   useEffect(() => {
     setIsPanicDismissed(false);
   }, [visibleRequests.length]);
+
+  // Auto-sync para o PDV em tempo real
+  useEffect(() => {
+    let isSyncing = false;
+
+    const runSync = async (reason: string) => {
+      if (isSyncing) return;
+      isSyncing = true;
+      try {
+        console.log(`PDV syncing: ${reason}`);
+        await syncData();
+      } catch (error) {
+        console.warn('Falha ao sincronizar PDV:', error);
+      } finally {
+        isSyncing = false;
+      }
+    };
+
+    const interval = setInterval(() => {
+      runSync('interval');
+    }, 5000);
+
+    const handleResume = () => {
+      if (!document.hidden) runSync('resume');
+    };
+
+    window.addEventListener('focus', handleResume);
+    window.addEventListener('online', handleResume);
+    document.addEventListener('visibilitychange', handleResume);
+    runSync('mount');
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleResume);
+      window.removeEventListener('online', handleResume);
+      document.removeEventListener('visibilitychange', handleResume);
+    };
+  }, [syncData]);
 
   useEffect(() => {
     if (!categories.length) return;
@@ -345,17 +384,18 @@ export function PDVView() {
               <div className="max-h-[400px] overflow-y-auto custom-scrollbar bg-[#0d0d0f]">
                 {visibleRequests.map((req) => {
                   const isResolved = req.status === 'resolved';
+                  const isOrderActionable = req.type === 'order_ready' || req.type === 'new_order';
                   return (
                     <motion.div 
                       key={req.id} 
                       animate={!isResolved ? { y: [0, -4, 0] } : { y: 0 }}
                       transition={{ repeat: Infinity, duration: 1, ease: "easeInOut" }}
                       onClick={() => {
-                        if (req.type === 'order_ready' && !isResolved) {
+                        if (isOrderActionable && !isResolved) {
                           setSelectedRequestForDetails(req);
                         }
                       }}
-                      className={`p-6 border-b border-white/10 last:border-0 flex justify-between items-center group transition-colors ${isResolved ? 'bg-emerald-500/20' : 'bg-rose-600'} ${(!isResolved && req.type === 'order_ready') ? 'cursor-pointer hover:bg-rose-500' : ''}`}
+                      className={`p-6 border-b border-white/10 last:border-0 flex justify-between items-center group transition-colors ${isResolved ? 'bg-emerald-500/20' : 'bg-rose-600'} ${(!isResolved && isOrderActionable) ? 'cursor-pointer hover:bg-rose-500' : ''}`}
                     >
                       <div className="flex items-center gap-4">
                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black italic text-xl shadow-inner ${isResolved ? 'bg-emerald-500 text-white' : 'bg-white/20 text-white'}`}>
@@ -369,18 +409,21 @@ export function PDVView() {
                                 req.type === 'glass' ? 'Copo Extra' :
                                 req.type === 'cutlery' ? 'Pedir Talher' :
                                 req.type === 'order_ready' ? 'Pedido Pronto' :
+                                req.type === 'new_order' ? 'Novo Pedido' :
                                 req.type}
                              </p>
-                             {req.type === 'order_ready' && (
-                               <span className="bg-white/20 text-[9px] px-2 py-0.5 rounded-full font-black uppercase">Entrega</span>
+                             {isOrderActionable && (
+                               <span className="bg-white/20 text-[9px] px-2 py-0.5 rounded-full font-black uppercase">
+                                 {req.type === 'order_ready' ? 'Entrega' : 'Bebidas'}
+                               </span>
                              )}
                            </div>
                            <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${isResolved ? 'text-emerald-400' : 'text-white/60'}`}>
                              <Clock size={10} /> 
                              {new Date(req.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • 
-                             {isResolved ? 'Atendimento Concluído' : (req.type === 'order_ready' ? 'Retirar na Cozinha' : (req.message || 'Aguardando atendimento'))}
+                             {isResolved ? 'Atendimento Concluído' : (req.type === 'order_ready' ? 'Retirar na Cozinha' : (req.type === 'new_order' ? 'Preparar Bebidas/Drinks' : (req.message || 'Aguardando atendimento')))}
                            </p>
-                           {!isResolved && req.type === 'order_ready' && (
+                           {!isResolved && isOrderActionable && (
                              <div className="mt-2 p-3 bg-white/10 rounded-xl border border-white/5">
                                <p className="text-[10px] font-bold text-white/80 leading-relaxed italic line-clamp-2">
                                  {req.message}
@@ -393,7 +436,10 @@ export function PDVView() {
                          </div>
                       </div>
                       <button 
-                        onClick={() => resolveService(req.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          resolveService(req.id);
+                        }}
                         className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-all ${isResolved ? 'bg-emerald-500 text-white hover:scale-105' : 'bg-white text-rose-600 hover:scale-110 active:scale-90'}`}
                         title={isResolved ? "Desmarcar" : "Dar Ciente"}
                       >
@@ -763,7 +809,7 @@ export function PDVView() {
         )}
       </AnimatePresence>
 
-      {/* MODAL DE DETALHES DA SOLICITAÇÃO (PEDIDO PRONTO) */}
+      {/* MODAL DE DETALHES DA SOLICITAÇÃO (PEDIDO PRONTO OU NOVO PEDIDO) */}
       <AnimatePresence>
         {selectedRequestForDetails && (
           <motion.div 
@@ -774,11 +820,11 @@ export function PDVView() {
               initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
               className="w-full max-w-2xl bg-[#111115] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden"
             >
-              <div className="p-10 border-b border-white/5 flex justify-between items-center bg-rose-600">
+              <div className={`p-10 border-b border-white/5 flex justify-between items-center ${selectedRequestForDetails.type === 'new_order' ? 'bg-indigo-600' : 'bg-rose-600'}`}>
                 <div>
                   <h2 className="text-4xl font-black italic tracking-tighter text-white">Mesa <span className="text-white/60">{selectedRequestForDetails.tableNumber}</span></h2>
                   <p className="text-white/80 font-black uppercase tracking-widest text-[10px] mt-1 flex items-center gap-2">
-                    <Clock size={12} /> {new Date(selectedRequestForDetails.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • Pedido Pronto
+                    <Clock size={12} /> {new Date(selectedRequestForDetails.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • {selectedRequestForDetails.type === 'new_order' ? 'Novo Pedido' : 'Pedido Pronto'}
                   </p>
                 </div>
                 <button onClick={() => setSelectedRequestForDetails(null)} className="p-4 bg-white/20 rounded-full text-white hover:bg-white/30 transition-all">
@@ -788,7 +834,9 @@ export function PDVView() {
 
               <div className="p-10">
                 <div className="bg-white/5 rounded-[2rem] p-8 border border-white/5">
-                   <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-6">Itens para entrega:</h3>
+                   <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-6">
+                     {selectedRequestForDetails.type === 'new_order' ? 'Itens do pedido (Bebidas/Drinks):' : 'Itens prontos para entrega:'}
+                   </h3>
                    <p className="text-3xl font-black text-white leading-relaxed italic">
                      {selectedRequestForDetails.message}
                    </p>
