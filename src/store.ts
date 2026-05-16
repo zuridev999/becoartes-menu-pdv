@@ -121,7 +121,7 @@ export interface AppState {
   syncBeveragesFromInventory: () => Promise<void>;
 
   addToCart: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
-  removeOrderItem: (itemId: string) => Promise<void>;
+  removeOrderItem: (itemId: string, context?: { tableNumber: number; itemName: string; quantity: number; sellerName?: string; sellerPermission?: Seller['permission'] }) => Promise<void>;
   removeFromCart: (itemId: string) => void;
   sendToKitchen: (tableId: string, origin?: 'tablet' | 'pdv' | 'qr', sellerId?: string) => Promise<void>;
   requestBill: (tableId: string) => void;
@@ -822,11 +822,20 @@ export const useStore = create<AppState>((set, get) => ({
     }));
   },
 
-  removeOrderItem: async (itemId) => {
+  removeOrderItem: async (itemId, context) => {
     const { currentTableId } = get();
     if (!currentTableId) return;
 
     await Repository.deleteOrderItem(itemId);
+    if (context) {
+      await Repository.notifyOrderItemCancelled({
+        tableNumber: context.tableNumber,
+        itemName: context.itemName,
+        quantity: context.quantity,
+        sellerName: context.sellerName || get().currentSeller?.name || 'Sistema',
+        sellerPermission: context.sellerPermission || get().currentSeller?.permission || 'standard'
+      });
+    }
     
     set((state) => ({
       tables: state.tables.map(t => t.id === currentTableId ? { ...t, orders: t.orders.filter(o => o.id !== itemId) } : t),

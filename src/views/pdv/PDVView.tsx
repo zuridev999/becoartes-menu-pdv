@@ -553,7 +553,13 @@ export function PDVView() {
             confirmLabel="Cancelar item"
             onClose={() => setCancelItemDialog(null)}
             onConfirm={async () => {
-              await removeOrderItem(cancelItemDialog.item.id);
+              await removeOrderItem(cancelItemDialog.item.id, {
+                tableNumber: cancelItemDialog.tableNumber,
+                itemName: cancelItemDialog.item.name,
+                quantity: cancelItemDialog.item.quantity,
+                sellerName: currentSeller?.name,
+                sellerPermission: currentSeller?.permission
+              });
               await addAuditLog({
                 action: 'item_cancelled',
                 details: { product_name: cancelItemDialog.item.name, quantity: cancelItemDialog.item.quantity },

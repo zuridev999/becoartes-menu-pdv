@@ -485,6 +485,38 @@ export const Repository = {
     });
   },
 
+  async notifyOrderItemCancelled(data: {
+    tableNumber: number;
+    itemName: string;
+    quantity: number;
+    sellerName: string;
+    sellerPermission: string;
+  }) {
+    const { empresaId, slug } = await this.resolveOSContext();
+    await this.createOSNotification({
+      empresaId,
+      title: 'Item cancelado no PDV',
+      message: `Mesa ${data.tableNumber}: ${data.quantity}x ${data.itemName} cancelado por ${data.sellerName} (${data.sellerPermission}).`,
+      type: 'warning',
+      link: `/${slug}/dinheiro`
+    });
+  },
+
+  async notifyCloseBillSyncFailure(data: { tableNumber: number; integrationId: string; error: unknown }) {
+    try {
+      const { empresaId, slug } = await this.resolveOSContext();
+      await this.createOSNotification({
+        empresaId,
+        title: 'Erro ao fechar conta no PDV',
+        message: `Mesa ${data.tableNumber}: falha no fechamento ${data.integrationId}. ${data.error instanceof Error ? data.error.message : String(data.error)}`,
+        type: 'error',
+        link: `/${slug}/dinheiro`
+      });
+    } catch (notificationError) {
+      console.error('Erro ao notificar falha de fechamento no OS:', notificationError);
+    }
+  },
+
   async findStockProduct(empresaId: string, candidates: { id?: string; name: string }) {
     const ids = [candidates.id].filter(Boolean) as string[];
 
@@ -810,6 +842,7 @@ export const Repository = {
       };
     } catch (error) {
       await this.failIntegrationEvent(integrationId, error);
+      await this.notifyCloseBillSyncFailure({ tableNumber: data.tableNumber, integrationId, error });
       throw error;
     }
   },
