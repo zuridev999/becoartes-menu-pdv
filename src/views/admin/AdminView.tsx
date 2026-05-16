@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp, 
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
-  GripVertical, ChevronRight, Check
+  GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote
 } from 'lucide-react';
 import {
   DndContext,
@@ -24,9 +24,27 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useStore, type Product } from '../../store';
 import { db } from '../../lib/db';
+import { PinLoginModal } from '../../components/auth/PinLoginModal';
+import { ActionDialog } from '../../components/common/ActionDialog';
+import { can, getPermissionLabel } from '../../lib/permissions';
+import { createId } from '../../lib/id';
+import { getImageSrc } from '../../lib/image';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
+
+type AdminDialog = {
+  title: string;
+  description?: string;
+  confirmLabel?: string;
+  tone?: 'primary' | 'danger';
+  input?: {
+    label: string;
+    defaultValue?: string;
+    placeholder?: string;
+  };
+  onConfirm: (value?: string) => void | Promise<void>;
+};
 
 // Componente de Input fora para evitar perda de foco
 const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string }) => {
@@ -80,7 +98,7 @@ const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { l
   );
 };
 
-function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSchedulingItem, toggleCategoryVisibility, isExpanded, onToggleExpand, updateProduct, categories }: any) {
+function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisibility, isExpanded, onToggleExpand, updateProduct, categories, onRenameCategory, onDeleteCategory }: any) {
   const {
     attributes,
     listeners,
@@ -131,16 +149,9 @@ function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSc
           >
             <Clock size={18}/>
           </button>
-          <button onClick={() => {
-            const newName = prompt('Novo nome da categoria:', cat.name);
-            if (newName) upsertCategory({ ...cat, name: newName });
-          }} className="p-4 glass rounded-xl text-primary"><Settings size={18}/></button>
+          <button onClick={() => onRenameCategory(cat)} className="p-4 glass rounded-xl text-primary"><Settings size={18}/></button>
           <button 
-            onClick={() => {
-              if (confirm(`Tem certeza que deseja excluir a categoria "${cat.name}"? Os produtos vinculados ficarão sem categoria.`)) {
-                deleteCategory(cat.id);
-              }
-            }} 
+            onClick={() => onDeleteCategory(cat)} 
             className="p-4 glass rounded-xl text-rose-500 hover:bg-rose-500/10"
           >
             <Trash2 size={18}/>
@@ -163,7 +174,7 @@ function SortableCategoryItem({ cat, menu, upsertCategory, deleteCategory, setSc
                 categoryProducts.map((p: any) => (
                   <div key={p.id} className="flex items-center justify-between p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all">
                     <div className="flex items-center gap-4">
-                      <img src={p.image} className="w-10 h-10 rounded-lg object-cover" />
+                      <img src={getImageSrc(p.image)} className="w-10 h-10 rounded-lg object-cover" />
                       <p className="font-bold text-sm">{p.name}</p>
                     </div>
                     <div className="flex items-center gap-4">
@@ -196,7 +207,7 @@ export function AdminView() {
     sellers, addSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
     adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, toggleCategoryVisibility,
-    linkGroupToCategory, linkGroupToProduct
+    linkGroupToCategory, linkGroupToProduct, currentSeller, closedBills, addNotification
   } = useStore();
 
   const activeTab = adminTab;
@@ -209,11 +220,12 @@ export function AdminView() {
 
   const [newSellerName, setNewSellerName] = useState('');
   const [newSellerRole, setNewSellerRole] = useState<'garçom' | 'atendente' | 'gerente' | 'outro'>('garçom');
-  const [newSellerPermission, setNewSellerPermission] = useState<'admin' | 'standard' | 'restricted'>('standard');
+  const [newSellerPermission, setNewSellerPermission] = useState<'admin' | 'manager' | 'operator'>('operator');
   const [newSellerPin, setNewSellerPin] = useState('1234');
 
   const [movements, setMovements] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -269,6 +281,109 @@ export function AdminView() {
 
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
 
+  if (!currentSeller) {
+    return <PinLoginModal />;
+  }
+
+  const canManageSettings = can(currentSeller, 'manageSettings');
+  const canManageTeam = can(currentSeller, 'manageTeam');
+  const canManageOptionals = can(currentSeller, 'manageOptionals');
+  const canAddProduct = can(currentSeller, 'addProduct');
+  const canEditProductPrice = can(currentSeller, 'editProductPrice');
+  const canDeleteProduct = can(currentSeller, 'deleteProduct');
+  const canToggleVisibility = can(currentSeller, 'toggleProductVisibility');
+  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
+
+  if (adminMode === 'settings' && !canManageSettings && activeTab === 'config') {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-12">
+        <div className="glass-card max-w-lg p-10 text-center border-white/10">
+          <h2 className="text-3xl font-black tracking-tighter mb-4">Acesso restrito</h2>
+          <p className="text-zinc-500 font-bold text-sm leading-relaxed mb-8">Configurações gerais exigem permissão de administrador.</p>
+          <button onClick={() => useStore.getState().setActiveView('pdv')} className="btn-beco btn-beco-purple px-8 py-4 rounded-2xl font-black">
+            Voltar ao PDV
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const paymentLabels: Record<string, string> = {
+    credit: 'Crédito',
+    debit: 'Débito',
+    cash: 'Dinheiro',
+    pix: 'PIX',
+  };
+
+  const paymentSummary = closedBills.reduce((acc, bill) => {
+    for (const payment of bill.payments || []) {
+      const current = acc[payment.method] || { total: 0, count: 0 };
+      acc[payment.method] = {
+        total: current.total + payment.amount,
+        count: current.count + 1,
+      };
+    }
+    return acc;
+  }, {} as Record<string, { total: number; count: number }>);
+
+  const closedBillsTotal = closedBills.reduce((acc, bill) => acc + bill.total, 0);
+  const allowedTabIds = new Set([
+    ...(adminMode === 'menu' ? ['products'] : []),
+    ...(canAddProduct ? ['categories'] : []),
+    ...(canManageOptionals ? ['optionals'] : []),
+    ...(canManageSettings ? ['config'] : []),
+    ...(canManageTeam ? ['sellers'] : []),
+    ...(canViewSalesTotals ? ['finance', 'movements'] : []),
+  ]);
+
+  const requestCategoryRename = (cat: any) => {
+    setAdminDialog({
+      title: 'Renomear categoria',
+      description: 'Esse nome aparece no tablet, QR Code e PDV.',
+      confirmLabel: 'Salvar nome',
+      input: { label: 'Novo nome', defaultValue: cat.name },
+      onConfirm: async (newName) => {
+        if (newName) await upsertCategory({ ...cat, name: newName });
+      }
+    });
+  };
+
+  const requestCategoryDelete = (cat: any) => {
+    setAdminDialog({
+      title: 'Excluir categoria?',
+      description: `Os produtos vinculados a "${cat.name}" ficarão sem categoria.`,
+      confirmLabel: 'Excluir categoria',
+      tone: 'danger',
+      onConfirm: async () => deleteCategory(cat.id)
+    });
+  };
+
+  const requestProductDelete = (product: Product) => {
+    setAdminDialog({
+      title: 'Excluir produto?',
+      description: `Excluir permanentemente "${product.name}". Se houver histórico, o sistema pode ocultar em vez de apagar.`,
+      confirmLabel: 'Excluir produto',
+      tone: 'danger',
+      onConfirm: async () => {
+        await deleteProduct(product.id);
+        setEditingProduct(null);
+      }
+    });
+  };
+
+  const requestModifierGroupDelete = (groupId: string) => {
+    setAdminDialog({
+      title: 'Excluir grupo?',
+      description: 'Produtos e categorias deixam de herdar essas opções.',
+      confirmLabel: 'Excluir grupo',
+      tone: 'danger',
+      onConfirm: async () => {
+        await deleteModifierGroup(groupId);
+        setEditingGroup(null);
+      }
+    });
+  };
+
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -316,7 +431,9 @@ export function AdminView() {
           </button>
           <div>
             <h1 className="text-7xl font-black tracking-tighter">Beco <span className="text-primary">Control</span></h1>
-            <p className="text-gray-500 font-bold uppercase tracking-[0.4em] text-[10px] mt-3 ml-2 italic">Administração e Governança do PDV</p>
+            <p className="text-gray-500 font-bold uppercase tracking-[0.4em] text-[10px] mt-3 ml-2 italic">
+              {currentSeller.name} • {getPermissionLabel(currentSeller)}
+            </p>
           </div>
         </div>
         <div className="flex glass p-2 rounded-[2rem] border-white/5">
@@ -326,14 +443,11 @@ export function AdminView() {
             { id: 'products', name: 'Produtos', icon: Package },
             { id: 'optionals', name: 'Opcionais', icon: Sparkles },
             { id: 'sellers', name: 'Equipe', icon: User },
+            { id: 'finance', name: 'Fechamentos', icon: Wallet },
             { id: 'movements', name: 'Auditoria', icon: TrendingUp },
           ]
           .filter(tab => {
-            if (adminMode === 'menu') {
-              return ['categories', 'products', 'optionals'].includes(tab.id);
-            } else {
-              return ['config', 'sellers', 'movements'].includes(tab.id);
-            }
+            return allowedTabIds.has(tab.id);
           })
           .map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-8 py-4 rounded-[1.5rem] flex items-center gap-3 font-black text-xs uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-gray-500 hover:text-white'}`}>
@@ -343,7 +457,7 @@ export function AdminView() {
         </div>
       </div>
 
-      {activeTab === 'config' && (
+      {activeTab === 'config' && canManageSettings && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
           <SectionCard title="Configurações Gerais" icon={Settings}>
             <ConfigInput label="Nome da Unidade" value={settings.unitName} onChange={(val) => updateSettings({ unitName: val })} />
@@ -396,19 +510,21 @@ export function AdminView() {
         </div>
       )}
 
-      {activeTab === 'categories' && (
+      {activeTab === 'categories' && canAddProduct && (
         <div className="max-w-6xl mx-auto space-y-6">
           <div className="flex justify-between items-center mb-12 px-8">
             <div>
               <h3 className="text-4xl font-black flex items-center gap-4"><LayoutDashboard size={36}/> Gestão de Categorias</h3>
               <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] mt-2 italic">Arraste para reordenar a exibição no Tablet</p>
             </div>
-            <button 
-              onClick={() => upsertCategory({ id: Math.random().toString(36).substr(2, 9), name: 'Nova Categoria', sortOrder: categories.length, visible: true })} 
-              className="px-8 py-4 bg-primary text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all flex items-center gap-3"
-            >
-              <Plus size={20}/> Adicionar Categoria
-            </button>
+            {canAddProduct && (
+              <button 
+                onClick={() => upsertCategory({ id: createId(), name: 'Nova Categoria', sortOrder: categories.length, visible: true })} 
+                className="px-8 py-4 bg-primary text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all flex items-center gap-3"
+              >
+                <Plus size={20}/> Adicionar Categoria
+              </button>
+            )}
           </div>
           <div className="glass rounded-[3rem] border-white/5 overflow-hidden shadow-2xl">
             <DndContext 
@@ -425,14 +541,14 @@ export function AdminView() {
                     key={cat.id} 
                     cat={cat} 
                     menu={menu} 
-                    upsertCategory={upsertCategory} 
-                    deleteCategory={deleteCategory}
                     setSchedulingItem={setSchedulingItem}
                     toggleCategoryVisibility={toggleCategoryVisibility}
                     isExpanded={expandedCategoryId === cat.id}
                     onToggleExpand={(id: string) => setExpandedCategoryId(expandedCategoryId === id ? null : id)}
                     updateProduct={updateProduct}
                     categories={categories}
+                    onRenameCategory={requestCategoryRename}
+                    onDeleteCategory={requestCategoryDelete}
                   />
                 ))}
               </SortableContext>
@@ -458,7 +574,9 @@ export function AdminView() {
                   />
                 </div>
               </div>
-              <button onClick={() => setEditingProduct({ id: Math.random().toString(36).substr(2, 9), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
+              {canAddProduct && (
+                <button onClick={() => setEditingProduct({ id: createId(), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
+              )}
             </div>
             <div className="glass rounded-[3rem] border-white/5 overflow-hidden max-h-[60vh] overflow-y-auto custom-scrollbar">
               {categories.map((cat) => {
@@ -476,7 +594,7 @@ export function AdminView() {
                       <div key={p.id} className={`flex items-center justify-between p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group ${!p.visible ? 'opacity-40 grayscale' : ''}`}>
                         <div className="flex items-center gap-6">
                           <div className="relative">
-                            <img src={p.image} className="w-20 h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
+                            <img src={getImageSrc(p.image)} className="w-20 h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
                             {!p.visible && <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center"><EyeOff size={20} className="text-white/40" /></div>}
                           </div>
                           <div>
@@ -488,15 +606,21 @@ export function AdminView() {
                           </div>
                         </div>
                         <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all">
-                          <button 
-                            onClick={() => toggleProductVisibility(p.id)}
-                            className={`p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
-                            title={p.visible ? 'Ocultar do Cardápio' : 'Mostrar no Cardápio'}
-                          >
-                            {p.visible ? <Eye size={20}/> : <EyeOff size={20}/>}
-                          </button>
-                          <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
-                          <button onClick={() => setEditingProduct(p)} className="p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
+                          {canToggleVisibility && (
+                            <button 
+                              onClick={() => toggleProductVisibility(p.id)}
+                              className={`p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
+                              title={p.visible ? 'Ocultar do Cardápio' : 'Mostrar no Cardápio'}
+                            >
+                              {p.visible ? <Eye size={20}/> : <EyeOff size={20}/>}
+                            </button>
+                          )}
+                          {canEditProductPrice && (
+                            <>
+                              <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
+                              <button onClick={() => setEditingProduct(p)} className="p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
+                            </>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -511,19 +635,21 @@ export function AdminView() {
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-12 border-primary/20 sticky top-12 h-fit shadow-2xl shadow-primary/10 overflow-hidden">
                 <div className="flex justify-between items-start mb-10">
                   <h3 className="text-3xl font-black">Editar Produto</h3>
-                  <button 
-                    onClick={async () => {
-                      if (editingProduct.id.startsWith('new_')) {
-                        setEditingProduct({...editingProduct, visible: !editingProduct.visible});
-                      } else {
-                        await toggleProductVisibility(editingProduct.id);
-                        setEditingProduct({...editingProduct, visible: !editingProduct.visible});
-                      }
-                    }}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
-                  >
-                    {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
-                  </button>
+                  {canToggleVisibility && (
+                    <button 
+                      onClick={async () => {
+                        if (editingProduct.id.startsWith('new_')) {
+                          setEditingProduct({...editingProduct, visible: !editingProduct.visible});
+                        } else {
+                          await toggleProductVisibility(editingProduct.id);
+                          setEditingProduct({...editingProduct, visible: !editingProduct.visible});
+                        }
+                      }}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
+                    >
+                      {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
+                    </button>
+                  )}
                 </div>
                 <div className="space-y-8">
                   <ConfigInput label="Nome do Produto" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} placeholder="Ex: Suco de Laranja 400ml" />
@@ -587,7 +713,7 @@ export function AdminView() {
                     >
                       {editingProduct.image ? (
                         <>
-                          <img src={editingProduct.image} className="absolute inset-0 w-full h-full object-cover opacity-40" />
+                          <img src={getImageSrc(editingProduct.image)} className="absolute inset-0 w-full h-full object-cover opacity-40" />
                           <div className="relative z-10 flex flex-col items-center gap-2">
                              <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md group-hover:scale-110 transition-all">
                                <Plus size={24} />
@@ -628,6 +754,7 @@ export function AdminView() {
                   <div className="relative group">
                     <ConfigInput label="Ou cole a URL da Imagem" value={editingProduct.image || ''} onChange={(v) => setEditingProduct({...editingProduct, image: v})} />
                   </div>
+                  {(canAddProduct || canEditProductPrice) && (
                   <button 
                     onClick={async () => { 
                       try {
@@ -654,33 +781,28 @@ export function AdminView() {
                         setEditingProduct(null);
                       } catch (err: any) {
                         console.error("Erro no form:", err);
-                        alert(`Erro ao salvar: ${err.message}`);
+                        addNotification(`Erro ao salvar: ${err.message}`, 'error');
                       }
                     }} 
                     className="w-full btn-beco btn-beco-purple py-6 font-black shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all"
                   >
                     SALVAR ALTERAÇÕES
                   </button>
+                  )}
 
+                  {canDeleteProduct && (
                   <div className="pt-6 border-t border-white/5 flex flex-col items-center gap-4">
-                    <button 
-                      onClick={() => {
-                        const pin = prompt('Esta é uma ação crítica. Digite o PIN de Administrador para excluir este produto:');
-                        if (pin === '0806') {
-                          if (confirm(`Tem certeza que deseja excluir permanentemente o produto "${editingProduct.name}"?`)) {
-                            deleteProduct(editingProduct.id);
-                            setEditingProduct(null);
-                          }
-                        } else if (pin !== null) {
-                          alert('PIN incorreto. Apenas Administradores podem excluir produtos.');
-                        }
-                      }}
+	                    <button 
+	                      onClick={() => {
+	                        requestProductDelete(editingProduct);
+	                      }}
                       className="text-[10px] font-black text-rose-500/40 hover:text-rose-500 uppercase tracking-[0.2em] transition-all flex items-center gap-2"
                     >
                       <Trash2 size={12} /> Excluir Produto do Cardápio
                     </button>
                     <p className="text-[9px] text-zinc-700 font-bold uppercase italic">Ação irreversível • Requer autorização nível Admin</p>
                   </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -688,13 +810,13 @@ export function AdminView() {
         </div>
       )}
 
-      {activeTab === 'optionals' && (
+      {activeTab === 'optionals' && canManageOptionals && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
           <div className="xl:col-span-1 space-y-6">
             <div className="flex justify-between items-center mb-8 px-4">
               <h3 className="text-3xl font-black flex items-center gap-4"><Sparkles size={28}/> Grupos</h3>
               <button 
-                onClick={() => addModifierGroup({ id: Math.random().toString(36).substr(2, 9), name: 'Novo Grupo', minChoices: 0, maxChoices: 1, isRequired: false, status: 'active', modifiers: [] })}
+                onClick={() => addModifierGroup({ id: createId(), name: 'Novo Grupo', minChoices: 0, maxChoices: 1, isRequired: false, status: 'active', modifiers: [] })}
                 className="p-3 bg-primary text-white rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all"
               >
                 <Plus size={20}/>
@@ -730,7 +852,7 @@ export function AdminView() {
                     <div className="glass-card p-10 border-white/5 shadow-2xl">
                       <div className="flex justify-between items-center mb-8">
                         <h4 className="text-2xl font-black tracking-tighter">Configurar "{group.name}"</h4>
-                        <button onClick={() => { if(confirm('Excluir este grupo?')) { deleteModifierGroup(group.id); setEditingGroup(null); } }} className="p-4 glass rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all"><Trash2 size={18}/></button>
+                        <button onClick={() => requestModifierGroupDelete(group.id)} className="p-4 glass rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all"><Trash2 size={18}/></button>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <ConfigInput label="Nome do Grupo" value={group.name} onChange={(v) => updateModifierGroup(group.id, { name: v })} />
@@ -777,7 +899,7 @@ export function AdminView() {
                         ))}
                         <button 
                           onClick={() => {
-                            const newMods = [...group.modifiers, { id: Math.random().toString(36).substr(2, 9), name: 'Nova Opção', price: 0, status: 'active' as const }];
+                            const newMods = [...group.modifiers, { id: createId(), name: 'Nova Opção', price: 0, status: 'active' as const }];
                             updateModifierGroup(group.id, { modifiers: newMods });
                           }}
                           className="w-full p-4 glass border-dashed border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white/5 text-primary transition-all"
@@ -841,7 +963,7 @@ export function AdminView() {
         </div>
       )}
 
-      {activeTab === 'sellers' && (
+      {activeTab === 'sellers' && canManageTeam && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
           <SectionCard title="Adicionar Novo Operador" icon={Plus}>
             <div className="grid grid-cols-2 gap-6">
@@ -858,13 +980,13 @@ export function AdminView() {
                <div className="space-y-3">
                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Permissão</label>
                   <select value={newSellerPermission} onChange={(e) => setNewSellerPermission(e.target.value as any)} className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent">
-                     <option value="standard" className="bg-[#0a0a0c]">Padrão</option>
-                     <option value="admin" className="bg-[#0a0a0c]">Administrador</option>
-                     <option value="restricted" className="bg-[#0a0a0c]">Restrito</option>
+                     <option value="admin" className="bg-[#0a0a0c]">Admin full access</option>
+                     <option value="manager" className="bg-[#0a0a0c]">Gerente</option>
+                     <option value="operator" className="bg-[#0a0a0c]">Operador</option>
                   </select>
                </div>
             </div>
-            <button onClick={async () => { await addSeller({ id: Math.random().toString(36).substr(2, 9), name: newSellerName, role: newSellerRole, permission: newSellerPermission, pin: newSellerPin, status: 'active' }); setNewSellerName(''); setNewSellerPin('1234'); }} className="w-full btn-beco btn-beco-purple py-6 font-black mt-4">Registrar Vendedor</button>
+            <button onClick={async () => { await addSeller({ id: createId(), name: newSellerName, role: newSellerRole, permission: newSellerPermission, pin: newSellerPin, status: 'active' }); setNewSellerName(''); setNewSellerPin('1234'); }} className="w-full btn-beco btn-beco-purple py-6 font-black mt-4">Registrar Vendedor</button>
           </SectionCard>
 
           <SectionCard title="Equipe Ativa" icon={User}>
@@ -886,7 +1008,66 @@ export function AdminView() {
         </div>
       )}
 
-      {activeTab === 'movements' && (
+      {activeTab === 'finance' && canViewSalesTotals && (
+        <div className="space-y-10">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="glass-card p-8 border-white/5">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Total Fechado</span>
+              <p className="text-4xl font-black text-emerald-400 mt-3">R$ {closedBillsTotal.toFixed(2)}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">{closedBills.length} mesas fechadas</p>
+            </div>
+            {(['credit', 'debit', 'pix', 'cash'] as const).map((method) => {
+              const Icon = method === 'cash' ? Banknote : method === 'pix' ? Wallet : CreditCard;
+              const summary = paymentSummary[method] || { total: 0, count: 0 };
+              return (
+                <div key={method} className="glass-card p-8 border-white/5">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{paymentLabels[method]}</span>
+                    <Icon size={22} className="text-primary" />
+                  </div>
+                  <p className="text-3xl font-black text-white">R$ {summary.total.toFixed(2)}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">{summary.count} lançamentos</p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="glass rounded-[3rem] border-white/5 overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-white/5">
+                <tr className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                  <th className="p-8">Mesa</th>
+                  <th className="p-8">Horário</th>
+                  <th className="p-8">Operador</th>
+                  <th className="p-8">Pagamentos</th>
+                  <th className="p-8 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {closedBills.map((bill) => (
+                  <tr key={bill.id} className="hover:bg-white/[0.01] transition-all">
+                    <td className="p-8 font-black text-xl">{bill.tableNumber}</td>
+                    <td className="p-8 font-medium text-gray-400">{new Date(bill.closedAt).toLocaleString('pt-BR')}</td>
+                    <td className="p-8 font-black text-primary">{bill.sellerName}</td>
+                    <td className="p-8">
+                      <div className="flex flex-wrap gap-2">
+                        {(bill.payments || []).map((payment, idx) => (
+                          <span key={`${bill.id}-${idx}`} className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-white/5 text-zinc-300">
+                            {paymentLabels[payment.method] || payment.method}: R$ {payment.amount.toFixed(2)}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="p-8 text-right font-black text-emerald-400">R$ {bill.total.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'movements' && canViewSalesTotals && (
         <div className="glass rounded-[3rem] border-white/5 overflow-hidden">
            <table className="w-full text-left">
               <thead className="bg-white/5">
@@ -914,6 +1095,22 @@ export function AdminView() {
            </table>
         </div>
       )}
+      {/* Modal de Agenda */}
+      <AnimatePresence>
+        {adminDialog && (
+          <ActionDialog
+            isOpen
+            title={adminDialog.title}
+            description={adminDialog.description}
+            confirmLabel={adminDialog.confirmLabel}
+            tone={adminDialog.tone}
+            input={adminDialog.input}
+            onClose={() => setAdminDialog(null)}
+            onConfirm={adminDialog.onConfirm}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Modal de Agenda */}
       <AnimatePresence>
         {schedulingItem && (

@@ -3,12 +3,42 @@ import { db } from './lib/db';
 import { Repository } from './lib/repository';
 import { ProductSchema, SellerSchema } from './lib/schemas';
 import { hashPin, comparePin } from './lib/security';
+import { createId } from './lib/id';
+import { getOrderItemsTotal } from './lib/totals';
 import type { 
   Product, Table, OrderItem, KitchenOrder, 
   ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category
 } from './types';
 
 export type { Product, Table, OrderItem, KitchenOrder, ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier };
+
+const TABLET_TABLE_STORAGE_KEY = 'beco_tablet_table_id';
+const LEGACY_TABLET_TABLE_STORAGE_KEY = 'becoartes_tablet_table_id';
+const SELLER_SESSION_STORAGE_KEY = 'beco_seller_session';
+const BOOTSTRAP_ADMIN_PIN = import.meta.env.VITE_BOOTSTRAP_ADMIN_PIN || '';
+const DEFAULT_MANAGER_PIN = import.meta.env.VITE_DEFAULT_MANAGER_PIN || '2020';
+const DEFAULT_OPERATOR_PIN = import.meta.env.VITE_DEFAULT_OPERATOR_PIN || '0040';
+let syncIntervalId: number | undefined;
+
+const toSessionSeller = (seller: Seller): Seller => ({ ...seller, pin: '' });
+
+const persistSellerSession = (seller: Seller) => {
+  const sessionSeller = toSessionSeller(seller);
+  localStorage.setItem(SELLER_SESSION_STORAGE_KEY, JSON.stringify(sessionSeller));
+  return sessionSeller;
+};
+
+const isLegacyPlainPin = (storedPin: string) => /^\d{4}$/.test(storedPin);
+
+const parseJsonArray = (value: unknown): any[] => {
+  if (!value || typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 
 export interface AppState {
@@ -27,17 +57,17 @@ export interface AppState {
   syncData: () => Promise<void>;
   addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string } | string, details?: string, tableNumber?: string, origin?: string) => Promise<void>;
   activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
-  adminTab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements';
+  adminTab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance';
   adminMode: 'menu' | 'settings';
   isLoading: boolean;
-  setAdminTab: (tab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements') => void;
+  setAdminTab: (tab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance') => void;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
   serverTimeOffset: number;
   
   currentTableId: string | null;
   setCurrentTableId: (id: string | null) => void;
   init: () => Promise<void>;
-  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements', mode?: 'menu' | 'settings') => void;
+  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance', mode?: 'menu' | 'settings') => void;
   toggleProductVisibility: (id: string) => void;
   toggleCategoryVisibility: (id: string) => void;
   addProduct: (product: Product) => Promise<void>;
@@ -45,7 +75,7 @@ export interface AppState {
   deleteProduct: (id: string) => Promise<void>;
   
   currentSeller: Seller | null;
-  login: (pin: string) => Promise<boolean>;
+  login: (pin: string, sellerId?: string) => Promise<boolean>;
   logout: () => void;
   
   // Vendedores
@@ -66,7 +96,7 @@ export interface AppState {
   syncBeveragesFromInventory: () => Promise<void>;
 
   addToCart: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
-  removeOrderItem: (itemId: string) => void;
+  removeOrderItem: (itemId: string) => Promise<void>;
   removeFromCart: (itemId: string) => void;
   sendToKitchen: (tableId: string, origin?: 'tablet' | 'pdv' | 'qr', sellerId?: string) => Promise<void>;
   requestBill: (tableId: string) => void;
@@ -88,7 +118,7 @@ export interface AppState {
   closeShift: (closingBalance: number) => Promise<void>;
 
   settings: AppSettings;
-  updateSettings: (settings: Partial<AppSettings>) => void;
+  updateSettings: (settings: Partial<AppSettings>) => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -147,98 +177,85 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  updateSettings: (newSettings) => set((state) => ({ 
-    settings: { 
-      ...state.settings, 
+  updateSettings: async (newSettings) => {
+    const currentSettings = get().settings;
+    const nextSettings = {
+      ...currentSettings,
       ...newSettings,
-      tablet: newSettings.tablet ? { ...state.settings.tablet, ...newSettings.tablet } : state.settings.tablet,
-      kitchen: newSettings.kitchen ? { ...state.settings.kitchen, ...newSettings.kitchen } : state.settings.kitchen
-    } 
-  })),
+      tablet: newSettings.tablet ? { ...currentSettings.tablet, ...newSettings.tablet } : currentSettings.tablet,
+      kitchen: newSettings.kitchen ? { ...currentSettings.kitchen, ...newSettings.kitchen } : currentSettings.kitchen
+    };
 
-  currentTableId: localStorage.getItem('beco_tablet_table_id'),
+    set({ settings: nextSettings });
+
+    try {
+      await Repository.saveSettings(nextSettings);
+    } catch (error) {
+      console.error("❌ Erro ao salvar configurações:", error);
+      set({ settings: currentSettings });
+      get().addNotification("Erro ao salvar configurações.", "error");
+    }
+  },
+
+  currentTableId: localStorage.getItem(TABLET_TABLE_STORAGE_KEY) || localStorage.getItem(LEGACY_TABLET_TABLE_STORAGE_KEY),
   setCurrentTableId: (id) => {
-    if (id) localStorage.setItem('beco_tablet_table_id', id);
-    else localStorage.removeItem('beco_tablet_table_id');
+    if (id) {
+      localStorage.setItem(TABLET_TABLE_STORAGE_KEY, id);
+      localStorage.removeItem(LEGACY_TABLET_TABLE_STORAGE_KEY);
+    } else {
+      localStorage.removeItem(TABLET_TABLE_STORAGE_KEY);
+      localStorage.removeItem(LEGACY_TABLET_TABLE_STORAGE_KEY);
+    }
     set({ currentTableId: id });
   },
 
   currentSeller: null,
 
-  login: async (pin) => {
-    // PINs de Sistema Diretos (Prioridade)
-    if (pin === '0806') {
-      const admin: Seller = {
-        id: 'admin-system',
-        name: 'Administrador',
-        status: 'active',
-        role: 'gerente',
-        permission: 'admin',
-        pin: '0806'
-      };
-      set({ currentSeller: admin });
-      localStorage.setItem('beco_seller_session', JSON.stringify(admin));
-      return true;
-    }
+  login: async (pin, sellerId) => {
+    const activeSellers = get().sellers.filter(s => s.status === 'active' && (!sellerId || s.id === sellerId));
 
-    if (pin === '0040') {
-      const operator: Seller = {
-        id: 'op-system',
-        name: 'Operador',
-        status: 'active',
-        role: 'atendente',
-        permission: 'standard',
-        pin: '0040'
-      };
-      set({ currentSeller: operator });
-      localStorage.setItem('beco_seller_session', JSON.stringify(operator));
-      return true;
-    }
-
-    // Acesso de Emergência se não houver vendedores
-    if (get().sellers.length === 0 && pin === '0000') {
+    if (activeSellers.length === 0 && BOOTSTRAP_ADMIN_PIN && pin === BOOTSTRAP_ADMIN_PIN) {
       const masterAdmin: Seller = {
         id: 'master',
         name: 'Admin Mestre',
         status: 'active',
         role: 'gerente',
         permission: 'admin',
-        pin: '0000'
+        pin: ''
       };
-      set({ currentSeller: masterAdmin });
-      localStorage.setItem('beco_seller_session', JSON.stringify(masterAdmin));
+      set({ currentSeller: persistSellerSession(masterAdmin) });
       return true;
     }
 
-    const seller = get().sellers.find(s => s.status === 'active');
-    if (seller) {
-      const isMatch = await comparePin(pin, seller.pin);
+    for (const seller of activeSellers) {
+      const isMatch = isLegacyPlainPin(seller.pin)
+        ? seller.pin === pin
+        : await comparePin(pin, seller.pin);
+
       if (isMatch) {
-        set({ currentSeller: seller });
-        localStorage.setItem('beco_seller_session', JSON.stringify(seller));
+        if (isLegacyPlainPin(seller.pin)) {
+          const hashedPin = await hashPin(pin);
+          await Repository.updateSellerPin(seller.id, hashedPin);
+          seller.pin = hashedPin;
+          set((state) => ({
+            sellers: state.sellers.map(s => s.id === seller.id ? { ...s, pin: hashedPin } : s)
+          }));
+        }
+        set({ currentSeller: persistSellerSession(seller) });
         return true;
       }
-    }
-    
-    // Fallback para PIN mestre em hash se configurado ou texto puro se for primeira vez
-    if (pin === '0000') {
-       const masterAdmin: Seller = {
-         id: 'master', name: 'Admin Mestre', status: 'active', role: 'gerente', permission: 'admin', pin: '0000'
-       };
-       set({ currentSeller: masterAdmin });
-       return true;
     }
 
     return false;
   },
 
   logout: () => {
-    localStorage.removeItem('beco_seller_session');
+    localStorage.removeItem(SELLER_SESSION_STORAGE_KEY);
     set({ currentSeller: null });
   },
 
   addAuditLog: async (logOrAction: any, details?: string, tableNumber?: string, origin?: string) => {
-    const id = Math.random().toString(36).substr(2, 9);
+    const id = createId();
     const timestamp = new Date().toISOString();
     
     let logData;
@@ -277,7 +294,7 @@ export const useStore = create<AppState>((set, get) => ({
     
     try {
       // Restaurar Sessão se existir
-      const savedSession = localStorage.getItem('beco_seller_session');
+      const savedSession = localStorage.getItem(SELLER_SESSION_STORAGE_KEY);
       if (savedSession) {
         set({ currentSeller: JSON.parse(savedSession) });
       }
@@ -293,7 +310,7 @@ export const useStore = create<AppState>((set, get) => ({
           for (const row of legacyMenu.rows) {
             const catName = row.category as string;
             if (!catName) continue;
-            const catId = Math.random().toString(36).substr(2, 9);
+            const catId = createId();
             await Repository.upsertCategory({ id: catId, name: catName, sortOrder: 0 });
             await db.execute({
               sql: "UPDATE menu SET category_id = ? WHERE category = ?",
@@ -306,17 +323,64 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       // 2. Carregar Dados
-      const [categories, menuItems, modifierGroups, sellers, kitchenData, mgMapping, catMgMapping, tablesRes, logsRes] = await Promise.all([
+      const [categories, menuItems, modifierGroups, loadedSellers, kitchenData, serviceRequests, closedBills, savedSettings, mgMapping, catMgMapping, tablesRes, logsRes] = await Promise.all([
         Repository.getCategories(),
         Repository.getMenu(),
         Repository.getModifierGroups(),
         Repository.getSellers(),
         Repository.getKitchenOrders(),
+        Repository.getServiceRequests(),
+        Repository.getClosedBills(),
+        Repository.getSettings(),
         Repository.getProductModifierGroupsMapping(),
         Repository.getCategoryModifierGroupsMapping(),
         db.execute("SELECT * FROM tables"),
         db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50")
       ]);
+
+      let sellers: Seller[] = loadedSellers;
+      const defaultUsers = [
+        {
+          id: 'admin-bootstrap',
+          name: 'Admin Full',
+          nickname: 'Admin',
+          role: 'gerente' as const,
+          permission: 'admin' as const,
+          pin: BOOTSTRAP_ADMIN_PIN,
+        },
+        {
+          id: 'manager-default',
+          name: 'Gerente',
+          nickname: 'Gerente',
+          role: 'gerente' as const,
+          permission: 'manager' as const,
+          pin: DEFAULT_MANAGER_PIN,
+        },
+        {
+          id: 'operator-default',
+          name: 'Operador',
+          nickname: 'Operador',
+          role: 'atendente' as const,
+          permission: 'operator' as const,
+          pin: DEFAULT_OPERATOR_PIN,
+        },
+      ].filter(user => user.pin);
+
+      for (const user of defaultUsers) {
+        if (!sellers.some(s => s.id === user.id)) {
+          const seller: Seller = {
+            id: user.id,
+            name: user.name,
+            nickname: user.nickname,
+            status: 'active',
+            role: user.role,
+            permission: user.permission,
+            pin: await hashPin(user.pin)
+          };
+          await Repository.upsertSeller(seller);
+          sellers = [...sellers, seller];
+        }
+      }
 
       const { orders: kitchenOrders, serverNow } = kitchenData;
       const serverTimeOffset = serverNow.getTime() - new Date().getTime();
@@ -411,7 +475,10 @@ export const useStore = create<AppState>((set, get) => ({
         modifierGroups, 
         sellers, 
         kitchenOrders, 
+        serviceRequests,
+        closedBills,
         auditLogs,
+        settings: savedSettings ? { ...get().settings, ...savedSettings } : get().settings,
         activeView: initialView as any,
         adminMode: initialAdminMode,
         adminTab: initialAdminMode === 'menu' ? 'products' : 'config',
@@ -427,7 +494,8 @@ export const useStore = create<AppState>((set, get) => ({
       
       // Iniciar Sync Automático (a cada 60 segundos se não for kitchen)
       if (initialView !== 'kitchen') {
-        setInterval(() => {
+        if (syncIntervalId) window.clearInterval(syncIntervalId);
+        syncIntervalId = window.setInterval(() => {
           get().syncData();
         }, 60000);
       }
@@ -566,8 +634,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   syncData: async () => {
     try {
-      const [kitchenData, tablesRes, categories, menuItems, modifierGroups, mgMapping, catMgMapping] = await Promise.all([
+      const [kitchenData, serviceRequests, closedBills, tablesRes, categories, menuItems, modifierGroups, mgMapping, catMgMapping] = await Promise.all([
         Repository.getKitchenOrders(),
+        Repository.getServiceRequests(),
+        Repository.getClosedBills(),
         db.execute("SELECT * FROM tables"),
         Repository.getCategories(),
         Repository.getMenu(),
@@ -600,9 +670,10 @@ export const useStore = create<AppState>((set, get) => ({
       }));
 
       const ordersRes = await db.execute(`
-        SELECT oi.*, o.table_id 
+        SELECT oi.*, o.table_id, m.name
         FROM order_items oi 
         JOIN orders o ON oi.order_id = o.id 
+        LEFT JOIN menu m ON oi.product_id = m.id
         WHERE o.status != 'closed'
       `);
 
@@ -611,11 +682,12 @@ export const useStore = create<AppState>((set, get) => ({
         if (!ordersByTable[row.table_id]) ordersByTable[row.table_id] = [];
         ordersByTable[row.table_id].push({
           id: row.id as string,
+          orderId: row.order_id as string,
           productId: row.product_id as string,
           name: row.name || '', 
           price: row.price_at_time as number,
           quantity: row.quantity as number,
-          selectedModifiers: JSON.parse(row.selected_modifiers as string || '[]'),
+          selectedModifiers: parseJsonArray(row.selected_modifiers),
           notes: row.notes as string
         });
       });
@@ -635,6 +707,8 @@ export const useStore = create<AppState>((set, get) => ({
         menu: menuItems,
         modifierGroups,
         kitchenOrders, 
+        serviceRequests,
+        closedBills,
         tables: finalTables.sort((a, b) => a.number - b.number),
         serverTimeOffset
       });
@@ -666,12 +740,12 @@ export const useStore = create<AppState>((set, get) => ({
           });
         } else {
           // Criar novo item de bebida - Garantindo todos os campos
-          const newId = Math.random().toString(36).substr(2, 9);
+          const newId = createId();
           
           // Buscar ou criar categoria 'Bebidas'
           let cat = get().categories.find(c => c.name === 'Bebidas');
           if (!cat) {
-             const catId = Math.random().toString(36).substr(2, 9);
+             const catId = createId();
              await Repository.upsertCategory({ id: catId, name: 'Bebidas', sortOrder: 0 });
              await get().init(); // Recarregar categorias
              cat = get().categories.find(c => c.name === 'Bebidas');
@@ -699,7 +773,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (!currentTableId) return;
 
     const newItem: OrderItem = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: createId(),
       productId: product.id,
       name: product.name,
       price: product.price,
@@ -728,24 +802,23 @@ export const useStore = create<AppState>((set, get) => ({
     }));
   },
 
-  removeOrderItem: (itemId) => {
+  removeOrderItem: async (itemId) => {
     const { currentTableId } = get();
     if (!currentTableId) return;
+
+    await Repository.deleteOrderItem(itemId);
     
     set((state) => ({
-      tables: state.tables.map(t => {
-        if (t.id === currentTableId) {
-          const newOrders = t.orders.filter(o => o.id !== itemId);
-          return { ...t, orders: newOrders };
-        }
-        return t;
-      })
+      tables: state.tables.map(t => t.id === currentTableId ? { ...t, orders: t.orders.filter(o => o.id !== itemId) } : t),
+      kitchenOrders: state.kitchenOrders
+        .map(order => ({ ...order, items: order.items.filter(item => item.id !== itemId) }))
+        .filter(order => order.items.length > 0)
     }));
   },
 
   requestService: async (tableId, type, message = '') => {
     const table = get().tables.find(t => t.id === tableId);
-    const id = Math.random().toString(36).substr(2, 9);
+    const id = createId();
     
     await db.execute({
       sql: "INSERT INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
@@ -785,7 +858,7 @@ export const useStore = create<AppState>((set, get) => ({
   resolveService: async (requestId) => {
     await db.execute({
       sql: "UPDATE service_requests SET status = ? WHERE id = ?",
-      args: ['done', requestId]
+      args: ['resolved', requestId]
     });
     set((state) => ({
       serviceRequests: state.serviceRequests.filter(r => r.id !== requestId)
@@ -796,27 +869,25 @@ export const useStore = create<AppState>((set, get) => ({
     const table = get().tables.find(t => t.id === tableId);
     if (!table || table.cart.length === 0) return;
 
-    const orderId = Math.random().toString(36).substr(2, 9);
-    const total = table.cart.reduce((acc, o) => {
-      const modifiersTotal = o.selectedModifiers?.reduce((mAcc, m) => mAcc + m.price, 0) || 0;
-      const itemPrice = o.price + modifiersTotal;
-      return acc + (itemPrice * o.quantity);
-    }, 0);
+    const orderId = createId();
+    const total = getOrderItemsTotal(table.cart);
 
     // Repositório
     await Repository.createOrder(orderId, tableId, total, origin, sellerId || null);
 
     // Salvar Itens do Pedido (Mover do Carrinho)
+    const persistedItems: OrderItem[] = [];
     for (const item of table.cart) {
-      const itemId = Math.random().toString(36).substr(2, 9);
+      const itemId = createId();
       await Repository.addOrderItem(itemId, orderId, item.productId, item.quantity, item.price, JSON.stringify(item.selectedModifiers), item.notes || '');
+      persistedItems.push({ ...item, id: itemId, orderId });
     }
 
     const newKitchenOrder: KitchenOrder = {
       id: orderId,
       tableId: tableId,
       tableNumber: table.number,
-      items: [...table.cart],
+      items: persistedItems,
       status: 'pending',
       origin: origin as 'tablet' | 'pdv',
       createdAt: new Date()
@@ -832,7 +903,7 @@ export const useStore = create<AppState>((set, get) => ({
       kitchenOrders: [...state.kitchenOrders, newKitchenOrder],
       tables: state.tables.map(t => t.id === tableId ? { 
         ...t, 
-        orders: [...t.orders, ...table.cart],
+        orders: [...t.orders, ...persistedItems],
         cart: [],
         status: 'ordering', 
         lastActivity: new Date() 
@@ -854,22 +925,23 @@ export const useStore = create<AppState>((set, get) => ({
     const table = get().tables.find(t => t.id === tableId);
     await db.execute({ sql: "UPDATE tables SET status = ? WHERE id = ?", args: ['bill_requested', tableId] });
     set((state) => ({ tables: state.tables.map(t => t.id === tableId ? { ...t, status: 'bill_requested' } : t) }));
-    get().addNotification(`A Mesa ${table.number} solicitou o fechamento da conta!`, 'info', tableId);
+    get().addNotification(`A Mesa ${table?.number || tableId} solicitou o fechamento da conta!`, 'info', tableId);
     await get().addAuditLog('bill_requested', 'Cliente solicitou a conta via Tablet', table?.number.toString(), 'tablet');
   },
 
   closeBill: async (data) => {
     try {
       await get().addAuditLog('bill_closed', `Fechamento: R$ ${data.total.toFixed(2)}`, data.tableNumber.toString(), 'pdv');
-      const id = Math.random().toString(36).substr(2, 9);
+      const id = createId();
       const closedAt = new Date();
       const closedBill: ClosedBill = { ...data, id, closedAt };
 
       // Salvar no DB
       await db.execute({
-        sql: "INSERT INTO closed_bills (id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        sql: "INSERT INTO closed_bills (id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         args: [
           id, 
+          data.tableId,
           data.tableNumber, 
           data.sellerId,
           data.sellerName,
@@ -887,6 +959,11 @@ export const useStore = create<AppState>((set, get) => ({
       await db.execute({
         sql: "UPDATE tables SET status = 'available', last_activity = ? WHERE id = ?",
         args: [closedAt.toISOString(), data.tableId]
+      });
+
+      await db.execute({
+        sql: "UPDATE orders SET status = 'closed' WHERE table_id = ? AND status != 'closed'",
+        args: [data.tableId]
       });
 
       set((state) => ({
@@ -914,7 +991,7 @@ export const useStore = create<AppState>((set, get) => ({
   // CRUD VENDEDORES
   addSeller: async (s) => {
     try {
-      const id = Math.random().toString(36).substr(2, 9);
+      const id = createId();
       const hashedPin = await hashPin(s.pin);
       const validated = SellerSchema.parse({ ...s, id, status: 'active', pin: hashedPin });
       await Repository.addSeller(validated);
@@ -950,7 +1027,7 @@ export const useStore = create<AppState>((set, get) => ({
 
 
   addNotification: (message, type = 'info', tableId = '') => {
-    const id = Math.random().toString(36).substr(2, 9);
+    const id = createId();
     set((state) => ({
       notifications: [...state.notifications, { id, message, type, tableId }]
     }));
@@ -1102,7 +1179,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   openShift: async (openingBalance) => {
-    const id = Math.random().toString(36).substr(2, 9);
+    const id = createId();
     await db.execute({
       sql: "INSERT INTO shifts (id, status, opening_balance) VALUES (?, ?, ?)",
       args: [id, 'open', openingBalance]

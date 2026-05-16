@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useStore } from './store';
 import { initDB } from './lib/db';
 import { AnimatePresence } from 'framer-motion';
@@ -7,15 +7,14 @@ import { AnimatePresence } from 'framer-motion';
 import { AntigravityErrorBoundary } from './components/common/UI';
 import { PremiumLoader } from './components/common/Loaders';
 
-// Visualizações
-import { TabletView } from './views/tablet/TabletView';
-import { PDVView } from './views/pdv/PDVView';
-import { KitchenView } from './views/kitchen/KitchenView';
-import { AdminView } from './views/admin/AdminView';
-import { QRView } from './views/qr/QRView';
 import { NotificationDisplay } from './components/common/NotificationDisplay';
 
-// Componentes de Autenticação
+const TabletView = lazy(() => import('./views/tablet/TabletView').then(module => ({ default: module.TabletView })));
+const PDVView = lazy(() => import('./views/pdv/PDVView').then(module => ({ default: module.PDVView })));
+const KitchenView = lazy(() => import('./views/kitchen/KitchenView').then(module => ({ default: module.KitchenView })));
+const AdminView = lazy(() => import('./views/admin/AdminView').then(module => ({ default: module.AdminView })));
+const QRView = lazy(() => import('./views/qr/QRView').then(module => ({ default: module.QRView })));
+
 function App() {
   const { 
     init, isLoading, activeView
@@ -49,11 +48,13 @@ function App() {
       <div className="min-h-screen bg-[#0a0a0c]">
         <NotificationDisplay />
         {/* Roteamento de Views com Hostname Fallback */}
-        {activeView === 'tablet' && <TabletView />}
-        {activeView === 'qr' && <QRView />}
-        {activeView === 'pdv' && <PDVView />}
-        {activeView === 'kitchen' && <KitchenView />}
-        {activeView === 'admin' && <AdminView />}
+        <Suspense fallback={null}>
+          {activeView === 'tablet' && <TabletView />}
+          {activeView === 'qr' && <QRView />}
+          {activeView === 'pdv' && <PDVView />}
+          {activeView === 'kitchen' && <KitchenView />}
+          {activeView === 'admin' && <AdminView />}
+        </Suspense>
         
         {/* Fallback amigável para URLs desconhecidas */}
         {!isLoading && !['tablet', 'pdv', 'kitchen', 'admin', 'qr'].includes(activeView) && (

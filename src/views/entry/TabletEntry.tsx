@@ -13,12 +13,12 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
   const [isPinCorrect, setIsPinCorrect] = useState(false);
   const [error, setError] = useState('');
 
-  const GLOBAL_PIN = '0040';
+  const tabletSetupPin = import.meta.env.VITE_TABLET_SETUP_PIN || '0040';
 
   useEffect(() => {
     // Se já tiver uma mesa salva no localStorage, pula o PIN (opcional, ou trava)
     // Mas o usuário pediu PIN -> Mesa -> Trava.
-    const savedTableId = localStorage.getItem('becoartes_tablet_table_id');
+    const savedTableId = localStorage.getItem('beco_tablet_table_id') || localStorage.getItem('becoartes_tablet_table_id');
     if (savedTableId && !currentTableId) {
        setCurrentTableId(savedTableId);
        onUnlock();
@@ -30,7 +30,7 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
     if (newPin.length <= 4) {
       setPin(newPin);
       if (newPin.length === 4) {
-        if (newPin === GLOBAL_PIN) {
+        if (newPin === tabletSetupPin) {
           setIsPinCorrect(true);
           setError('');
         } else {
@@ -42,7 +42,6 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
   };
 
   const handleTableSelect = (tableId: string) => {
-    localStorage.setItem('becoartes_tablet_table_id', tableId);
     setCurrentTableId(tableId);
     onUnlock();
   };

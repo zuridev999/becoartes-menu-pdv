@@ -8,10 +8,13 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup, Bell, Check
+  Settings, Soup, Bell, Check, Trash2, Wallet
 } from 'lucide-react';
-import { useStore, type Table as TableType } from '../../store';
+import { useStore, type OrderItem, type Table as TableType } from '../../store';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
+import { ActionDialog } from '../../components/common/ActionDialog';
+import { can, getPermissionLabel } from '../../lib/permissions';
+import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 
 export function PDVView() {
   const { 
@@ -24,6 +27,7 @@ export function PDVView() {
     logout,
     addAuditLog,
     addToCart,
+    removeOrderItem,
     setCurrentTableId,
     sendToKitchen,
     serviceRequests,
@@ -42,6 +46,7 @@ export function PDVView() {
   const [logAction, setLogAction] = useState('');
   const [logDetails, setLogDetails] = useState('');
   const [logTable, setLogTable] = useState('');
+  const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableNumber: number } | null>(null);
 
   const handleLogin = async () => {
     const success = await login(pin);
@@ -95,11 +100,14 @@ export function PDVView() {
 
   // Derived state
   const currentTable = tables.find(t => t.id === selectedTable?.id);
+  const managedTable = currentTable || selectedTable;
   const cart = currentTable?.cart || [];
 
   // Stats
   const activeTablesCount = tables.filter(t => t.status === 'ordering' || t.status === 'bill_requested').length;
   const totalToday = closedBills.reduce((acc, bill) => acc + bill.total, 0);
+  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
+  const canCancelTableItem = can(currentSeller, 'cancelTableItem');
 
   const handleTableClick = (table: TableType) => {
     setSelectedTable(table);
@@ -131,7 +139,7 @@ export function PDVView() {
         </div>
 
         <div className="flex gap-6">
-          {currentSeller?.permission === 'admin' && (
+          {canViewSalesTotals && (
             <div className="glass-card px-8 py-4 flex flex-col items-end border-white/5">
               <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Vendas Hoje</span>
               <span className="text-2xl font-black text-emerald-400">R$ {totalToday.toFixed(2)}</span>
@@ -148,7 +156,16 @@ export function PDVView() {
           >
             <Soup size={24} />
           </button>
-          {currentSeller?.permission === 'admin' && (
+          {canViewSalesTotals && (
+            <button 
+              onClick={() => useStore.getState().setActiveView('admin', 'finance', 'settings')} 
+              className="glass-card p-4 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all border-white/5"
+              title="Fechamentos e pagamentos"
+            >
+              <Wallet size={24} />
+            </button>
+          )}
+          {can(currentSeller, 'manageSettings') && (
             <button 
               onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')} 
               className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"
@@ -157,6 +174,10 @@ export function PDVView() {
               <Settings size={24} />
             </button>
           )}
+          <div className="glass-card px-5 py-4 flex flex-col items-end border-white/5">
+            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Perfil</span>
+            <span className="text-sm font-black text-white">{getPermissionLabel(currentSeller)}</span>
+          </div>
           <button onClick={logout} className="glass-card p-4 hover:bg-rose-500/10 hover:text-rose-500 transition-all border-white/5">
             <LogOut size={24} />
           </button>
@@ -214,7 +235,7 @@ export function PDVView() {
                     <div className="flex flex-col items-start">
                       <span className="text-[10px] font-black uppercase tracking-widest opacity-60">Total</span>
                       <span className="text-lg font-black italic tracking-tighter">
-                        R$ {table.orders.reduce((acc, o) => acc + (o.price * o.quantity), 0).toFixed(2)}
+                        R$ {getOrderItemsTotal(table.orders).toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -335,7 +356,7 @@ export function PDVView() {
               <button onClick={() => setSelectedTable(null)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all"><X size={24}/></button>
             </div>
 
-            {selectedTable.status === 'available' ? (
+            {managedTable?.status === 'available' ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center px-12">
                 <div className="w-24 h-24 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 mb-8 animate-pulse">
                   <PlusCircle size={48} />
@@ -353,8 +374,8 @@ export function PDVView() {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-y-auto space-y-6 pr-4 custom-scrollbar mb-12">
                   <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-4">Pedidos Ativos</h4>
-                  {selectedTable.orders.map((o, idx) => (
-                    <div key={idx} className="glass-card p-6 border-white/5 flex justify-between items-center">
+                  {(managedTable?.orders || []).map((o, idx) => (
+                    <div key={idx} className="glass-card p-6 border-white/5 flex justify-between items-center gap-4">
                       <div>
                         <p className="font-bold text-lg">{o.quantity}x {o.name}</p>
                         <div className="flex gap-2 mt-1">
@@ -363,7 +384,18 @@ export function PDVView() {
                           ))}
                         </div>
                       </div>
-                      <p className="font-black italic text-zinc-300">R$ {(o.price * o.quantity).toFixed(2)}</p>
+                      <div className="flex items-center gap-3">
+                        <p className="font-black italic text-zinc-300">R$ {getOrderItemTotal(o).toFixed(2)}</p>
+                        {canCancelTableItem && (
+                          <button
+                            onClick={() => setCancelItemDialog({ item: o, tableNumber: selectedTable.number })}
+                            className="p-3 glass rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all"
+                            title="Cancelar item da mesa"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -373,7 +405,7 @@ export function PDVView() {
                     <div>
                       <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Total Acumulado</span>
                       <p className="text-5xl font-black italic tracking-tighter text-emerald-400">
-                        R$ {selectedTable.orders.reduce((acc, o) => acc + (o.price * o.quantity), 0).toFixed(2)}
+                        R$ {getOrderItemsTotal(managedTable?.orders || []).toFixed(2)}
                       </p>
                     </div>
                     <button 
@@ -477,7 +509,7 @@ export function PDVView() {
                  </div>
                  <div>
                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1">Subtotal</span>
-                   <span className="text-3xl font-black italic tracking-tighter text-emerald-400">R$ {cart.reduce((acc, i) => acc + (i.price * i.quantity), 0).toFixed(2)}</span>
+                   <span className="text-3xl font-black italic tracking-tighter text-emerald-400">R$ {getOrderItemsTotal(cart).toFixed(2)}</span>
                  </div>
               </div>
               <div className="flex gap-4">
@@ -512,9 +544,31 @@ export function PDVView() {
 
       {/* CHECKOUT MODAL */}
       <AnimatePresence>
+        {cancelItemDialog && (
+          <ActionDialog
+            isOpen
+            tone="danger"
+            title="Cancelar item?"
+            description={`Remover ${cancelItemDialog.item.quantity}x ${cancelItemDialog.item.name} da Mesa ${cancelItemDialog.tableNumber}. O total do pedido será recalculado.`}
+            confirmLabel="Cancelar item"
+            onClose={() => setCancelItemDialog(null)}
+            onConfirm={async () => {
+              await removeOrderItem(cancelItemDialog.item.id);
+              await addAuditLog({
+                action: 'item_cancelled',
+                details: { product_name: cancelItemDialog.item.name, quantity: cancelItemDialog.item.quantity },
+                table_number: cancelItemDialog.tableNumber.toString(),
+                origin: 'pdv'
+              });
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {showCheckout && selectedTable && (
           <CheckoutModal 
-            table={selectedTable} 
+            table={managedTable || selectedTable} 
             onClose={() => {
               setShowCheckout(false);
               setSelectedTable(null);

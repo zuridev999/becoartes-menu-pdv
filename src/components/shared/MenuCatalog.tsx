@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Search, ChevronRight, Plus } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import { isItemAvailable } from '../../lib/utils';
+import { getImageSrc } from '../../lib/image';
 
 interface MenuCatalogProps {
   onProductSelect: (product: Product) => void;
@@ -99,7 +100,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid' }: MenuCatalogP
              {filteredMenu.map(p => (
                <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className="glass-card flex flex-col p-6 border-white/5 hover:border-primary/30 group transition-all">
                   <div className="relative h-64 mb-6 rounded-3xl overflow-hidden">
-                    <img src={p.image} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" />
+                    <img src={getImageSrc(p.image)} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" />
                     <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-xl px-4 py-2 rounded-xl font-black text-accent border border-white/10">R$ {p.price.toFixed(2)}</div>
                   </div>
                   <h4 className="font-black text-2xl mb-2 italic tracking-tighter leading-none">{p.name}</h4>
@@ -111,7 +112,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid' }: MenuCatalogP
            <div className="space-y-6">
              {filteredMenu.map(p => (
                <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className="glass-card flex items-center p-6 border-white/5 hover:border-primary/30 group transition-all w-full text-left">
-                 <div className="w-48 h-48 rounded-3xl overflow-hidden mr-8"><img src={p.image} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" /></div>
+                 <div className="w-48 h-48 rounded-3xl overflow-hidden mr-8"><img src={getImageSrc(p.image)} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" /></div>
                  <div className="flex-1">
                    <h4 className="font-black text-3xl mb-3 italic tracking-tighter">{p.name}</h4>
                    <p className="text-gray-500 font-bold text-lg leading-relaxed max-w-2xl">{p.description}</p>

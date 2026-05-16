@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ShoppingBag, Trash2, Send, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../../store';
+import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 
 export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
   const { currentTableId, tables, removeFromCart, sendToKitchen, addNotification } = useStore();
@@ -11,10 +12,7 @@ export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
   const table = tables.find(t => t.id === currentTableId);
   if (!table) return null;
 
-  const cartTotal = table.cart.reduce((acc, item) => {
-    const modifiersTotal = item.selectedModifiers?.reduce((mAcc, m) => mAcc + m.price, 0) || 0;
-    return acc + ((item.price + modifiersTotal) * item.quantity);
-  }, 0);
+  const cartTotal = getOrderItemsTotal(table.cart);
 
   const handleSendOrder = async () => {
     setIsSending(true);
@@ -25,7 +23,7 @@ export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
         onClose();
         setIsSent(false);
       }, 2500);
-    } catch (error) {
+    } catch {
       addNotification('Erro ao enviar pedido. Tente novamente.', 'error');
     } finally {
       setIsSending(false);
@@ -97,7 +95,7 @@ export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
                        </div>
                        <div>
                           <p className="text-2xl font-black italic tracking-tighter leading-none mb-1">{item.name}</p>
-                          <p className="text-accent font-black">R$ {(item.price * item.quantity).toFixed(2)}</p>
+                          <p className="text-accent font-black">R$ {getOrderItemTotal(item).toFixed(2)}</p>
                        </div>
                     </div>
                     {item.selectedModifiers && item.selectedModifiers.length > 0 && (

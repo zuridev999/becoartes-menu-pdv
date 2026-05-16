@@ -22,7 +22,7 @@ export const SellerSchema = z.object({
   nickname: z.string().optional(),
   status: z.enum(['active', 'inactive']),
   role: z.enum(['garçom', 'atendente', 'gerente', 'outro']),
-  permission: z.enum(['admin', 'standard', 'restricted']).default('standard'),
+  permission: z.enum(['admin', 'manager', 'operator', 'standard', 'restricted']).default('operator'),
   pin: z.string().length(4, "O PIN deve ter 4 dígitos"),
   lastLogin: z.date().optional(),
 });

@@ -18,6 +18,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const [discountReason] = useState('');
   const [payments, setPayments] = useState<Payment[]>([]);
   const [currentMethod, setCurrentMethod] = useState<Payment['method']>('credit');
+  const sellerOptions = sellers.some(s => s.id === currentSeller?.id)
+    ? sellers
+    : currentSeller ? [currentSeller, ...sellers] : sellers;
   
   const subtotal = table.orders.reduce((acc: number, o: any) => {
     const itemPrice = o.price + o.selectedModifiers.reduce((mAcc: number, m: any) => mAcc + m.price, 0);
@@ -47,7 +50,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   };
 
   const handleFinish = async () => {
-    const seller = sellers.find(s => s.id === selectedSellerId);
+    const seller = sellerOptions.find(s => s.id === selectedSellerId);
     await closeBill({
       tableId: table.id,
       tableNumber: table.number,
@@ -130,7 +133,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                        className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-lg bg-transparent"
                     >
                        <option value="">Selecione o Vendedor</option>
-                        {sellers.filter((s: any) => s.status === 'active').map((s: any) => (
+                       {sellerOptions.filter((s: any) => s.status === 'active').map((s: any) => (
                          <option key={s.id} value={s.id} className="bg-[#0d0d0f]">{s.name}</option>
                        ))}
                     </select>

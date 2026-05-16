@@ -57,6 +57,7 @@ export interface Product {
 
 export interface OrderItem {
   id: string; // Unique ID for this item in the cart
+  orderId?: string;
   productId: string;
   name: string;
   price: number;
@@ -125,7 +126,7 @@ export interface Seller {
   lastLogin?: Date;
   status: 'active' | 'inactive';
   role: 'garçom' | 'atendente' | 'gerente' | 'outro';
-  permission: 'admin' | 'standard' | 'restricted';
+  permission: 'admin' | 'manager' | 'operator' | 'standard' | 'restricted';
 }
 
 export interface AppSettings {

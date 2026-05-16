@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useStore, type Product, type Modifier } from '../../store';
+import { getImageSrc } from '../../lib/image';
 
 export function ProductModal({ product, onClose }: { product: Product, onClose: () => void }) {
   const { addToCart } = useStore();
@@ -34,7 +35,7 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="fixed inset-0 z-[350] flex items-center justify-center p-12 pointer-events-none font-['Outfit']">
         <div className="glass-card w-full max-w-6xl h-[85vh] flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl">
           <div className="w-1/2 relative hidden lg:block">
-             <img src={product.image} className="w-full h-full object-cover" />
+             <img src={getImageSrc(product.image)} className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
              <div className="absolute bottom-16 left-16">
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2 block">{product.categoryName}</span>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, ChevronRight, User } from 'lucide-react';
 import { useStore } from '../../store';
+import { getPermissionLabel } from '../../lib/permissions';
 
 export function PinLoginModal() {
   const { sellers, login, addNotification } = useStore();
@@ -10,7 +11,7 @@ export function PinLoginModal() {
   const [error, setError] = useState(false);
 
   const handleLogin = async () => {
-    const success = await login(pin);
+    const success = await login(pin, selectedSeller?.id);
     if (success) {
       addNotification(`Bem-vindo!`, 'info');
     } else {
@@ -44,7 +45,7 @@ export function PinLoginModal() {
                    <div className="w-16 h-16 bg-white/10 rounded-3xl flex items-center justify-center text-2xl font-black">{s.name.charAt(0)}</div>
                    <div>
                       <p className="font-black text-2xl">{s.name}</p>
-                      <p className="text-xs uppercase font-black tracking-widest text-white/50">{s.role}</p>
+                      <p className="text-xs uppercase font-black tracking-widest text-white/50">{getPermissionLabel(s)}</p>
                    </div>
                  </button>
                ))}

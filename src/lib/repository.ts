@@ -1,5 +1,17 @@
 import { db } from './db';
 import type { SellerInput } from './schemas';
+import { createId } from './id';
+import { getOrderItemsTotal } from './totals';
+
+const parseJsonArray = (value: unknown) => {
+  if (!value || typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 export const Repository = {
   // --- MENU ---
@@ -120,7 +132,7 @@ export const Repository = {
         const m = group.modifiers[i];
         await db.execute({
           sql: "INSERT INTO modifiers (id, group_id, name, price, status, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
-          args: [m.id || Math.random().toString(36).substr(2, 9), group.id, m.name, m.price, m.status || 'active', i]
+          args: [m.id || createId(), group.id, m.name, m.price, m.status || 'active', i]
         });
       }
     }
@@ -218,10 +230,24 @@ export const Repository = {
     });
   },
 
+  async upsertSeller(s: SellerInput) {
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO sellers (id, name, nickname, status, role, permission, pin) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      args: [s.id, s.name, s.nickname || '', s.status, s.role, s.permission, s.pin]
+    });
+  },
+
   async updateSellerStatus(id: string, status: string) {
     await db.execute({
       sql: "UPDATE sellers SET status = ? WHERE id = ?",
       args: [status, id]
+    });
+  },
+
+  async updateSellerPin(id: string, pin: string) {
+    await db.execute({
+      sql: "UPDATE sellers SET pin = ? WHERE id = ?",
+      args: [pin, id]
     });
   },
 
@@ -246,7 +272,7 @@ export const Repository = {
 
   async getKitchenOrders() {
     const [kOrdersRes, itemsRes, nowRes] = await Promise.all([
-      db.execute("SELECT o.id, o.status, o.table_id, o.origin, strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) as created_at, t.number as tableNumber FROM orders o JOIN tables t ON o.table_id = t.id WHERE o.status != 'ready' ORDER BY o.created_at ASC"),
+      db.execute("SELECT o.id, o.status, o.table_id, o.origin, strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) as created_at, t.number as tableNumber FROM orders o JOIN tables t ON o.table_id = t.id WHERE o.status IN ('pending', 'preparing') ORDER BY o.created_at ASC"),
       db.execute("SELECT oi.*, m.name FROM order_items oi JOIN menu m ON oi.product_id = m.id"),
       db.execute("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now') as serverNow")
     ]);
@@ -257,11 +283,13 @@ export const Repository = {
     itemsRes.rows.forEach((iRow: any) => {
       if (!itemsByOrder[iRow.order_id]) itemsByOrder[iRow.order_id] = [];
       itemsByOrder[iRow.order_id].push({
-        id: iRow.product_id as string,
+        id: iRow.id as string,
+        orderId: iRow.order_id as string,
+        productId: iRow.product_id as string,
         name: iRow.name as string,
         price: iRow.price_at_time as number,
         quantity: iRow.quantity as number,
-        selectedModifiers: JSON.parse(iRow.selected_modifiers as string || '[]'),
+        selectedModifiers: parseJsonArray(iRow.selected_modifiers),
         notes: iRow.notes || ''
       });
     });
@@ -284,6 +312,97 @@ export const Repository = {
       sql: "UPDATE orders SET status = ? WHERE id = ?",
       args: [status, id]
     });
+  },
+
+  async deleteOrderItem(id: string) {
+    const itemRes = await db.execute({ sql: "SELECT order_id FROM order_items WHERE id = ? LIMIT 1", args: [id] });
+    const orderId = itemRes.rows[0]?.order_id as string | undefined;
+
+    await db.execute({ sql: "DELETE FROM order_items WHERE id = ?", args: [id] });
+
+    if (!orderId) return;
+
+    const remainingRes = await db.execute({
+      sql: "SELECT quantity, price_at_time, selected_modifiers FROM order_items WHERE order_id = ?",
+      args: [orderId]
+    });
+
+    const remainingItems = remainingRes.rows.map((row: any) => ({
+      price: Number(row.price_at_time || 0),
+      quantity: Number(row.quantity || 0),
+      selectedModifiers: parseJsonArray(row.selected_modifiers)
+    }));
+
+    if (remainingItems.length === 0) {
+      await db.execute({ sql: "UPDATE orders SET total = 0, status = 'closed' WHERE id = ?", args: [orderId] });
+      return;
+    }
+
+    await db.execute({
+      sql: "UPDATE orders SET total = ? WHERE id = ?",
+      args: [getOrderItemsTotal(remainingItems), orderId]
+    });
+  },
+
+  async getSettings() {
+    const res = await db.execute("SELECT value FROM app_settings WHERE key = 'settings' LIMIT 1");
+    const raw = res.rows[0]?.value;
+    if (!raw || typeof raw !== 'string') return null;
+
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  },
+
+  async saveSettings(settings: unknown) {
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('settings', ?, CURRENT_TIMESTAMP)",
+      args: [JSON.stringify(settings)]
+    });
+  },
+
+  async getServiceRequests() {
+    const res = await db.execute(`
+      SELECT sr.*, t.number as tableNumber
+      FROM service_requests sr
+      LEFT JOIN tables t ON sr.table_id = t.id
+      WHERE sr.status IN ('pending', 'viewed')
+      ORDER BY sr.created_at ASC
+    `);
+
+    return res.rows.map((row: any) => ({
+      id: row.id as string,
+      tableId: row.table_id as string,
+      tableNumber: Number(row.tableNumber || 0),
+      type: row.type as string,
+      message: row.message as string || '',
+      status: row.status as any,
+      createdAt: row.created_at ? new Date(row.created_at as string) : new Date()
+    }));
+  },
+
+  async getClosedBills(limit = 200) {
+    const res = await db.execute({
+      sql: "SELECT * FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
+      args: [limit]
+    });
+
+    return res.rows.map((row: any) => ({
+      id: row.id as string,
+      tableId: row.table_id as string || '',
+      tableNumber: Number(row.table_number || 0),
+      sellerId: row.seller_id as string || '',
+      sellerName: row.seller_name as string || 'Sistema',
+      subtotal: Number(row.subtotal || 0),
+      serviceFee: Number(row.service_fee || 0),
+      discount: Number(row.discount || 0),
+      discountReason: row.discount_reason as string || '',
+      total: Number(row.total || 0),
+      payments: parseJsonArray(row.payments),
+      closedAt: row.closed_at ? new Date(row.closed_at as string) : new Date()
+    }));
   },
 
   // --- LOGS ---
