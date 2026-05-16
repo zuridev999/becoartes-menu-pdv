@@ -29,6 +29,7 @@ import { ActionDialog } from '../../components/common/ActionDialog';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { createId } from '../../lib/id';
 import { getImageSrc } from '../../lib/image';
+import { APP_BUILD_LABEL } from '../../lib/version';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
@@ -455,6 +456,9 @@ export function AdminView() {
             <h1 className="text-7xl font-black tracking-tighter">Beco <span className="text-primary">Control</span></h1>
             <p className="text-gray-500 font-bold uppercase tracking-[0.4em] text-[10px] mt-3 ml-2 italic">
               {currentSeller.name} • {getPermissionLabel(currentSeller)}
+            </p>
+            <p className="text-zinc-700 font-black uppercase tracking-[0.25em] text-[9px] mt-2 ml-2">
+              PDV {APP_BUILD_LABEL}
             </p>
           </div>
         </div>

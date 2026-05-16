@@ -15,6 +15,8 @@ services:
         VITE_OS_TENANT_SLUG: ${VITE_OS_TENANT_SLUG:-becoartes}
         VITE_OS_SYSTEM_USER_ID: ${VITE_OS_SYSTEM_USER_ID:-}
         VITE_OS_ALLOWED_ORIGINS: ${VITE_OS_ALLOWED_ORIGINS:-https://os.becoartes.com}
+        VITE_APP_VERSION: ${VITE_APP_VERSION:-v1.0.0}
+        VITE_APP_COMMIT: ${VITE_APP_COMMIT:-}
     container_name: becoartes-operational
     restart: always
     ports:
