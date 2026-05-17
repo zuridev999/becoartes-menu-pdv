@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, 
@@ -60,6 +60,18 @@ export function PDVView() {
     const diffHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
     return diffHours < 2;
   });
+
+  // Referência para o container de scroll da lista de solicitações
+  const listRef = useRef<HTMLDivElement>(null);
+  const prevRequestsLength = useRef(visibleRequests.length);
+
+  // Auto-scroll para o topo quando uma nova solicitação chega
+  useEffect(() => {
+    if (visibleRequests.length > prevRequestsLength.current) {
+      listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    prevRequestsLength.current = visibleRequests.length;
+  }, [visibleRequests.length]);
 
   // Verificação de Modo Pânico (5 minutos) - considerando apenas as visíveis
   useEffect(() => {
@@ -371,8 +383,8 @@ export function PDVView() {
         <div className="col-span-4 glass-card border-white/5 flex flex-col overflow-hidden">
           {/* SOLICITAÇÕES DE SERVIÇO */}
           {visibleRequests.length > 0 && (
-            <div className="border-b border-white/5 relative z-10">
-              <div className={`p-8 border-b border-white/20 flex justify-between items-center ${visibleRequests.some(r => r.status !== 'resolved') ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'}`}>
+            <div className="flex-1 flex flex-col min-h-0 border-b border-white/5 relative z-10">
+              <div className={`p-8 border-b border-white/20 flex justify-between items-center ${visibleRequests.some(r => r.status !== 'resolved') ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'} shrink-0`}>
                 <h3 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3 text-white">
                   <Bell size={16} className={visibleRequests.some(r => r.status !== 'resolved') ? 'animate-bounce' : ''} /> 
                   {visibleRequests.some(r => r.status !== 'resolved') ? 'Novas Solicitações' : 'Solicitações Atendidas'}
@@ -381,7 +393,7 @@ export function PDVView() {
                   {visibleRequests.filter(r => r.status !== 'resolved').length || visibleRequests.length}
                 </span>
               </div>
-              <div className="max-h-[400px] overflow-y-auto custom-scrollbar bg-[#0d0d0f]">
+              <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar bg-[#0d0d0f]">
                 {visibleRequests.map((req) => {
                   const isResolved = req.status === 'resolved';
                   const isOrderActionable = req.type === 'order_ready' || req.type === 'new_order';
@@ -452,12 +464,10 @@ export function PDVView() {
             </div>
           )}
 
-          <div className="flex-1 flex flex-col justify-end">
-            <div className="p-8 border-t border-white/5 space-y-4">
+          <div className="p-8 border-t border-white/5 space-y-4 shrink-0 bg-[#0d0d0f]/50 mt-auto">
              <button 
                onClick={() => {
                  setShowOnlyActive(false);
-                 // Opcional: scroll para o mapa de mesas
                }}
                className="w-full btn-beco bg-zinc-800 hover:bg-zinc-700 py-6 font-black uppercase tracking-widest text-xs rounded-2xl flex items-center justify-center gap-3"
              >
@@ -472,7 +482,6 @@ export function PDVView() {
           </div>
         </div>
       </div>
-    </div>
 
       {/* SELECTED TABLE OVERLAY (Management) */}
       <AnimatePresence>
@@ -598,7 +607,11 @@ export function PDVView() {
                     <button 
                       key={cat.id}
                       onClick={() => setActiveCategory(cat.id)}
-                      className={`p-6 rounded-3xl font-black text-left uppercase text-xs tracking-widest transition-all ${activeCategory === cat.id ? 'bg-primary text-white shadow-2xl shadow-primary/20' : 'glass border-white/5 opacity-40 hover:opacity-100'}`}
+                      className={`p-6 rounded-3xl font-black text-left uppercase text-xs tracking-widest transition-all ${
+                        activeCategory === cat.id 
+                          ? 'bg-primary text-white shadow-2xl shadow-primary/20 border border-primary' 
+                          : 'bg-[#121214] border border-white/10 text-zinc-400 hover:text-white hover:bg-[#1a1a1e]'
+                      }`}
                     >
                       {cat.name}
                     </button>
@@ -606,11 +619,11 @@ export function PDVView() {
                </div>
 
                <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar">
-                  <div className="flex flex-col gap-2">
+                  <div className="grid grid-cols-2 gap-4">
                     {menu.filter(p => !activeCategory || p.categoryId === activeCategory).map(product => (
                       <motion.button
                         key={product.id}
-                        whileHover={{ x: 10 }}
+                        whileHover={{ x: 6 }}
                         onClick={() => {
                           if (product.modifierGroups?.length) {
                             setSelectedProduct(product);
@@ -625,7 +638,7 @@ export function PDVView() {
                             origin: 'pdv'
                           });
                         }}
-                        className="glass-card p-4 border-white/5 flex justify-between items-center group relative overflow-hidden text-left"
+                        className="bg-[#121214] border border-white/10 rounded-3xl p-6 flex justify-between items-center group relative overflow-hidden text-left transition-all hover:bg-[#1a1a1e] shadow-lg"
                       >
                          <div className="flex items-center gap-4 min-w-0">
                            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-black transition-all shrink-0">

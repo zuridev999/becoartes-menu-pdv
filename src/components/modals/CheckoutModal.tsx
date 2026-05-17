@@ -34,16 +34,14 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const remaining = Math.max(0, totalFinal - paidTotal);
   const change = Math.max(0, paidTotal - totalFinal);
 
-  const [currentAmount, setCurrentAmount] = useState<string>(remaining.toString());
+  const [currentAmount, setCurrentAmount] = useState<string>(remaining.toFixed(2));
 
   useEffect(() => {
-    if (Number(currentAmount) === 0 || currentAmount === '') {
-      setCurrentAmount(remaining.toFixed(2));
-    }
+    setCurrentAmount(remaining.toFixed(2));
   }, [remaining]);
 
   const handleAddPayment = () => {
-    const val = Number(currentAmount);
+    const val = Number(Number(currentAmount).toFixed(2));
     if (val <= 0) return;
     setPayments([...payments, { method: currentMethod, amount: val }]);
     setCurrentAmount('');
