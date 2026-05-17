@@ -6,6 +6,7 @@ import { hashPin, comparePin } from './lib/security';
 import { createId } from './lib/id';
 import { getOrderItemsTotal } from './lib/totals';
 import { postOSMessage } from './lib/osBridge';
+import { CatalogApi, OperationalApi } from './lib/api';
 import type { 
   Product, Table, OrderItem, KitchenOrder, 
   ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category
@@ -586,11 +587,8 @@ export const useStore = create<AppState>((set, get) => ({
 
     try {
       // 2. Persistir no Banco
-      await db.execute({
-        sql: "UPDATE menu SET visible = ? WHERE id = ?",
-        args: [newVisible ? 1 : 0, id]
-      });
-      lastCatalogVersion = await Repository.bumpCatalogVersion();
+      const result = await CatalogApi.toggleProductVisibility(id, newVisible);
+      lastCatalogVersion = result.catalogVersion;
     } catch (e) {
       // 3. Reverter se falhar
       console.error("❌ Falha ao sincronizar visibilidade:", e);
@@ -611,11 +609,8 @@ export const useStore = create<AppState>((set, get) => ({
     }));
 
     try {
-      await db.execute({
-        sql: "UPDATE categories SET visible = ? WHERE id = ?",
-        args: [newVisible ? 1 : 0, id]
-      });
-      lastCatalogVersion = await Repository.bumpCatalogVersion();
+      const result = await CatalogApi.toggleCategoryVisibility(id, newVisible);
+      lastCatalogVersion = result.catalogVersion;
     } catch (e) {
       console.error("❌ Falha ao sincronizar visibilidade da categoria:", e);
       set((state) => ({
@@ -639,7 +634,8 @@ export const useStore = create<AppState>((set, get) => ({
       };
 
       const validated = ProductSchema.parse({ ...cleanData, id, categoryName: category?.name });
-      await Repository.upsertProduct(validated as Product);
+      const result = await CatalogApi.upsertProduct(validated as Product);
+      lastCatalogVersion = result.catalogVersion;
       set((state) => ({ 
         menu: state.menu.map(p => p.id === id ? validated as Product : p) 
       }));
@@ -667,7 +663,8 @@ export const useStore = create<AppState>((set, get) => ({
       };
 
       const validated = ProductSchema.parse({ ...cleanData, categoryName: category?.name });
-      await Repository.upsertProduct(validated as Product);
+      const result = await CatalogApi.upsertProduct(validated as Product);
+      lastCatalogVersion = result.catalogVersion;
       set((state) => ({ menu: [...state.menu, validated as Product] }));
       get().addNotification(`Produto "${validated.name}" adicionado!`, 'info');
     } catch (e: any) {
@@ -680,7 +677,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   deleteProduct: async (id) => {
     try {
-      await Repository.deleteProduct(id);
+      const result = await CatalogApi.deleteProduct(id);
+      lastCatalogVersion = result.catalogVersion;
       set((state) => ({ menu: state.menu.filter(x => x.id !== id) }));
       get().addNotification("Produto removido definitivamente", 'info');
     } catch (e: any) {
@@ -849,16 +847,16 @@ export const useStore = create<AppState>((set, get) => ({
     const { currentTableId } = get();
     if (!currentTableId) return;
 
-    await Repository.deleteOrderItem(itemId);
-    if (context) {
-      await Repository.notifyOrderItemCancelled({
+    await OperationalApi.deleteOrderItem({
+      itemId,
+      cancelContext: context ? {
         tableNumber: context.tableNumber,
         itemName: context.itemName,
         quantity: context.quantity,
         sellerName: context.sellerName || get().currentSeller?.name || 'Sistema',
         sellerPermission: context.sellerPermission || get().currentSeller?.permission || 'standard'
-      });
-    }
+      } : undefined
+    });
     
     set((state) => ({
       tables: state.tables.map(t => t.id === currentTableId ? { ...t, orders: t.orders.filter(o => o.id !== itemId) } : t),
@@ -959,7 +957,7 @@ export const useStore = create<AppState>((set, get) => ({
       orderId
     }));
 
-    await Repository.createKitchenOrderWithItems({
+    await OperationalApi.sendToKitchen({
       orderId,
       tableId,
       total,
@@ -982,11 +980,6 @@ export const useStore = create<AppState>((set, get) => ({
     const requestId = 'new_order_' + orderId;
     const itemsList = table.cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
     
-    await db.execute({
-      sql: "INSERT INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
-      args: [requestId, tableId, 'new_order', 'pending', itemsList]
-    });
-
     const newRequest: ServiceRequest = {
       id: requestId,
       tableId,
@@ -1023,28 +1016,22 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   updateKitchenOrderStatus: async (orderId, status) => {
-    await Repository.updateOrderStatus(orderId, status);
+    const result = await OperationalApi.updateOrderStatus(orderId, status);
     
     // Se o pedido ficou pronto, cria uma solicitação de serviço automática para o PDV
     if (status === 'ready') {
       const order = get().kitchenOrders.find(o => o.id === orderId);
-      if (order) {
-        const id = createId();
+      if (order && result.request) {
         const itemsList = order.items.map(i => `${i.quantity}x ${i.name}`).join(', ');
-        
-        await db.execute({
-          sql: "INSERT INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
-          args: [id, order.tableId, 'order_ready', 'pending', itemsList]
-        });
 
         const newRequest: ServiceRequest = {
-          id,
+          ...result.request,
           tableId: order.tableId,
           tableNumber: order.tableNumber,
           type: 'order_ready',
           message: itemsList,
           status: 'pending',
-          createdAt: new Date()
+          createdAt: result.request.createdAt
         };
 
         set((state) => ({
@@ -1083,7 +1070,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   closeBill: async (data) => {
     try {
-      const closeResult = await Repository.closeBillWithInventorySync(data);
+      const closeResult = await OperationalApi.closeBill(data);
 
       if (closeResult.skipped || !closeResult.closedBill || !closeResult.inventorySync) {
         get().addNotification("Este fechamento já foi processado ou está em andamento.", "info");
@@ -1184,7 +1171,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   // --- CATEGORIES ---
   upsertCategory: async (cat) => {
-    await Repository.upsertCategory(cat);
+    const result = await CatalogApi.upsertCategory(cat);
+    lastCatalogVersion = result.catalogVersion;
     set((state) => {
       const exists = state.categories.find(c => c.id === cat.id);
       let newCats;
@@ -1198,7 +1186,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   deleteCategory: async (id) => {
-    await Repository.deleteCategory(id);
+    const result = await CatalogApi.deleteCategory(id);
+    lastCatalogVersion = result.catalogVersion;
     set((state) => ({
       categories: state.categories.filter(c => c.id !== id),
       menu: state.menu.map(p => p.categoryId === id ? { ...p, categoryId: '', categoryName: 'Sem Categoria' } : p)
@@ -1209,13 +1198,15 @@ export const useStore = create<AppState>((set, get) => ({
     const ordered = newCategories.map((c, idx) => ({ ...c, sortOrder: idx }));
     set({ categories: ordered });
     for (const cat of ordered) {
-      await Repository.upsertCategory(cat);
+      const result = await CatalogApi.upsertCategory(cat);
+      lastCatalogVersion = result.catalogVersion;
     }
   },
 
   // --- MODIFIERS ---
   addModifierGroup: async (group) => {
-    await Repository.saveModifierGroup(group);
+    const result = await CatalogApi.saveModifierGroup(group);
+    lastCatalogVersion = result.catalogVersion;
     set((state) => ({ modifierGroups: [...state.modifierGroups, group] }));
   },
 
@@ -1224,7 +1215,8 @@ export const useStore = create<AppState>((set, get) => ({
     const group = modifierGroups.find(g => g.id === id);
     if (group) {
       const updated = { ...group, ...data };
-      await Repository.saveModifierGroup(updated);
+      const result = await CatalogApi.saveModifierGroup(updated);
+      lastCatalogVersion = result.catalogVersion;
       set((state) => ({
         modifierGroups: state.modifierGroups.map(g => g.id === id ? updated : g)
       }));
@@ -1232,7 +1224,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   deleteModifierGroup: async (id) => {
-    await Repository.deleteModifierGroup(id);
+    const result = await CatalogApi.deleteModifierGroup(id);
+    lastCatalogVersion = result.catalogVersion;
     set((state) => ({
       modifierGroups: state.modifierGroups.map(g => g.id === id ? { ...g, status: 'inactive' } : g)
     }));
@@ -1240,12 +1233,14 @@ export const useStore = create<AppState>((set, get) => ({
 
 
   linkGroupToProduct: async (productId, groupId, linked) => {
-    await Repository.linkGroupToProduct(productId, groupId, linked);
+    const result = await CatalogApi.linkModifierGroup('product', productId, groupId, linked);
+    lastCatalogVersion = result.catalogVersion;
     await get().syncData({ includeCatalog: true });
   },
 
   linkGroupToCategory: async (categoryId, groupId, linked) => {
-    await Repository.linkGroupToCategory(categoryId, groupId, linked);
+    const result = await CatalogApi.linkModifierGroup('category', categoryId, groupId, linked);
+    lastCatalogVersion = result.catalogVersion;
     await get().syncData({ includeCatalog: true });
   },
 
