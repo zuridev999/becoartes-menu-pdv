@@ -36,6 +36,7 @@ export function PDVView() {
   } = useStore();
 
   const [pin, setPin] = useState('');
+  const [isSendingOrder, setIsSendingOrder] = useState(false);
   const [loginError, setLoginError] = useState(false);
   const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
   const [showCheckout, setShowCheckout] = useState(false);
@@ -203,7 +204,13 @@ export function PDVView() {
 
   // Stats
   const activeTablesCount = tables.filter(t => t.status === 'ordering' || t.status === 'bill_requested').length;
-  const totalToday = closedBills.reduce((acc, bill) => acc + bill.total, 0);
+  const todayStr = new Date().toLocaleDateString('pt-BR');
+  const totalToday = closedBills
+    .filter(bill => {
+      const billDate = bill.closedAt instanceof Date ? bill.closedAt : new Date(bill.closedAt);
+      return billDate.toLocaleDateString('pt-BR') === todayStr;
+    })
+    .reduce((acc, bill) => acc + bill.total, 0);
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
   const canCancelTableItem = can(currentSeller, 'cancelTableItem');
 
@@ -687,21 +694,31 @@ export function PDVView() {
                   CANCELAR
                 </button>
                 <button 
+                  disabled={isSendingOrder || cart.length === 0}
                   onClick={async () => {
                     if (cart.length > 0) {
-                      await sendToKitchen(selectedTable.id, 'pdv', currentSeller?.id || 'sistema');
-                      addAuditLog({
-                        action: 'item_added',
-                        details: { items_count: cart.length },
-                        table_number: selectedTable.number.toString(),
-                        origin: 'pdv'
-                      });
+                      setIsSendingOrder(true);
+                      try {
+                        await sendToKitchen(selectedTable.id, 'pdv', currentSeller?.id || 'sistema');
+                        addAuditLog({
+                          action: 'item_added',
+                          details: { items_count: cart.length },
+                          table_number: selectedTable.number.toString(),
+                          origin: 'pdv'
+                        });
+                        setShowProductMenu(false);
+                      } catch (err) {
+                        console.error("Erro ao enviar pedido para a cozinha:", err);
+                      } finally {
+                        setIsSendingOrder(false);
+                      }
+                    } else {
+                      setShowProductMenu(false);
                     }
-                    setShowProductMenu(false);
                   }}
-                  className="btn-beco btn-beco-purple py-8 px-24 text-xl font-black rounded-3xl shadow-2xl shadow-primary/20"
+                  className="btn-beco btn-beco-purple py-8 px-24 text-xl font-black rounded-3xl shadow-2xl shadow-primary/20 disabled:opacity-20 disabled:grayscale transition-all"
                 >
-                  CONFIRMAR E ENVIAR
+                  {isSendingOrder ? 'ENVIANDO...' : 'CONFIRMAR E ENVIAR'}
                 </button>
               </div>
             </div>

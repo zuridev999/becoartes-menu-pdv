@@ -854,6 +854,10 @@ export const Repository = {
       {
         sql: "UPDATE orders SET status = 'closed' WHERE table_id = ? AND status != 'closed'",
         args: [data.tableId]
+      },
+      {
+        sql: "UPDATE service_requests SET status = 'resolved' WHERE table_id = ? AND status != 'resolved'",
+        args: [data.tableId]
       }
     );
 
@@ -1057,13 +1061,45 @@ export const Repository = {
         o.created_at
       FROM orders o
       WHERE o.status IN ('pending', 'preparing')
+        AND NOT EXISTS (
+          SELECT 1 FROM service_requests sr
+          WHERE sr.table_id = o.table_id
+            AND sr.status = 'pending'
+            AND sr.type = 'new_order'
+            AND sr.message = COALESCE((
+              SELECT group_concat(oi2.quantity || 'x ' || COALESCE(m2.name, 'Item'), ', ')
+              FROM order_items oi2
+              LEFT JOIN menu m2 ON oi2.product_id = m2.id
+              WHERE oi2.order_id = o.id
+            ), 'Novo pedido')
+        )
     `);
 
     const res = await db.execute(`
-      SELECT sr.*, t.number as tableNumber
+      SELECT
+        sr.id,
+        sr.table_id,
+        sr.type,
+        sr.status,
+        sr.message,
+        strftime('%Y-%m-%dT%H:%M:%SZ', sr.created_at) as created_at,
+        t.number as tableNumber
       FROM service_requests sr
       LEFT JOIN tables t ON sr.table_id = t.id
       WHERE sr.status IN ('pending', 'viewed', 'resolved')
+        AND NOT (
+          sr.type = 'new_order'
+          AND sr.id NOT LIKE 'new_order_%'
+          AND EXISTS (
+            SELECT 1 FROM service_requests sr2
+            WHERE sr2.table_id = sr.table_id
+              AND sr2.type = 'new_order'
+              AND sr2.message = sr.message
+              AND sr2.status = sr.status
+              AND sr2.id LIKE 'new_order_%'
+              AND abs(strftime('%s', sr2.created_at) - strftime('%s', sr.created_at)) < 300
+          )
+        )
       ORDER BY sr.created_at DESC
     `);
 
@@ -1080,7 +1116,7 @@ export const Repository = {
 
   async getClosedBills(limit = 200) {
     const res = await db.execute({
-      sql: "SELECT * FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
+      sql: "SELECT id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, strftime('%Y-%m-%dT%H:%M:%SZ', closed_at) as closed_at FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
       args: [limit]
     });
 

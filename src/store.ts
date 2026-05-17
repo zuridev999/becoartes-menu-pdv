@@ -920,16 +920,31 @@ export const useStore = create<AppState>((set, get) => ({
 
     const newStatus = request.status === 'resolved' ? 'pending' : 'resolved';
 
-    await db.execute({
-      sql: "UPDATE service_requests SET status = ? WHERE id = ?",
-      args: [newStatus, requestId]
-    });
+    if (request.type === 'new_order') {
+      await db.execute({
+        sql: "UPDATE service_requests SET status = ? WHERE (id = ? OR (table_id = ? AND type = 'new_order' AND message = ? AND status = 'pending'))",
+        args: [newStatus, requestId, request.tableId, request.message]
+      });
 
-    set((state) => ({
-      serviceRequests: state.serviceRequests.map(r => 
-        r.id === requestId ? { ...r, status: newStatus } : r
-      )
-    }));
+      set((state) => ({
+        serviceRequests: state.serviceRequests.map(r =>
+          (r.id === requestId || (r.tableId === request.tableId && r.type === 'new_order' && r.message === request.message && r.status === 'pending'))
+            ? { ...r, status: newStatus }
+            : r
+        )
+      }));
+    } else {
+      await db.execute({
+        sql: "UPDATE service_requests SET status = ? WHERE id = ?",
+        args: [newStatus, requestId]
+      });
+
+      set((state) => ({
+        serviceRequests: state.serviceRequests.map(r =>
+          r.id === requestId ? { ...r, status: newStatus } : r
+        )
+      }));
+    }
   },
 
   sendToKitchen: async (tableId, origin = 'pdv', sellerId) => {
@@ -964,7 +979,7 @@ export const useStore = create<AppState>((set, get) => ({
     };
 
     // Criar uma solicitação de serviço imediata para o PDV (para drinks/bebidas)
-    const requestId = createId();
+    const requestId = 'new_order_' + orderId;
     const itemsList = table.cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
     
     await db.execute({
@@ -1078,7 +1093,8 @@ export const useStore = create<AppState>((set, get) => ({
 
       set((state) => ({
         closedBills: [...state.closedBills, closeResult.closedBill],
-        tables: state.tables.map(t => t.id === data.tableId ? { ...t, status: 'available', orders: [] } : t)
+        tables: state.tables.map(t => t.id === data.tableId ? { ...t, status: 'available', orders: [] } : t),
+        serviceRequests: state.serviceRequests.map(r => r.tableId === data.tableId ? { ...r, status: 'resolved' } : r)
       }));
       postOSMessage('bill_closed', {
         tableId: data.tableId,
@@ -1240,6 +1256,10 @@ export const useStore = create<AppState>((set, get) => ({
         sql: "UPDATE orders SET status = 'closed' WHERE table_id = ? AND status != 'closed'",
         args: [tableId]
       });
+      await db.execute({
+        sql: "UPDATE service_requests SET status = 'resolved' WHERE table_id = ? AND status != 'resolved'",
+        args: [tableId]
+      });
     }
 
     await db.execute({
@@ -1248,7 +1268,8 @@ export const useStore = create<AppState>((set, get) => ({
     });
     
     set((state) => ({
-      tables: state.tables.map(t => t.id === tableId ? { ...t, status: 'ordering', orders: initialItems, lastActivity: new Date() } : t)
+      tables: state.tables.map(t => t.id === tableId ? { ...t, status: 'ordering', orders: initialItems, lastActivity: new Date() } : t),
+      serviceRequests: state.serviceRequests.map(r => r.tableId === tableId ? { ...r, status: 'resolved' } : r)
     }));
 
     if (initialItems.length > 0) {
