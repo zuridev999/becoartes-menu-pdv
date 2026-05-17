@@ -22,6 +22,11 @@ const CATALOG_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 const toSessionSeller = (seller: Seller): Seller => ({ ...seller, pin: '' });
 
+const clearSellerSession = () => {
+  localStorage.removeItem(SELLER_SESSION_STORAGE_KEY);
+  setApiSessionToken(null);
+};
+
 const persistSellerSession = (seller: Seller) => {
   const sessionSeller = toSessionSeller(seller);
   localStorage.setItem(SELLER_SESSION_STORAGE_KEY, JSON.stringify(sessionSeller));
@@ -254,8 +259,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   logout: () => {
-    localStorage.removeItem(SELLER_SESSION_STORAGE_KEY);
-    setApiSessionToken(null);
+    clearSellerSession();
     set({ currentSeller: null });
   },
 
@@ -309,6 +313,10 @@ export const useStore = create<AppState>((set, get) => ({
         set({ currentSeller: JSON.parse(savedSession) });
       }
       const snapshot = await AppApi.init();
+      if (snapshot.accessRestricted) {
+        clearSellerSession();
+        set({ currentSeller: null });
+      }
       const catalogData = snapshot.catalogData;
       const { categories, menuItems, modifierGroups, productMapping, categoryMapping, catalogVersion } = catalogData;
       const { orders: kitchenOrders, serverNow } = snapshot.kitchenData;
@@ -519,9 +527,17 @@ export const useStore = create<AppState>((set, get) => ({
           Boolean(options.includeCatalog)
           || Date.now() - lastCatalogSyncAt > CATALOG_SYNC_INTERVAL_MS;
         let snapshot = await AppApi.sync(shouldRefreshCatalog);
+        if (snapshot.accessRestricted) {
+          clearSellerSession();
+          set({ currentSeller: null });
+        }
 
         if (!shouldRefreshCatalog && snapshot.catalogVersion && snapshot.catalogVersion !== lastCatalogVersion) {
           snapshot = await AppApi.sync(true);
+          if (snapshot.accessRestricted) {
+            clearSellerSession();
+            set({ currentSeller: null });
+          }
         }
 
         const { orders: kitchenOrders, serverNow } = snapshot.kitchenData;

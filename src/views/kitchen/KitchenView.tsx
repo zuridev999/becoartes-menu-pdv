@@ -1,10 +1,107 @@
-import { useState, useEffect, useRef } from 'react';
-import { Clock, CheckCircle2, X, AlertCircle, ChefHat } from 'lucide-react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { Clock, CheckCircle2, X, AlertCircle, ChefHat, LockKeyhole, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
 
 const KITCHEN_SYNC_INTERVAL_MS = 5000;
+
+function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
+  const { login } = useStore();
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const submitPin = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (pin.length < 4 || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const allowed = await login(pin);
+      if (allowed) {
+        setPin('');
+        onUnlock();
+        return;
+      }
+      setError('PIN não autorizado nesta rede.');
+      setPin('');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const addDigit = (digit: string) => {
+    if (pin.length >= 4 || isSubmitting) return;
+    setError('');
+    setPin(current => `${current}${digit}`.slice(0, 4));
+  };
+
+  return (
+    <div className="fixed inset-0 z-[900] bg-[#09090b] text-white font-['Outfit'] flex items-center justify-center p-8 uppercase">
+      <form onSubmit={submitPin} className="w-full max-w-md glass rounded-[2.5rem] p-10 border-white/10 shadow-2xl">
+        <div className="w-20 h-20 rounded-[2rem] bg-primary/15 text-primary flex items-center justify-center mb-8">
+          <LockKeyhole size={38} />
+        </div>
+        <p className="text-[10px] font-black tracking-[0.35em] text-primary mb-3">COZINHA SEGURA</p>
+        <h1 className="text-5xl font-black italic tracking-tighter mb-4">Digite o PIN</h1>
+        <p className="text-zinc-500 text-xs font-black tracking-widest leading-relaxed mb-10">
+          A cozinha só opera na rede autorizada. Fora do IP do Becoartes, apenas o PIN admin libera acesso remoto.
+        </p>
+
+        <input
+          value={pin}
+          onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+          inputMode="numeric"
+          pattern="[0-9]*"
+          autoFocus
+          className={`w-full glass py-6 rounded-3xl text-center text-5xl font-black tracking-[0.6em] outline-none border-2 transition-all ${
+            error ? 'border-rose-500 text-rose-400' : 'border-white/10 focus:border-primary'
+          }`}
+          placeholder="••••"
+        />
+
+        {error && <p className="mt-4 text-rose-400 text-[10px] font-black tracking-widest">{error}</p>}
+
+        <div className="grid grid-cols-3 gap-3 mt-8">
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(digit => (
+            <button
+              type="button"
+              key={digit}
+              onClick={() => addDigit(digit)}
+              className="h-16 rounded-2xl glass border-white/5 text-2xl font-black hover:bg-white/10 active:scale-95 transition-all"
+            >
+              {digit}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setPin('')}
+            className="h-16 rounded-2xl glass border-white/5 text-xs font-black text-rose-400 hover:bg-rose-500/10 active:scale-95 transition-all"
+          >
+            LIMPAR
+          </button>
+          <button
+            type="button"
+            onClick={() => addDigit('0')}
+            className="h-16 rounded-2xl glass border-white/5 text-2xl font-black hover:bg-white/10 active:scale-95 transition-all"
+          >
+            0
+          </button>
+          <button
+            type="submit"
+            disabled={pin.length < 4 || isSubmitting}
+            className="h-16 rounded-2xl btn-beco btn-beco-purple text-xs font-black disabled:opacity-30"
+          >
+            {isSubmitting ? '...' : 'ENTRAR'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
 function KitchenOrderCard({ order, index, onClick }: { order: any, index: number, onClick: () => void }) {
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -194,9 +291,10 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
 }
 
 export function KitchenView() {
-  const { kitchenOrders, updateKitchenOrderStatus, syncData } = useStore();
+  const { kitchenOrders, updateKitchenOrderStatus, syncData, currentSeller } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [soundReady, setSoundReady] = useState(false);
+  const [isKitchenUnlocked, setIsKitchenUnlocked] = useState(false);
   const lastOrderIds = useRef<string[]>([]);
   const hasInitializedOrderTracking = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -206,6 +304,8 @@ export function KitchenView() {
 
   // Auto-sync curto: a cozinha precisa reagir em segundos, não em ciclos longos.
   useEffect(() => {
+    if (!isKitchenUnlocked) return;
+
     let isSyncing = false;
 
     const runSync = async (reason: string) => {
@@ -240,7 +340,14 @@ export function KitchenView() {
       window.removeEventListener('online', handleResume);
       document.removeEventListener('visibilitychange', handleResume);
     };
-  }, [syncData]);
+  }, [syncData, isKitchenUnlocked]);
+
+  useEffect(() => {
+    if (!currentSeller) {
+      setIsKitchenUnlocked(false);
+      setSoundReady(false);
+    }
+  }, [currentSeller]);
 
   const getAudioContext = async (shouldResume = false) => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -268,6 +375,8 @@ export function KitchenView() {
   };
 
   useEffect(() => {
+    if (!isKitchenUnlocked) return;
+
     const handleFirstInteraction = () => {
       unlockKitchenSound();
     };
@@ -279,7 +388,7 @@ export function KitchenView() {
       window.removeEventListener('pointerdown', handleFirstInteraction);
       window.removeEventListener('keydown', handleFirstInteraction);
     };
-  }, []);
+  }, [isKitchenUnlocked]);
 
   // Função para tocar o sininho (Web Audio API)
   const playBellSound = async () => {
@@ -328,6 +437,8 @@ export function KitchenView() {
 
   // Detectar Novos Pedidos
   useEffect(() => {
+    if (!isKitchenUnlocked) return;
+
     const currentIds = activeOrders.map(o => o.id);
     const hasNewOrder = currentIds.some(id => !lastOrderIds.current.includes(id));
     
@@ -343,10 +454,35 @@ export function KitchenView() {
     }
     
     lastOrderIds.current = currentIds;
-  }, [activeOrderIds]);
+  }, [activeOrderIds, isKitchenUnlocked]);
+
+  const requestFullscreen = async () => {
+    try {
+      const root = document.documentElement as HTMLElement & {
+        webkitRequestFullscreen?: () => Promise<void> | void;
+      };
+      if (document.fullscreenElement) return;
+      if (root.requestFullscreen) await root.requestFullscreen();
+      else if (root.webkitRequestFullscreen) await root.webkitRequestFullscreen();
+    } catch (error) {
+      console.warn('Falha ao ativar tela cheia da cozinha:', error);
+    }
+  };
+
+  if (!isKitchenUnlocked || !currentSeller) {
+    return <KitchenPinGate onUnlock={() => setIsKitchenUnlocked(true)} />;
+  }
   
   return (
     <div className="p-4 bg-[#09090b] h-screen text-white font-['Outfit'] overflow-hidden flex flex-col uppercase">
+      <button
+        onClick={requestFullscreen}
+        className="fixed top-8 left-8 z-[400] w-14 h-14 rounded-2xl glass border-white/5 text-white/80 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center shadow-2xl"
+        title="Ativar tela cheia"
+      >
+        <Maximize2 size={24} />
+      </button>
+
       {/* Status Indicator */}
       <div className="fixed top-8 right-8 z-[400] flex items-center gap-4 px-6 py-3 glass rounded-2xl border-white/5 shadow-2xl">
         <div className="relative">
