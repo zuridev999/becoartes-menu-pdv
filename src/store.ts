@@ -227,8 +227,21 @@ export const useStore = create<AppState>((set, get) => ({
   currentSeller: null,
 
   login: async (pin, sellerId) => {
-    const result = await AppApi.login(pin, sellerId);
-    if (!result.seller) return false;
+    let result;
+    try {
+      result = await AppApi.login(pin, sellerId);
+    } catch (error) {
+      console.warn('Login bloqueado ou recusado:', error);
+      get().addNotification(error instanceof Error ? error.message : 'Login não autorizado.', 'error');
+      return false;
+    }
+
+    if (!result.seller) {
+      if (result.accessRestricted) {
+        get().addNotification('Este PIN só funciona na rede autorizada do Becoartes.', 'error');
+      }
+      return false;
+    }
 
     setApiSessionToken(result.sessionToken || null);
     set({ currentSeller: persistSellerSession(result.seller as Seller) });

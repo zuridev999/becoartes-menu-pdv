@@ -20,6 +20,11 @@ const BOOTSTRAP_ADMIN_PIN = process.env.BOOTSTRAP_ADMIN_PIN || process.env.VITE_
 const DEFAULT_MANAGER_PIN = process.env.DEFAULT_MANAGER_PIN || process.env.VITE_DEFAULT_MANAGER_PIN || '2020';
 const DEFAULT_OPERATOR_PIN = process.env.DEFAULT_OPERATOR_PIN || process.env.VITE_DEFAULT_OPERATOR_PIN || '0040';
 const TABLET_SETUP_PIN = process.env.TABLET_SETUP_PIN || process.env.VITE_TABLET_SETUP_PIN || '0040';
+const ADMIN_BYPASS_PIN = process.env.ADMIN_BYPASS_PIN || process.env.VITE_BOOTSTRAP_ADMIN_PIN || BOOTSTRAP_ADMIN_PIN || '0806';
+const ALLOWED_OPERATION_IPS = (process.env.ALLOWED_OPERATION_IPS || '')
+  .split(',')
+  .map((ip) => ip.trim())
+  .filter(Boolean);
 const SESSION_SECRET = process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET || tursoAuthToken;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const PROCESSING_STALE_MS = 10 * 60 * 1000;
@@ -319,9 +324,28 @@ const pinAttemptBuckets = new Map();
 const PIN_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const PIN_RATE_LIMIT_MAX = 12;
 
+const normalizeClientIp = (ip) => String(ip || '')
+  .replace(/^::ffff:/, '')
+  .trim();
+
 const getClientIp = (req) => {
+  if (!req) return 'unknown';
   const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return forwardedFor || req.socket.remoteAddress || 'unknown';
+  return normalizeClientIp(forwardedFor || req.socket.remoteAddress || 'unknown');
+};
+
+const isOperationIpRestricted = () => ALLOWED_OPERATION_IPS.length > 0;
+const isOperationIpAllowed = (req) => (
+  !isOperationIpRestricted() || ALLOWED_OPERATION_IPS.includes(getClientIp(req))
+);
+
+const isAdminSession = (session) => normalizePermission(session?.permission) === 'admin';
+const isAdminBypassPin = (pin) => ADMIN_BYPASS_PIN && String(pin || '') === ADMIN_BYPASS_PIN;
+
+const throwIpRestricted = (req) => {
+  const error = new Error(`Acesso operacional permitido apenas na rede autorizada. IP detectado: ${getClientIp(req)}`);
+  error.statusCode = 403;
+  throw error;
 };
 
 const isPinRateLimited = (req, pathname) => {
@@ -863,7 +887,35 @@ const filterSnapshotForContext = (snapshot, { view = 'pdv', session = null } = {
   };
 };
 
-const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, view = 'pdv', session = null } = {}) => {
+const getRestrictedSnapshot = (view = 'pdv') => ({
+  catalogData: {
+    categories: [],
+    menuItems: [],
+    modifierGroups: [],
+    productMapping: {},
+    categoryMapping: {},
+    catalogVersion: 'restricted',
+  },
+  catalogVersion: 'restricted',
+  sellers: [],
+  kitchenData: {
+    orders: [],
+    serverNow: new Date().toISOString(),
+  },
+  serviceRequests: [],
+  closedBills: [],
+  savedSettings: null,
+  tables: [],
+  auditLogs: [],
+  accessRestricted: true,
+  view,
+});
+
+const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, view = 'pdv', session = null, operationAccessAllowed = true } = {}) => {
+  if (!operationAccessAllowed && !isAdminSession(session)) {
+    return getRestrictedSnapshot(view);
+  }
+
   await ensureDatabaseReady();
   const safeView = ['tablet', 'qr', 'kitchen', 'pdv', 'admin'].includes(view) ? view : 'pdv';
   const needsOperationalPanel = safeView === 'pdv' || safeView === 'admin';
@@ -895,11 +947,12 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
   }, { view, session });
 };
 
-const login = async ({ pin, sellerId }) => {
+const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = null } = {}) => {
   await ensureDatabaseReady();
   await ensureDefaultSellersReady();
   const activeSellers = (await getSellers({ includePins: true }))
     .filter((seller) => seller.status === 'active' && (!sellerId || seller.id === sellerId));
+  let blockedNonAdminMatch = false;
 
   if (activeSellers.length === 0 && BOOTSTRAP_ADMIN_PIN && pin === BOOTSTRAP_ADMIN_PIN) {
     const seller = {
@@ -920,22 +973,46 @@ const login = async ({ pin, sellerId }) => {
     const storedPin = seller.pin || '';
     const isMatch = isLegacyPlainPin(storedPin) ? storedPin === pin : storedPin === hashPin(pin);
     if (!isMatch) continue;
+    const safeSeller = toSessionSeller(seller);
+
+    if (!operationAccessAllowed && !isAdminSession(safeSeller)) {
+      blockedNonAdminMatch = true;
+      if (req && isOperationIpRestricted()) {
+        console.warn(`Blocked non-admin login outside operation IP: ${getClientIp(req)} seller=${seller.id}`);
+      }
+      continue;
+    }
 
     if (isLegacyPlainPin(storedPin)) {
       await updateSellerPin({ id: seller.id, pin: hashPin(pin) });
     }
 
     return {
-      seller: toSessionSeller(seller),
+      seller: safeSeller,
+      sessionToken: createSessionToken(safeSeller),
+    };
+  }
+
+  if (!operationAccessAllowed && isAdminBypassPin(pin)) {
+    const seller = {
+      id: 'admin-bypass',
+      name: 'Admin Full',
+      status: 'active',
+      role: 'gerente',
+      permission: 'admin',
+      pin: '',
+    };
+    return {
+      seller,
       sessionToken: createSessionToken(seller),
     };
   }
 
-  return { seller: null, sessionToken: null };
+  return { seller: null, sessionToken: null, accessRestricted: blockedNonAdminMatch };
 };
 
-const validateTabletSetupPin = async ({ pin }) => ({
-  valid: String(pin || '') === TABLET_SETUP_PIN,
+const validateTabletSetupPin = async ({ pin }, { operationAccessAllowed = true } = {}) => ({
+  valid: operationAccessAllowed && String(pin || '') === TABLET_SETUP_PIN,
 });
 
 const resolveOSContext = async () => {
@@ -1955,13 +2032,21 @@ const requirePermission = (session, permission) => {
 
 const allowPublicOperationalOrigin = (body) => body?.origin === 'tablet' || body?.origin === 'qr';
 
-const enforceRouteAccess = (routeKey, body, session) => {
+const enforceRouteAccess = (routeKey, body, session, { operationAccessAllowed = true, req = null } = {}) => {
   if (
     routeKey === 'GET /api/app/init'
     || routeKey === 'POST /api/app/sync'
     || routeKey === 'POST /api/auth/login'
-    || routeKey === 'POST /api/tablet/setup-login'
   ) {
+    return;
+  }
+
+  if (!operationAccessAllowed && !isAdminSession(session)) {
+    if (routeKey === 'POST /api/tablet/setup-login') throwIpRestricted(req);
+    throwIpRestricted(req);
+  }
+
+  if (routeKey === 'POST /api/tablet/setup-login') {
     return;
   }
 
@@ -2020,15 +2105,17 @@ const handlers = {
     includeAuditLimit: 50,
     view: context.url.searchParams.get('view') || 'pdv',
     session: context.session,
+    operationAccessAllowed: context.operationAccessAllowed,
   }),
   'POST /api/app/sync': async (body, context) => getAppSnapshot({
     includeCatalog: Boolean(body.includeCatalog),
     includeAuditLimit: 0,
     view: body.view || 'pdv',
     session: context.session,
+    operationAccessAllowed: context.operationAccessAllowed,
   }),
-  'POST /api/auth/login': async (body) => login(body),
-  'POST /api/tablet/setup-login': async (body) => validateTabletSetupPin(body),
+  'POST /api/auth/login': async (body, context) => login(body, context),
+  'POST /api/tablet/setup-login': async (body, context) => validateTabletSetupPin(body, context),
   'POST /api/audit-logs/list': async (body) => ({ auditLogs: await getAuditLogs(Number(body.limit || 100)) }),
   'POST /api/orders/send-to-kitchen': async (body) => sendToKitchen(body),
   'POST /api/orders/status': async (body) => updateOrderStatus(body),
@@ -2088,8 +2175,9 @@ const handleApi = async (req, res, url) => {
 
     const body = req.method === 'GET' ? {} : await readJsonBody(req);
     const session = getSessionFromRequest(req);
-    enforceRouteAccess(routeKey, body, session);
-    const data = await handler(body, { req, url, session });
+    const operationAccessAllowed = isOperationIpAllowed(req) || isAdminSession(session);
+    enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
+    const data = await handler(body, { req, url, session, operationAccessAllowed });
     sendJson(res, 200, { ok: true, data });
   } catch (error) {
     console.error('BFF error:', error);
