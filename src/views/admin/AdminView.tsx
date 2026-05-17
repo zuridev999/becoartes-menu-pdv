@@ -23,13 +23,13 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore, type Product } from '../../store';
-import { db } from '../../lib/db';
 import { PinLoginModal } from '../../components/auth/PinLoginModal';
 import { ActionDialog } from '../../components/common/ActionDialog';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { createId } from '../../lib/id';
 import { getImageSrc } from '../../lib/image';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
+import { AppApi } from '../../lib/api';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
@@ -246,12 +246,9 @@ export function AdminView() {
   useEffect(() => {
     if (activeTab === 'movements') {
       const fetchMovements = async () => {
-        const res = await db.execute(`
-          SELECT * FROM audit_logs 
-          ORDER BY timestamp DESC LIMIT 100
-        `);
+        const res = await AppApi.fetchAuditLogs(100);
 
-        const formatted = res.rows.map((r: any) => ({
+        const formatted = res.auditLogs.map((r: any) => ({
           id: r.id,
           action: r.action,
           details: r.details,

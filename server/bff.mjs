@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { createReadStream, existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@libsql/client';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -16,6 +16,16 @@ const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || process.env.VITE_TURSO_AU
 const OS_EMPRESA_ID = process.env.OS_EMPRESA_ID || process.env.VITE_OS_EMPRESA_ID || 'e19cbcce-b2a7-4cc1-bf70-c06d2f8feb8a';
 const OS_TENANT_SLUG = process.env.OS_TENANT_SLUG || process.env.VITE_OS_TENANT_SLUG || 'becoartes';
 const OS_SYSTEM_USER_ID = process.env.OS_SYSTEM_USER_ID || process.env.VITE_OS_SYSTEM_USER_ID || '';
+const BOOTSTRAP_ADMIN_PIN = process.env.BOOTSTRAP_ADMIN_PIN || process.env.VITE_BOOTSTRAP_ADMIN_PIN || '';
+const DEFAULT_MANAGER_PIN = process.env.DEFAULT_MANAGER_PIN || process.env.VITE_DEFAULT_MANAGER_PIN || '2020';
+const DEFAULT_OPERATOR_PIN = process.env.DEFAULT_OPERATOR_PIN || process.env.VITE_DEFAULT_OPERATOR_PIN || '0040';
+const TABLET_SETUP_PIN = process.env.TABLET_SETUP_PIN || process.env.VITE_TABLET_SETUP_PIN || '0040';
+const SESSION_SECRET = process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET || tursoAuthToken;
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const PROCESSING_STALE_MS = 10 * 60 * 1000;
+const SERVICE_REQUEST_LIMIT = Number(process.env.SERVICE_REQUEST_LIMIT || 150);
+const CLOSED_BILLS_LIMIT = Number(process.env.CLOSED_BILLS_LIMIT || 200);
+const AUDIT_LOG_LIMIT = Number(process.env.AUDIT_LOG_LIMIT || 100);
 
 if (!tursoUrl || !tursoAuthToken) {
   throw new Error('Missing Turso configuration for BFF runtime.');
@@ -38,7 +48,7 @@ const securityHeaders = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'strict-origin-when-cross-origin',
   'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
-  'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.turso.io wss://*.turso.io https://images.unsplash.com; object-src 'none'; base-uri 'self'; frame-ancestors https://os.becoartes.com",
+  'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors https://os.becoartes.com",
 };
 
 const mimeTypes = {
@@ -71,6 +81,215 @@ const parseJsonArray = (value) => {
   }
 };
 
+const parseJsonObject = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const hashPin = (pin) => createHash('sha256').update(`${pin}becoartes_salt_2024`).digest('hex');
+const isLegacyPlainPin = (storedPin) => /^\d{4}$/.test(String(storedPin || ''));
+const toSessionSeller = (seller) => ({ ...seller, pin: '' });
+const normalizePermission = (permission) => {
+  if (permission === 'admin') return 'admin';
+  if (permission === 'manager' || permission === 'standard') return 'manager';
+  return 'operator';
+};
+
+const permissionsByProfile = {
+  admin: {
+    viewSalesTotals: true,
+    manageSettings: true,
+    manageTeam: true,
+    manageOptionals: true,
+    addProduct: true,
+    editProductPrice: true,
+    deleteProduct: true,
+    toggleProductVisibility: true,
+    cancelTableItem: true,
+    closeBill: true,
+  },
+  manager: {
+    viewSalesTotals: true,
+    manageSettings: false,
+    manageTeam: false,
+    manageOptionals: true,
+    addProduct: true,
+    editProductPrice: true,
+    deleteProduct: true,
+    toggleProductVisibility: true,
+    cancelTableItem: true,
+    closeBill: true,
+  },
+  operator: {
+    viewSalesTotals: false,
+    manageSettings: false,
+    manageTeam: false,
+    manageOptionals: true,
+    addProduct: true,
+    editProductPrice: false,
+    deleteProduct: false,
+    toggleProductVisibility: true,
+    cancelTableItem: false,
+    closeBill: true,
+  },
+};
+
+const canSession = (session, permission) => {
+  if (!session) return false;
+  return Boolean(permissionsByProfile[normalizePermission(session.permission)]?.[permission]);
+};
+
+const base64UrlEncode = (value) => Buffer.from(value).toString('base64url');
+const base64UrlJson = (value) => base64UrlEncode(JSON.stringify(value));
+const signSessionPayload = (payload) => (
+  createHmac('sha256', SESSION_SECRET)
+    .update(payload)
+    .digest('base64url')
+);
+
+const createSessionToken = (seller) => {
+  const payload = base64UrlJson({
+    sub: seller.id,
+    name: seller.name,
+    permission: normalizePermission(seller.permission),
+    role: seller.role,
+    exp: Date.now() + SESSION_TTL_MS,
+  });
+  return `${payload}.${signSessionPayload(payload)}`;
+};
+
+const safeEqual = (left, right) => {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+};
+
+const parseCookies = (header = '') => Object.fromEntries(
+  String(header)
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const index = part.indexOf('=');
+      if (index === -1) return [part, ''];
+      return [part.slice(0, index), decodeURIComponent(part.slice(index + 1))];
+    })
+);
+
+const getSessionFromRequest = (req) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const token = String(req.headers['x-beco-session'] || cookies.beco_session || '');
+  if (!token.includes('.')) return null;
+
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature || !safeEqual(signature, signSessionPayload(payload))) return null;
+
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!decoded.exp || Number(decoded.exp) < Date.now()) return null;
+    return {
+      id: decoded.sub,
+      name: decoded.name,
+      role: decoded.role,
+      permission: normalizePermission(decoded.permission),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const ensureDatabase = async () => {
+  await db.batch([
+    "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, schedule_config TEXT, sort_order INTEGER DEFAULT 0, visible INTEGER DEFAULT 1)",
+    "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS modifier_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, min_choices INTEGER DEFAULT 0, max_choices INTEGER DEFAULT 1, is_required INTEGER DEFAULT 0, status TEXT DEFAULT 'active')",
+    "CREATE TABLE IF NOT EXISTS modifiers (id TEXT PRIMARY KEY, group_id TEXT, name TEXT NOT NULL, price REAL NOT NULL, status TEXT DEFAULT 'active', sort_order INTEGER DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS product_modifier_groups (product_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(product_id, group_id))",
+    "CREATE TABLE IF NOT EXISTS category_modifier_groups (category_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(category_id, group_id))",
+    "CREATE TABLE IF NOT EXISTS tables (id TEXT PRIMARY KEY, number TEXT NOT NULL, status TEXT NOT NULL, last_activity DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, table_id TEXT, total REAL NOT NULL, status TEXT NOT NULL, origin TEXT DEFAULT 'pdv', created_by_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, payment_method TEXT)",
+    "CREATE TABLE IF NOT EXISTS order_items (id TEXT PRIMARY KEY, order_id TEXT, product_id TEXT, quantity INTEGER NOT NULL, price_at_time REAL NOT NULL, selected_modifiers TEXT, notes TEXT)",
+    "CREATE TABLE IF NOT EXISTS service_requests (id TEXT PRIMARY KEY, table_id TEXT, type TEXT NOT NULL, status TEXT NOT NULL, message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS sellers (id TEXT PRIMARY KEY, name TEXT NOT NULL, nickname TEXT, status TEXT NOT NULL, role TEXT NOT NULL, permission TEXT DEFAULT 'standard', pin TEXT DEFAULT '1234', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, details TEXT, table_number TEXT, origin TEXT, author_id TEXT, author_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS closed_bills (id TEXT PRIMARY KEY, table_id TEXT, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, subtotal REAL NOT NULL, service_fee REAL DEFAULT 0, discount REAL DEFAULT 0, discount_reason TEXT, total REAL NOT NULL, payments TEXT, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS integration_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, table_id TEXT, ref_id TEXT, payload TEXT, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, status TEXT NOT NULL, opening_balance REAL NOT NULL, closing_balance REAL, total_sales REAL DEFAULT 0, opened_at DATETIME DEFAULT CURRENT_TIMESTAMP, closed_at DATETIME, sort_order INTEGER DEFAULT 0)",
+  ], 'write');
+
+  const migrations = [
+    "ALTER TABLE menu ADD COLUMN category_id TEXT",
+    "ALTER TABLE menu ADD COLUMN schedule_config TEXT",
+    "ALTER TABLE menu ADD COLUMN cost REAL DEFAULT 0",
+    "ALTER TABLE categories ADD COLUMN visible INTEGER DEFAULT 1",
+    "ALTER TABLE categories ADD COLUMN schedule_config TEXT",
+    "ALTER TABLE sellers ADD COLUMN permission TEXT DEFAULT 'standard'",
+    "ALTER TABLE sellers ADD COLUMN pin TEXT DEFAULT '1234'",
+    "ALTER TABLE orders ADD COLUMN origin TEXT DEFAULT 'pdv'",
+    "ALTER TABLE order_items ADD COLUMN notes TEXT",
+    "ALTER TABLE modifier_groups ADD COLUMN status TEXT DEFAULT 'active'",
+    "ALTER TABLE modifiers ADD COLUMN status TEXT DEFAULT 'active'",
+    "ALTER TABLE modifiers ADD COLUMN sort_order INTEGER DEFAULT 0",
+    "ALTER TABLE product_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
+    "ALTER TABLE category_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
+    "ALTER TABLE service_requests ADD COLUMN message TEXT",
+    "ALTER TABLE closed_bills ADD COLUMN table_id TEXT",
+    "ALTER TABLE estoque_movimentacoes ADD COLUMN closed_bill_id TEXT",
+    "ALTER TABLE estoque_movimentacoes ADD COLUMN order_id TEXT",
+    "ALTER TABLE estoque_movimentacoes ADD COLUMN order_item_id TEXT",
+    "ALTER TABLE estoque_movimentacoes ADD COLUMN origem TEXT",
+    "ALTER TABLE estoque_movimentacoes ADD COLUMN integration_event_id TEXT",
+    "ALTER TABLE estoque_movimentacoes ADD COLUMN source_item_id TEXT",
+    "ALTER TABLE estoque_movimentacoes ADD COLUMN source_item_kind TEXT",
+  ];
+
+  for (const sql of migrations) {
+    try { await db.execute(sql); } catch {}
+  }
+
+  const indexes = [
+    "CREATE INDEX IF NOT EXISTS idx_orders_table_status ON orders(table_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)",
+    "CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id)",
+    "CREATE INDEX IF NOT EXISTS idx_stock_empresa_nome ON estoque_produtos(empresa_id, ativo, nome)",
+    "CREATE INDEX IF NOT EXISTS idx_stock_mov_empresa_created ON estoque_movimentacoes(empresa_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_notif_empresa_created ON notificacoes(empresa_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_category_modifiers_category ON category_modifier_groups(category_id)",
+    "CREATE INDEX IF NOT EXISTS idx_product_modifiers_product ON product_modifier_groups(product_id)",
+    "CREATE INDEX IF NOT EXISTS idx_modifiers_group_status ON modifiers(group_id, status, sort_order)",
+    "CREATE INDEX IF NOT EXISTS idx_category_modifiers_group ON category_modifier_groups(group_id)",
+    "CREATE INDEX IF NOT EXISTS idx_product_modifiers_group ON product_modifier_groups(group_id)",
+    "CREATE INDEX IF NOT EXISTS idx_integration_events_type_status ON integration_events(type, status)",
+    "CREATE INDEX IF NOT EXISTS idx_stock_mov_integration_event ON estoque_movimentacoes(integration_event_id)",
+    "CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_service_requests_status_created ON service_requests(status, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_closed_bills_closed_at ON closed_bills(closed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_mov_pdv_once ON estoque_movimentacoes(integration_event_id, order_item_id, produto_id, source_item_kind, source_item_id) WHERE origem = 'pdv' AND integration_event_id IS NOT NULL AND order_item_id IS NOT NULL",
+  ];
+
+  for (const sql of indexes) {
+    try { await db.execute(sql); } catch (error) { console.warn('Index skipped:', sql, error); }
+  }
+};
+
+let databaseReadyPromise = null;
+const ensureDatabaseReady = () => {
+  if (!databaseReadyPromise) {
+    databaseReadyPromise = ensureDatabase().catch((error) => {
+      databaseReadyPromise = null;
+      throw error;
+    });
+  }
+  return databaseReadyPromise;
+};
+
 const readJsonBody = async (req) => {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -96,6 +315,31 @@ const assertSameOrigin = (req) => {
   }
 };
 
+const pinAttemptBuckets = new Map();
+const PIN_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const PIN_RATE_LIMIT_MAX = 12;
+
+const getClientIp = (req) => {
+  const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwardedFor || req.socket.remoteAddress || 'unknown';
+};
+
+const isPinRateLimited = (req, pathname) => {
+  if (pathname !== '/api/auth/login' && pathname !== '/api/tablet/setup-login') return false;
+
+  const key = `${pathname}:${getClientIp(req)}`;
+  const now = Date.now();
+  const bucket = pinAttemptBuckets.get(key);
+
+  if (!bucket || bucket.resetAt <= now) {
+    pinAttemptBuckets.set(key, { count: 1, resetAt: now + PIN_RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+
+  bucket.count += 1;
+  return bucket.count > PIN_RATE_LIMIT_MAX;
+};
+
 const requireString = (value, field) => {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`Campo obrigatório inválido: ${field}`);
@@ -108,6 +352,591 @@ const requireNumber = (value, field) => {
   if (!Number.isFinite(parsed)) throw new Error(`Campo numérico inválido: ${field}`);
   return parsed;
 };
+
+const getCatalogVersion = async () => {
+  const res = await db.execute("SELECT value FROM app_settings WHERE key = 'catalog_version' LIMIT 1");
+  return String(res.rows[0]?.value || '0');
+};
+
+const getCategories = async () => {
+  const res = await db.execute("SELECT * FROM categories ORDER BY sort_order ASC");
+  return res.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    schedule: parseJsonObject(row.schedule_config),
+    sortOrder: Number(row.sort_order || 0),
+    visible: row.visible === 1,
+  }));
+};
+
+const getMenu = async () => {
+  const res = await db.execute(`
+    SELECT m.*, c.name as category_name
+    FROM menu m
+    LEFT JOIN categories c ON m.category_id = c.id
+  `);
+  return res.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description || '',
+    price: Number(row.price || 0),
+    categoryId: row.category_id || '',
+    categoryName: row.category_name || '',
+    image: row.image || '',
+    visible: row.visible === 1,
+    schedule: parseJsonObject(row.schedule_config),
+    erpCode: row.erp_code || '',
+    remoteStockId: row.remote_stock_id || '',
+    cost: Number(row.cost || 0),
+    modifierGroups: [],
+  }));
+};
+
+const getModifierData = async () => {
+  const res = await db.execute(`
+    SELECT
+      'group' as row_kind,
+      mg.id as group_id,
+      mg.name as group_name,
+      mg.description as group_description,
+      mg.min_choices,
+      mg.max_choices,
+      mg.is_required,
+      mg.status as group_status,
+      NULL as modifier_id,
+      NULL as modifier_name,
+      NULL as modifier_price,
+      NULL as modifier_status,
+      NULL as modifier_sort_order,
+      NULL as scope,
+      NULL as scope_id,
+      0 as link_sort_order
+    FROM modifier_groups mg
+    WHERE mg.status = 'active'
+
+    UNION ALL
+
+    SELECT
+      'modifier' as row_kind,
+      mg.id as group_id,
+      mg.name as group_name,
+      mg.description as group_description,
+      mg.min_choices,
+      mg.max_choices,
+      mg.is_required,
+      mg.status as group_status,
+      m.id as modifier_id,
+      m.name as modifier_name,
+      m.price as modifier_price,
+      m.status as modifier_status,
+      m.sort_order as modifier_sort_order,
+      NULL as scope,
+      NULL as scope_id,
+      0 as link_sort_order
+    FROM modifiers m
+    JOIN modifier_groups mg ON m.group_id = mg.id
+    WHERE mg.status = 'active' AND m.status = 'active'
+
+    UNION ALL
+
+    SELECT
+      'product_link' as row_kind,
+      mg.id as group_id,
+      mg.name as group_name,
+      mg.description as group_description,
+      mg.min_choices,
+      mg.max_choices,
+      mg.is_required,
+      mg.status as group_status,
+      NULL as modifier_id,
+      NULL as modifier_name,
+      NULL as modifier_price,
+      NULL as modifier_status,
+      NULL as modifier_sort_order,
+      'product' as scope,
+      pmg.product_id as scope_id,
+      pmg.sort_order as link_sort_order
+    FROM product_modifier_groups pmg
+    JOIN modifier_groups mg ON pmg.group_id = mg.id
+    WHERE mg.status = 'active'
+
+    UNION ALL
+
+    SELECT
+      'category_link' as row_kind,
+      mg.id as group_id,
+      mg.name as group_name,
+      mg.description as group_description,
+      mg.min_choices,
+      mg.max_choices,
+      mg.is_required,
+      mg.status as group_status,
+      NULL as modifier_id,
+      NULL as modifier_name,
+      NULL as modifier_price,
+      NULL as modifier_status,
+      NULL as modifier_sort_order,
+      'category' as scope,
+      cmg.category_id as scope_id,
+      cmg.sort_order as link_sort_order
+    FROM category_modifier_groups cmg
+    JOIN modifier_groups mg ON cmg.group_id = mg.id
+    WHERE mg.status = 'active'
+    ORDER BY group_id, row_kind, modifier_sort_order, link_sort_order
+  `);
+
+  const groupById = {};
+  const productMapping = {};
+  const categoryMapping = {};
+
+  res.rows.forEach((row) => {
+    if (!groupById[row.group_id]) {
+      groupById[row.group_id] = {
+        id: row.group_id,
+        name: row.group_name,
+        description: row.group_description || '',
+        minChoices: Number(row.min_choices || 0),
+        maxChoices: Number(row.max_choices || 1),
+        isRequired: row.is_required === 1,
+        status: row.group_status || 'active',
+        modifiers: [],
+      };
+    }
+
+    if (row.row_kind === 'modifier' && row.modifier_id) {
+      groupById[row.group_id].modifiers.push({
+        id: row.modifier_id,
+        name: row.modifier_name,
+        price: Number(row.modifier_price || 0),
+        status: row.modifier_status || 'active',
+        sortOrder: Number(row.modifier_sort_order || 0),
+      });
+      return;
+    }
+
+    if (row.scope === 'product' && row.scope_id) {
+      if (!productMapping[row.scope_id]) productMapping[row.scope_id] = [];
+      productMapping[row.scope_id].push(row.group_id);
+      return;
+    }
+
+    if (row.scope === 'category' && row.scope_id) {
+      if (!categoryMapping[row.scope_id]) categoryMapping[row.scope_id] = [];
+      categoryMapping[row.scope_id].push(row.group_id);
+    }
+  });
+
+  return {
+    modifierGroups: Object.values(groupById),
+    productMapping,
+    categoryMapping,
+  };
+};
+
+let catalogCache = null;
+const getCatalogData = async () => {
+  const catalogVersion = await getCatalogVersion();
+  if (catalogCache?.catalogVersion === catalogVersion) return catalogCache;
+
+  const [categories, menuItems, modifierData] = await Promise.all([
+    getCategories(),
+    getMenu(),
+    getModifierData(),
+  ]);
+
+  catalogCache = { categories, menuItems, ...modifierData, catalogVersion };
+  return catalogCache;
+};
+
+const getSellers = async ({ includePins = false } = {}) => {
+  const res = await db.execute("SELECT * FROM sellers");
+  return res.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    nickname: row.nickname || '',
+    status: row.status,
+    role: row.role,
+    permission: row.permission || 'operator',
+    pin: includePins ? row.pin || '' : '',
+  }));
+};
+
+const getKitchenOrders = async () => {
+  const [ordersRes, itemsRes, nowRes] = await Promise.all([
+    db.execute("SELECT o.id, o.status, o.table_id, o.origin, strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) as created_at, t.number as tableNumber FROM orders o JOIN tables t ON o.table_id = t.id WHERE o.status IN ('pending', 'preparing') ORDER BY o.created_at ASC"),
+    db.execute(`
+      SELECT oi.*, m.name
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      JOIN menu m ON oi.product_id = m.id
+      WHERE o.status IN ('pending', 'preparing')
+    `),
+    db.execute("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now') as serverNow"),
+  ]);
+
+  const itemsByOrder = {};
+  itemsRes.rows.forEach((row) => {
+    if (!itemsByOrder[row.order_id]) itemsByOrder[row.order_id] = [];
+    itemsByOrder[row.order_id].push({
+      id: row.id,
+      orderId: row.order_id,
+      productId: row.product_id,
+      name: row.name || '',
+      price: Number(row.price_at_time || 0),
+      quantity: Number(row.quantity || 0),
+      selectedModifiers: parseJsonArray(row.selected_modifiers),
+      notes: row.notes || '',
+    });
+  });
+
+  return {
+    orders: ordersRes.rows.map((row) => ({
+      id: row.id,
+      tableId: row.table_id,
+      tableNumber: Number(row.tableNumber),
+      status: row.status,
+      origin: row.origin || 'pdv',
+      createdAt: row.created_at,
+      items: itemsByOrder[row.id] || [],
+    })),
+    serverNow: nowRes.rows[0]?.serverNow || new Date().toISOString(),
+  };
+};
+
+const materializeNewOrderRequests = async () => {
+  await db.execute(`
+    INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message, created_at)
+    SELECT
+      'new_order_' || o.id,
+      o.table_id,
+      'new_order',
+      'pending',
+      COALESCE((
+        SELECT group_concat(oi.quantity || 'x ' || COALESCE(m.name, 'Item'), ', ')
+        FROM order_items oi
+        LEFT JOIN menu m ON oi.product_id = m.id
+        WHERE oi.order_id = o.id
+      ), 'Novo pedido'),
+      o.created_at
+    FROM orders o
+    WHERE o.status IN ('pending', 'preparing')
+      AND o.created_at >= datetime('now', '-12 hours')
+      AND NOT EXISTS (
+        SELECT 1 FROM service_requests sr
+        WHERE sr.table_id = o.table_id
+          AND sr.status = 'pending'
+          AND sr.type = 'new_order'
+          AND sr.message = COALESCE((
+            SELECT group_concat(oi2.quantity || 'x ' || COALESCE(m2.name, 'Item'), ', ')
+            FROM order_items oi2
+            LEFT JOIN menu m2 ON oi2.product_id = m2.id
+            WHERE oi2.order_id = o.id
+          ), 'Novo pedido')
+      )
+  `);
+};
+
+const getServiceRequests = async () => {
+  await materializeNewOrderRequests();
+  const res = await db.execute({
+    sql: `
+      SELECT
+        sr.id,
+        sr.table_id,
+        sr.type,
+        sr.status,
+        sr.message,
+        strftime('%Y-%m-%dT%H:%M:%SZ', sr.created_at) as created_at,
+        t.number as tableNumber
+      FROM service_requests sr
+      LEFT JOIN tables t ON sr.table_id = t.id
+      WHERE (
+          sr.status IN ('pending', 'viewed')
+          OR (
+            sr.status = 'resolved'
+            AND sr.created_at >= datetime('now', '-12 hours')
+          )
+        )
+        AND NOT (
+          sr.type = 'new_order'
+          AND sr.id NOT LIKE 'new_order_%'
+          AND EXISTS (
+            SELECT 1 FROM service_requests sr2
+            WHERE sr2.table_id = sr.table_id
+              AND sr2.type = 'new_order'
+              AND sr2.message = sr.message
+              AND sr2.status = sr.status
+              AND sr2.id LIKE 'new_order_%'
+              AND abs(strftime('%s', sr2.created_at) - strftime('%s', sr.created_at)) < 300
+          )
+        )
+      ORDER BY
+        CASE sr.status WHEN 'pending' THEN 0 WHEN 'viewed' THEN 1 ELSE 2 END,
+        sr.created_at DESC
+      LIMIT ?
+    `,
+    args: [SERVICE_REQUEST_LIMIT],
+  });
+
+  return res.rows.map((row) => ({
+    id: row.id,
+    tableId: row.table_id,
+    tableNumber: Number(row.tableNumber || 0),
+    type: row.type,
+    message: row.message || '',
+    status: row.status,
+    createdAt: row.created_at || new Date().toISOString(),
+  }));
+};
+
+const getClosedBills = async (limit = 200) => {
+  const res = await db.execute({
+    sql: "SELECT id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, strftime('%Y-%m-%dT%H:%M:%SZ', closed_at) as closed_at FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
+    args: [Math.min(Number(limit) || CLOSED_BILLS_LIMIT, CLOSED_BILLS_LIMIT)],
+  });
+  return res.rows.map((row) => ({
+    id: row.id,
+    tableId: row.table_id || '',
+    tableNumber: Number(row.table_number || 0),
+    sellerId: row.seller_id || '',
+    sellerName: row.seller_name || 'Sistema',
+    subtotal: Number(row.subtotal || 0),
+    serviceFee: Number(row.service_fee || 0),
+    discount: Number(row.discount || 0),
+    discountReason: row.discount_reason || '',
+    total: Number(row.total || 0),
+    payments: parseJsonArray(row.payments),
+    closedAt: row.closed_at || new Date().toISOString(),
+  }));
+};
+
+const getSettings = async () => {
+  const res = await db.execute("SELECT value FROM app_settings WHERE key = 'settings' LIMIT 1");
+  return parseJsonObject(res.rows[0]?.value) || null;
+};
+
+const getAuditLogs = async (limit = 50) => {
+  const res = await db.execute({
+    sql: "SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?",
+    args: [Math.min(Number(limit) || 50, AUDIT_LOG_LIMIT)],
+  });
+  return res.rows.map((row) => ({
+    id: row.id,
+    action: row.action,
+    details: row.details,
+    table_number: row.table_number,
+    origin: row.origin || 'pdv',
+    author_name: row.author_name,
+    timestamp: row.timestamp,
+  }));
+};
+
+const getActiveOrdersByTable = async () => {
+  const res = await db.execute(`
+    SELECT oi.*, o.table_id, m.name, m.category_id, c.name as category_name
+    FROM order_items oi
+    JOIN orders o ON oi.order_id = o.id
+    LEFT JOIN menu m ON oi.product_id = m.id
+    LEFT JOIN categories c ON m.category_id = c.id
+    WHERE o.status != 'closed'
+  `);
+
+  const ordersByTable = {};
+  res.rows.forEach((row) => {
+    if (!ordersByTable[row.table_id]) ordersByTable[row.table_id] = [];
+    ordersByTable[row.table_id].push({
+      id: row.id,
+      orderId: row.order_id,
+      productId: row.product_id,
+      categoryId: row.category_id,
+      categoryName: row.category_name,
+      name: row.name || '',
+      price: Number(row.price_at_time || 0),
+      quantity: Number(row.quantity || 0),
+      selectedModifiers: parseJsonArray(row.selected_modifiers),
+      notes: row.notes || '',
+    });
+  });
+  return ordersByTable;
+};
+
+const getTables = async () => {
+  let tableRes = await db.execute("SELECT * FROM tables ORDER BY CAST(number AS INTEGER) ASC");
+  if (tableRes.rows.length < 50) {
+    const values = [];
+    const placeholders = [];
+    for (let i = tableRes.rows.length + 1; i <= 50; i++) {
+      placeholders.push('(?, ?, ?)');
+      values.push(String(i), String(i), 'available');
+    }
+    if (placeholders.length > 0) {
+      await db.execute({
+        sql: `INSERT OR IGNORE INTO tables (id, number, status) VALUES ${placeholders.join(', ')}`,
+        args: values,
+      });
+      tableRes = await db.execute("SELECT * FROM tables ORDER BY CAST(number AS INTEGER) ASC");
+    }
+  }
+
+  const ordersByTable = await getActiveOrdersByTable();
+  return tableRes.rows.map((row) => ({
+    id: row.id,
+    number: Number(row.number),
+    status: row.status,
+    orders: ordersByTable[row.id] || [],
+    cart: [],
+    lastActivity: row.last_activity || new Date().toISOString(),
+  })).sort((a, b) => a.number - b.number);
+};
+
+const ensureDefaultSellers = async () => {
+  const defaults = [
+    { id: 'admin-bootstrap', name: 'Admin Full', nickname: 'Admin', role: 'gerente', permission: 'admin', pin: BOOTSTRAP_ADMIN_PIN },
+    { id: 'manager-default', name: 'Gerente', nickname: 'Gerente', role: 'gerente', permission: 'manager', pin: DEFAULT_MANAGER_PIN },
+    { id: 'operator-default', name: 'Operador', nickname: 'Operador', role: 'atendente', permission: 'operator', pin: DEFAULT_OPERATOR_PIN },
+  ].filter((seller) => seller.pin);
+
+  const existing = await getSellers({ includePins: true });
+  for (const seller of defaults) {
+    if (existing.some((item) => item.id === seller.id)) continue;
+    await db.execute({
+      sql: "INSERT INTO sellers (id, name, nickname, status, role, permission, pin) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      args: [seller.id, seller.name, seller.nickname, 'active', seller.role, seller.permission, hashPin(seller.pin)],
+    });
+  }
+};
+
+let defaultSellersReadyPromise = null;
+const ensureDefaultSellersReady = () => {
+  if (!defaultSellersReadyPromise) {
+    defaultSellersReadyPromise = ensureDefaultSellers().catch((error) => {
+      defaultSellersReadyPromise = null;
+      throw error;
+    });
+  }
+  return defaultSellersReadyPromise;
+};
+
+const filterSnapshotForContext = (snapshot, { view = 'pdv', session = null } = {}) => {
+  const safeView = ['tablet', 'qr', 'kitchen', 'pdv', 'admin'].includes(view) ? view : 'pdv';
+  const canViewSales = canSession(session, 'viewSalesTotals');
+  const canManageTeam = canSession(session, 'manageTeam');
+
+  if (safeView === 'tablet' || safeView === 'qr') {
+    return {
+      ...snapshot,
+      sellers: [],
+      serviceRequests: [],
+      closedBills: [],
+      auditLogs: [],
+    };
+  }
+
+  if (safeView === 'kitchen') {
+    return {
+      ...snapshot,
+      sellers: [],
+      serviceRequests: [],
+      closedBills: [],
+      auditLogs: [],
+      savedSettings: snapshot.savedSettings
+        ? { kitchen: snapshot.savedSettings.kitchen }
+        : null,
+    };
+  }
+
+  return {
+    ...snapshot,
+    sellers: canManageTeam
+      ? snapshot.sellers
+      : snapshot.sellers.map((seller) => ({
+          id: seller.id,
+          name: seller.name,
+          nickname: seller.nickname,
+          status: seller.status,
+          role: seller.role,
+          permission: seller.permission,
+          pin: '',
+        })),
+    closedBills: canViewSales ? snapshot.closedBills : [],
+    auditLogs: canViewSales ? snapshot.auditLogs : [],
+  };
+};
+
+const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, view = 'pdv', session = null } = {}) => {
+  await ensureDatabaseReady();
+  const safeView = ['tablet', 'qr', 'kitchen', 'pdv', 'admin'].includes(view) ? view : 'pdv';
+  const needsOperationalPanel = safeView === 'pdv' || safeView === 'admin';
+  const needsSellers = needsOperationalPanel;
+  const needsSalesData = needsOperationalPanel && canSession(session, 'viewSalesTotals');
+  if (needsSellers) await ensureDefaultSellersReady();
+  const [catalogData, sellers, kitchenData, serviceRequests, closedBills, savedSettings, tables, auditLogs, catalogVersion] = await Promise.all([
+    includeCatalog ? getCatalogData() : Promise.resolve(null),
+    needsSellers ? getSellers() : Promise.resolve([]),
+    getKitchenOrders(),
+    needsOperationalPanel ? getServiceRequests() : Promise.resolve([]),
+    needsSalesData ? getClosedBills() : Promise.resolve([]),
+    getSettings(),
+    getTables(),
+    needsSalesData ? getAuditLogs(includeAuditLimit) : Promise.resolve([]),
+    getCatalogVersion(),
+  ]);
+
+  return filterSnapshotForContext({
+    catalogData,
+    catalogVersion,
+    sellers,
+    kitchenData,
+    serviceRequests,
+    closedBills,
+    savedSettings,
+    tables,
+    auditLogs,
+  }, { view, session });
+};
+
+const login = async ({ pin, sellerId }) => {
+  await ensureDatabaseReady();
+  await ensureDefaultSellersReady();
+  const activeSellers = (await getSellers({ includePins: true }))
+    .filter((seller) => seller.status === 'active' && (!sellerId || seller.id === sellerId));
+
+  if (activeSellers.length === 0 && BOOTSTRAP_ADMIN_PIN && pin === BOOTSTRAP_ADMIN_PIN) {
+    const seller = {
+      id: 'master',
+      name: 'Admin Mestre',
+      status: 'active',
+      role: 'gerente',
+      permission: 'admin',
+      pin: '',
+    };
+    return {
+      seller,
+      sessionToken: createSessionToken(seller),
+    };
+  }
+
+  for (const seller of activeSellers) {
+    const storedPin = seller.pin || '';
+    const isMatch = isLegacyPlainPin(storedPin) ? storedPin === pin : storedPin === hashPin(pin);
+    if (!isMatch) continue;
+
+    if (isLegacyPlainPin(storedPin)) {
+      await updateSellerPin({ id: seller.id, pin: hashPin(pin) });
+    }
+
+    return {
+      seller: toSessionSeller(seller),
+      sessionToken: createSessionToken(seller),
+    };
+  }
+
+  return { seller: null, sessionToken: null };
+};
+
+const validateTabletSetupPin = async ({ pin }) => ({
+  valid: String(pin || '') === TABLET_SETUP_PIN,
+});
 
 const resolveOSContext = async () => {
   let empresaId = OS_EMPRESA_ID;
@@ -136,6 +965,26 @@ const createOSNotification = async ({ empresaId, title, message, type = 'info', 
     sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     args: [createId(), empresaId, null, title, message, type, 0, link, osTimestamp()],
   });
+};
+
+const safeCreateOSNotification = async ({ title, message, type = 'info', link = null, context = null }) => {
+  try {
+    const osContext = context || await resolveOSContext();
+    await createOSNotification({
+      empresaId: osContext.empresaId,
+      title,
+      message,
+      type,
+      link: link || `/${osContext.slug}/dinheiro`,
+    });
+    return { sent: true };
+  } catch (error) {
+    console.error('OS notification skipped:', title, error);
+    return {
+      sent: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 };
 
 const getActiveOrderItemsForTable = async (tableId) => {
@@ -170,21 +1019,39 @@ const getActiveOrderItemsForTable = async (tableId) => {
 
 const claimIntegrationEvent = async (id, type, tableId, payload) => {
   const now = Date.now();
-  const existing = await db.execute({ sql: "SELECT status FROM integration_events WHERE id = ? LIMIT 1", args: [id] });
-  const status = existing.rows[0]?.status;
-
-  if (status === 'completed' || status === 'processing') return false;
-
-  await db.execute({
+  const inserted = await db.execute({
     sql: `
-      INSERT OR REPLACE INTO integration_events
+      INSERT OR IGNORE INTO integration_events
         (id, type, status, table_id, payload, error, created_at, updated_at)
-      VALUES (?, ?, 'processing', ?, ?, NULL, COALESCE((SELECT created_at FROM integration_events WHERE id = ?), ?), ?)
+      VALUES (?, ?, 'processing', ?, ?, NULL, ?, ?)
     `,
-    args: [id, type, tableId, JSON.stringify(payload), id, now, now],
+    args: [id, type, tableId, JSON.stringify(payload), now, now],
   });
 
-  return true;
+  if (Number(inserted.rowsAffected || 0) > 0) return true;
+
+  const existing = await db.execute({
+    sql: "SELECT status, updated_at FROM integration_events WHERE id = ? LIMIT 1",
+    args: [id],
+  });
+  const status = existing.rows[0]?.status;
+  const updatedAt = Number(existing.rows[0]?.updated_at || 0);
+
+  if (status === 'completed') return false;
+
+  if (status === 'failed' || (status === 'processing' && updatedAt < now - PROCESSING_STALE_MS)) {
+    const reclaimed = await db.execute({
+      sql: `
+        UPDATE integration_events
+        SET status = 'processing', payload = ?, error = NULL, updated_at = ?
+        WHERE id = ? AND (status = 'failed' OR (status = 'processing' AND updated_at < ?))
+      `,
+      args: [JSON.stringify(payload), now, id, now - PROCESSING_STALE_MS],
+    });
+    return Number(reclaimed.rowsAffected || 0) > 0;
+  }
+
+  return false;
 };
 
 const failIntegrationEvent = async (id, error) => {
@@ -215,29 +1082,21 @@ const findStockProduct = async (empresaId, candidates) => {
 };
 
 const notifyOrderItemCancelled = async ({ tableNumber, itemName, quantity, sellerName, sellerPermission }) => {
-  const { empresaId, slug } = await resolveOSContext();
-  await createOSNotification({
-    empresaId,
+  return safeCreateOSNotification({
     title: 'Item cancelado no PDV',
     message: `Mesa ${tableNumber}: ${quantity}x ${itemName} cancelado por ${sellerName} (${sellerPermission}).`,
     type: 'warning',
-    link: `/${slug}/dinheiro`,
+    link: `/${OS_TENANT_SLUG}/dinheiro`,
   });
 };
 
 const notifyCloseBillSyncFailure = async ({ tableNumber, integrationId, error }) => {
-  try {
-    const { empresaId, slug } = await resolveOSContext();
-    await createOSNotification({
-      empresaId,
-      title: 'Erro ao fechar conta no PDV',
-      message: `Mesa ${tableNumber}: falha no fechamento ${integrationId}. ${error instanceof Error ? error.message : String(error)}`,
-      type: 'error',
-      link: `/${slug}/dinheiro`,
-    });
-  } catch (notificationError) {
-    console.error('Erro ao notificar falha de fechamento no OS:', notificationError);
-  }
+  return safeCreateOSNotification({
+    title: 'Erro ao fechar conta no PDV',
+    message: `Mesa ${tableNumber}: falha no fechamento ${integrationId}. ${error instanceof Error ? error.message : String(error)}`,
+    type: 'error',
+    link: `/${OS_TENANT_SLUG}/dinheiro`,
+  });
 };
 
 const deleteOrderItem = async ({ itemId, cancelContext }) => {
@@ -274,7 +1133,7 @@ const deleteOrderItem = async ({ itemId, cancelContext }) => {
   }
 
   if (cancelContext) {
-    await notifyOrderItemCancelled({
+    void notifyOrderItemCancelled({
       tableNumber: Number(cancelContext.tableNumber || 0),
       itemName: String(cancelContext.itemName || 'Item'),
       quantity: Number(cancelContext.quantity || 0),
@@ -398,6 +1257,7 @@ const bumpCatalogVersion = async () => {
     sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('catalog_version', ?, CURRENT_TIMESTAMP)",
     args: [version],
   });
+  catalogCache = null;
   return version;
 };
 
@@ -434,9 +1294,22 @@ const toggleCategoryVisibility = async ({ id, visible }) => {
   return { catalogVersion: await bumpCatalogVersion() };
 };
 
-const upsertProduct = async ({ product }) => {
+const upsertProduct = async ({ product }, session = null) => {
   const p = product || {};
   const productId = requireString(p.id, 'product.id');
+  const existing = await db.execute({
+    sql: "SELECT price FROM menu WHERE id = ? LIMIT 1",
+    args: [productId],
+  });
+  if (existing.rows[0] && !canSession(session, 'editProductPrice')) {
+    const currentPrice = Number(existing.rows[0].price || 0);
+    const nextPrice = Number(p.price || 0);
+    if (Math.abs(currentPrice - nextPrice) > 0.001) {
+      const error = new Error('Permissão insuficiente para alterar preço.');
+      error.statusCode = 403;
+      throw error;
+    }
+  }
   await db.execute({
     sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category, category_id, image, visible, erp_code, remote_stock_id, schedule_config, cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     args: [
@@ -488,10 +1361,11 @@ const saveModifierGroup = async ({ group }) => {
   const safeGroup = group || {};
   const groupId = requireString(safeGroup.id, 'group.id');
   await db.execute({
-    sql: "INSERT OR REPLACE INTO modifier_groups (id, name, min_choices, max_choices, is_required, status) VALUES (?, ?, ?, ?, ?, ?)",
+    sql: "INSERT OR REPLACE INTO modifier_groups (id, name, description, min_choices, max_choices, is_required, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
     args: [
       groupId,
       requireString(safeGroup.name, 'group.name'),
+      safeGroup.description || '',
       Number(safeGroup.minChoices || 0),
       Number(safeGroup.maxChoices || 1),
       safeGroup.isRequired ? 1 : 0,
@@ -685,6 +1559,7 @@ const closeShift = async ({ id, closingBalance }) => {
 
 const addSeller = async ({ seller }) => {
   const safeSeller = seller || {};
+  const pin = requireString(safeSeller.pin, 'seller.pin');
   await db.execute({
     sql: "INSERT INTO sellers (id, name, nickname, status, role, permission, pin) VALUES (?, ?, ?, ?, ?, ?, ?)",
     args: [
@@ -694,7 +1569,7 @@ const addSeller = async ({ seller }) => {
       safeSeller.status || 'active',
       safeSeller.role || 'atendente',
       safeSeller.permission || 'operator',
-      requireString(safeSeller.pin, 'seller.pin'),
+      isLegacyPlainPin(pin) ? hashPin(pin) : pin,
     ],
   });
   return { saved: true };
@@ -702,10 +1577,10 @@ const addSeller = async ({ seller }) => {
 
 const updateSellerPin = async ({ id, pin }) => {
   requireString(id, 'id');
-  requireString(pin, 'pin');
+  const safePin = requireString(pin, 'pin');
   await db.execute({
     sql: "UPDATE sellers SET pin = ? WHERE id = ?",
-    args: [pin, id],
+    args: [isLegacyPlainPin(safePin) ? hashPin(safePin) : safePin, id],
   });
   return { updated: true };
 };
@@ -805,75 +1680,95 @@ const closeBillWithInventorySync = async (data) => {
       id: integrationId,
       closedAt: closedAt.toISOString(),
     };
-    const { empresaId, userId, slug } = await resolveOSContext();
-    const movementPlans = [];
+    let osContext = null;
+    let inventorySyncError = null;
+    let movementPlans = [];
     const result = { movementCount: 0, unmatched: [], insufficient: [], critical: [] };
     const baseReason = `Venda PDV Mesa ${data.tableNumber} | Fechamento ${integrationId}`;
 
-    for (const item of activeOrderItems) {
-      const requestedQuantity = toStockAmount(item.quantity);
-      const productStock = await findStockProduct(empresaId, {
-        id: item.remoteStockId || item.productId,
-        name: item.name,
-      });
+    try {
+      osContext = await resolveOSContext();
+    } catch (error) {
+      inventorySyncError = error;
+      result.unmatched.push(`Sincronização OS indisponível: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
-      if (!productStock) {
-        result.unmatched.push(`${item.quantity}x ${item.name}`);
-      } else {
-        const currentQuantity = toStockAmount(productStock.quantidade_atual);
-        const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
-        if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
-        if (nextQuantity <= toStockAmount(productStock.estoque_minimo)) result.critical.push(item.name);
-        if (currentQuantity > 0 && requestedQuantity > 0) {
-          movementPlans.push({
-            movementId: createId(),
-            stockId: productStock.id,
-            stockName: productStock.nome || item.name,
-            orderId: item.orderId,
-            orderItemId: item.id,
-            sourceItemId: item.productId,
-            sourceItemKind: 'product',
-            requestedQuantity,
-            previousQuantity: currentQuantity,
-            nextQuantity,
-            reason: baseReason,
+    if (osContext) {
+      const { empresaId } = osContext;
+      try {
+        for (const item of activeOrderItems) {
+          const requestedQuantity = toStockAmount(item.quantity);
+          const productStock = await findStockProduct(empresaId, {
+            id: item.remoteStockId || item.productId,
+            name: item.name,
           });
+
+          if (!productStock) {
+            result.unmatched.push(`${item.quantity}x ${item.name}`);
+          } else {
+            const currentQuantity = toStockAmount(productStock.quantidade_atual);
+            const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
+            if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
+            if (nextQuantity <= toStockAmount(productStock.estoque_minimo)) result.critical.push(item.name);
+            if (currentQuantity > 0 && requestedQuantity > 0) {
+              movementPlans.push({
+                movementId: createId(),
+                stockId: productStock.id,
+                stockName: productStock.nome || item.name,
+                orderId: item.orderId,
+                orderItemId: item.id,
+                sourceItemId: item.productId,
+                sourceItemKind: 'product',
+                requestedQuantity,
+                previousQuantity: currentQuantity,
+                nextQuantity,
+                reason: baseReason,
+              });
+            }
+          }
+
+          for (const modifier of item.selectedModifiers || []) {
+            const modifierStock = await findStockProduct(empresaId, {
+              id: modifier.id,
+              name: modifier.name,
+            });
+
+            if (!modifierStock) continue;
+
+            const currentQuantity = toStockAmount(modifierStock.quantidade_atual);
+            const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
+            if (requestedQuantity > currentQuantity) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
+            if (nextQuantity <= toStockAmount(modifierStock.estoque_minimo)) result.critical.push(modifier.name);
+            if (currentQuantity > 0 && requestedQuantity > 0) {
+              movementPlans.push({
+                movementId: createId(),
+                stockId: modifierStock.id,
+                stockName: modifierStock.nome || modifier.name,
+                orderId: item.orderId,
+                orderItemId: item.id,
+                sourceItemId: modifier.id,
+                sourceItemKind: 'modifier',
+                requestedQuantity,
+                previousQuantity: currentQuantity,
+                nextQuantity,
+                reason: `${baseReason} | Opcional ${modifier.name}`,
+              });
+            }
+          }
         }
-      }
-
-      for (const modifier of item.selectedModifiers || []) {
-        const modifierStock = await findStockProduct(empresaId, {
-          id: modifier.id,
-          name: modifier.name,
-        });
-
-        if (!modifierStock) continue;
-
-        const currentQuantity = toStockAmount(modifierStock.quantidade_atual);
-        const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
-        if (requestedQuantity > currentQuantity) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
-        if (nextQuantity <= toStockAmount(modifierStock.estoque_minimo)) result.critical.push(modifier.name);
-        if (currentQuantity > 0 && requestedQuantity > 0) {
-          movementPlans.push({
-            movementId: createId(),
-            stockId: modifierStock.id,
-            stockName: modifierStock.nome || modifier.name,
-            orderId: item.orderId,
-            orderItemId: item.id,
-            sourceItemId: modifier.id,
-            sourceItemKind: 'modifier',
-            requestedQuantity,
-            previousQuantity: currentQuantity,
-            nextQuantity,
-            reason: `${baseReason} | Opcional ${modifier.name}`,
-          });
-        }
+      } catch (error) {
+        inventorySyncError = error;
+        movementPlans = [];
+        result.unmatched.push(`Falha parcial na baixa de estoque OS: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
     result.movementCount = movementPlans.length;
 
     const now = osTimestamp();
+    const empresaId = osContext?.empresaId || null;
+    const userId = osContext?.userId || null;
+    const slug = osContext?.slug || OS_TENANT_SLUG;
     const batch = [
       {
         sql: "INSERT OR REPLACE INTO closed_bills (id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -960,76 +1855,73 @@ const closeBillWithInventorySync = async (data) => {
       },
     );
 
+    batch.push({
+      sql: "UPDATE integration_events SET status = 'completed', payload = ?, error = NULL, updated_at = ? WHERE id = ?",
+      args: [
+        JSON.stringify({
+          tableNumber: data.tableNumber,
+          orderIds,
+          inventorySync: result,
+          inventorySyncError: inventorySyncError instanceof Error ? inventorySyncError.message : inventorySyncError ? String(inventorySyncError) : null,
+          movementIds: movementPlans.map((movement) => movement.movementId),
+        }),
+        Date.now(),
+        integrationId,
+      ],
+    });
+
+    await db.batch(batch, 'write');
+
+    const notificationContext = osContext || null;
+    const notificationTasks = [];
     if (result.unmatched.length > 0) {
-      batch.push({
-        sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, NULL, ?, ?, 'alert', 0, ?, ?)",
-        args: [
-          createId(),
-          empresaId,
-          'Itens do PDV sem vínculo de estoque',
-          `Mesa ${data.tableNumber}: ${result.unmatched.slice(0, 8).join(', ')}`,
-          `/${slug}/estoque`,
-          now,
-        ],
-      });
+      notificationTasks.push(safeCreateOSNotification({
+        context: notificationContext,
+        title: 'Itens do PDV sem vínculo de estoque',
+        message: `Mesa ${data.tableNumber}: ${result.unmatched.slice(0, 8).join(', ')}`,
+        type: 'alert',
+        link: `/${slug}/estoque`,
+      }));
     }
 
     if (result.insufficient.length > 0) {
-      batch.push({
-        sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, NULL, ?, ?, 'warning', 0, ?, ?)",
-        args: [
-          createId(),
-          empresaId,
-          'Estoque insuficiente em venda PDV',
-          `Mesa ${data.tableNumber}: ${result.insufficient.slice(0, 8).join(', ')}`,
-          `/${slug}/estoque`,
-          now,
-        ],
-      });
+      notificationTasks.push(safeCreateOSNotification({
+        context: notificationContext,
+        title: 'Estoque insuficiente em venda PDV',
+        message: `Mesa ${data.tableNumber}: ${result.insufficient.slice(0, 8).join(', ')}`,
+        type: 'warning',
+        link: `/${slug}/estoque`,
+      }));
     }
 
     if (result.critical.length > 0) {
-      batch.push({
-        sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, NULL, ?, ?, 'warning', 0, ?, ?)",
-        args: [
-          createId(),
-          empresaId,
-          'Estoque crítico após venda PDV',
-          `Mesa ${data.tableNumber}: ${Array.from(new Set(result.critical)).slice(0, 8).join(', ')}`,
-          `/${slug}/estoque`,
-          now,
-        ],
-      });
+      notificationTasks.push(safeCreateOSNotification({
+        context: notificationContext,
+        title: 'Estoque crítico após venda PDV',
+        message: `Mesa ${data.tableNumber}: ${Array.from(new Set(result.critical)).slice(0, 8).join(', ')}`,
+        type: 'warning',
+        link: `/${slug}/estoque`,
+      }));
     }
 
-    batch.push(
-      {
-        sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, NULL, 'Conta fechada no PDV', ?, ?, 0, ?, ?)",
-        args: [
-          createId(),
-          empresaId,
-          `Mesa ${data.tableNumber}: ${result.movementCount} movimentações de estoque registradas.`,
-          result.unmatched.length > 0 ? 'warning' : 'info',
-          `/${slug}/dinheiro`,
-          now,
-        ],
-      },
-      {
-        sql: "UPDATE integration_events SET status = 'completed', payload = ?, error = NULL, updated_at = ? WHERE id = ?",
-        args: [
-          JSON.stringify({
-            tableNumber: data.tableNumber,
-            orderIds,
-            inventorySync: result,
-            movementIds: movementPlans.map((movement) => movement.movementId),
-          }),
-          Date.now(),
-          integrationId,
-        ],
-      },
-    );
+    if (inventorySyncError) {
+      notificationTasks.push(safeCreateOSNotification({
+        context: notificationContext,
+        title: 'Sincronização de estoque do PDV falhou',
+        message: `Mesa ${data.tableNumber}: conta fechada, mas o estoque OS não sincronizou. ${inventorySyncError instanceof Error ? inventorySyncError.message : String(inventorySyncError)}`,
+        type: 'error',
+        link: `/${slug}/estoque`,
+      }));
+    }
 
-    await db.batch(batch, 'write');
+    notificationTasks.push(safeCreateOSNotification({
+      context: notificationContext,
+      title: 'Conta fechada no PDV',
+      message: `Mesa ${data.tableNumber}: ${result.movementCount} movimentações de estoque registradas.`,
+      type: result.unmatched.length > 0 || inventorySyncError ? 'warning' : 'info',
+      link: `/${slug}/dinheiro`,
+    }));
+    void Promise.all(notificationTasks);
 
     return {
       skipped: false,
@@ -1044,7 +1936,100 @@ const closeBillWithInventorySync = async (data) => {
   }
 };
 
+const requireSession = (session) => {
+  if (!session) {
+    const error = new Error('Sessão obrigatória.');
+    error.statusCode = 401;
+    throw error;
+  }
+};
+
+const requirePermission = (session, permission) => {
+  requireSession(session);
+  if (!canSession(session, permission)) {
+    const error = new Error('Permissão insuficiente.');
+    error.statusCode = 403;
+    throw error;
+  }
+};
+
+const allowPublicOperationalOrigin = (body) => body?.origin === 'tablet' || body?.origin === 'qr';
+
+const enforceRouteAccess = (routeKey, body, session) => {
+  if (
+    routeKey === 'GET /api/app/init'
+    || routeKey === 'POST /api/app/sync'
+    || routeKey === 'POST /api/auth/login'
+    || routeKey === 'POST /api/tablet/setup-login'
+  ) {
+    return;
+  }
+
+  if (routeKey === 'POST /api/orders/send-to-kitchen') {
+    if (!allowPublicOperationalOrigin(body)) requireSession(session);
+    return;
+  }
+
+  if (routeKey === 'POST /api/service-requests' || routeKey === 'POST /api/tables/request-bill') {
+    return;
+  }
+
+  if (routeKey === 'POST /api/orders/status') {
+    return;
+  }
+
+  if (routeKey === 'POST /api/audit-logs') {
+    if (body?.origin === 'tablet' || body?.origin === 'qr') return;
+    requireSession(session);
+    return;
+  }
+
+  const permissionByRoute = {
+    'POST /api/order-items/delete': 'cancelTableItem',
+    'POST /api/bills/close': 'closeBill',
+    'POST /api/catalog/category': 'addProduct',
+    'POST /api/catalog/category/delete': 'deleteProduct',
+    'POST /api/catalog/category/visibility': 'toggleProductVisibility',
+    'POST /api/catalog/product': 'addProduct',
+    'POST /api/catalog/product/delete': 'deleteProduct',
+    'POST /api/catalog/product/visibility': 'toggleProductVisibility',
+    'POST /api/catalog/modifier-group': 'manageOptionals',
+    'POST /api/catalog/modifier-group/delete': 'manageOptionals',
+    'POST /api/catalog/modifier-group/link': 'manageOptionals',
+    'POST /api/settings': 'manageSettings',
+    'POST /api/audit-logs/list': 'viewSalesTotals',
+    'POST /api/sellers': 'manageTeam',
+    'POST /api/sellers/pin': 'manageTeam',
+    'POST /api/sellers/delete': 'manageTeam',
+    'POST /api/sellers/status': 'manageTeam',
+    'POST /api/inventory/sync-beverages': 'addProduct',
+  };
+
+  const requiredPermission = permissionByRoute[routeKey];
+  if (requiredPermission) {
+    requirePermission(session, requiredPermission);
+    return;
+  }
+
+  requireSession(session);
+};
+
 const handlers = {
+  'GET /api/app/init': async (_body, context) => getAppSnapshot({
+    includeCatalog: true,
+    includeAuditLimit: 50,
+    view: context.url.searchParams.get('view') || 'pdv',
+    session: context.session,
+  }),
+  'POST /api/app/sync': async (body, context) => getAppSnapshot({
+    includeCatalog: Boolean(body.includeCatalog),
+    includeAuditLimit: 0,
+    view: body.view || 'pdv',
+    session: context.session,
+  }),
+  'POST /api/auth/login': async (body) => login(body),
+  'POST /api/tablet/setup-login': async (body) => validateTabletSetupPin(body),
+  'POST /api/audit-logs/list': async (body) => ({ auditLogs: await getAuditLogs(Number(body.limit || 100)) }),
   'POST /api/orders/send-to-kitchen': async (body) => sendToKitchen(body),
   'POST /api/orders/status': async (body) => updateOrderStatus(body),
   'POST /api/order-items/delete': async (body) => deleteOrderItem(body),
@@ -1052,7 +2037,7 @@ const handlers = {
   'POST /api/catalog/category': async (body) => upsertCategory(body),
   'POST /api/catalog/category/delete': async (body) => deleteCategory(body),
   'POST /api/catalog/category/visibility': async (body) => toggleCategoryVisibility(body),
-  'POST /api/catalog/product': async (body) => upsertProduct(body),
+  'POST /api/catalog/product': async (body, context) => upsertProduct(body, context.session),
   'POST /api/catalog/product/delete': async (body) => deleteProduct(body),
   'POST /api/catalog/product/visibility': async (body) => toggleProductVisibility(body),
   'POST /api/catalog/modifier-group': async (body) => saveModifierGroup(body),
@@ -1091,17 +2076,24 @@ const handleApi = async (req, res, url) => {
       return;
     }
 
-    if (!String(req.headers['content-type'] || '').includes('application/json')) {
+    if (isPinRateLimited(req, url.pathname)) {
+      sendJson(res, 429, { ok: false, error: 'Muitas tentativas de PIN. Aguarde 1 minuto.' });
+      return;
+    }
+
+    if (req.method !== 'GET' && !String(req.headers['content-type'] || '').includes('application/json')) {
       sendJson(res, 415, { ok: false, error: 'Content-Type precisa ser application/json' });
       return;
     }
 
-    const body = await readJsonBody(req);
-    const data = await handler(body);
+    const body = req.method === 'GET' ? {} : await readJsonBody(req);
+    const session = getSessionFromRequest(req);
+    enforceRouteAccess(routeKey, body, session);
+    const data = await handler(body, { req, url, session });
     sendJson(res, 200, { ok: true, data });
   } catch (error) {
     console.error('BFF error:', error);
-    sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : 'Erro interno' });
+    sendJson(res, error.statusCode || 400, { ok: false, error: error instanceof Error ? error.message : 'Erro interno' });
   }
 };
 

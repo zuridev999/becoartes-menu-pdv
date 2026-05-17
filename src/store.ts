@@ -1,14 +1,11 @@
 import { create } from 'zustand';
-import { db } from './lib/db';
-import { Repository } from './lib/repository';
 import { ProductSchema, SellerSchema } from './lib/schemas';
-import { hashPin, comparePin } from './lib/security';
 import { createId } from './lib/id';
 import { getOrderItemsTotal } from './lib/totals';
 import { postOSMessage } from './lib/osBridge';
-import { AdminApi, CatalogApi, OperationalApi, OpsApi } from './lib/api';
-import type { 
-  Product, Table, OrderItem, KitchenOrder, 
+import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, setApiSessionToken } from './lib/api';
+import type {
+  Product, Table, OrderItem, KitchenOrder,
   ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category
 } from './types';
 
@@ -17,10 +14,8 @@ export type { Product, Table, OrderItem, KitchenOrder, ServiceRequest, ModifierG
 const TABLET_TABLE_STORAGE_KEY = 'beco_tablet_table_id';
 const LEGACY_TABLET_TABLE_STORAGE_KEY = 'becoartes_tablet_table_id';
 const SELLER_SESSION_STORAGE_KEY = 'beco_seller_session';
-const BOOTSTRAP_ADMIN_PIN = import.meta.env.VITE_BOOTSTRAP_ADMIN_PIN || '';
-const DEFAULT_MANAGER_PIN = import.meta.env.VITE_DEFAULT_MANAGER_PIN || '2020';
-const DEFAULT_OPERATOR_PIN = import.meta.env.VITE_DEFAULT_OPERATOR_PIN || '0040';
 let syncIntervalId: number | undefined;
+let syncInFlight: Promise<void> | null = null;
 let lastCatalogSyncAt = 0;
 let lastCatalogVersion = '0';
 const CATALOG_SYNC_INTERVAL_MS = 5 * 60 * 1000;
@@ -31,48 +26,6 @@ const persistSellerSession = (seller: Seller) => {
   const sessionSeller = toSessionSeller(seller);
   localStorage.setItem(SELLER_SESSION_STORAGE_KEY, JSON.stringify(sessionSeller));
   return sessionSeller;
-};
-
-const isLegacyPlainPin = (storedPin: string) => /^\d{4}$/.test(storedPin);
-
-const parseJsonArray = (value: unknown): any[] => {
-  if (!value || typeof value !== 'string') return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const loadActiveOrdersByTable = async () => {
-  const ordersRes = await db.execute(`
-    SELECT oi.*, o.table_id, m.name, m.category_id, c.name as category_name
-    FROM order_items oi
-    JOIN orders o ON oi.order_id = o.id
-    LEFT JOIN menu m ON oi.product_id = m.id
-    LEFT JOIN categories c ON m.category_id = c.id
-    WHERE o.status != 'closed'
-  `);
-
-  const ordersByTable: Record<string, OrderItem[]> = {};
-  ordersRes.rows.forEach((row: any) => {
-    if (!ordersByTable[row.table_id]) ordersByTable[row.table_id] = [];
-    ordersByTable[row.table_id].push({
-      id: row.id as string,
-      orderId: row.order_id as string,
-      productId: row.product_id as string,
-      categoryId: row.category_id as string,
-      categoryName: row.category_name as string,
-      name: row.name || '',
-      price: row.price_at_time as number,
-      quantity: row.quantity as number,
-      selectedModifiers: parseJsonArray(row.selected_modifiers),
-      notes: row.notes as string
-    });
-  });
-
-  return ordersByTable;
 };
 
 const attachModifierGroupsToMenu = (
@@ -123,7 +76,7 @@ export interface AppState {
   setAdminTab: (tab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance') => void;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
   serverTimeOffset: number;
-  
+
   currentTableId: string | null;
   setCurrentTableId: (id: string | null) => void;
   init: () => Promise<void>;
@@ -133,11 +86,11 @@ export interface AppState {
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
-  
+
   currentSeller: Seller | null;
   login: (pin: string, sellerId?: string) => Promise<boolean>;
   logout: () => void;
-  
+
   // Vendedores
   addSeller: (seller: Seller) => Promise<void>;
   updateSeller: (id: string, data: Partial<Seller>) => Promise<void>;
@@ -167,7 +120,7 @@ export interface AppState {
   updateKitchenOrderStatus: (orderId: string, status: KitchenOrder['status']) => void;
   addNotification: (message: string, type?: 'info' | 'error' | 'order' | 'service', tableId?: string) => void;
   clearNotification: (id: string) => void;
-  
+
   // Logística de Mesas
   openTable: (tableId: string, initialItems?: OrderItem[], origin?: 'tablet' | 'pdv', sellerId?: string) => Promise<void>;
   transferTable: (fromTableId: string, toTableId: string) => Promise<void>;
@@ -201,7 +154,7 @@ export const useStore = create<AppState>((set, get) => ({
   modifierGroups: [],
   productModifierMapping: {},
   categoryModifierMapping: {},
-  menu: [], 
+  menu: [],
   categories: [],
   tables: [],
   currentShift: null,
@@ -274,52 +227,29 @@ export const useStore = create<AppState>((set, get) => ({
   currentSeller: null,
 
   login: async (pin, sellerId) => {
-    const activeSellers = get().sellers.filter(s => s.status === 'active' && (!sellerId || s.id === sellerId));
+    const result = await AppApi.login(pin, sellerId);
+    if (!result.seller) return false;
 
-    if (activeSellers.length === 0 && BOOTSTRAP_ADMIN_PIN && pin === BOOTSTRAP_ADMIN_PIN) {
-      const masterAdmin: Seller = {
-        id: 'master',
-        name: 'Admin Mestre',
-        status: 'active',
-        role: 'gerente',
-        permission: 'admin',
-        pin: ''
-      };
-      set({ currentSeller: persistSellerSession(masterAdmin) });
-      return true;
+    setApiSessionToken(result.sessionToken || null);
+    set({ currentSeller: persistSellerSession(result.seller as Seller) });
+    try {
+      await get().syncData();
+    } catch (error) {
+      console.warn('Login realizado, mas o refresh pós-login falhou:', error);
     }
-
-    for (const seller of activeSellers) {
-      const isMatch = isLegacyPlainPin(seller.pin)
-        ? seller.pin === pin
-        : await comparePin(pin, seller.pin);
-
-      if (isMatch) {
-        if (isLegacyPlainPin(seller.pin)) {
-          const hashedPin = await hashPin(pin);
-          await AdminApi.updateSellerPin(seller.id, hashedPin);
-          seller.pin = hashedPin;
-          set((state) => ({
-            sellers: state.sellers.map(s => s.id === seller.id ? { ...s, pin: hashedPin } : s)
-          }));
-        }
-        set({ currentSeller: persistSellerSession(seller) });
-        return true;
-      }
-    }
-
-    return false;
+    return true;
   },
 
   logout: () => {
     localStorage.removeItem(SELLER_SESSION_STORAGE_KEY);
+    setApiSessionToken(null);
     set({ currentSeller: null });
   },
 
   addAuditLog: async (logOrAction: any, details?: string, tableNumber?: string, origin?: string) => {
     const id = createId();
     const timestamp = new Date().toISOString();
-    
+
     let logData;
     if (typeof logOrAction === 'object') {
       logData = {
@@ -358,151 +288,30 @@ export const useStore = create<AppState>((set, get) => ({
     if (get().categories.length === 0) {
       set({ isLoading: true });
     }
-    
+
     try {
       // Restaurar Sessão se existir
       const savedSession = localStorage.getItem(SELLER_SESSION_STORAGE_KEY);
       if (savedSession) {
         set({ currentSeller: JSON.parse(savedSession) });
       }
-      // 1. Migração de Categorias (Legado -> Novo)
-      // Usamos um bloco try-catch interno para não travar o carregamento se a migração falhar
-      try {
-        const menuCheck = await db.execute("SELECT * FROM menu LIMIT 1");
-        const hasCategoryId = menuCheck.columns?.includes('category_id');
-        
-        if (!hasCategoryId) {
-          console.log("⚠️ Migrando categorias legadas...");
-          const legacyMenu = await db.execute("SELECT DISTINCT category FROM menu");
-          for (const row of legacyMenu.rows) {
-            const catName = row.category as string;
-            if (!catName) continue;
-            const catId = createId();
-            await Repository.upsertCategory({ id: catId, name: catName, sortOrder: 0 });
-            await db.execute({
-              sql: "UPDATE menu SET category_id = ? WHERE category = ?",
-              args: [catId, catName]
-            });
-          }
-        }
-      } catch (migrationError) {
-        console.error("❌ Erro na migração de categorias:", migrationError);
-      }
-
-      // 2. Carregar Dados
-      const [catalogData, loadedSellers, kitchenData, serviceRequests, closedBills, savedSettings, tablesRes, logsRes] = await Promise.all([
-        Repository.getCatalogData(),
-        Repository.getSellers(),
-        Repository.getKitchenOrders(),
-        Repository.getServiceRequests(),
-        Repository.getClosedBills(),
-        Repository.getSettings(),
-        db.execute("SELECT * FROM tables"),
-        db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50")
-      ]);
+      const snapshot = await AppApi.init();
+      const catalogData = snapshot.catalogData;
       const { categories, menuItems, modifierGroups, productMapping, categoryMapping, catalogVersion } = catalogData;
-
-      let sellers: Seller[] = loadedSellers;
-      const defaultUsers = [
-        {
-          id: 'admin-bootstrap',
-          name: 'Admin Full',
-          nickname: 'Admin',
-          role: 'gerente' as const,
-          permission: 'admin' as const,
-          pin: BOOTSTRAP_ADMIN_PIN,
-        },
-        {
-          id: 'manager-default',
-          name: 'Gerente',
-          nickname: 'Gerente',
-          role: 'gerente' as const,
-          permission: 'manager' as const,
-          pin: DEFAULT_MANAGER_PIN,
-        },
-        {
-          id: 'operator-default',
-          name: 'Operador',
-          nickname: 'Operador',
-          role: 'atendente' as const,
-          permission: 'operator' as const,
-          pin: DEFAULT_OPERATOR_PIN,
-        },
-      ].filter(user => user.pin);
-
-      for (const user of defaultUsers) {
-        if (!sellers.some(s => s.id === user.id)) {
-          const seller: Seller = {
-            id: user.id,
-            name: user.name,
-            nickname: user.nickname,
-            status: 'active',
-            role: user.role,
-            permission: user.permission,
-            pin: await hashPin(user.pin)
-          };
-          await Repository.upsertSeller(seller);
-          sellers = [...sellers, seller];
-        }
-      }
-
-      const { orders: kitchenOrders, serverNow } = kitchenData;
+      const { orders: kitchenOrders, serverNow } = snapshot.kitchenData;
       const serverTimeOffset = serverNow.getTime() - new Date().getTime();
-      
+
       const menuWithModifierGroups = attachModifierGroupsToMenu(menuItems, modifierGroups, productMapping, categoryMapping);
       lastCatalogSyncAt = Date.now();
       lastCatalogVersion = catalogVersion;
 
-      // 3. Mesas
-      let tables: Table[] = tablesRes.rows.map(row => ({
-        id: row.id as string,
-        number: Number(row.number),
-        status: row.status as Table['status'],
-        orders: [],
-        cart: [],
-        lastActivity: row.last_activity ? new Date(row.last_activity as string) : new Date(),
-      }));
-
-      // Garantir 50 mesas para o Becoartes
-      if (tables.length < 50) {
-        console.log("🛠️ Gerando mesas iniciais...");
-        const values: any[] = [];
-        const placeholders: string[] = [];
-        
-        for (let i = tables.length + 1; i <= 50; i++) {
-          placeholders.push("(?, ?, ?)");
-          values.push(`${i}`, `${i}`, 'available');
-        }
-
-        await db.execute({ 
-          sql: `INSERT OR IGNORE INTO tables (id, number, status) VALUES ${placeholders.join(', ')}`, 
-          args: values 
-        });
-
-        const freshTables = await db.execute("SELECT * FROM tables");
-        tables = freshTables.rows.map(row => ({
-          id: row.id as string,
-          number: Number(row.number),
-          status: row.status as Table['status'],
-          orders: [],
-          cart: [],
-          lastActivity: row.last_activity ? new Date(row.last_activity as string) : new Date(),
-        }));
-      }
-
-      const ordersByTable = await loadActiveOrdersByTable();
-      tables = tables.map(table => ({
-        ...table,
-        orders: ordersByTable[table.id] || []
-      }));
-
       // 4. Determinar View Inicial pela URL e Hostname
       const hostname = window.location.hostname;
       const fullPath = window.location.pathname.substring(1);
-      
+
       let initialView: any = 'tablet';
       let initialAdminMode: any = 'settings';
-      
+
       if (fullPath.startsWith('admin/menu')) {
         initialView = 'admin';
         initialAdminMode = 'menu';
@@ -519,44 +328,33 @@ export const useStore = create<AppState>((set, get) => ({
         initialView = 'tablet';
       }
 
-      // 5. Audit Logs
-      const auditLogs = logsRes.rows.map((r: any) => ({
-        id: r.id,
-        action: r.action,
-        details: r.details,
-        table_number: r.table_number,
-        origin: r.origin,
-        author_name: r.author_name,
-        timestamp: r.timestamp
-      }));
-
-      set({ 
-        categories, 
+      set({
+        categories,
         menu: menuWithModifierGroups,
-        modifierGroups, 
+        modifierGroups,
         productModifierMapping: productMapping,
         categoryModifierMapping: categoryMapping,
-        sellers, 
-        kitchenOrders, 
-        serviceRequests,
-        closedBills,
-        auditLogs,
-        settings: savedSettings ? { ...get().settings, ...savedSettings } : get().settings,
+        sellers: snapshot.sellers,
+        kitchenOrders,
+        serviceRequests: snapshot.serviceRequests,
+        closedBills: snapshot.closedBills,
+        auditLogs: snapshot.auditLogs,
+        settings: snapshot.savedSettings ? { ...get().settings, ...snapshot.savedSettings } : get().settings,
         activeView: initialView as any,
         adminMode: initialAdminMode,
         adminTab: initialAdminMode === 'menu' ? 'products' : 'config',
-        tables: tables.sort((a, b) => a.number - b.number),
+        tables: snapshot.tables.sort((a: Table, b: Table) => a.number - b.number),
         serverTimeOffset
       });
-      
+
       console.log(`🚀 Sistema Becoartes Inicializado! View: ${initialView} | Host: ${hostname}`);
-      
-      // NOTA TÉCNICA MODO KIOSK: 
+
+      // NOTA TÉCNICA MODO KIOSK:
       // Para bloqueio total do hardware (botão Home, recentes, etc) no Android,
       // utilize o "Fully Kiosk Browser" apontando para este URL com "Kiosk Mode" ATIVO.
-      
-      // Iniciar Sync Automático (a cada 60 segundos se não for kitchen)
-      if (initialView !== 'kitchen') {
+
+      // Admin/QR nao possuem polling proprio. PDV, tablet e cozinha controlam seus ciclos nas views.
+      if (initialView === 'admin' || initialView === 'qr') {
         if (syncIntervalId) window.clearInterval(syncIntervalId);
         syncIntervalId = window.setInterval(() => {
           get().syncData();
@@ -573,8 +371,8 @@ export const useStore = create<AppState>((set, get) => ({
   setActiveView: (view, tab, mode) => {
     const url = view === 'admin' ? `/admin/${mode || 'settings'}` : `/${view}`;
     window.history.pushState({}, '', url);
-    set({ 
-      activeView: view, 
+    set({
+      activeView: view,
       adminTab: tab || (mode === 'menu' ? 'products' : 'config'),
       adminMode: mode || get().adminMode
     });
@@ -641,8 +439,8 @@ export const useStore = create<AppState>((set, get) => ({
       const validated = ProductSchema.parse({ ...cleanData, id, categoryName: category?.name });
       const result = await CatalogApi.upsertProduct(validated as Product);
       lastCatalogVersion = result.catalogVersion;
-      set((state) => ({ 
-        menu: state.menu.map(p => p.id === id ? validated as Product : p) 
+      set((state) => ({
+        menu: state.menu.map(p => p.id === id ? validated as Product : p)
       }));
       get().addNotification(`Produto "${validated.name}" atualizado com sucesso!`, 'info');
     } catch (e: any) {
@@ -695,68 +493,72 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   syncData: async (options = {}) => {
+    if (syncInFlight) {
+      if (options.includeCatalog) {
+        return syncInFlight.then(() => get().syncData(options));
+      }
+      return syncInFlight;
+    }
+
+    const runSync = (async () => {
+      try {
+        const shouldRefreshCatalog =
+          Boolean(options.includeCatalog)
+          || Date.now() - lastCatalogSyncAt > CATALOG_SYNC_INTERVAL_MS;
+        let snapshot = await AppApi.sync(shouldRefreshCatalog);
+
+        if (!shouldRefreshCatalog && snapshot.catalogVersion && snapshot.catalogVersion !== lastCatalogVersion) {
+          snapshot = await AppApi.sync(true);
+        }
+
+        const { orders: kitchenOrders, serverNow } = snapshot.kitchenData;
+        const serverTimeOffset = serverNow.getTime() - new Date().getTime();
+
+        const catalogUpdate = snapshot.catalogData
+          ? (() => {
+              lastCatalogSyncAt = Date.now();
+              lastCatalogVersion = snapshot.catalogData.catalogVersion;
+              return {
+                categories: snapshot.catalogData.categories,
+                menu: attachModifierGroupsToMenu(snapshot.catalogData.menuItems, snapshot.catalogData.modifierGroups, snapshot.catalogData.productMapping, snapshot.catalogData.categoryMapping),
+                modifierGroups: snapshot.catalogData.modifierGroups,
+                productModifierMapping: snapshot.catalogData.productMapping,
+                categoryModifierMapping: snapshot.catalogData.categoryMapping
+              };
+            })()
+          : null;
+
+        if (snapshot.catalogVersion) {
+          lastCatalogVersion = snapshot.catalogVersion;
+        }
+
+        const currentTables = get().tables;
+        const finalTables = snapshot.tables.map((newTable: Table) => {
+          const localTable = currentTables.find(t => t.id === newTable.id);
+          return {
+            ...newTable,
+            cart: localTable?.cart || [],
+          };
+        });
+
+        set({
+          ...(catalogUpdate || {}),
+          kitchenOrders,
+          serviceRequests: snapshot.serviceRequests,
+          closedBills: snapshot.closedBills,
+          tables: finalTables.sort((a, b) => a.number - b.number),
+          serverTimeOffset
+        });
+      } catch (error) {
+        console.error("❌ Erro no sync de dados:", error);
+      }
+    })();
+
+    syncInFlight = runSync;
     try {
-      const catalogVersion = await Repository.getCatalogVersion();
-      const shouldRefreshCatalog =
-        Boolean(options.includeCatalog)
-        || catalogVersion !== lastCatalogVersion
-        || Date.now() - lastCatalogSyncAt > CATALOG_SYNC_INTERVAL_MS;
-      const [kitchenData, serviceRequests, closedBills, tablesRes, catalogData] = await Promise.all([
-        Repository.getKitchenOrders(),
-        Repository.getServiceRequests(),
-        Repository.getClosedBills(),
-        db.execute("SELECT * FROM tables"),
-        shouldRefreshCatalog ? Repository.getCatalogData() : Promise.resolve(null)
-      ]);
-
-      const { orders: kitchenOrders, serverNow } = kitchenData;
-      const serverTimeOffset = serverNow.getTime() - new Date().getTime();
-      
-      const catalogUpdate = catalogData
-        ? (() => {
-            lastCatalogSyncAt = Date.now();
-            lastCatalogVersion = catalogData.catalogVersion;
-            return {
-              categories: catalogData.categories,
-              menu: attachModifierGroupsToMenu(catalogData.menuItems, catalogData.modifierGroups, catalogData.productMapping, catalogData.categoryMapping),
-              modifierGroups: catalogData.modifierGroups,
-              productModifierMapping: catalogData.productMapping,
-              categoryModifierMapping: catalogData.categoryMapping
-            };
-          })()
-        : null;
-
-      const updatedTables = tablesRes.rows.map((row: any) => ({
-        id: row.id as string,
-        number: Number(row.number),
-        status: row.status as Table['status'],
-        orders: [],
-        cart: [],
-        lastActivity: row.last_activity ? new Date(row.last_activity as string) : new Date(),
-      }));
-
-      const ordersByTable = await loadActiveOrdersByTable();
-
-      const currentTables = get().tables;
-      const finalTables = updatedTables.map(newTable => {
-        const localTable = currentTables.find(t => t.id === newTable.id);
-        return {
-          ...newTable,
-          cart: localTable?.cart || [],
-          orders: ordersByTable[newTable.id] || []
-        };
-      });
-
-      set({ 
-        ...(catalogUpdate || {}),
-        kitchenOrders, 
-        serviceRequests,
-        closedBills,
-        tables: finalTables.sort((a, b) => a.number - b.number),
-        serverTimeOffset
-      });
-    } catch (error) {
-      console.error("❌ Erro no sync de dados:", error);
+      await runSync;
+    } finally {
+      if (syncInFlight === runSync) syncInFlight = null;
     }
   },
 
@@ -765,7 +567,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const result = await AdminApi.syncBeveragesFromInventory();
       lastCatalogVersion = result.catalogVersion;
-      
+
       // Recarregar o menu
       await get().init();
       set({ notifications: [...get().notifications, { id: Date.now().toString(), message: 'Bebidas sincronizadas com o estoque!', type: 'info', tableId: '' }] });
@@ -795,9 +597,9 @@ export const useStore = create<AppState>((set, get) => ({
     };
 
     set((state) => ({
-      tables: state.tables.map(t => t.id === currentTableId ? { 
-        ...t, 
-        cart: [...t.cart, newItem] 
+      tables: state.tables.map(t => t.id === currentTableId ? {
+        ...t,
+        cart: [...t.cart, newItem]
       } : t)
     }));
 
@@ -826,7 +628,7 @@ export const useStore = create<AppState>((set, get) => ({
         sellerPermission: context.sellerPermission || get().currentSeller?.permission || 'standard'
       } : undefined
     });
-    
+
     set((state) => ({
       tables: state.tables.map(t => t.id === currentTableId ? { ...t, orders: t.orders.filter(o => o.id !== itemId) } : t),
       kitchenOrders: state.kitchenOrders
@@ -838,28 +640,28 @@ export const useStore = create<AppState>((set, get) => ({
   requestService: async (tableId, type, message = '') => {
     const table = get().tables.find(t => t.id === tableId);
     const id = createId();
-    
+
     const created = await OpsApi.createServiceRequest({ id, tableId, type, message });
 
     const newRequest: ServiceRequest = {
       ...created.request,
       tableNumber: typeof table?.number === 'number' ? table.number : created.request.tableNumber || 0
     };
-    
-    const messages: Record<string, string> = { 
-      waiter: 'Chamar Garçom', 
+
+    const messages: Record<string, string> = {
+      waiter: 'Chamar Garçom',
       bill: 'Fechar a Conta',
-      napkin: 'Precisa de Guardanapos', 
-      cutlery: 'Precisa de Talheres', 
+      napkin: 'Precisa de Guardanapos',
+      cutlery: 'Precisa de Talheres',
       glass: 'Copo Extra',
       ice: 'Pedir Gelo',
       lemon: 'Pedir Limão',
       physical_menu: 'Cardápio Físico',
       help: 'Ajuda com Pedido',
       problem: 'Problema com Pedido',
-      other: 'Solicitação Diversa' 
+      other: 'Solicitação Diversa'
     };
-    
+
     set((state) => ({
       serviceRequests: [...state.serviceRequests, newRequest]
     }));
@@ -946,7 +748,7 @@ export const useStore = create<AppState>((set, get) => ({
     // Criar uma solicitação de serviço imediata para o PDV (para drinks/bebidas)
     const requestId = 'new_order_' + orderId;
     const itemsList = table.cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
-    
+
     const newRequest: ServiceRequest = {
       id: requestId,
       tableId,
@@ -960,17 +762,17 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({
       kitchenOrders: [...state.kitchenOrders, newKitchenOrder],
       serviceRequests: [newRequest, ...state.serviceRequests],
-      tables: state.tables.map(t => t.id === tableId ? { 
-        ...t, 
+      tables: state.tables.map(t => t.id === tableId ? {
+        ...t,
         orders: [...t.orders, ...persistedItems],
         cart: [],
-        status: 'ordering', 
-        lastActivity: new Date() 
+        status: 'ordering',
+        lastActivity: new Date()
       } : t)
     }));
 
     get().addNotification(`Novo pedido da Mesa ${table.number}!`, 'order', tableId);
-    
+
     postOSMessage('table_alert', {
       tableId,
       tableNumber: table.number,
@@ -979,12 +781,16 @@ export const useStore = create<AppState>((set, get) => ({
       createdAt: new Date().toISOString()
     });
 
-    await get().addAuditLog('order_sent', `Itens: ${table.cart.length} | Total: R$ ${total.toFixed(2)}`, table.number.toString(), origin);
+    try {
+      await get().addAuditLog('order_sent', `Itens: ${table.cart.length} | Total: R$ ${total.toFixed(2)}`, table.number.toString(), origin);
+    } catch (error) {
+      console.warn('Pedido enviado, mas a auditoria falhou:', error);
+    }
   },
 
   updateKitchenOrderStatus: async (orderId, status) => {
     const result = await OperationalApi.updateOrderStatus(orderId, status);
-    
+
     // Se o pedido ficou pronto, cria uma solicitação de serviço automática para o PDV
     if (status === 'ready') {
       const order = get().kitchenOrders.find(o => o.id === orderId);
@@ -1060,7 +866,7 @@ export const useStore = create<AppState>((set, get) => ({
         inventorySync: closeResult.inventorySync,
         closedAt: closeResult.closedBill.closedAt.toISOString()
       });
-      
+
       const inventorySuffix = closeResult.inventorySync.unmatched.length > 0
         ? ` ${closeResult.inventorySync.unmatched.length} item(ns) sem vínculo de estoque.`
         : '';
@@ -1084,10 +890,9 @@ export const useStore = create<AppState>((set, get) => ({
   addSeller: async (s) => {
     try {
       const id = createId();
-      const hashedPin = await hashPin(s.pin);
-      const validated = SellerSchema.parse({ ...s, id, status: 'active', pin: hashedPin });
+      const validated = SellerSchema.parse({ ...s, id, status: 'active' });
       await AdminApi.addSeller(validated);
-      set((state) => ({ sellers: [...state.sellers, validated as Seller] }));
+      set((state) => ({ sellers: [...state.sellers, toSessionSeller(validated as Seller)] }));
       get().addNotification("Vendedor cadastrado com sucesso!", "info");
     } catch (e: any) {
       get().addNotification(e.message || "Dados inválidos", 'error');
@@ -1171,6 +976,7 @@ export const useStore = create<AppState>((set, get) => ({
     const result = await CatalogApi.saveModifierGroup(group);
     lastCatalogVersion = result.catalogVersion;
     set((state) => ({ modifierGroups: [...state.modifierGroups, group] }));
+    await get().syncData({ includeCatalog: true });
   },
 
   updateModifierGroup: async (id, data) => {
@@ -1183,6 +989,7 @@ export const useStore = create<AppState>((set, get) => ({
       set((state) => ({
         modifierGroups: state.modifierGroups.map(g => g.id === id ? updated : g)
       }));
+      await get().syncData({ includeCatalog: true });
     }
   },
 
@@ -1192,6 +999,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({
       modifierGroups: state.modifierGroups.map(g => g.id === id ? { ...g, status: 'inactive' } : g)
     }));
+    await get().syncData({ includeCatalog: true });
   },
 
 
@@ -1214,7 +1022,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     await OpsApi.openTable(tableId, currentTable?.status === 'available');
-    
+
     set((state) => ({
       tables: state.tables.map(t => t.id === tableId ? { ...t, status: 'ordering', orders: initialItems, lastActivity: new Date() } : t),
       serviceRequests: state.serviceRequests.map(r => r.tableId === tableId ? { ...r, status: 'resolved' } : r)
@@ -1232,7 +1040,7 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     const fromTable = state.tables.find(t => t.id === fromTableId);
     const toTable = state.tables.find(t => t.id === toTableId);
-    
+
     if (!fromTable || !toTable) return;
 
     await OpsApi.transferTable(fromTableId, toTableId);
@@ -1249,7 +1057,7 @@ export const useStore = create<AppState>((set, get) => ({
   joinTables: async (tableIds, targetTableId) => {
     const state = get();
     const allOrders: OrderItem[] = [];
-    
+
     for (const id of tableIds) {
       const table = state.tables.find(t => t.id === id);
       if (table) {
@@ -1287,7 +1095,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   fetchAuditLogs: async () => {
-    const res = await db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50");
-    set({ auditLogs: res.rows as any });
+    const result = await AppApi.fetchAuditLogs(50);
+    set({ auditLogs: result.auditLogs as any });
   },
 }));

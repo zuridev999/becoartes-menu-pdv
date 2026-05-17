@@ -1,5 +1,7 @@
 import type { Category, ClosedBill, ModifierGroup, OrderItem, Product, ServiceRequest } from '../types';
 
+const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
+
 type ApiEnvelope<T> = {
   ok: boolean;
   data?: T;
@@ -29,13 +31,52 @@ type UpdateOrderStatusResult = {
   request: (Omit<ServiceRequest, 'createdAt'> & { createdAt: string }) | null;
 };
 
+const getSessionToken = () => {
+  if (typeof localStorage === 'undefined') return '';
+  return localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || '';
+};
+
+export const setApiSessionToken = (token: string | null) => {
+  if (typeof localStorage === 'undefined') return;
+  if (token) localStorage.setItem(SESSION_TOKEN_STORAGE_KEY, token);
+  else localStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+};
+
+const getAuthHeaders = () => {
+  const token = getSessionToken();
+  return token ? { 'X-Beco-Session': token } : {};
+};
+
+const getCurrentView = () => {
+  if (typeof window === 'undefined') return 'pdv';
+  const path = window.location.pathname.replace(/^\/+/, '');
+  const host = window.location.hostname;
+  if (path.startsWith('admin')) return 'admin';
+  if (['tablet', 'pdv', 'kitchen', 'qr'].includes(path)) return path;
+  if (host.startsWith('tablet.')) return 'tablet';
+  if (host.startsWith('coz.')) return 'kitchen';
+  if (host.startsWith('qr.')) return 'qr';
+  return 'pdv';
+};
+
 const postJson = async <T>(path: string, body: unknown): Promise<T> => {
   const response = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(body),
   });
 
+  const payload = (await response.json()) as ApiEnvelope<T>;
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || `Falha na API (${response.status})`);
+  }
+
+  return payload.data as T;
+};
+
+const getJson = async <T>(path: string): Promise<T> => {
+  const response = await fetch(path, { method: 'GET', headers: getAuthHeaders() });
   const payload = (await response.json()) as ApiEnvelope<T>;
 
   if (!response.ok || !payload.ok) {
@@ -94,6 +135,54 @@ export const OperationalApi = {
           ? { ...result.closedBill, closedAt: new Date(result.closedBill.closedAt) }
           : null,
       }));
+  },
+};
+
+const hydrateSnapshot = (snapshot: any) => ({
+  ...snapshot,
+  kitchenData: snapshot.kitchenData
+    ? {
+        ...snapshot.kitchenData,
+        serverNow: new Date(snapshot.kitchenData.serverNow),
+        orders: (snapshot.kitchenData.orders || []).map((order: any) => ({
+          ...order,
+          createdAt: new Date(order.createdAt),
+        })),
+      }
+    : snapshot.kitchenData,
+  serviceRequests: (snapshot.serviceRequests || []).map((request: any) => ({
+    ...request,
+    createdAt: new Date(request.createdAt),
+  })),
+  closedBills: (snapshot.closedBills || []).map((bill: any) => ({
+    ...bill,
+    closedAt: new Date(bill.closedAt),
+  })),
+  tables: (snapshot.tables || []).map((table: any) => ({
+    ...table,
+    lastActivity: table.lastActivity ? new Date(table.lastActivity) : new Date(),
+  })),
+});
+
+export const AppApi = {
+  init() {
+    return getJson<any>(`/api/app/init?view=${encodeURIComponent(getCurrentView())}`).then(hydrateSnapshot);
+  },
+
+  sync(includeCatalog: boolean) {
+    return postJson<any>('/api/app/sync', { includeCatalog, view: getCurrentView() }).then(hydrateSnapshot);
+  },
+
+  login(pin: string, sellerId?: string) {
+    return postJson<{ seller: any | null; sessionToken?: string }>('/api/auth/login', { pin, sellerId });
+  },
+
+  validateTabletSetupPin(pin: string) {
+    return postJson<{ valid: boolean }>('/api/tablet/setup-login', { pin });
+  },
+
+  fetchAuditLogs(limit = 100) {
+    return postJson<{ auditLogs: any[] }>('/api/audit-logs/list', { limit });
   },
 };
 
