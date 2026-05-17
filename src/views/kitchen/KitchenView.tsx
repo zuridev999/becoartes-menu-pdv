@@ -46,10 +46,7 @@ function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
           <LockKeyhole size={38} />
         </div>
         <p className="text-[10px] font-black tracking-[0.35em] text-primary mb-3">COZINHA SEGURA</p>
-        <h1 className="text-5xl font-black italic tracking-tighter mb-4">Digite o PIN</h1>
-        <p className="text-zinc-500 text-xs font-black tracking-widest leading-relaxed mb-10">
-          A cozinha só opera na rede autorizada. Fora do IP do Becoartes, apenas o PIN admin libera acesso remoto.
-        </p>
+        <h1 className="text-5xl font-black italic tracking-tighter mb-10">Digite o PIN</h1>
 
         <input
           value={pin}
