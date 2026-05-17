@@ -328,10 +328,20 @@ const normalizeClientIp = (ip) => String(ip || '')
   .replace(/^::ffff:/, '')
   .trim();
 
+const isTrustedProxyIp = (ip) => {
+  const normalized = normalizeClientIp(ip);
+  if (normalized === '127.0.0.1' || normalized === '::1' || normalized === 'localhost') return true;
+  if (normalized.startsWith('10.')) return true;
+  if (normalized.startsWith('192.168.')) return true;
+  const match = normalized.match(/^172\.(\d+)\./);
+  return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
+};
+
 const getClientIp = (req) => {
   if (!req) return 'unknown';
+  const remoteAddress = normalizeClientIp(req.socket.remoteAddress || 'unknown');
   const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return normalizeClientIp(forwardedFor || req.socket.remoteAddress || 'unknown');
+  return normalizeClientIp(isTrustedProxyIp(remoteAddress) && forwardedFor ? forwardedFor : remoteAddress);
 };
 
 const isOperationIpRestricted = () => ALLOWED_OPERATION_IPS.length > 0;
