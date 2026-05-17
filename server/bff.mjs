@@ -340,8 +340,15 @@ const isTrustedProxyIp = (ip) => {
 const getClientIp = (req) => {
   if (!req) return 'unknown';
   const remoteAddress = normalizeClientIp(req.socket.remoteAddress || 'unknown');
-  const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return normalizeClientIp(isTrustedProxyIp(remoteAddress) && forwardedFor ? forwardedFor : remoteAddress);
+  const forwardedFor = String(req.headers['x-forwarded-for'] || '')
+    .split(',')
+    .map(part => normalizeClientIp(part.trim()))
+    .filter(Boolean);
+  // Nginx appends the real client address to any incoming XFF value. Use the
+  // right-most forwarded address so a client cannot spoof the allowlist by
+  // sending a fake first X-Forwarded-For entry.
+  const proxiedClientIp = forwardedFor[forwardedFor.length - 1];
+  return normalizeClientIp(isTrustedProxyIp(remoteAddress) && proxiedClientIp ? proxiedClientIp : remoteAddress);
 };
 
 const isOperationIpRestricted = () => ALLOWED_OPERATION_IPS.length > 0;
