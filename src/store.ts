@@ -6,7 +6,7 @@ import { hashPin, comparePin } from './lib/security';
 import { createId } from './lib/id';
 import { getOrderItemsTotal } from './lib/totals';
 import { postOSMessage } from './lib/osBridge';
-import { CatalogApi, OperationalApi } from './lib/api';
+import { AdminApi, CatalogApi, OperationalApi, OpsApi } from './lib/api';
 import type { 
   Product, Table, OrderItem, KitchenOrder, 
   ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category
@@ -251,7 +251,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ settings: nextSettings });
 
     try {
-      await Repository.saveSettings(nextSettings);
+      await AdminApi.saveSettings(nextSettings);
     } catch (error) {
       console.error("❌ Erro ao salvar configurações:", error);
       set({ settings: currentSettings });
@@ -297,7 +297,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (isMatch) {
         if (isLegacyPlainPin(seller.pin)) {
           const hashedPin = await hashPin(pin);
-          await Repository.updateSellerPin(seller.id, hashedPin);
+          await AdminApi.updateSellerPin(seller.id, hashedPin);
           seller.pin = hashedPin;
           set((state) => ({
             sellers: state.sellers.map(s => s.id === seller.id ? { ...s, pin: hashedPin } : s)
@@ -339,9 +339,14 @@ export const useStore = create<AppState>((set, get) => ({
       };
     }
 
-    await db.execute({
-      sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [id, logData.action, logData.details, logData.table_number, logData.origin, logData.author_name, timestamp]
+    await OpsApi.addAuditLog({
+      id,
+      action: logData.action,
+      details: logData.details,
+      tableNumber: logData.table_number,
+      origin: logData.origin,
+      authorName: logData.author_name,
+      timestamp
     });
 
     const newLog = { id, ...logData, timestamp, details: logData.details || '' };
@@ -758,44 +763,8 @@ export const useStore = create<AppState>((set, get) => ({
   syncBeveragesFromInventory: async () => {
     set({ isLoading: true });
     try {
-      // 1. Puxar apenas BEBIDAS do estoque do OS
-      const res = await db.execute("SELECT * FROM estoque_produtos WHERE categoria = 'Bebidas' AND ativo = 1");
-      
-      const currentMenu = get().menu;
-      
-      for (const row of res.rows) {
-        const remoteId = row.id as string;
-        const name = row.nome as string;
-        const price = row.preco_venda as number;
-        
-        const existing = currentMenu.find(p => p.remoteStockId === remoteId);
-        
-        if (existing) {
-          // Atualizar item existente
-          await db.execute({
-            sql: "UPDATE menu SET name = ?, price = ? WHERE remote_stock_id = ?",
-            args: [name, price, remoteId]
-          });
-        } else {
-          // Criar novo item de bebida - Garantindo todos os campos
-          const newId = createId();
-          
-          // Buscar ou criar categoria 'Bebidas'
-          let cat = get().categories.find(c => c.name === 'Bebidas');
-          if (!cat) {
-             const catId = createId();
-             await Repository.upsertCategory({ id: catId, name: 'Bebidas', sortOrder: 0 });
-             await get().init(); // Recarregar categorias
-             cat = get().categories.find(c => c.name === 'Bebidas');
-          }
-
-          await db.execute({
-            sql: "INSERT INTO menu (id, name, description, price, category_id, image, visible, erp_code, remote_stock_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            args: [newId, name, 'Sincronizado do Estoque OS', price, cat?.id || 'bebidas', 'https://images.unsplash.com/photo-1544145945-f904253db0ad?w=400', 1, null, remoteId]
-          });
-        }
-      }
-      lastCatalogVersion = await Repository.bumpCatalogVersion();
+      const result = await AdminApi.syncBeveragesFromInventory();
+      lastCatalogVersion = result.catalogVersion;
       
       // Recarregar o menu
       await get().init();
@@ -870,19 +839,11 @@ export const useStore = create<AppState>((set, get) => ({
     const table = get().tables.find(t => t.id === tableId);
     const id = createId();
     
-    await db.execute({
-      sql: "INSERT INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
-      args: [id, tableId, type, 'pending', message]
-    });
+    const created = await OpsApi.createServiceRequest({ id, tableId, type, message });
 
     const newRequest: ServiceRequest = {
-      id,
-      tableId,
-      tableNumber: typeof table?.number === 'number' ? table.number : 0,
-      type,
-      message,
-      status: 'pending',
-      createdAt: new Date()
+      ...created.request,
+      tableNumber: typeof table?.number === 'number' ? table.number : created.request.tableNumber || 0
     };
     
     const messages: Record<string, string> = { 
@@ -919,9 +880,12 @@ export const useStore = create<AppState>((set, get) => ({
     const newStatus = request.status === 'resolved' ? 'pending' : 'resolved';
 
     if (request.type === 'new_order') {
-      await db.execute({
-        sql: "UPDATE service_requests SET status = ? WHERE (id = ? OR (table_id = ? AND type = 'new_order' AND message = ? AND status = 'pending'))",
-        args: [newStatus, requestId, request.tableId, request.message]
+      await OpsApi.resolveServiceRequest({
+        requestId,
+        tableId: request.tableId,
+        type: request.type,
+        message: request.message,
+        currentStatus: request.status
       });
 
       set((state) => ({
@@ -932,9 +896,12 @@ export const useStore = create<AppState>((set, get) => ({
         )
       }));
     } else {
-      await db.execute({
-        sql: "UPDATE service_requests SET status = ? WHERE id = ?",
-        args: [newStatus, requestId]
+      await OpsApi.resolveServiceRequest({
+        requestId,
+        tableId: request.tableId,
+        type: request.type,
+        message: request.message,
+        currentStatus: request.status
       });
 
       set((state) => ({
@@ -1055,7 +1022,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   requestBill: async (tableId) => {
     const table = get().tables.find(t => t.id === tableId);
-    await db.execute({ sql: "UPDATE tables SET status = ? WHERE id = ?", args: ['bill_requested', tableId] });
+    await OpsApi.requestBill(tableId);
     set((state) => ({ tables: state.tables.map(t => t.id === tableId ? { ...t, status: 'bill_requested' } : t) }));
     get().addNotification(`A Mesa ${table?.number || tableId} solicitou o fechamento da conta!`, 'info', tableId);
     postOSMessage('table_alert', {
@@ -1107,10 +1074,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   updateTableStatus: async (tableId, status) => {
-    await db.execute({
-      sql: "UPDATE tables SET status = ? WHERE id = ?",
-      args: [status, tableId]
-    });
+    await OpsApi.updateTableStatus(tableId, status);
     set((state) => ({
       tables: state.tables.map(t => t.id === tableId ? { ...t, status } : t)
     }));
@@ -1122,7 +1086,7 @@ export const useStore = create<AppState>((set, get) => ({
       const id = createId();
       const hashedPin = await hashPin(s.pin);
       const validated = SellerSchema.parse({ ...s, id, status: 'active', pin: hashedPin });
-      await Repository.addSeller(validated);
+      await AdminApi.addSeller(validated);
       set((state) => ({ sellers: [...state.sellers, validated as Seller] }));
       get().addNotification("Vendedor cadastrado com sucesso!", "info");
     } catch (e: any) {
@@ -1136,12 +1100,11 @@ export const useStore = create<AppState>((set, get) => ({
 
   deleteSeller: async (id) => {
     // Verificar se tem vendas
-    const hasBills = await db.execute({ sql: "SELECT id FROM closed_bills WHERE seller_id = ? LIMIT 1", args: [id] });
-    if (hasBills.rows.length > 0) {
+    const result = await AdminApi.deleteSeller(id);
+    if (!result.deleted && result.reason === 'seller_has_bills') {
       get().addNotification("Não é possível excluir: vendedor possui vendas vinculadas.", "error");
       return;
     }
-    await Repository.deleteSeller(id);
     set((state) => ({ sellers: state.sellers.filter(s => s.id !== id) }));
   },
 
@@ -1149,7 +1112,7 @@ export const useStore = create<AppState>((set, get) => ({
     const seller = get().sellers.find(s => s.id === id);
     if (!seller) return;
     const newStatus = seller.status === 'active' ? 'inactive' : 'active';
-    await Repository.updateSellerStatus(id, newStatus);
+    await AdminApi.updateSellerStatus(id, newStatus);
     set((state) => ({ sellers: state.sellers.map(s => s.id === id ? { ...s, status: newStatus } : s) }));
   },
 
@@ -1247,20 +1210,10 @@ export const useStore = create<AppState>((set, get) => ({
   openTable: async (tableId, initialItems = [], origin = 'pdv', sellerId) => {
     const currentTable = get().tables.find(t => t.id === tableId);
     if (currentTable?.status === 'available') {
-      await db.execute({
-        sql: "UPDATE orders SET status = 'closed' WHERE table_id = ? AND status != 'closed'",
-        args: [tableId]
-      });
-      await db.execute({
-        sql: "UPDATE service_requests SET status = 'resolved' WHERE table_id = ? AND status != 'resolved'",
-        args: [tableId]
-      });
+      // Limpeza de pedidos/solicitações antigas fica no BFF.
     }
 
-    await db.execute({
-      sql: "UPDATE tables SET status = 'ordering', last_activity = CURRENT_TIMESTAMP WHERE id = ?",
-      args: [tableId]
-    });
+    await OpsApi.openTable(tableId, currentTable?.status === 'available');
     
     set((state) => ({
       tables: state.tables.map(t => t.id === tableId ? { ...t, status: 'ordering', orders: initialItems, lastActivity: new Date() } : t),
@@ -1282,16 +1235,7 @@ export const useStore = create<AppState>((set, get) => ({
     
     if (!fromTable || !toTable) return;
 
-    // No DB: Mover itens de pedidos de uma mesa para outra
-    // (Simplificando: atualizando o table_id nas tabelas relacionadas se necessário)
-    await db.execute({
-      sql: "UPDATE tables SET status = 'available' WHERE id = ?",
-      args: [fromTableId]
-    });
-    await db.execute({
-      sql: "UPDATE tables SET status = 'ordering' WHERE id = ?",
-      args: [toTableId]
-    });
+    await OpsApi.transferTable(fromTableId, toTableId);
 
     set((state) => ({
       tables: state.tables.map(t => {
@@ -1311,12 +1255,12 @@ export const useStore = create<AppState>((set, get) => ({
       if (table) {
         allOrders.push(...table.orders);
         if (id !== targetTableId) {
-          await db.execute({ sql: "UPDATE tables SET status = 'available' WHERE id = ?", args: [id] });
+          // Persistência feita em lote no BFF abaixo.
         }
       }
     }
 
-    await db.execute({ sql: "UPDATE tables SET status = 'ordering' WHERE id = ?", args: [targetTableId] });
+    await OpsApi.joinTables(tableIds, targetTableId);
 
     set((state) => ({
       tables: state.tables.map(t => {
@@ -1329,10 +1273,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   openShift: async (openingBalance) => {
     const id = createId();
-    await db.execute({
-      sql: "INSERT INTO shifts (id, status, opening_balance) VALUES (?, ?, ?)",
-      args: [id, 'open', openingBalance]
-    });
+    await OpsApi.openShift(id, openingBalance);
     set({ currentShift: { id, status: 'open', openingBalance } });
   },
 
@@ -1340,10 +1281,7 @@ export const useStore = create<AppState>((set, get) => ({
     const shift = get().currentShift;
     if (!shift) return;
 
-    await db.execute({
-      sql: "UPDATE shifts SET status = 'closed', closing_balance = ?, closed_at = CURRENT_TIMESTAMP WHERE id = ?",
-      args: [closingBalance, shift.id]
-    });
+    await OpsApi.closeShift(shift.id, closingBalance);
 
     set({ currentShift: null });
   },

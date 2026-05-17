@@ -547,6 +547,236 @@ const linkModifierGroup = async ({ scope, targetId, groupId, linked }) => {
   return { catalogVersion: await bumpCatalogVersion() };
 };
 
+const saveSettings = async ({ settings }) => {
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('settings', ?, CURRENT_TIMESTAMP)",
+    args: [JSON.stringify(settings || {})],
+  });
+  return { saved: true };
+};
+
+const addAuditLog = async ({ id, action, details = '', tableNumber = null, origin = 'pdv', authorName = 'Sistema', timestamp }) => {
+  const logId = id || createId();
+  const createdAt = timestamp || new Date().toISOString();
+  await db.execute({
+    sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    args: [logId, requireString(action, 'action'), details, tableNumber, origin, authorName, createdAt],
+  });
+  return {
+    log: {
+      id: logId,
+      action,
+      details,
+      table_number: tableNumber,
+      origin,
+      author_name: authorName,
+      timestamp: createdAt,
+    },
+  };
+};
+
+const createServiceRequest = async ({ id, tableId, type, message = '' }) => {
+  const requestId = id || createId();
+  const tableRes = await db.execute({ sql: "SELECT number FROM tables WHERE id = ? LIMIT 1", args: [tableId] });
+  const tableNumber = Number(tableRes.rows[0]?.number || 0);
+  await db.execute({
+    sql: "INSERT INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
+    args: [requestId, requireString(tableId, 'tableId'), requireString(type, 'type'), 'pending', message],
+  });
+  return {
+    request: {
+      id: requestId,
+      tableId,
+      tableNumber,
+      type,
+      message,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    },
+  };
+};
+
+const resolveServiceRequest = async ({ requestId, tableId, type, message, currentStatus }) => {
+  const newStatus = currentStatus === 'resolved' ? 'pending' : 'resolved';
+  if (type === 'new_order') {
+    await db.execute({
+      sql: "UPDATE service_requests SET status = ? WHERE (id = ? OR (table_id = ? AND type = 'new_order' AND message = ? AND status = 'pending'))",
+      args: [newStatus, requestId, tableId, message],
+    });
+  } else {
+    await db.execute({
+      sql: "UPDATE service_requests SET status = ? WHERE id = ?",
+      args: [newStatus, requestId],
+    });
+  }
+  return { status: newStatus };
+};
+
+const requestBill = async ({ tableId }) => {
+  await db.execute({ sql: "UPDATE tables SET status = ? WHERE id = ?", args: ['bill_requested', tableId] });
+  return { status: 'bill_requested' };
+};
+
+const updateTableStatus = async ({ tableId, status }) => {
+  requireString(tableId, 'tableId');
+  const allowed = new Set(['available', 'ordering', 'waiting', 'paid', 'bill_requested']);
+  if (!allowed.has(status)) throw new Error('Status de mesa inválido.');
+  await db.execute({ sql: "UPDATE tables SET status = ? WHERE id = ?", args: [status, tableId] });
+  return { status };
+};
+
+const openTable = async ({ tableId, wasAvailable }) => {
+  requireString(tableId, 'tableId');
+  const batch = [];
+  if (wasAvailable) {
+    batch.push(
+      { sql: "UPDATE orders SET status = 'closed' WHERE table_id = ? AND status != 'closed'", args: [tableId] },
+      { sql: "UPDATE service_requests SET status = 'resolved' WHERE table_id = ? AND status != 'resolved'", args: [tableId] },
+    );
+  }
+  batch.push({ sql: "UPDATE tables SET status = 'ordering', last_activity = CURRENT_TIMESTAMP WHERE id = ?", args: [tableId] });
+  await db.batch(batch, 'write');
+  return { status: 'ordering' };
+};
+
+const transferTable = async ({ fromTableId, toTableId }) => {
+  requireString(fromTableId, 'fromTableId');
+  requireString(toTableId, 'toTableId');
+  await db.batch([
+    { sql: "UPDATE orders SET table_id = ? WHERE table_id = ? AND status != 'closed'", args: [toTableId, fromTableId] },
+    { sql: "UPDATE service_requests SET table_id = ? WHERE table_id = ? AND status != 'resolved'", args: [toTableId, fromTableId] },
+    { sql: "UPDATE tables SET status = 'available' WHERE id = ?", args: [fromTableId] },
+    { sql: "UPDATE tables SET status = 'ordering' WHERE id = ?", args: [toTableId] },
+  ], 'write');
+  return { moved: true };
+};
+
+const joinTables = async ({ tableIds, targetTableId }) => {
+  if (!Array.isArray(tableIds) || tableIds.length === 0) throw new Error('tableIds inválido.');
+  requireString(targetTableId, 'targetTableId');
+  const sourceIds = tableIds.filter((id) => id !== targetTableId);
+  const batch = [
+    ...sourceIds.map((id) => ({ sql: "UPDATE orders SET table_id = ? WHERE table_id = ? AND status != 'closed'", args: [targetTableId, id] })),
+    ...sourceIds.map((id) => ({ sql: "UPDATE service_requests SET table_id = ? WHERE table_id = ? AND status != 'resolved'", args: [targetTableId, id] })),
+    ...sourceIds.map((id) => ({ sql: "UPDATE tables SET status = 'available' WHERE id = ?", args: [id] })),
+    { sql: "UPDATE tables SET status = 'ordering' WHERE id = ?", args: [targetTableId] },
+  ];
+  await db.batch(batch, 'write');
+  return { joined: true };
+};
+
+const openShift = async ({ id, openingBalance }) => {
+  const shiftId = id || createId();
+  await db.execute({
+    sql: "INSERT INTO shifts (id, status, opening_balance) VALUES (?, ?, ?)",
+    args: [shiftId, 'open', requireNumber(openingBalance, 'openingBalance')],
+  });
+  return { shift: { id: shiftId, status: 'open', openingBalance: Number(openingBalance) } };
+};
+
+const closeShift = async ({ id, closingBalance }) => {
+  requireString(id, 'id');
+  await db.execute({
+    sql: "UPDATE shifts SET status = 'closed', closing_balance = ?, closed_at = CURRENT_TIMESTAMP WHERE id = ?",
+    args: [requireNumber(closingBalance, 'closingBalance'), id],
+  });
+  return { closed: true };
+};
+
+const addSeller = async ({ seller }) => {
+  const safeSeller = seller || {};
+  await db.execute({
+    sql: "INSERT INTO sellers (id, name, nickname, status, role, permission, pin) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    args: [
+      requireString(safeSeller.id, 'seller.id'),
+      requireString(safeSeller.name, 'seller.name'),
+      safeSeller.nickname || '',
+      safeSeller.status || 'active',
+      safeSeller.role || 'atendente',
+      safeSeller.permission || 'operator',
+      requireString(safeSeller.pin, 'seller.pin'),
+    ],
+  });
+  return { saved: true };
+};
+
+const updateSellerPin = async ({ id, pin }) => {
+  requireString(id, 'id');
+  requireString(pin, 'pin');
+  await db.execute({
+    sql: "UPDATE sellers SET pin = ? WHERE id = ?",
+    args: [pin, id],
+  });
+  return { updated: true };
+};
+
+const deleteSeller = async ({ id }) => {
+  requireString(id, 'id');
+  const hasBills = await db.execute({ sql: "SELECT id FROM closed_bills WHERE seller_id = ? LIMIT 1", args: [id] });
+  if (hasBills.rows.length > 0) {
+    return { deleted: false, reason: 'seller_has_bills' };
+  }
+  await db.execute({ sql: "DELETE FROM sellers WHERE id = ?", args: [id] });
+  return { deleted: true };
+};
+
+const updateSellerStatus = async ({ id, status }) => {
+  requireString(id, 'id');
+  const safeStatus = status === 'inactive' ? 'inactive' : 'active';
+  await db.execute({
+    sql: "UPDATE sellers SET status = ? WHERE id = ?",
+    args: [safeStatus, id],
+  });
+  return { status: safeStatus };
+};
+
+const syncBeveragesFromInventory = async () => {
+  const stockRes = await db.execute("SELECT * FROM estoque_produtos WHERE categoria = 'Bebidas' AND ativo = 1");
+  let categoryRes = await db.execute("SELECT id FROM categories WHERE name = 'Bebidas' LIMIT 1");
+  let categoryId = categoryRes.rows[0]?.id;
+
+  if (!categoryId) {
+    categoryId = createId();
+    await db.execute({
+      sql: "INSERT INTO categories (id, name, sort_order, visible) VALUES (?, 'Bebidas', 0, 1)",
+      args: [categoryId],
+    });
+  }
+
+  const batch = [];
+  for (const row of stockRes.rows) {
+    const remoteId = row.id;
+    const existing = await db.execute({
+      sql: "SELECT id FROM menu WHERE remote_stock_id = ? LIMIT 1",
+      args: [remoteId],
+    });
+    if (existing.rows[0]) {
+      batch.push({
+        sql: "UPDATE menu SET name = ?, price = ? WHERE remote_stock_id = ?",
+        args: [row.nome, Number(row.preco_venda || 0), remoteId],
+      });
+    } else {
+      batch.push({
+        sql: "INSERT INTO menu (id, name, description, price, category_id, image, visible, erp_code, remote_stock_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        args: [
+          createId(),
+          row.nome,
+          'Sincronizado do Estoque OS',
+          Number(row.preco_venda || 0),
+          categoryId,
+          'https://images.unsplash.com/photo-1544145945-f904253db0ad?w=400',
+          1,
+          null,
+          remoteId,
+        ],
+      });
+    }
+  }
+
+  if (batch.length > 0) await db.batch(batch, 'write');
+  return { catalogVersion: await bumpCatalogVersion(), count: stockRes.rows.length };
+};
+
 const closeBillWithInventorySync = async (data) => {
   const tableId = requireString(data.tableId, 'tableId');
   const activeOrderItems = await getActiveOrderItemsForTable(tableId);
@@ -828,6 +1058,22 @@ const handlers = {
   'POST /api/catalog/modifier-group': async (body) => saveModifierGroup(body),
   'POST /api/catalog/modifier-group/delete': async (body) => deleteModifierGroup(body),
   'POST /api/catalog/modifier-group/link': async (body) => linkModifierGroup(body),
+  'POST /api/settings': async (body) => saveSettings(body),
+  'POST /api/audit-logs': async (body) => addAuditLog(body),
+  'POST /api/service-requests': async (body) => createServiceRequest(body),
+  'POST /api/service-requests/resolve': async (body) => resolveServiceRequest(body),
+  'POST /api/tables/request-bill': async (body) => requestBill(body),
+  'POST /api/tables/status': async (body) => updateTableStatus(body),
+  'POST /api/tables/open': async (body) => openTable(body),
+  'POST /api/tables/transfer': async (body) => transferTable(body),
+  'POST /api/tables/join': async (body) => joinTables(body),
+  'POST /api/shifts/open': async (body) => openShift(body),
+  'POST /api/shifts/close': async (body) => closeShift(body),
+  'POST /api/sellers': async (body) => addSeller(body),
+  'POST /api/sellers/pin': async (body) => updateSellerPin(body),
+  'POST /api/sellers/delete': async (body) => deleteSeller(body),
+  'POST /api/sellers/status': async (body) => updateSellerStatus(body),
+  'POST /api/inventory/sync-beverages': async () => syncBeveragesFromInventory(),
 };
 
 const handleApi = async (req, res, url) => {

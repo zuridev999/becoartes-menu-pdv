@@ -139,3 +139,91 @@ export const CatalogApi = {
     });
   },
 };
+
+export const AdminApi = {
+  saveSettings(settings: unknown) {
+    return postJson<{ saved: boolean }>('/api/settings', { settings });
+  },
+
+  addSeller(seller: unknown) {
+    return postJson<{ saved: boolean }>('/api/sellers', { seller });
+  },
+
+  updateSellerPin(id: string, pin: string) {
+    return postJson<{ updated: boolean }>('/api/sellers/pin', { id, pin });
+  },
+
+  deleteSeller(id: string) {
+    return postJson<{ deleted: boolean; reason?: string }>('/api/sellers/delete', { id });
+  },
+
+  updateSellerStatus(id: string, status: 'active' | 'inactive') {
+    return postJson<{ status: 'active' | 'inactive' }>('/api/sellers/status', { id, status });
+  },
+
+  syncBeveragesFromInventory() {
+    return postJson<{ catalogVersion: string; count: number }>('/api/inventory/sync-beverages', {});
+  },
+};
+
+export const OpsApi = {
+  addAuditLog(log: {
+    id?: string;
+    action: string;
+    details?: string;
+    tableNumber?: string | null;
+    origin?: string;
+    authorName?: string;
+    timestamp?: string;
+  }) {
+    return postJson<{ log: any }>('/api/audit-logs', log);
+  },
+
+  createServiceRequest(input: { id?: string; tableId: string; type: string; message?: string }) {
+    return postJson<{ request: Omit<ServiceRequest, 'createdAt'> & { createdAt: string } }>('/api/service-requests', input)
+      .then(result => ({
+        request: {
+          ...result.request,
+          createdAt: new Date(result.request.createdAt),
+        } as ServiceRequest,
+      }));
+  },
+
+  resolveServiceRequest(input: {
+    requestId: string;
+    tableId: string;
+    type: string;
+    message: string;
+    currentStatus: string;
+  }) {
+    return postJson<{ status: 'pending' | 'resolved' }>('/api/service-requests/resolve', input);
+  },
+
+  requestBill(tableId: string) {
+    return postJson<{ status: 'bill_requested' }>('/api/tables/request-bill', { tableId });
+  },
+
+  updateTableStatus(tableId: string, status: string) {
+    return postJson<{ status: string }>('/api/tables/status', { tableId, status });
+  },
+
+  openTable(tableId: string, wasAvailable: boolean) {
+    return postJson<{ status: 'ordering' }>('/api/tables/open', { tableId, wasAvailable });
+  },
+
+  transferTable(fromTableId: string, toTableId: string) {
+    return postJson<{ moved: boolean }>('/api/tables/transfer', { fromTableId, toTableId });
+  },
+
+  joinTables(tableIds: string[], targetTableId: string) {
+    return postJson<{ joined: boolean }>('/api/tables/join', { tableIds, targetTableId });
+  },
+
+  openShift(id: string, openingBalance: number) {
+    return postJson<{ shift: { id: string; status: 'open'; openingBalance: number } }>('/api/shifts/open', { id, openingBalance });
+  },
+
+  closeShift(id: string, closingBalance: number) {
+    return postJson<{ closed: boolean }>('/api/shifts/close', { id, closingBalance });
+  },
+};
