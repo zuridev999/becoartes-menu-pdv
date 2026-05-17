@@ -31,8 +31,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const discountAmountValue = discountType === 'fixed' ? discountValue : subtotal * (discountValue / 100);
   const totalFinal = subtotal + feeValue - discountAmountValue;
   const paidTotal = payments.reduce((acc: number, p: any) => acc + p.amount, 0);
-  const remaining = Math.max(0, totalFinal - paidTotal);
-  const change = Math.max(0, paidTotal - totalFinal);
+  const diff = Number((totalFinal - paidTotal).toFixed(2));
+  const remaining = Math.max(0, diff);
+  const change = Math.max(0, -diff);
 
   const [currentAmount, setCurrentAmount] = useState<string>(remaining.toFixed(2));
 
