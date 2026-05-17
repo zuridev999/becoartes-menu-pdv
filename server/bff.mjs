@@ -1021,9 +1021,27 @@ const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = n
   return { seller: null, sessionToken: null, accessRestricted: blockedNonAdminMatch };
 };
 
-const validateTabletSetupPin = async ({ pin }, { operationAccessAllowed = true } = {}) => ({
-  valid: operationAccessAllowed && String(pin || '') === TABLET_SETUP_PIN,
-});
+const createAdminBypassSession = () => {
+  const seller = {
+    id: 'admin-bypass',
+    name: 'Admin Full',
+    status: 'active',
+    role: 'gerente',
+    permission: 'admin',
+    pin: '',
+  };
+  return {
+    seller,
+    sessionToken: createSessionToken(seller),
+  };
+};
+
+const validateTabletSetupPin = async ({ pin }, { operationAccessAllowed = true } = {}) => {
+  const safePin = String(pin || '');
+  if (safePin === TABLET_SETUP_PIN && operationAccessAllowed) return { valid: true, sessionToken: null };
+  if (isAdminBypassPin(safePin)) return { valid: true, ...createAdminBypassSession() };
+  return { valid: false, sessionToken: null };
+};
 
 const resolveOSContext = async () => {
   let empresaId = OS_EMPRESA_ID;
@@ -2047,17 +2065,13 @@ const enforceRouteAccess = (routeKey, body, session, { operationAccessAllowed = 
     routeKey === 'GET /api/app/init'
     || routeKey === 'POST /api/app/sync'
     || routeKey === 'POST /api/auth/login'
+    || routeKey === 'POST /api/tablet/setup-login'
   ) {
     return;
   }
 
   if (!operationAccessAllowed && !isAdminSession(session)) {
-    if (routeKey === 'POST /api/tablet/setup-login') throwIpRestricted(req);
     throwIpRestricted(req);
-  }
-
-  if (routeKey === 'POST /api/tablet/setup-login') {
-    return;
   }
 
   if (routeKey === 'POST /api/orders/send-to-kitchen') {

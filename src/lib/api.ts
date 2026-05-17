@@ -178,7 +178,7 @@ export const AppApi = {
   },
 
   validateTabletSetupPin(pin: string) {
-    return postJson<{ valid: boolean }>('/api/tablet/setup-login', { pin });
+    return postJson<{ valid: boolean; sessionToken?: string | null; seller?: any | null }>('/api/tablet/setup-login', { pin });
   },
 
   fetchAuditLogs(limit = 100) {

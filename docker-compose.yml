@@ -9,7 +9,7 @@ services:
         VITE_OS_TENANT_SLUG: ${VITE_OS_TENANT_SLUG:-becoartes}
         VITE_OS_SYSTEM_USER_ID: ${VITE_OS_SYSTEM_USER_ID:-}
         VITE_OS_ALLOWED_ORIGINS: ${VITE_OS_ALLOWED_ORIGINS:-https://os.becoartes.com}
-        VITE_APP_VERSION: ${VITE_APP_VERSION:-v1.2.2}
+        VITE_APP_VERSION: ${VITE_APP_VERSION:-v1.2.3}
         VITE_APP_COMMIT: ${VITE_APP_COMMIT:-}
     environment:
       TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
@@ -29,7 +29,7 @@ services:
       VITE_OS_EMPRESA_ID: ${VITE_OS_EMPRESA_ID:-}
       VITE_OS_TENANT_SLUG: ${VITE_OS_TENANT_SLUG:-becoartes}
       VITE_OS_SYSTEM_USER_ID: ${VITE_OS_SYSTEM_USER_ID:-}
-      VITE_APP_VERSION: ${VITE_APP_VERSION:-v1.2.2}
+      VITE_APP_VERSION: ${VITE_APP_VERSION:-v1.2.3}
       VITE_APP_COMMIT: ${VITE_APP_COMMIT:-}
       PORT: 80
     container_name: becoartes-operational

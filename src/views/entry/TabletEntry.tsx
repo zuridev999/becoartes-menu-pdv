@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Tablet as TabletIcon } from 'lucide-react';
 import { useStore } from '../../store';
-import { AppApi } from '../../lib/api';
+import { AppApi, setApiSessionToken } from '../../lib/api';
 
 interface TabletEntryProps {
   onUnlock: () => void;
 }
 
 export function TabletEntry({ onUnlock }: TabletEntryProps) {
-  const { tables, setCurrentTableId, currentTableId } = useStore();
+  const { tables, setCurrentTableId, currentTableId, syncData } = useStore();
   const [pin, setPin] = useState('');
   const [isPinCorrect, setIsPinCorrect] = useState(false);
   const [error, setError] = useState('');
@@ -32,6 +32,10 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
         try {
           const result = await AppApi.validateTabletSetupPin(newPin);
           if (result.valid) {
+            if (result.sessionToken) {
+              setApiSessionToken(result.sessionToken);
+              await syncData({ includeCatalog: true });
+            }
             setIsPinCorrect(true);
             setError('');
           } else {
