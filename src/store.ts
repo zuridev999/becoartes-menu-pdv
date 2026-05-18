@@ -3,7 +3,7 @@ import { ProductSchema, SellerSchema } from './lib/schemas';
 import { createId } from './lib/id';
 import { getOrderItemsTotal } from './lib/totals';
 import { postOSMessage } from './lib/osBridge';
-import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, hasApiSessionToken, setApiSessionToken } from './lib/api';
+import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, hasApiSessionToken, setApiSessionToken, type CashState } from './lib/api';
 import type {
   Product, Table, OrderItem, KitchenOrder,
   ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category
@@ -87,6 +87,7 @@ export interface AppState {
   isLoading: boolean;
   setAdminTab: (tab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance') => void;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
+  cashState: CashState | null;
   serverTimeOffset: number;
 
   currentTableId: string | null;
@@ -141,6 +142,9 @@ export interface AppState {
   // Gestão de Caixa
   openShift: (openingBalance: number) => Promise<void>;
   closeShift: (closingBalance: number) => Promise<void>;
+  refreshCashState: () => Promise<void>;
+  openCash: (openingBalance: number, notes?: string) => Promise<void>;
+  closeCash: (closingBalance: number, notes?: string) => Promise<void>;
 
   settings: AppSettings;
   updateSettings: (settings: Partial<AppSettings>) => Promise<void>;
@@ -170,6 +174,7 @@ export const useStore = create<AppState>((set, get) => ({
   categories: [],
   tables: [],
   currentShift: null,
+  cashState: null,
   settings: {
     unitName: 'Becoartes',
     mode: 'demo',
@@ -256,7 +261,10 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     setApiSessionToken(result.sessionToken || null);
-    set({ currentSeller: persistSellerSession(result.seller as Seller) });
+    const sessionSeller = persistSellerSession(result.seller as Seller);
+    set({ currentSeller: sessionSeller });
+    const firstName = sessionSeller.nickname || String(sessionSeller.name || '').trim().split(' ')[0] || 'equipe';
+    get().addNotification(`Bem-vindo, ${firstName}!`, 'info');
     try {
       await get().syncData();
     } catch (error) {
@@ -373,6 +381,7 @@ export const useStore = create<AppState>((set, get) => ({
         closedBills: snapshot.closedBills,
         auditLogs: snapshot.auditLogs,
         settings: snapshot.savedSettings ? { ...get().settings, ...snapshot.savedSettings } : get().settings,
+        cashState: snapshot.cashState || null,
         activeView: initialView as any,
         adminMode: initialAdminMode,
         adminTab: initialAdminMode === 'menu' ? 'products' : 'config',
@@ -587,6 +596,7 @@ export const useStore = create<AppState>((set, get) => ({
           kitchenOrders,
           serviceRequests: snapshot.serviceRequests,
           closedBills: snapshot.closedBills,
+          cashState: snapshot.cashState || get().cashState,
           tables: finalTables.sort((a, b) => a.number - b.number),
           serverTimeOffset
         });
@@ -1164,6 +1174,23 @@ export const useStore = create<AppState>((set, get) => ({
     await OpsApi.closeShift(shift.id, closingBalance);
 
     set({ currentShift: null });
+  },
+
+  refreshCashState: async () => {
+    const result = await OperationalApi.getCashStatus();
+    set({ cashState: result.cashState });
+  },
+
+  openCash: async (openingBalance, notes = '') => {
+    const result = await OperationalApi.openCash(openingBalance, notes);
+    set({ cashState: result.cashState });
+    get().addNotification('Caixa aberto. PDV liberado para operação.', 'info');
+  },
+
+  closeCash: async (closingBalance, notes = '') => {
+    const result = await OperationalApi.closeCash(closingBalance, notes);
+    set({ cashState: result.cashState });
+    get().addNotification('Caixa fechado. Operação do PDV bloqueada.', 'info');
   },
 
   fetchAuditLogs: async () => {

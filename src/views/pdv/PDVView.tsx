@@ -7,7 +7,7 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight
+  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole
 } from 'lucide-react';
 import { useStore, type OrderItem, type Product, type Table as TableType } from '../../store';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
@@ -33,7 +33,10 @@ export function PDVView() {
     resolveService,
     login,
     syncData,
-    updateTableStatus
+    updateTableStatus,
+    cashState,
+    openCash,
+    closeCash
   } = useStore();
 
   const [pin, setPin] = useState('');
@@ -54,6 +57,11 @@ export function PDVView() {
   const [selectedRequestForDetails, setSelectedRequestForDetails] = useState<any>(null);
   const [isPanicDismissed, setIsPanicDismissed] = useState(false);
   const [hasPanicAlert, setHasPanicAlert] = useState(false);
+  const [cashDialog, setCashDialog] = useState<'open' | 'close' | null>(null);
+  const [cashValue, setCashValue] = useState('');
+  const [cashNotes, setCashNotes] = useState('');
+  const [isCashSubmitting, setIsCashSubmitting] = useState(false);
+  const [isEmbedded, setIsEmbedded] = useState(false);
 
   // Filtra solicitações das últimas 2 horas para manter a tela limpa
   const now = new Date();
@@ -66,6 +74,17 @@ export function PDVView() {
   // Referência para o container de scroll da lista de solicitações
   const listRef = useRef<HTMLDivElement>(null);
   const prevRequestsLength = useRef(visibleRequests.length);
+
+  useEffect(() => {
+    setIsEmbedded(window.self !== window.top);
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('openCash') === '1') {
+      setCashDialog('open');
+    }
+    if (searchParams.get('closeCash') === '1') {
+      setCashDialog('close');
+    }
+  }, []);
 
   // Auto-scroll para o topo quando uma nova solicitação chega
   useEffect(() => {
@@ -206,14 +225,45 @@ export function PDVView() {
   // Stats
   const activeTablesCount = tables.filter(t => t.status === 'ordering' || t.status === 'bill_requested').length;
   const todayStr = new Date().toLocaleDateString('pt-BR');
-  const totalToday = closedBills
+  const todayBills = closedBills
     .filter(bill => {
       const billDate = bill.closedAt instanceof Date ? bill.closedAt : new Date(bill.closedAt);
       return billDate.toLocaleDateString('pt-BR') === todayStr;
-    })
+    });
+  const totalToday = todayBills
     .reduce((acc, bill) => acc + bill.total, 0);
+  const todayPaymentTotals = todayBills.reduce((acc, bill) => {
+    bill.payments.forEach(payment => {
+      acc[payment.method] += Number(payment.amount || 0);
+    });
+    return acc;
+  }, { credit: 0, debit: 0, pix: 0, cash: 0 });
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
   const canCancelTableItem = can(currentSeller, 'cancelTableItem');
+  const isCashOpen = Boolean(cashState?.isOpen);
+  const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
+
+  const parseMoneyValue = (value: string) => {
+    const normalized = value.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+    return Number(normalized) || 0;
+  };
+
+  const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  const submitCashDialog = async () => {
+    const value = parseMoneyValue(cashValue);
+    setIsCashSubmitting(true);
+    try {
+      if (cashDialog === 'open') await openCash(value, cashNotes);
+      if (cashDialog === 'close') await closeCash(value, cashNotes);
+      setCashDialog(null);
+      setCashValue('');
+      setCashNotes('');
+      await syncData({ includeCatalog: false });
+    } finally {
+      setIsCashSubmitting(false);
+    }
+  };
 
   const handleTableClick = (table: TableType) => {
     setSelectedTable(table);
@@ -276,6 +326,16 @@ export function PDVView() {
             CENTRAL <span className="text-primary">OPERACIONAL</span>
           </h1>
           <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest mt-1">Becoartes • PDV Management</p>
+          <p className="mt-4 text-lg font-black tracking-tight text-white">
+            Bem-vindo, <span className="text-primary">{currentSeller.nickname || currentSeller.name}</span>
+          </p>
+          <div className={`mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-2xl border text-[10px] font-black uppercase tracking-[0.18em] ${
+            isCashOpen ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${isCashOpen ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            {isCashOpen ? 'Caixa aberto' : 'Caixa fechado'}
+            {cashState?.sandbox && <span className="text-white/35">Sandbox</span>}
+          </div>
         </div>
 
         <div className="flex gap-6">
@@ -305,6 +365,16 @@ export function PDVView() {
               <Wallet size={24} />
             </button>
           )}
+          <button
+            onClick={() => setCashDialog(isCashOpen ? 'close' : 'open')}
+            className={`glass-card px-6 py-4 flex items-center gap-3 transition-all border-white/5 ${
+              isCashOpen ? 'hover:bg-rose-500/10 hover:text-rose-400' : 'hover:bg-emerald-500/10 hover:text-emerald-400'
+            }`}
+            title={cashActionLabel}
+          >
+            <Wallet size={22} />
+            <span className="text-[10px] font-black uppercase tracking-[0.18em]">{cashActionLabel}</span>
+          </button>
           {can(currentSeller, 'manageSettings') && (
             <button 
               onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')} 
@@ -316,7 +386,8 @@ export function PDVView() {
           )}
           <div className="glass-card px-5 py-4 flex flex-col items-end border-white/5">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Perfil</span>
-            <span className="text-sm font-black text-white">{getPermissionLabel(currentSeller)}</span>
+            <span className="text-sm font-black text-white">{currentSeller.name}</span>
+            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mt-1">{getPermissionLabel(currentSeller)}</span>
           </div>
           <button onClick={logout} className="glass-card p-4 hover:bg-rose-500/10 hover:text-rose-500 transition-all border-white/5">
             <LogOut size={24} />
@@ -324,7 +395,49 @@ export function PDVView() {
         </div>
       </header>
 
-      <div className="grid grid-cols-12 gap-8 h-[calc(100vh-200px)]">
+      {isEmbedded && (
+        <button
+          onClick={() => window.open('/pdv', '_blank', 'noopener,noreferrer')}
+          className="fixed right-8 bottom-8 z-50 glass-card p-4 border-primary/30 text-primary hover:bg-primary/10 transition-all"
+          title="Abrir PDV em nova janela"
+        >
+          <ExternalLink size={24} />
+        </button>
+      )}
+
+      {!isCashOpen && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute inset-x-8 top-64 bottom-8 z-30 flex items-center justify-center pointer-events-none"
+        >
+          <div className="pointer-events-auto max-w-xl w-full glass-card border-amber-400/30 p-10 text-center shadow-2xl shadow-black/40">
+            <div className="w-20 h-20 rounded-[2rem] bg-amber-400/10 text-amber-300 flex items-center justify-center mx-auto mb-6">
+              <LockKeyhole size={38} />
+            </div>
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-300 mb-3">Operação bloqueada</p>
+            <h2 className="text-4xl font-black tracking-tight mb-4">Abra o caixa para operar o PDV</h2>
+            <p className="text-sm font-bold text-zinc-500 leading-relaxed mb-8">
+              As mesas, lançamentos e fechamento ficam pausados até alguém da equipe abrir a casa.
+            </p>
+            <button
+              onClick={() => setCashDialog('open')}
+              className="btn-beco btn-beco-purple px-10 py-5 rounded-2xl font-black uppercase tracking-widest"
+            >
+              Abrir caixa agora
+            </button>
+            {cashState?.lastClosingBalance !== undefined && (
+              <p className="mt-5 text-[11px] font-black uppercase tracking-widest text-zinc-600">
+                Último fechamento: {formatCurrency(cashState.lastClosingBalance)}
+              </p>
+            )}
+          </div>
+        </motion.div>
+      )}
+
+      <div className={`grid grid-cols-12 gap-8 h-[calc(100vh-200px)] transition-all duration-300 ${
+        isCashOpen ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
+      }`}>
         {/* LEFT: MAPA DE MESAS */}
         <div className="col-span-8 flex flex-col gap-6 overflow-y-auto pr-4 custom-scrollbar">
           <div className="flex items-center justify-between">
@@ -746,6 +859,104 @@ export function PDVView() {
             product={selectedProduct}
             onClose={() => setSelectedProduct(null)}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {cashDialog && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-xl flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 20 }}
+              className="glass-card w-full max-w-xl border-primary/30 p-8"
+            >
+              <div className="flex items-start justify-between gap-6 mb-8">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">
+                    {cashDialog === 'open' ? 'Abertura da casa' : 'Fechamento da casa'}
+                  </p>
+                  <h3 className="text-3xl font-black tracking-tight">
+                    {cashDialog === 'open' ? 'Abrir caixa' : 'Fechar caixa'}
+                  </h3>
+                </div>
+                <button onClick={() => setCashDialog(null)} className="glass p-3 rounded-2xl text-zinc-400 hover:text-white">
+                  <X size={22} />
+                </button>
+              </div>
+
+              <div className="space-y-5">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                    {cashDialog === 'open' ? 'Valor inicial na gaveta' : 'Valor físico final na gaveta'}
+                  </label>
+                  <input
+                    value={cashValue}
+                    onChange={(event) => setCashValue(event.target.value)}
+                    placeholder="R$ 0,00"
+                    inputMode="decimal"
+                    className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-6 py-6 outline-none text-4xl font-black text-accent focus:border-primary/60"
+                    autoFocus
+                  />
+                </div>
+
+                {cashDialog === 'open' && (
+                  <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-5">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-2">Último fechamento</p>
+                    <p className="text-xl font-black text-white">{formatCurrency(cashState?.lastClosingBalance || 0)}</p>
+                  </div>
+                )}
+
+                {cashDialog === 'close' && (
+                  <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-5">
+                    <div className="flex items-center justify-between gap-4 mb-4">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Resumo vendido hoje</p>
+                        <p className="text-2xl font-black text-emerald-400 mt-1">{formatCurrency(totalToday)}</p>
+                      </div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-600">{todayBills.length} contas</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        ['Crédito', todayPaymentTotals.credit],
+                        ['Débito', todayPaymentTotals.debit],
+                        ['Pix', todayPaymentTotals.pix],
+                        ['Dinheiro', todayPaymentTotals.cash],
+                      ].map(([label, amount]) => (
+                        <div key={label} className="rounded-2xl bg-black/20 border border-white/5 p-4">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">{label}</p>
+                          <p className="mt-1 text-lg font-black text-white">{formatCurrency(Number(amount))}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Observação</label>
+                  <textarea
+                    value={cashNotes}
+                    onChange={(event) => setCashNotes(event.target.value)}
+                    placeholder="Ex: diferença no fundo de caixa, conferência manual..."
+                    className="mt-3 w-full h-28 bg-white/[0.04] border border-white/10 rounded-3xl px-5 py-4 outline-none text-sm font-bold resize-none focus:border-primary/60"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={submitCashDialog}
+                disabled={isCashSubmitting}
+                className="mt-8 w-full btn-beco btn-beco-purple py-6 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40"
+              >
+                {isCashSubmitting ? 'Processando...' : cashDialog === 'open' ? 'Abrir caixa e liberar PDV' : 'Fechar caixa e bloquear PDV'}
+              </button>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 

@@ -31,6 +31,25 @@ type UpdateOrderStatusResult = {
   request: (Omit<ServiceRequest, 'createdAt'> & { createdAt: string }) | null;
 };
 
+export type CashState = {
+  businessDate: string;
+  isOpen: boolean;
+  sandbox?: boolean;
+  lastClosingBalance: number;
+  current: null | {
+    id: string;
+    businessDate: string;
+    openingBalance: number;
+    closingBalance: number;
+    totalHouse: number;
+    responsibleId: string;
+    notes: string;
+    status: 'Aberto' | 'Fechado' | string;
+    createdAt: string | number | null;
+    updatedAt: string | number | null;
+  };
+};
+
 const getSessionToken = () => {
   if (typeof localStorage === 'undefined') return '';
   return localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || '';
@@ -137,6 +156,18 @@ export const OperationalApi = {
           ? { ...result.closedBill, closedAt: new Date(result.closedBill.closedAt) }
           : null,
       }));
+  },
+
+  getCashStatus() {
+    return getJson<{ cashState: CashState }>('/api/cash/status');
+  },
+
+  openCash(openingBalance: number, notes = '') {
+    return postJson<{ cashState: CashState }>('/api/cash/open', { openingBalance, notes });
+  },
+
+  closeCash(closingBalance: number, notes = '') {
+    return postJson<{ cashState: CashState }>('/api/cash/close', { closingBalance, notes });
   },
 };
 

@@ -25,12 +25,18 @@ const ALLOWED_OPERATION_IPS = (process.env.ALLOWED_OPERATION_IPS || '')
   .split(',')
   .map((ip) => ip.trim())
   .filter(Boolean);
+const ALLOWED_WEB_ORIGINS = (process.env.ALLOWED_WEB_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const SESSION_SECRET = process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET || tursoAuthToken;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const PROCESSING_STALE_MS = 10 * 60 * 1000;
 const SERVICE_REQUEST_LIMIT = Number(process.env.SERVICE_REQUEST_LIMIT || 150);
 const CLOSED_BILLS_LIMIT = Number(process.env.CLOSED_BILLS_LIMIT || 200);
 const AUDIT_LOG_LIMIT = Number(process.env.AUDIT_LOG_LIMIT || 100);
+const CASH_SANDBOX_MODE = process.env.CASH_SANDBOX_MODE === '1';
+const CASH_TABLE = CASH_SANDBOX_MODE ? 'pdv_cash_sandbox' : 'caixa_diario';
 
 if (!tursoUrl || !tursoAuthToken) {
   throw new Error('Missing Turso configuration for BFF runtime.');
@@ -75,6 +81,7 @@ const mimeTypes = {
 const createId = () => randomUUID();
 const osTimestamp = () => Math.floor(Date.now() / 1000);
 const toStockAmount = (value) => Math.max(0, Math.trunc(Number(value || 0)));
+const getBusinessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 
 const parseJsonArray = (value) => {
   if (!value || typeof value !== 'string') return [];
@@ -99,11 +106,30 @@ const parseJsonObject = (value) => {
 const hashPin = (pin) => createHash('sha256').update(`${pin}becoartes_salt_2024`).digest('hex');
 const isLegacyPlainPin = (storedPin) => /^\d{4}$/.test(String(storedPin || ''));
 const toSessionSeller = (seller) => ({ ...seller, pin: '' });
+const normalizeText = (value) => String(value || '').trim().replace(/\s+/g, ' ');
 const normalizePermission = (permission) => {
   if (permission === 'admin') return 'admin';
   if (permission === 'manager' || permission === 'standard') return 'manager';
   return 'operator';
 };
+const mapOperationalPermission = (role, funcao = '') => {
+  const safeRole = String(role || '').trim().toLowerCase();
+  const safeFuncao = String(funcao || '').trim().toLowerCase();
+  if (safeRole === 'super_admin' || safeRole === 'admin') return 'admin';
+  if (safeRole === 'gerente' || safeFuncao.includes('gerente')) return 'manager';
+  return 'operator';
+};
+const mapOperationalRoleLabel = (role, funcao = '') => {
+  const safeRole = String(role || '').trim().toLowerCase();
+  const safeFuncao = String(funcao || '').trim().toLowerCase();
+  if (safeRole === 'gerente' || safeFuncao.includes('gerente')) return 'gerente';
+  if (safeFuncao.includes('gar')) return 'garçom';
+  if (safeRole === 'colaborador' || safeRole === 'operacional' || safeFuncao.includes('atend')) return 'atendente';
+  return 'outro';
+};
+const canAccessOutsideOperationIp = (session) => Boolean(
+  session && (normalizePermission(session.permission) === 'admin' || session.allowRemote)
+);
 
 const permissionsByProfile = {
   admin: {
@@ -163,6 +189,7 @@ const createSessionToken = (seller) => {
     name: seller.name,
     permission: normalizePermission(seller.permission),
     role: seller.role,
+    allowRemote: Boolean(seller.allowRemote),
     exp: Date.now() + SESSION_TTL_MS,
   });
   return `${payload}.${signSessionPayload(payload)}`;
@@ -202,6 +229,7 @@ const getSessionFromRequest = (req) => {
       name: decoded.name,
       role: decoded.role,
       permission: normalizePermission(decoded.permission),
+      allowRemote: Boolean(decoded.allowRemote),
     };
   } catch {
     return null;
@@ -226,6 +254,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS integration_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, table_id TEXT, ref_id TEXT, payload TEXT, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     "CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, status TEXT NOT NULL, opening_balance REAL NOT NULL, closing_balance REAL, total_sales REAL DEFAULT 0, opened_at DATETIME DEFAULT CURRENT_TIMESTAMP, closed_at DATETIME, sort_order INTEGER DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS pdv_cash_sandbox (id TEXT PRIMARY KEY, empresa_id TEXT NOT NULL, data TEXT NOT NULL, saldo_inicial REAL NOT NULL DEFAULT 0, entradas_dinheiro REAL NOT NULL DEFAULT 0, saidas_dinheiro REAL NOT NULL DEFAULT 0, valor_caixa_final REAL NOT NULL DEFAULT 0, valor_envelopes REAL NOT NULL DEFAULT 0, total_na_casa REAL NOT NULL DEFAULT 0, responsavel_id TEXT NOT NULL, observacoes TEXT, status TEXT NOT NULL DEFAULT 'Aberto', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
   ], 'write');
 
   const migrations = [
@@ -315,7 +344,7 @@ const assertSameOrigin = (req) => {
   if (!host) throw new Error('Host ausente.');
   const expectedHttp = `http://${host}`;
   const expectedHttps = `https://${host}`;
-  if (origin !== expectedHttp && origin !== expectedHttps) {
+  if (origin !== expectedHttp && origin !== expectedHttps && !ALLOWED_WEB_ORIGINS.includes(origin)) {
     throw new Error('Origem não autorizada.');
   }
 };
@@ -600,6 +629,80 @@ const getSellers = async ({ includePins = false } = {}) => {
     permission: row.permission || 'operator',
     pin: includePins ? row.pin || '' : '',
   }));
+};
+
+const mapCashRow = (row) => row ? ({
+  id: row.id,
+  empresaId: row.empresa_id,
+  businessDate: row.data,
+  openingBalance: Number(row.saldo_inicial || 0),
+  closingBalance: Number(row.valor_caixa_final || 0),
+  totalHouse: Number(row.total_na_casa || 0),
+  responsibleId: row.responsavel_id || '',
+  notes: row.observacoes || '',
+  status: row.status || 'Fechado',
+  createdAt: row.created_at || null,
+  updatedAt: row.updated_at || null,
+}) : null;
+
+const getCashState = async () => {
+  await ensureDatabaseReady();
+  const businessDate = getBusinessDate();
+  const [todayRes, lastClosedRes] = await Promise.all([
+    db.execute({
+      sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? LIMIT 1`,
+      args: [OS_EMPRESA_ID, businessDate],
+    }),
+    db.execute({
+      sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND status = 'Fechado' AND data != ? ORDER BY data DESC LIMIT 1`,
+      args: [OS_EMPRESA_ID, businessDate],
+    }),
+  ]);
+  const current = mapCashRow(todayRes.rows[0]);
+  const lastClosed = mapCashRow(lastClosedRes.rows[0]);
+
+  return {
+    businessDate,
+    isOpen: current?.status === 'Aberto',
+    current,
+    lastClosingBalance: lastClosed?.closingBalance || 0,
+    sandbox: CASH_SANDBOX_MODE,
+  };
+};
+
+const getOperationalUsers = async ({ includePins = false } = {}) => {
+  const res = await db.execute({
+    sql: `
+      SELECT id, nome, email, role, funcao, ativo, pin, is_operador, permitir_acesso_remoto
+      FROM users
+      WHERE empresa_id = ?
+        AND COALESCE(ativo, 1) = 1
+        AND COALESCE(is_operador, 1) = 1
+      ORDER BY nome COLLATE NOCASE ASC
+    `,
+    args: [OS_EMPRESA_ID],
+  });
+
+  return res.rows
+    .filter((row) => normalizeText(row.nome))
+    .map((row) => ({
+      id: row.id,
+      name: normalizeText(row.nome),
+      nickname: normalizeText(row.nome).split(' ')[0] || '',
+      status: Number(row.ativo || 0) === 1 ? 'active' : 'inactive',
+      role: mapOperationalRoleLabel(row.role, row.funcao),
+      permission: mapOperationalPermission(row.role, row.funcao),
+      pin: includePins ? String(row.pin || '') : '',
+      allowRemote: Boolean(Number(row.permitir_acesso_remoto || 0)),
+      source: 'os',
+      email: row.email || '',
+    }));
+};
+
+const getAuthSellers = async ({ includePins = false } = {}) => {
+  const operationalUsers = await getOperationalUsers({ includePins });
+  if (operationalUsers.length > 0) return operationalUsers;
+  return getSellers({ includePins });
 };
 
 const getKitchenOrders = async () => {
@@ -922,6 +1025,7 @@ const getRestrictedSnapshot = (view = 'pdv') => ({
   serviceRequests: [],
   closedBills: [],
   savedSettings: null,
+  cashState: null,
   tables: [],
   auditLogs: [],
   accessRestricted: true,
@@ -929,7 +1033,7 @@ const getRestrictedSnapshot = (view = 'pdv') => ({
 });
 
 const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, view = 'pdv', session = null, operationAccessAllowed = true } = {}) => {
-  if (!operationAccessAllowed && !isAdminSession(session)) {
+  if (!operationAccessAllowed && !canAccessOutsideOperationIp(session)) {
     return getRestrictedSnapshot(view);
   }
 
@@ -939,9 +1043,9 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
   const needsSellers = needsOperationalPanel;
   const needsSalesData = needsOperationalPanel && canSession(session, 'viewSalesTotals');
   if (needsSellers) await ensureDefaultSellersReady();
-  const [catalogData, sellers, kitchenData, serviceRequests, closedBills, savedSettings, tables, auditLogs, catalogVersion] = await Promise.all([
+  const [catalogData, sellers, kitchenData, serviceRequests, closedBills, savedSettings, tables, auditLogs, catalogVersion, cashState] = await Promise.all([
     includeCatalog ? getCatalogData() : Promise.resolve(null),
-    needsSellers ? getSellers() : Promise.resolve([]),
+    needsSellers ? (safeView === 'admin' ? getSellers() : getAuthSellers()) : Promise.resolve([]),
     getKitchenOrders(),
     needsOperationalPanel ? getServiceRequests() : Promise.resolve([]),
     needsSalesData ? getClosedBills() : Promise.resolve([]),
@@ -949,6 +1053,7 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
     getTables(),
     needsSalesData ? getAuditLogs(includeAuditLimit) : Promise.resolve([]),
     getCatalogVersion(),
+    needsOperationalPanel ? getCashState() : Promise.resolve(null),
   ]);
 
   return filterSnapshotForContext({
@@ -959,6 +1064,7 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
     serviceRequests,
     closedBills,
     savedSettings,
+    cashState,
     tables,
     auditLogs,
   }, { view, session });
@@ -967,7 +1073,7 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
 const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = null } = {}) => {
   await ensureDatabaseReady();
   await ensureDefaultSellersReady();
-  const activeSellers = (await getSellers({ includePins: true }))
+  const activeSellers = (await getAuthSellers({ includePins: true }))
     .filter((seller) => seller.status === 'active' && (!sellerId || seller.id === sellerId));
   let blockedNonAdminMatch = false;
 
@@ -992,7 +1098,7 @@ const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = n
     if (!isMatch) continue;
     const safeSeller = toSessionSeller(seller);
 
-    if (!operationAccessAllowed && !isAdminSession(safeSeller)) {
+    if (!operationAccessAllowed && !canAccessOutsideOperationIp(safeSeller)) {
       blockedNonAdminMatch = true;
       if (req && isOperationIpRestricted()) {
         console.warn(`Blocked non-admin login outside operation IP: ${getClientIp(req)} seller=${seller.id}`);
@@ -1018,6 +1124,7 @@ const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = n
       role: 'gerente',
       permission: 'admin',
       pin: '',
+      allowRemote: true,
     };
     return {
       seller,
@@ -1662,6 +1769,87 @@ const joinTables = async ({ tableIds, targetTableId }) => {
   return { joined: true };
 };
 
+const openCash = async ({ openingBalance, notes }, session) => {
+  requireSession(session);
+  const businessDate = getBusinessDate();
+  const existing = await db.execute({
+    sql: `SELECT id, status FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? LIMIT 1`,
+    args: [OS_EMPRESA_ID, businessDate],
+  });
+  if (existing.rows[0]) {
+    throw new Error(existing.rows[0].status === 'Aberto'
+      ? 'O caixa de hoje já está aberto.'
+      : 'Já existe um caixa registrado para hoje.');
+  }
+
+  const now = osTimestamp();
+  await db.execute({
+    sql: `
+      INSERT INTO ${CASH_TABLE}
+        (id, empresa_id, data, saldo_inicial, responsavel_id, observacoes, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'Aberto', ?, ?)
+    `,
+    args: [
+      createId(),
+      OS_EMPRESA_ID,
+      businessDate,
+      requireNumber(openingBalance, 'openingBalance'),
+      session.id,
+      notes || '',
+      now,
+      now,
+    ],
+  });
+
+  await addAuditLog({
+    id: createId(),
+    action: 'cash_opened',
+    details: JSON.stringify({ openingBalance: Number(openingBalance), sandbox: CASH_SANDBOX_MODE }),
+    origin: 'pdv',
+    authorName: session.name,
+    timestamp: new Date().toISOString(),
+  });
+
+  return { cashState: await getCashState() };
+};
+
+const closeCash = async ({ closingBalance, notes }, session) => {
+  requireSession(session);
+  const businessDate = getBusinessDate();
+  const current = await db.execute({
+    sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? AND status = 'Aberto' LIMIT 1`,
+    args: [OS_EMPRESA_ID, businessDate],
+  });
+  const cash = current.rows[0];
+  if (!cash) throw new Error('Não existe caixa aberto para hoje.');
+
+  const now = osTimestamp();
+  await db.execute({
+    sql: `
+      UPDATE ${CASH_TABLE}
+      SET valor_caixa_final = ?, status = 'Fechado', observacoes = ?, updated_at = ?
+      WHERE id = ?
+    `,
+    args: [
+      requireNumber(closingBalance, 'closingBalance'),
+      notes || cash.observacoes || '',
+      now,
+      cash.id,
+    ],
+  });
+
+  await addAuditLog({
+    id: createId(),
+    action: 'cash_closed',
+    details: JSON.stringify({ closingBalance: Number(closingBalance), sandbox: CASH_SANDBOX_MODE }),
+    origin: 'pdv',
+    authorName: session.name,
+    timestamp: new Date().toISOString(),
+  });
+
+  return { cashState: await getCashState() };
+};
+
 const openShift = async ({ id, openingBalance }) => {
   const shiftId = id || createId();
   await db.execute({
@@ -2088,7 +2276,7 @@ const enforceRouteAccess = (routeKey, body, session, { operationAccessAllowed = 
     return;
   }
 
-  if (!operationAccessAllowed && !isAdminSession(session)) {
+  if (!operationAccessAllowed && !canAccessOutsideOperationIp(session)) {
     throwIpRestricted(req);
   }
 
@@ -2181,6 +2369,9 @@ const handlers = {
   'POST /api/tables/open': async (body) => openTable(body),
   'POST /api/tables/transfer': async (body) => transferTable(body),
   'POST /api/tables/join': async (body) => joinTables(body),
+  'GET /api/cash/status': async () => ({ cashState: await getCashState() }),
+  'POST /api/cash/open': async (body, context) => openCash(body, context.session),
+  'POST /api/cash/close': async (body, context) => closeCash(body, context.session),
   'POST /api/shifts/open': async (body) => openShift(body),
   'POST /api/shifts/close': async (body) => closeShift(body),
   'POST /api/sellers': async (body) => addSeller(body),
