@@ -524,11 +524,9 @@ export function PDVView() {
                       animate={!isResolved ? { y: [0, -4, 0] } : { y: 0 }}
                       transition={{ repeat: Infinity, duration: 1, ease: "easeInOut" }}
                       onClick={() => {
-                        if (isOrderActionable && !isResolved) {
-                          setSelectedRequestForDetails(req);
-                        }
+                        setSelectedRequestForDetails(req);
                       }}
-                      className={`p-6 border-b border-white/10 last:border-0 flex justify-between items-center group transition-colors ${isResolved ? 'bg-emerald-500/20' : 'bg-rose-600'} ${(!isResolved && isOrderActionable) ? 'cursor-pointer hover:bg-rose-500' : ''}`}
+                      className={`p-6 border-b border-white/10 last:border-0 flex justify-between items-center group transition-colors cursor-pointer ${isResolved ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-rose-600 hover:bg-rose-500'}`}
                     >
                       <div className="flex items-center gap-4">
                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black italic text-xl shadow-inner ${isResolved ? 'bg-emerald-500 text-white' : 'bg-white/20 text-white'}`}>
@@ -556,13 +554,13 @@ export function PDVView() {
                              {new Date(req.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • 
                              {isResolved ? 'Atendimento Concluído' : (req.type === 'order_ready' ? 'Retirar na Cozinha' : (req.type === 'new_order' ? 'Preparar Bebidas/Drinks' : (req.message || 'Aguardando atendimento')))}
                            </p>
-                           {!isResolved && isOrderActionable && (
+                           {isOrderActionable && (
                              <div className="mt-2 p-3 bg-white/10 rounded-xl border border-white/5">
                                <p className="text-[10px] font-bold text-white/80 leading-relaxed italic line-clamp-2">
                                  {req.message}
                                </p>
                                <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-white/40 uppercase">
-                                 Clique para ver detalhes <ChevronRight size={8} />
+                                 Clique para ver movimento <ChevronRight size={8} />
                                </div>
                              </div>
                            )}
@@ -1063,7 +1061,7 @@ export function PDVView() {
         )}
       </AnimatePresence>
 
-      {/* MODAL DE DETALHES DA SOLICITAÇÃO (PEDIDO PRONTO OU NOVO PEDIDO) */}
+      {/* MODAL DE DETALHES DA SOLICITAÇÃO */}
       <AnimatePresence>
         {selectedRequestForDetails && (
           <motion.div 
@@ -1074,11 +1072,17 @@ export function PDVView() {
               initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
               className="w-full max-w-2xl bg-[#111115] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden"
             >
-              <div className={`p-10 border-b border-white/5 flex justify-between items-center ${selectedRequestForDetails.type === 'new_order' ? 'bg-indigo-600' : 'bg-rose-600'}`}>
+              <div className={`p-10 border-b border-white/5 flex justify-between items-center ${
+                selectedRequestForDetails.status === 'resolved'
+                  ? 'bg-emerald-600'
+                  : selectedRequestForDetails.type === 'new_order'
+                    ? 'bg-indigo-600'
+                    : 'bg-rose-600'
+              }`}>
                 <div>
                   <h2 className="text-4xl font-black italic tracking-tighter text-white">Mesa <span className="text-white/60">{selectedRequestForDetails.tableNumber}</span></h2>
                   <p className="text-white/80 font-black uppercase tracking-widest text-[10px] mt-1 flex items-center gap-2">
-                    <Clock size={12} /> {new Date(selectedRequestForDetails.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • {selectedRequestForDetails.type === 'new_order' ? 'Novo Pedido' : 'Pedido Pronto'}
+                    <Clock size={12} /> {new Date(selectedRequestForDetails.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • {selectedRequestForDetails.status === 'resolved' ? 'Atendimento concluído' : 'Aguardando atendimento'}
                   </p>
                 </div>
                 <button onClick={() => setSelectedRequestForDetails(null)} className="p-4 bg-white/20 rounded-full text-white hover:bg-white/30 transition-all">
@@ -1087,12 +1091,37 @@ export function PDVView() {
               </div>
 
               <div className="p-10">
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="bg-white/5 rounded-3xl p-5 border border-white/5">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Movimento</p>
+                    <p className="text-xl font-black text-white uppercase">
+                      {selectedRequestForDetails.type === 'waiter' ? 'Chamar Garçom' :
+                       selectedRequestForDetails.type === 'bill' ? 'Pedido de Conta' :
+                       selectedRequestForDetails.type === 'glass' ? 'Copo Extra' :
+                       selectedRequestForDetails.type === 'cutlery' ? 'Pedir Talher' :
+                       selectedRequestForDetails.type === 'order_ready' ? 'Pedido Pronto' :
+                       selectedRequestForDetails.type === 'new_order' ? 'Novo Pedido' :
+                       selectedRequestForDetails.type}
+                    </p>
+                  </div>
+                  <div className="bg-white/5 rounded-3xl p-5 border border-white/5">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Status</p>
+                    <p className={`text-xl font-black uppercase ${selectedRequestForDetails.status === 'resolved' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {selectedRequestForDetails.status === 'resolved' ? 'Atendido' : 'Pendente'}
+                    </p>
+                  </div>
+                </div>
+
                 <div className="bg-white/5 rounded-[2rem] p-8 border border-white/5">
                    <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-6">
-                     {selectedRequestForDetails.type === 'new_order' ? 'Itens do pedido (Bebidas/Drinks):' : 'Itens prontos para entrega:'}
+                     {selectedRequestForDetails.type === 'new_order'
+                       ? 'Itens do pedido'
+                       : selectedRequestForDetails.type === 'order_ready'
+                         ? 'Itens prontos para entrega'
+                         : 'Mensagem da solicitação'}
                    </h3>
                    <p className="text-3xl font-black text-white leading-relaxed italic">
-                     {selectedRequestForDetails.message}
+                     {selectedRequestForDetails.message || 'Sem observação adicional.'}
                    </p>
                 </div>
 
@@ -1102,9 +1131,13 @@ export function PDVView() {
                       resolveService(selectedRequestForDetails.id);
                       setSelectedRequestForDetails(null);
                     }}
-                    className="w-full py-8 bg-emerald-500 text-white rounded-[2rem] text-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-4"
+                    className={`w-full py-8 text-white rounded-[2rem] text-2xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-4 ${
+                      selectedRequestForDetails.status === 'resolved'
+                        ? 'bg-rose-500 shadow-rose-500/20'
+                        : 'bg-emerald-500 shadow-emerald-500/20'
+                    }`}
                   >
-                    <Check size={32} strokeWidth={4} /> DAR CIENTE
+                    <Check size={32} strokeWidth={4} /> {selectedRequestForDetails.status === 'resolved' ? 'Reabrir Solicitação' : 'Dar Ciente'}
                   </button>
                 </div>
               </div>
