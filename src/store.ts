@@ -3,7 +3,7 @@ import { ProductSchema, SellerSchema } from './lib/schemas';
 import { createId } from './lib/id';
 import { getOrderItemsTotal } from './lib/totals';
 import { postOSMessage } from './lib/osBridge';
-import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, setApiSessionToken } from './lib/api';
+import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, hasApiSessionToken, setApiSessionToken } from './lib/api';
 import type {
   Product, Table, OrderItem, KitchenOrder,
   ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category
@@ -19,6 +19,8 @@ let syncInFlight: Promise<void> | null = null;
 let lastCatalogSyncAt = 0;
 let lastCatalogVersion = '0';
 const CATALOG_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const modifierGroupSaveTimers = new Map<string, number>();
+const MODIFIER_GROUP_SAVE_DEBOUNCE_MS = 550;
 
 const toSessionSeller = (seller: Seller): Seller => ({ ...seller, pin: '' });
 
@@ -51,7 +53,12 @@ const attachModifierGroupsToMenu = (
 
     return {
       ...item,
-      modifierGroups: allGroupIds.map(groupId => groupById[groupId]).filter(Boolean)
+      modifierGroups: allGroupIds
+        .map(groupId => groupById[groupId] ? {
+          ...groupById[groupId],
+          modifiers: (groupById[groupId].modifiers || []).filter(modifier => modifier.status !== 'inactive')
+        } : null)
+        .filter(group => group && group.modifiers.length > 0)
     };
   });
 };
@@ -309,8 +316,13 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       // Restaurar Sessão se existir
       const savedSession = localStorage.getItem(SELLER_SESSION_STORAGE_KEY);
-      if (savedSession) {
+      if (savedSession && hasApiSessionToken()) {
         set({ currentSeller: JSON.parse(savedSession) });
+      } else if (savedSession) {
+        // Sessões antigas da UI não têm o token assinado do BFF. Força novo PIN
+        // para evitar estado "logado" no cliente e bloqueado no backend.
+        clearSellerSession();
+        set({ currentSeller: null });
       }
       const snapshot = await AppApi.init();
       if (snapshot.accessRestricted) {
@@ -837,7 +849,10 @@ export const useStore = create<AppState>((set, get) => ({
         };
 
         set((state) => ({
-          serviceRequests: [newRequest, ...state.serviceRequests]
+          serviceRequests: [
+            newRequest,
+            ...state.serviceRequests.filter(request => request.id !== newRequest.id)
+          ]
         }));
 
         postOSMessage('table_alert', {
@@ -1013,12 +1028,40 @@ export const useStore = create<AppState>((set, get) => ({
     const group = modifierGroups.find(g => g.id === id);
     if (group) {
       const updated = { ...group, ...data };
-      const result = await CatalogApi.saveModifierGroup(updated);
-      lastCatalogVersion = result.catalogVersion;
       set((state) => ({
         modifierGroups: state.modifierGroups.map(g => g.id === id ? updated : g)
       }));
-      await get().syncData({ includeCatalog: true });
+
+      const existingTimer = modifierGroupSaveTimers.get(id);
+      if (existingTimer) window.clearTimeout(existingTimer);
+
+      if (!String(updated.name || '').trim()) return;
+
+      const timer = window.setTimeout(async () => {
+        try {
+          const result = await CatalogApi.saveModifierGroup({
+            ...updated,
+            name: String(updated.name).trim(),
+            minChoices: Number(updated.minChoices) || 0,
+            maxChoices: Math.max(1, Number(updated.maxChoices) || 1),
+            modifiers: (updated.modifiers || [])
+              .filter(modifier => String(modifier.name || '').trim())
+              .map(modifier => ({
+                ...modifier,
+                name: String(modifier.name).trim(),
+                price: Number(modifier.price) || 0,
+              })),
+          });
+          lastCatalogVersion = result.catalogVersion;
+        } catch (error) {
+          console.error("❌ Erro ao salvar grupo de opcionais:", error);
+          get().addNotification("Falha ao salvar opcionais. Tente novamente.", "error");
+        } finally {
+          modifierGroupSaveTimers.delete(id);
+        }
+      }, MODIFIER_GROUP_SAVE_DEBOUNCE_MS);
+
+      modifierGroupSaveTimers.set(id, timer);
     }
   },
 

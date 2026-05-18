@@ -36,6 +36,8 @@ const getSessionToken = () => {
   return localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || '';
 };
 
+export const hasApiSessionToken = () => Boolean(getSessionToken());
+
 export const setApiSessionToken = (token: string | null) => {
   if (typeof localStorage === 'undefined') return;
   if (token) localStorage.setItem(SESSION_TOKEN_STORAGE_KEY, token);

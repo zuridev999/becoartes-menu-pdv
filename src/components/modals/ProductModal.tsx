@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { useStore, type Product, type Modifier } from '../../store';
 import { getImageSrc } from '../../lib/image';
 
@@ -28,6 +28,7 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
   };
 
   const totalPrice = (product.price + selectedModifiers.reduce((acc: number, m: any) => acc + m.price, 0)) * quantity;
+  const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   return (
     <>
@@ -55,24 +56,28 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
                   const isSingle = group.maxChoices === 1;
 
                   return (
-                    <div key={group.id} className="space-y-4">
-                      <div className="flex justify-between items-center sticky top-0 bg-[#0a0a0c]/90 py-2 z-10 backdrop-blur-md">
+                    <div key={group.id} className="space-y-5">
+                      <div className="flex justify-between items-start sticky top-0 bg-[#0a0a0c]/95 py-3 z-10 backdrop-blur-md">
                         <div>
-                          <h4 className="text-sm font-black uppercase tracking-widest text-white">{group.name}</h4>
-                          <p className="text-[10px] text-gray-500 font-bold uppercase">
-                            {isSingle ? 'Escolha 1' : `Escolha de ${group.minChoices} a ${group.maxChoices}`}
+                          <h4 className="text-lg font-black uppercase tracking-[0.12em] text-white leading-tight pr-4">{group.name}</h4>
+                          <p className="mt-2 flex items-center gap-2 text-[10px] text-gray-500 font-black uppercase tracking-[0.16em]">
+                            <span className="w-2 h-2 rounded-full bg-accent shadow-[0_0_16px_rgba(255,210,30,0.8)]" />
+                            {isSingle ? 'Escolha 1 adicional' : `Escolha de ${group.minChoices} a ${group.maxChoices}`}
                           </p>
                         </div>
                         {group.isRequired && (
-                          <span className="bg-primary/20 text-primary px-3 py-1 rounded-lg text-[10px] font-black uppercase">Obrigatório</span>
+                          <span className="bg-accent text-black px-3 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg shadow-accent/20">Obrigatório</span>
                         )}
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-4">
                         {group.modifiers.map(m => {
                           const isSelected = selectedModifiers.find(sm => sm.id === m.id);
                           return (
-                            <button 
+                            <motion.button
                               key={m.id} 
+                              type="button"
+                              animate={isSelected ? { y: 0 } : { y: [0, -5, 0] }}
+                              transition={isSelected ? { duration: 0.15 } : { repeat: Infinity, duration: 1.45, ease: 'easeInOut' }}
                               onClick={() => {
                                 if (isSelected) {
                                   setSelectedModifiers(selectedModifiers.filter(sm => sm.id !== m.id));
@@ -88,13 +93,25 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
                                   }
                                 }
                               }}
-                              className={`p-5 rounded-2xl border text-left transition-all ${isSelected ? 'bg-primary border-primary shadow-lg shadow-primary/20' : 'glass border-white/5 hover:bg-white/5'}`}
+                              className={`w-full min-h-[88px] grid grid-cols-[54px_1fr_auto] items-center gap-5 p-5 rounded-[1.7rem] border text-left transition-all ${
+                                isSelected
+                                  ? 'bg-gradient-to-br from-primary to-[#6f2dff] border-primary text-white shadow-2xl shadow-primary/30'
+                                  : 'bg-gradient-to-br from-accent to-[#ffad1f] border-accent text-black shadow-xl shadow-accent/20 hover:scale-[1.015]'
+                              }`}
                             >
-                              <div className="flex justify-between items-center">
-                                <span className="font-bold text-sm">{m.name}</span>
-                                {m.price > 0 && <span className="text-[10px] font-black opacity-60">+ R$ {m.price.toFixed(2)}</span>}
+                              <div className={`w-[54px] h-[54px] rounded-2xl flex items-center justify-center border text-xl font-black ${
+                                isSelected ? 'bg-white text-primary border-white' : 'bg-black/10 text-black border-black/10'
+                              }`}>
+                                {isSelected ? <Check size={26} strokeWidth={5} /> : '+'}
                               </div>
-                            </button>
+                              <div className="min-w-0">
+                                <span className="block font-black text-xl tracking-tight leading-tight">{m.name}</span>
+                                <span className={`mt-1 block text-[10px] font-black uppercase tracking-[0.16em] ${isSelected ? 'text-white/65' : 'text-black/55'}`}>
+                                  {isSelected ? 'Selecionado, toque para remover' : 'Toque para adicionar'}
+                                </span>
+                              </div>
+                              {m.price > 0 && <span className={`text-xl font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-black'}`}>+ {formatCurrency(m.price)}</span>}
+                            </motion.button>
                           );
                         })}
                       </div>
@@ -128,7 +145,7 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
                   </div>
                   <div className="text-right">
                      <p className="text-[10px] font-black uppercase text-gray-500 mb-1">Total do Item</p>
-                     <p className="text-4xl font-black text-accent tracking-tighter">R$ {totalPrice.toFixed(2)}</p>
+                     <p className="text-4xl font-black text-accent tracking-tighter">{formatCurrency(totalPrice)}</p>
                   </div>
                 </div>
 

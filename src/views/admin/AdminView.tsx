@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp, 
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
-  GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote
+  GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy
 } from 'lucide-react';
 import {
   DndContext,
@@ -89,6 +89,9 @@ const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { l
             type="text" 
             value={isMoney ? formatMoney(value) : value} 
             placeholder={placeholder}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
             onChange={handleInputChange}
             className={`w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 focus:border-primary/40 focus:bg-white/[0.05] outline-none font-bold text-sm transition-all placeholder:text-zinc-700 ${isMoney ? 'text-right pr-12' : ''}`}
           />
@@ -671,6 +674,40 @@ export function AdminView() {
                     </h3>
                   </div>
                   <div className="flex items-center gap-4">
+                    {canAddProduct && menu.some(p => p.id === editingProduct.id) && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const duplicatedProduct = {
+                              ...editingProduct,
+                              id: createId(),
+                              name: `${editingProduct.name} (Cópia)`,
+                              price: typeof editingProduct.price === 'string'
+                                ? parseFloat(String(editingProduct.price).replace(',', '.')) || 0
+                                : Number(editingProduct.price) || 0,
+                              cost: typeof editingProduct.cost === 'string'
+                                ? parseFloat(String(editingProduct.cost).replace(',', '.')) || 0
+                                : Number(editingProduct.cost) || 0,
+                              description: editingProduct.description || '',
+                              image: editingProduct.image || '',
+                              visible: false,
+                              erpCode: '',
+                              remoteStockId: '',
+                            };
+
+                            await addProduct(duplicatedProduct);
+                            setEditingProduct(duplicatedProduct);
+                            addNotification('Produto duplicado como oculto. Revise nome, estoque e publique quando estiver pronto.', 'info');
+                          } catch (err: any) {
+                            console.error('Erro ao duplicar produto:', err);
+                            addNotification(`Erro ao duplicar: ${err.message}`, 'error');
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-white/5 text-zinc-300 hover:bg-primary/10 hover:text-primary"
+                      >
+                        <Copy size={14}/> Duplicar
+                      </button>
+                    )}
                     {canToggleVisibility && (
                       <button 
                         onClick={async () => {
@@ -918,9 +955,12 @@ export function AdminView() {
                       <h4 className="text-xl font-black mb-8 flex items-center gap-3"><Plus size={20} className="text-primary"/> Opções de Escolha</h4>
                       <div className="space-y-3">
                         {group.modifiers.map((m, idx) => (
-                          <div key={m.id || idx} className="flex items-center gap-4 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all">
+                          <div key={m.id || idx} className={`flex items-center gap-4 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all ${m.status === 'inactive' ? 'opacity-45 grayscale' : ''}`}>
                             <input 
                               value={m.name} 
+                              autoComplete="off"
+                              autoCorrect="off"
+                              spellCheck={false}
                               onChange={(e) => {
                                 const newMods = [...group.modifiers];
                                 newMods[idx] = { ...m, name: e.target.value };
@@ -932,6 +972,7 @@ export function AdminView() {
                               <span className="text-[10px] font-black text-gray-500 uppercase">R$</span>
                               <input 
                                 type="number"
+                                autoComplete="off"
                                 value={m.price} 
                                 onChange={(e) => {
                                   const newMods = [...group.modifiers];
@@ -941,6 +982,22 @@ export function AdminView() {
                                 className="w-20 bg-transparent outline-none font-bold text-sm text-right"
                               />
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newMods = [...group.modifiers];
+                                newMods[idx] = { ...m, status: m.status === 'inactive' ? 'active' : 'inactive' };
+                                updateModifierGroup(group.id, { modifiers: newMods });
+                              }}
+                              title={m.status === 'inactive' ? 'Mostrar no tablet' : 'Ocultar do tablet'}
+                              className={`p-2 rounded-lg transition-all ${
+                                m.status === 'inactive'
+                                  ? 'text-gray-500 hover:bg-white/10 hover:text-white'
+                                  : 'text-emerald-400 hover:bg-emerald-500/10'
+                              }`}
+                            >
+                              {m.status === 'inactive' ? <EyeOff size={16}/> : <Eye size={16}/>}
+                            </button>
                             <button onClick={() => {
                               const newMods = group.modifiers.filter((_, i) => i !== idx);
                               updateModifierGroup(group.id, { modifiers: newMods });

@@ -476,7 +476,7 @@ const getModifierData = async () => {
       0 as link_sort_order
     FROM modifiers m
     JOIN modifier_groups mg ON m.group_id = mg.id
-    WHERE mg.status = 'active' AND m.status = 'active'
+    WHERE mg.status = 'active'
 
     UNION ALL
 
@@ -1335,30 +1335,41 @@ const updateOrderStatus = async ({ orderId, status }) => {
 
   const itemsRes = await db.execute({
     sql: `
-      SELECT oi.quantity, COALESCE(m.name, 'Item') as name
+      SELECT oi.quantity, COALESCE(m.name, 'Item') as name, oi.selected_modifiers
       FROM order_items oi
       LEFT JOIN menu m ON oi.product_id = m.id
       WHERE oi.order_id = ?
     `,
     args: [orderId],
   });
-  const itemsList = itemsRes.rows.map((item) => `${item.quantity}x ${item.name}`).join(', ');
-  const id = createId();
+  const itemsList = itemsRes.rows.map((item) => {
+    const modifiers = parseJsonArray(item.selected_modifiers)
+      .map((modifier) => modifier?.name)
+      .filter(Boolean);
+    return `${item.quantity}x ${item.name}${modifiers.length ? ` (+ ${modifiers.join(', ')})` : ''}`;
+  }).join(', ');
+  const id = `order_ready_${orderId}`;
 
   await db.execute({
-    sql: "INSERT INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
+    sql: "INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
     args: [id, order.table_id, 'order_ready', 'pending', itemsList],
   });
 
+  const requestRes = await db.execute({
+    sql: "SELECT id, table_id, type, status, message, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at FROM service_requests WHERE id = ? LIMIT 1",
+    args: [id],
+  });
+  const request = requestRes.rows[0];
+
   return {
     request: {
-      id,
-      tableId: order.table_id,
+      id: request?.id || id,
+      tableId: request?.table_id || order.table_id,
       tableNumber: Number(order.tableNumber || 0),
       type: 'order_ready',
-      message: itemsList,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
+      message: request?.message || itemsList,
+      status: request?.status || 'pending',
+      createdAt: request?.created_at || new Date().toISOString(),
     },
   };
 };

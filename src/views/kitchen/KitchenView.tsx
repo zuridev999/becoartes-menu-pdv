@@ -151,9 +151,25 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
         <p className="text-sm font-black uppercase tracking-[0.3em] mb-4 opacity-40">{order.items.length} Itens no Pedido</p>
         <div className={`mt-2 ${order.items.length > 5 ? 'grid grid-cols-2 gap-x-8 gap-y-3' : 'space-y-3'}`}>
           {order.items.slice(0, 10).map((item: any, idx: number) => (
-            <div key={idx} className="flex gap-3 items-center min-w-0">
-              <span className="font-black text-2xl text-black shrink-0">{item.quantity}X</span>
-              <span className="font-black text-lg tracking-tighter truncate leading-none">{item.name}</span>
+            <div key={idx} className="flex gap-3 items-start min-w-0">
+              <span className="font-black text-2xl text-black shrink-0 leading-none">{item.quantity}X</span>
+              <div className="min-w-0 flex-1">
+                <span className="font-black text-lg tracking-tighter truncate leading-none block">{item.name}</span>
+                {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {item.selectedModifiers.slice(0, 3).map((modifier: any, modifierIdx: number) => (
+                      <span key={modifierIdx} className="px-2 py-1 rounded-lg bg-black text-white text-[10px] font-black uppercase tracking-widest leading-none">
+                        + {modifier.name}
+                      </span>
+                    ))}
+                    {item.selectedModifiers.length > 3 && (
+                      <span className="px-2 py-1 rounded-lg bg-black/10 text-black text-[10px] font-black uppercase tracking-widest leading-none">
+                        +{item.selectedModifiers.length - 3}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
           {order.items.length > 10 && (
