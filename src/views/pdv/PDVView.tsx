@@ -32,7 +32,8 @@ export function PDVView() {
     serviceRequests,
     resolveService,
     login,
-    syncData
+    syncData,
+    updateTableStatus
   } = useStore();
 
   const [pin, setPin] = useState('');
@@ -576,12 +577,24 @@ export function PDVView() {
                     >
                       ADICIONAR ITENS
                     </button>
-                    <button 
-                      onClick={() => setShowCheckout(true)}
-                      className="btn-beco btn-beco-purple py-6 rounded-2xl font-black text-sm"
-                    >
-                      FINALIZAR CONTA
-                    </button>
+                    {getOrderItemsTotal(managedTable?.orders || []) === 0 ? (
+                      <button 
+                        onClick={() => {
+                          updateTableStatus(managedTable.id, 'available');
+                          setSelectedTable(null);
+                        }}
+                        className="btn-beco bg-rose-500/20 text-rose-500 hover:bg-rose-500/30 py-6 rounded-2xl font-black text-sm"
+                      >
+                        LIMPAR MESA (R$ 0,00)
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => setShowCheckout(true)}
+                        className="btn-beco btn-beco-purple py-6 rounded-2xl font-black text-sm"
+                      >
+                        FINALIZAR CONTA
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
