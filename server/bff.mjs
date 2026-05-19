@@ -1179,6 +1179,20 @@ const resolveOSContext = async () => {
   return { empresaId, userId, slug: OS_TENANT_SLUG };
 };
 
+const resolveCashResponsibleId = async (session) => {
+  const sessionId = session?.id || '';
+  if (sessionId) {
+    const userRes = await db.execute({
+      sql: "SELECT id FROM users WHERE empresa_id = ? AND id = ? LIMIT 1",
+      args: [OS_EMPRESA_ID, sessionId],
+    });
+    if (userRes.rows[0]?.id) return userRes.rows[0].id;
+  }
+
+  const { userId } = await resolveOSContext();
+  return userId;
+};
+
 const createOSNotification = async ({ empresaId, title, message, type = 'info', link = null }) => {
   await db.execute({
     sql: "INSERT INTO notificacoes (id, empresa_id, usuario_id, titulo, mensagem, tipo, lida, link, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1783,6 +1797,7 @@ const openCash = async ({ openingBalance, notes }, session) => {
 
   const now = osTimestamp();
   const normalizedOpeningBalance = requireNumber(openingBalance, 'openingBalance');
+  const responsibleId = await resolveCashResponsibleId(session);
 
   if (existingCash) {
     await db.execute({
@@ -1793,7 +1808,7 @@ const openCash = async ({ openingBalance, notes }, session) => {
       `,
       args: [
         normalizedOpeningBalance,
-        session.id,
+        responsibleId,
         notes || existingCash.observacoes || '',
         now,
         existingCash.id,
@@ -1811,7 +1826,7 @@ const openCash = async ({ openingBalance, notes }, session) => {
         OS_EMPRESA_ID,
         businessDate,
         normalizedOpeningBalance,
-        session.id,
+        responsibleId,
         notes || '',
         now,
         now,
