@@ -1773,38 +1773,56 @@ const openCash = async ({ openingBalance, notes }, session) => {
   requireSession(session);
   const businessDate = getBusinessDate();
   const existing = await db.execute({
-    sql: `SELECT id, status FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? LIMIT 1`,
+    sql: `SELECT id, status, observacoes FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? LIMIT 1`,
     args: [OS_EMPRESA_ID, businessDate],
   });
-  if (existing.rows[0]) {
-    throw new Error(existing.rows[0].status === 'Aberto'
-      ? 'O caixa de hoje já está aberto.'
-      : 'Já existe um caixa registrado para hoje.');
+  const existingCash = existing.rows[0];
+  if (existingCash?.status === 'Aberto') {
+    throw new Error('O caixa de hoje já está aberto.');
   }
 
   const now = osTimestamp();
-  await db.execute({
-    sql: `
-      INSERT INTO ${CASH_TABLE}
-        (id, empresa_id, data, saldo_inicial, responsavel_id, observacoes, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'Aberto', ?, ?)
-    `,
-    args: [
-      createId(),
-      OS_EMPRESA_ID,
-      businessDate,
-      requireNumber(openingBalance, 'openingBalance'),
-      session.id,
-      notes || '',
-      now,
-      now,
-    ],
-  });
+  const normalizedOpeningBalance = requireNumber(openingBalance, 'openingBalance');
+
+  if (existingCash) {
+    await db.execute({
+      sql: `
+        UPDATE ${CASH_TABLE}
+        SET saldo_inicial = ?, valor_caixa_final = 0, responsavel_id = ?, observacoes = ?, status = 'Aberto', updated_at = ?
+        WHERE id = ?
+      `,
+      args: [
+        normalizedOpeningBalance,
+        session.id,
+        notes || existingCash.observacoes || '',
+        now,
+        existingCash.id,
+      ],
+    });
+  } else {
+    await db.execute({
+      sql: `
+        INSERT INTO ${CASH_TABLE}
+          (id, empresa_id, data, saldo_inicial, responsavel_id, observacoes, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'Aberto', ?, ?)
+      `,
+      args: [
+        createId(),
+        OS_EMPRESA_ID,
+        businessDate,
+        normalizedOpeningBalance,
+        session.id,
+        notes || '',
+        now,
+        now,
+      ],
+    });
+  }
 
   await addAuditLog({
     id: createId(),
     action: 'cash_opened',
-    details: JSON.stringify({ openingBalance: Number(openingBalance), sandbox: CASH_SANDBOX_MODE }),
+    details: JSON.stringify({ openingBalance: normalizedOpeningBalance, reopened: Boolean(existingCash), sandbox: CASH_SANDBOX_MODE }),
     origin: 'pdv',
     authorName: session.name,
     timestamp: new Date().toISOString(),

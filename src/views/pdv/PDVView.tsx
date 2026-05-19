@@ -60,6 +60,7 @@ export function PDVView() {
   const [cashDialog, setCashDialog] = useState<'open' | 'close' | null>(null);
   const [cashValue, setCashValue] = useState('');
   const [cashNotes, setCashNotes] = useState('');
+  const [cashError, setCashError] = useState('');
   const [isCashSubmitting, setIsCashSubmitting] = useState(false);
   const [isEmbedded, setIsEmbedded] = useState(false);
 
@@ -252,6 +253,7 @@ export function PDVView() {
 
   const submitCashDialog = async () => {
     const value = parseMoneyValue(cashValue);
+    setCashError('');
     setIsCashSubmitting(true);
     try {
       if (cashDialog === 'open') await openCash(value, cashNotes);
@@ -260,6 +262,8 @@ export function PDVView() {
       setCashValue('');
       setCashNotes('');
       await syncData({ includeCatalog: false });
+    } catch (error) {
+      setCashError(error instanceof Error ? error.message : 'Falha ao processar caixa.');
     } finally {
       setIsCashSubmitting(false);
     }
@@ -887,6 +891,12 @@ export function PDVView() {
                   <X size={22} />
                 </button>
               </div>
+
+              {cashError && (
+                <div className="mb-5 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-5 py-4 text-sm font-black text-rose-200">
+                  {cashError}
+                </div>
+              )}
 
               <div className="space-y-5">
                 <div>
