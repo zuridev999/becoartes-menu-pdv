@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { Clock, CheckCircle2, X, AlertCircle, ChefHat, LockKeyhole, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useStore } from '../../store';
+import { useStore, type Seller } from '../../store';
+import { AppApi, setApiSessionToken } from '../../lib/api';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
 
 const KITCHEN_SYNC_INTERVAL_MS = 5000;
@@ -26,7 +27,27 @@ function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
         onUnlock();
         return;
       }
+      const setupResult = await AppApi.validateTabletSetupPin(pin);
+      if (setupResult.valid) {
+        setApiSessionToken(setupResult.sessionToken || null);
+        const kitchenSeller: Seller = setupResult.seller || {
+          id: 'kitchen-setup',
+          name: 'Cozinha',
+          nickname: 'Cozinha',
+          pin: '',
+          status: 'active',
+          role: 'atendente',
+          permission: 'operator',
+        };
+        useStore.setState({ currentSeller: kitchenSeller });
+        setPin('');
+        onUnlock();
+        return;
+      }
       setError('PIN não autorizado nesta rede.');
+      setPin('');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'PIN não autorizado nesta rede.');
       setPin('');
     } finally {
       setIsSubmitting(false);
