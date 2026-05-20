@@ -29,6 +29,15 @@ const clearSellerSession = () => {
   setApiSessionToken(null);
 };
 
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return '';
+};
+
+const isSessionExpiredError = (error: unknown) => /sess[aã]o obrigat[oó]ria|session/i.test(getErrorMessage(error));
+const isNetworkError = (error: unknown) => /fetch failed|network|timeout|etimedout|econnreset/i.test(getErrorMessage(error));
+
 const persistSellerSession = (seller: Seller) => {
   const sessionSeller = toSessionSeller(seller);
   localStorage.setItem(SELLER_SESSION_STORAGE_KEY, JSON.stringify(sessionSeller));
@@ -732,7 +741,7 @@ export const useStore = create<AppState>((set, get) => ({
 
     const newStatus = request.status === 'resolved' ? 'pending' : 'resolved';
 
-    if (request.type === 'new_order') {
+    try {
       await OpsApi.resolveServiceRequest({
         requestId,
         tableId: request.tableId,
@@ -743,25 +752,23 @@ export const useStore = create<AppState>((set, get) => ({
 
       set((state) => ({
         serviceRequests: state.serviceRequests.map(r =>
-          (r.id === requestId || (r.tableId === request.tableId && r.type === 'new_order' && r.message === request.message && r.status === 'pending'))
+          request.type === 'new_order'
+            ? (r.id === requestId || (r.tableId === request.tableId && r.type === 'new_order' && r.message === request.message && r.status === 'pending'))
             ? { ...r, status: newStatus }
             : r
+            : r.id === requestId ? { ...r, status: newStatus } : r
         )
       }));
-    } else {
-      await OpsApi.resolveServiceRequest({
-        requestId,
-        tableId: request.tableId,
-        type: request.type,
-        message: request.message,
-        currentStatus: request.status
-      });
-
-      set((state) => ({
-        serviceRequests: state.serviceRequests.map(r =>
-          r.id === requestId ? { ...r, status: newStatus } : r
-        )
-      }));
+    } catch (error) {
+      console.error("Erro ao atualizar solicitação:", error);
+      if (isSessionExpiredError(error)) {
+        clearSellerSession();
+        set({ currentSeller: null });
+        get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+        return;
+      }
+      const message = getErrorMessage(error);
+      get().addNotification(message || "Não foi possível dar ciente. Tente novamente.", "error");
     }
   },
 
@@ -928,7 +935,20 @@ export const useStore = create<AppState>((set, get) => ({
       return true;
     } catch (error) {
       console.error("Erro ao fechar conta:", error);
-      get().addNotification("Erro ao lançar conta. Tente novamente.", "error");
+      if (isSessionExpiredError(error)) {
+        clearSellerSession();
+        set({ currentSeller: null });
+        get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+        return false;
+      }
+
+      if (isNetworkError(error)) {
+        get().addNotification("Banco demorou para responder. Atualize a mesa e tente novamente.", "error");
+        return false;
+      }
+
+      const message = getErrorMessage(error);
+      get().addNotification(message ? `Erro ao lançar conta: ${message}` : "Erro ao lançar conta. Tente novamente.", "error");
       return false;
     }
   },
