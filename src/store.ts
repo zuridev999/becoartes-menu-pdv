@@ -739,7 +739,14 @@ export const useStore = create<AppState>((set, get) => ({
     const request = get().serviceRequests.find(r => r.id === requestId);
     if (!request) return;
 
-    const newStatus = request.status === 'resolved' ? 'pending' : 'resolved';
+    if (!hasApiSessionToken()) {
+      clearSellerSession();
+      set({ currentSeller: null });
+      get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+      return;
+    }
+
+    const newStatus = 'resolved';
 
     try {
       await OpsApi.resolveServiceRequest({
@@ -903,6 +910,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   closeBill: async (data) => {
+    if (!hasApiSessionToken()) {
+      clearSellerSession();
+      set({ currentSeller: null });
+      get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+      return false;
+    }
+
     try {
       const closeResult = await OperationalApi.closeBill(data);
 

@@ -1715,7 +1715,7 @@ const createServiceRequest = async ({ id, tableId, type, message = '' }) => {
 };
 
 const resolveServiceRequest = async ({ requestId, tableId, type, message, currentStatus }) => {
-  const newStatus = currentStatus === 'resolved' ? 'pending' : 'resolved';
+  const newStatus = 'resolved';
   if (type === 'new_order') {
     await db.execute({
       sql: "UPDATE service_requests SET status = ? WHERE (id = ? OR (table_id = ? AND type = 'new_order' AND message = ? AND status = 'pending'))",

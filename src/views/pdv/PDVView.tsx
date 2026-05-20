@@ -241,6 +241,7 @@ export function PDVView() {
   }, { credit: 0, debit: 0, pix: 0, cash: 0 });
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
   const canCancelTableItem = can(currentSeller, 'cancelTableItem');
+  const canCloseBill = can(currentSeller, 'closeBill');
   const isCashOpen = Boolean(cashState?.isOpen);
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
 
@@ -677,9 +678,14 @@ export function PDVView() {
                         R$ {getOrderItemsTotal(managedTable?.orders || []).toFixed(2)}
                       </p>
                     </div>
-                    <button 
-                      onClick={() => setShowCheckout(true)}
-                      className="glass px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest text-amber-400 border-amber-500/20 hover:bg-amber-500/10"
+                    <button
+                      onClick={() => canCloseBill && setShowCheckout(true)}
+                      disabled={!canCloseBill}
+                      className={`glass px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest border-amber-500/20 ${
+                        canCloseBill
+                          ? 'text-amber-400 hover:bg-amber-500/10'
+                          : 'text-zinc-600 opacity-50 cursor-not-allowed'
+                      }`}
                     >
                       Solicitar Conta
                     </button>
@@ -703,9 +709,14 @@ export function PDVView() {
                         LIMPAR MESA (R$ 0,00)
                       </button>
                     ) : (
-                      <button 
-                        onClick={() => setShowCheckout(true)}
-                        className="btn-beco btn-beco-purple py-6 rounded-2xl font-black text-sm"
+                      <button
+                        onClick={() => canCloseBill && setShowCheckout(true)}
+                        disabled={!canCloseBill}
+                        className={`btn-beco py-6 rounded-2xl font-black text-sm ${
+                          canCloseBill
+                            ? 'btn-beco-purple'
+                            : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                        }`}
                       >
                         FINALIZAR CONTA
                       </button>
