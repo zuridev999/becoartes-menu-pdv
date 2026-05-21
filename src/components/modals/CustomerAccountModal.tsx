@@ -2,6 +2,13 @@ import { motion } from 'framer-motion';
 import { X, FileText, Receipt, LayoutDashboard } from 'lucide-react';
 import { useStore } from '../../store';
 
+const MAX_SERVICE_FEE_PERCENT = 13;
+const clampServiceFeePercent = (value: number) => {
+  if (!Number.isFinite(value)) return MAX_SERVICE_FEE_PERCENT;
+  return Math.min(MAX_SERVICE_FEE_PERCENT, Math.max(0, value));
+};
+const formatPercent = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+
 export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
   const { currentTableId, tables, settings } = useStore();
   const table = tables.find(t => t.id === currentTableId);
@@ -13,7 +20,8 @@ export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
     return acc + ((o.price + modifiersTotal) * o.quantity);
   }, 0);
 
-  const serviceFee = subtotal * (settings.serviceTax / 100);
+  const serviceFeePercent = clampServiceFeePercent(Number(settings.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
+  const serviceFee = subtotal * (serviceFeePercent / 100);
   const total = subtotal + serviceFee;
 
   return (
@@ -77,7 +85,7 @@ export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
               <span>R$ {subtotal.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-center text-gray-500 font-black uppercase tracking-[0.2em] text-sm">
-              <span>Taxa de serviço</span>
+              <span>Taxa de serviço ({formatPercent(serviceFeePercent)}%)</span>
               <span>R$ {serviceFee.toFixed(2)}</span>
             </div>
             <div className="pt-6 border-t border-white/10 flex justify-between items-center">

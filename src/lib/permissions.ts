@@ -10,6 +10,8 @@ export type PermissionKey =
   | 'deleteProduct'
   | 'toggleProductVisibility'
   | 'cancelTableItem'
+  | 'applyDiscount'
+  | 'editServiceFee'
   | 'closeBill';
 
 type PermissionProfile = 'admin' | 'manager' | 'operator';
@@ -33,6 +35,8 @@ const permissionsByProfile: Record<PermissionProfile, Record<PermissionKey, bool
     deleteProduct: true,
     toggleProductVisibility: true,
     cancelTableItem: true,
+    applyDiscount: true,
+    editServiceFee: true,
     closeBill: true,
   },
   manager: {
@@ -45,6 +49,8 @@ const permissionsByProfile: Record<PermissionProfile, Record<PermissionKey, bool
     deleteProduct: true,
     toggleProductVisibility: true,
     cancelTableItem: true,
+    applyDiscount: true,
+    editServiceFee: true,
     closeBill: true,
   },
   operator: {
@@ -57,6 +63,8 @@ const permissionsByProfile: Record<PermissionProfile, Record<PermissionKey, bool
     deleteProduct: false,
     toggleProductVisibility: true,
     cancelTableItem: false,
+    applyDiscount: false,
+    editServiceFee: true,
     closeBill: true,
   },
 };

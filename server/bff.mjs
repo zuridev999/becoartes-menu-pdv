@@ -142,6 +142,8 @@ const permissionsByProfile = {
     deleteProduct: true,
     toggleProductVisibility: true,
     cancelTableItem: true,
+    applyDiscount: true,
+    editServiceFee: true,
     closeBill: true,
   },
   manager: {
@@ -154,6 +156,8 @@ const permissionsByProfile = {
     deleteProduct: true,
     toggleProductVisibility: true,
     cancelTableItem: true,
+    applyDiscount: true,
+    editServiceFee: true,
     closeBill: true,
   },
   operator: {
@@ -166,6 +170,8 @@ const permissionsByProfile = {
     deleteProduct: false,
     toggleProductVisibility: true,
     cancelTableItem: false,
+    applyDiscount: false,
+    editServiceFee: true,
     closeBill: true,
   },
 };
@@ -456,6 +462,12 @@ const centsToMoney = (cents) => Math.round(Number(cents || 0)) / 100;
 const formatMoneyBRL = (value) => (
   centsToMoney(moneyToCents(value)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 );
+
+const MAX_SERVICE_FEE_PERCENT = 13;
+const clampServiceFeePercent = (value) => {
+  if (!Number.isFinite(Number(value))) return MAX_SERVICE_FEE_PERCENT;
+  return Math.min(MAX_SERVICE_FEE_PERCENT, Math.max(0, Number(value)));
+};
 
 const getCatalogVersion = async () => {
   const res = await db.execute("SELECT value FROM app_settings WHERE key = 'catalog_version' LIMIT 1");
@@ -2131,8 +2143,49 @@ const syncBeveragesFromInventory = async () => {
   return { catalogVersion: await bumpCatalogVersion(), count: stockRes.rows.length };
 };
 
-const closeBillWithInventorySync = async (data) => {
+const closeBillWithInventorySync = async (data, session = null) => {
   const tableId = requireString(data.tableId, 'tableId');
+  const settings = await getSettings();
+  const subtotalCents = moneyToCents(data.subtotal || 0, 'subtotal');
+  const serviceFeeCents = moneyToCents(data.serviceFee || 0, 'serviceFee');
+  const discountCents = moneyToCents(data.discount || 0, 'discount');
+  const totalCents = moneyToCents(data.total || 0, 'total');
+
+  if (subtotalCents < 0) throw new Error('Subtotal inválido.');
+  if (serviceFeeCents < 0) throw new Error('Taxa de serviço não pode ser negativa.');
+  if (discountCents < 0) throw new Error('Desconto não pode ser negativo.');
+  if (totalCents < 0) throw new Error('Total da conta não pode ser negativo.');
+
+  const defaultServiceFeePercent = clampServiceFeePercent(settings?.serviceTax ?? MAX_SERVICE_FEE_PERCENT);
+  const defaultServiceFeeCents = Math.round(subtotalCents * (defaultServiceFeePercent / 100));
+  const maxServiceFeeCents = Math.round(subtotalCents * (MAX_SERVICE_FEE_PERCENT / 100));
+
+  if (serviceFeeCents > maxServiceFeeCents) {
+    throw new Error(`Taxa de serviço não pode passar de ${MAX_SERVICE_FEE_PERCENT}%.`);
+  }
+
+  if (serviceFeeCents !== defaultServiceFeeCents) {
+    requirePermission(session, 'editServiceFee');
+  }
+
+  if (discountCents > 0) {
+    requirePermission(session, 'applyDiscount');
+  }
+
+  const expectedTotalCents = subtotalCents + serviceFeeCents - discountCents;
+  if (expectedTotalCents < 0) {
+    throw new Error('Desconto não pode ser maior que subtotal mais taxa de serviço.');
+  }
+
+  if (totalCents !== expectedTotalCents) {
+    throw new Error('Total da conta não confere com subtotal, taxa de serviço e desconto.');
+  }
+
+  data.subtotal = centsToMoney(subtotalCents);
+  data.serviceFee = centsToMoney(serviceFeeCents);
+  data.discount = centsToMoney(discountCents);
+  data.total = centsToMoney(totalCents);
+
   const activeOrderItems = await getActiveOrderItemsForTable(tableId);
   const orderIds = Array.from(new Set(activeOrderItems.map((item) => item.orderId))).sort();
   const integrationId = `pdv_close_${tableId}_${orderIds.join('_') || 'no_orders'}`;
@@ -2518,7 +2571,7 @@ const handlers = {
   'POST /api/orders/send-to-kitchen': async (body) => sendToKitchen(body),
   'POST /api/orders/status': async (body) => updateOrderStatus(body),
   'POST /api/order-items/delete': async (body) => deleteOrderItem(body),
-  'POST /api/bills/close': async (body) => closeBillWithInventorySync(body),
+  'POST /api/bills/close': async (body, context) => closeBillWithInventorySync(body, context.session),
   'POST /api/catalog/category': async (body) => upsertCategory(body),
   'POST /api/catalog/category/delete': async (body) => deleteCategory(body),
   'POST /api/catalog/category/visibility': async (body) => toggleCategoryVisibility(body),
