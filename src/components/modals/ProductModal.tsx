@@ -37,28 +37,40 @@ export function ProductModal({
 
   const totalPrice = (product.price + selectedModifiers.reduce((acc: number, m: any) => acc + m.price, 0)) * quantity;
   const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const modalShellClass = tabletLandscape
+    ? 'p-3 sm:p-4'
+    : 'p-12';
+  const modalCardClass = tabletLandscape
+    ? 'w-[min(1120px,calc(100vw-24px))] max-h-[calc(100dvh-24px)] min-h-[min(560px,calc(100svh-24px))] flex-col min-[760px]:flex-row'
+    : 'w-full max-w-6xl h-[85vh]';
+  const mediaPanelClass = tabletLandscape
+    ? 'block h-[34%] min-h-[170px] max-h-[260px] w-full min-[760px]:h-auto min-[760px]:max-h-none min-[760px]:w-[50%] min-[760px]:min-w-[50%]'
+    : 'w-1/2 hidden lg:block';
+  const contentPanelClass = tabletLandscape
+    ? 'flex-1 min-h-0 min-w-0 p-5 sm:p-6 min-[900px]:p-8'
+    : 'w-full lg:w-1/2 p-12';
 
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[700]" />
-      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`fixed inset-0 z-[750] flex items-center justify-center pointer-events-none font-['Outfit'] ${tabletLandscape ? 'p-4 md:p-8' : 'p-12'}`}>
-        <div className={`glass-card w-full flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${tabletLandscape ? 'max-w-[1120px] h-[86vh]' : 'max-w-6xl h-[85vh]'}`}>
-          <div className={`relative ${tabletLandscape ? 'block w-[52%] min-w-[52%]' : 'w-1/2 hidden lg:block'}`}>
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`fixed inset-0 z-[750] flex items-center justify-center pointer-events-none font-['Outfit'] ${modalShellClass}`}>
+        <div className={`glass-card flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
+          <div className={`relative shrink-0 overflow-hidden ${mediaPanelClass}`}>
              <img src={getImageSrc(product.image)} className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
-             <div className={tabletLandscape ? 'absolute bottom-10 left-10 right-10' : 'absolute bottom-16 left-16'}>
+             <div className={tabletLandscape ? 'absolute bottom-5 left-5 right-5 min-[900px]:bottom-10 min-[900px]:left-10 min-[900px]:right-10' : 'absolute bottom-16 left-16'}>
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2 block">{product.categoryName}</span>
-                <h2 className={`${tabletLandscape ? 'text-5xl' : 'text-7xl'} font-black tracking-tighter italic text-white mb-4 leading-none`}>{product.name}</h2>
-                <p className={`${tabletLandscape ? 'text-base max-w-sm' : 'text-xl max-w-md'} text-gray-400 font-medium italic`}>"{product.description || 'Uma obra prima gastronômica curada especialmente para o Becoartes.'}"</p>
+                <h2 className={`${tabletLandscape ? 'text-3xl min-[900px]:text-5xl' : 'text-7xl'} font-black tracking-tighter italic text-white mb-2 min-[900px]:mb-4 leading-none`}>{product.name}</h2>
+                <p className={`${tabletLandscape ? 'hidden min-[900px]:block text-base max-w-sm' : 'text-xl max-w-md'} text-gray-400 font-medium italic`}>"{product.description || 'Uma obra prima gastronômica curada especialmente para o Becoartes.'}"</p>
              </div>
           </div>
-          <div className={`${tabletLandscape ? 'w-[48%] p-8' : 'w-full lg:w-1/2 p-12'} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
+          <div className={`${contentPanelClass} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
              <button onClick={onClose} className={`${tabletLandscape ? 'top-5 right-5 p-3' : 'top-8 right-8 p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
              <div className="flex justify-between items-center mb-8 lg:hidden">
                 <h2 className="text-4xl font-black italic">{product.name}</h2>
              </div>
 
-             <div className={`flex-1 overflow-y-auto custom-scrollbar pr-4 ${tabletLandscape ? 'space-y-6' : 'space-y-10'}`}>
+             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-3 min-[900px]:pr-4 ${tabletLandscape ? 'space-y-4 min-[900px]:space-y-6' : 'space-y-10'}`}>
                 {product.modifierGroups?.map(group => {
                   const selectedInGroup = selectedModifiers.filter(m => group.modifiers.some(gm => gm.id === m.id));
                   const isSingle = group.maxChoices === 1;
@@ -144,7 +156,7 @@ export function ProductModal({
                </div>
              )}
 
-             <div className={`${tabletLandscape ? 'mt-5 pt-5 space-y-4' : 'mt-8 pt-8 space-y-6'} border-t border-white/10`}>
+             <div className={`${tabletLandscape ? 'mt-4 pt-4 space-y-3 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-8 pt-8 space-y-6'} border-t border-white/10 shrink-0`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 glass p-2 rounded-2xl border-white/5">
                      <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-10 flex items-center justify-center font-black text-xl hover:text-primary transition-all">-</button>
@@ -159,7 +171,7 @@ export function ProductModal({
 
                 <button 
                 onClick={handleAdd}
-                className={`${tabletLandscape ? 'py-6 text-base' : 'py-8 text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4`}
+                className={`${tabletLandscape ? 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-8 text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4`}
               >
                 ADICIONAR AO PEDIDO
               </button>

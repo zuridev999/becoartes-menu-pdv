@@ -38,7 +38,7 @@ export function TabletView() {
   const viewMode = settings.tablet.viewMode;
 
   return (
-    <div className="flex h-screen bg-[#0a0a0c] text-white font-['Outfit'] overflow-hidden relative">
+    <div className="flex h-[100dvh] min-h-[100svh] bg-[#0a0a0c] text-white font-['Outfit'] overflow-hidden relative">
       {/* Header */}
       <div className="fixed top-0 left-0 right-0 h-24 glass border-b border-white/5 z-[100] flex items-center justify-between px-12 backdrop-blur-3xl bg-black/40">
         <div className="flex items-center gap-12">
