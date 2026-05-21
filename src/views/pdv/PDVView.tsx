@@ -315,7 +315,7 @@ export function PDVView() {
 
   return (
     <div 
-      className="min-h-screen bg-[#09090b] text-white font-['Outfit'] p-8 relative overflow-hidden"
+      className="min-h-screen bg-[#09090b] text-white font-['Outfit'] p-4 sm:p-6 xl:p-8 relative overflow-x-hidden overflow-y-auto"
       onClick={() => {
         if (hasPanicAlert) {
           setHasPanicAlert(false);
@@ -343,12 +343,12 @@ export function PDVView() {
       </AnimatePresence>
 
       {/* HEADER */}
-      <header className="flex justify-between items-center mb-12">
-        <div>
-          <h1 className="text-4xl font-black italic tracking-tighter flex items-center gap-4">
+      <header className="flex flex-col xl:flex-row xl:justify-between xl:items-center gap-6 mb-8 xl:mb-12">
+        <div className="min-w-0">
+          <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter flex flex-wrap items-center gap-x-3 gap-y-1 leading-none">
             CENTRAL <span className="text-primary">OPERACIONAL</span>
           </h1>
-          <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest mt-1">Becoartes • PDV Management</p>
+          <p className="text-zinc-500 text-xs sm:text-sm font-bold uppercase tracking-[0.2em] sm:tracking-widest mt-2">Becoartes • PDV Management</p>
           <p className="mt-4 text-lg font-black tracking-tight text-white">
             Bem-vindo, <span className="text-primary">{currentSeller.nickname || currentSeller.name}</span>
           </p>
@@ -361,14 +361,14 @@ export function PDVView() {
           </div>
         </div>
 
-        <div className="flex gap-6">
+        <div className="flex flex-wrap gap-3 sm:gap-4 xl:gap-6 w-full xl:w-auto">
           {canViewSalesTotals && (
-            <div className="glass-card px-8 py-4 flex flex-col items-end border-white/5">
+            <div className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[150px] xl:flex-none">
               <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Vendas Hoje</span>
               <span className="text-2xl font-black text-emerald-400">R$ {totalToday.toFixed(2)}</span>
             </div>
           )}
-          <div className="glass-card px-8 py-4 flex flex-col items-end border-white/5">
+          <div className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[130px] xl:flex-none">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Mesas Ativas</span>
             <span className="text-2xl font-black text-purple-400">{activeTablesCount}</span>
           </div>
@@ -410,7 +410,7 @@ export function PDVView() {
               <Settings size={24} />
             </button>
           )}
-          <div className="glass-card px-5 py-4 flex flex-col items-end border-white/5">
+          <div className="glass-card px-5 py-4 flex flex-col items-start xl:items-end border-white/5 min-w-[160px]">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Perfil</span>
             <span className="text-sm font-black text-white">{currentSeller.name}</span>
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mt-1">{getPermissionLabel(currentSeller)}</span>
@@ -435,7 +435,7 @@ export function PDVView() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="absolute inset-x-8 top-64 bottom-8 z-30 flex items-center justify-center pointer-events-none"
+          className="absolute inset-x-4 sm:inset-x-8 top-72 sm:top-64 bottom-8 z-30 flex items-center justify-center pointer-events-none"
         >
           <div className="pointer-events-auto max-w-xl w-full glass-card border-amber-400/30 p-10 text-center shadow-2xl shadow-black/40">
             <div className="w-20 h-20 rounded-[2rem] bg-amber-400/10 text-amber-300 flex items-center justify-center mx-auto mb-6">
@@ -461,19 +461,19 @@ export function PDVView() {
         </motion.div>
       )}
 
-      <div className={`grid grid-cols-12 gap-8 h-[calc(100vh-200px)] transition-all duration-300 ${
+      <div className={`grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-8 min-h-[calc(100vh-220px)] xl:h-[calc(100vh-200px)] transition-all duration-300 ${
         isCashOpen ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
       }`}>
         {/* LEFT: MAPA DE MESAS */}
-        <div className="col-span-8 flex flex-col gap-6 overflow-y-auto pr-4 custom-scrollbar">
-          <div className="flex items-center justify-between">
+        <div className="xl:col-span-8 flex flex-col gap-5 xl:gap-6 xl:overflow-y-auto xl:pr-4 custom-scrollbar min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <h2 className="text-xl font-black italic tracking-tight uppercase flex items-center gap-3">
               <LayoutDashboard size={20} className="text-primary" /> Mapa de Mesas
             </h2>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-3 sm:gap-4">
               <button 
                 onClick={() => setShowOnlyActive(!showOnlyActive)}
-                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${showOnlyActive ? 'bg-primary text-black' : 'bg-white/5 text-zinc-500'}`}
+                className={`px-5 sm:px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${showOnlyActive ? 'bg-primary text-black' : 'bg-white/5 text-zinc-500'}`}
               >
                 {showOnlyActive ? 'Apenas Ativas' : 'Todas as Mesas'}
               </button>
@@ -489,7 +489,7 @@ export function PDVView() {
             </div>
           </div>
 
-          <div className="grid grid-cols-4 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
             {tables
               .filter(t => !showOnlyActive || t.status !== 'available')
               .map((table) => (
@@ -498,7 +498,7 @@ export function PDVView() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => handleTableClick(table)}
-                className={`h-40 rounded-[2.5rem] border-2 p-6 flex flex-col justify-between transition-all relative overflow-hidden group ${getStatusColor(table.status)}`}
+                className={`h-32 sm:h-40 rounded-[2rem] sm:rounded-[2.5rem] border-2 p-4 sm:p-6 flex flex-col justify-between transition-all relative overflow-hidden group ${getStatusColor(table.status)}`}
               >
                 <div className="flex justify-between items-start relative z-10">
                   <span className="text-3xl font-black italic tracking-tighter">{table.number}</span>
@@ -513,7 +513,7 @@ export function PDVView() {
                   ) : (
                     <div className="flex flex-col items-start">
                       <span className="text-[10px] font-black uppercase tracking-widest opacity-60">Total</span>
-                      <span className="text-lg font-black italic tracking-tighter">
+                      <span className="text-base sm:text-lg font-black italic tracking-tighter">
                         R$ {getOrderItemsTotal(table.orders).toFixed(2)}
                       </span>
                     </div>
@@ -527,12 +527,12 @@ export function PDVView() {
         </div>
 
         {/* RIGHT: LANÇAMENTOS & ACTIVITY */}
-        <div className="col-span-4 glass-card border-white/5 flex flex-col overflow-hidden">
+        <div className="xl:col-span-4 glass-card border-white/5 flex flex-col overflow-hidden min-h-[360px] xl:min-h-0">
           {/* SOLICITAÇÕES DE SERVIÇO */}
           {visibleRequests.length > 0 && (
             <div className="flex-1 flex flex-col min-h-0 border-b border-white/5 relative z-10">
-              <div className={`p-8 border-b border-white/20 flex justify-between items-center ${visibleRequests.some(r => r.status !== 'resolved') ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'} shrink-0`}>
-                <h3 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3 text-white">
+              <div className={`p-5 sm:p-8 border-b border-white/20 flex justify-between items-center ${visibleRequests.some(r => r.status !== 'resolved') ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'} shrink-0`}>
+                <h3 className="text-xs sm:text-sm font-black uppercase tracking-[0.16em] sm:tracking-[0.2em] flex items-center gap-3 text-white">
                   <Bell size={16} className={visibleRequests.some(r => r.status !== 'resolved') ? 'animate-bounce' : ''} /> 
                   {visibleRequests.some(r => r.status !== 'resolved') ? 'Novas Solicitações' : 'Solicitações Atendidas'}
                 </h3>
@@ -552,15 +552,15 @@ export function PDVView() {
                       onClick={() => {
                         setSelectedRequestForDetails(req);
                       }}
-                      className={`p-6 border-b border-white/10 last:border-0 flex justify-between items-center group transition-colors cursor-pointer ${isResolved ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-rose-600 hover:bg-rose-500'}`}
+                      className={`p-4 sm:p-6 border-b border-white/10 last:border-0 flex justify-between items-center gap-3 group transition-colors cursor-pointer ${isResolved ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-rose-600 hover:bg-rose-500'}`}
                     >
-                      <div className="flex items-center gap-4">
-                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black italic text-xl shadow-inner ${isResolved ? 'bg-emerald-500 text-white' : 'bg-white/20 text-white'}`}>
+                      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                         <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center font-black italic text-xl shadow-inner shrink-0 ${isResolved ? 'bg-emerald-500 text-white' : 'bg-white/20 text-white'}`}>
                            {req.tableNumber}
                          </div>
-                         <div>
+                         <div className="min-w-0">
                            <div className="flex items-center gap-2 mb-1">
-                             <p className="text-base font-black text-white uppercase tracking-tight">
+                             <p className="text-sm sm:text-base font-black text-white uppercase tracking-tight truncate">
                                {req.type === 'waiter' ? 'Chamar Garçom' : 
                                 req.type === 'bill' ? 'Pedido de Conta' : 
                                 req.type === 'glass' ? 'Copo Extra' :
@@ -625,7 +625,7 @@ export function PDVView() {
             </div>
           )}
 
-          <div className="p-8 border-t border-white/5 space-y-4 shrink-0 bg-[#0d0d0f]/50 mt-auto">
+          <div className="p-5 sm:p-8 border-t border-white/5 space-y-4 shrink-0 bg-[#0d0d0f]/50 mt-auto">
              <button 
                onClick={() => {
                  setShowOnlyActive(false);
@@ -651,15 +651,15 @@ export function PDVView() {
             initial={{ x: 600 }}
             animate={{ x: 0 }}
             exit={{ x: 600 }}
-            className="fixed top-0 right-0 w-[500px] h-screen bg-[#0d0d0f] border-l border-white/10 z-[300] shadow-2xl p-12 flex flex-col"
+            className="fixed inset-y-0 right-0 w-full sm:w-[500px] bg-[#0d0d0f] border-l border-white/10 z-[300] shadow-2xl p-6 sm:p-12 flex flex-col"
           >
-            <div className="flex justify-between items-center mb-12">
-              <h2 className="text-5xl font-black italic tracking-tighter">Mesa <span className="text-primary">{selectedTable.number}</span></h2>
+            <div className="flex justify-between items-center mb-8 sm:mb-12">
+              <h2 className="text-4xl sm:text-5xl font-black italic tracking-tighter">Mesa <span className="text-primary">{selectedTable.number}</span></h2>
               <button onClick={() => setSelectedTable(null)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all"><X size={24}/></button>
             </div>
 
             {managedTable?.status === 'available' ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center px-12">
+              <div className="flex-1 flex flex-col items-center justify-center text-center px-4 sm:px-12">
                 <div className="w-24 h-24 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 mb-8 animate-pulse">
                   <PlusCircle size={48} />
                 </div>
@@ -716,7 +716,7 @@ export function PDVView() {
                   <div className="flex justify-between items-end mb-8">
                     <div>
                       <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Total Acumulado</span>
-                      <p className="text-5xl font-black italic tracking-tighter text-emerald-400">
+                      <p className="text-4xl sm:text-5xl font-black italic tracking-tighter text-emerald-400">
                         R$ {getOrderItemsTotal(managedTable?.orders || []).toFixed(2)}
                       </p>
                     </div>
@@ -733,7 +733,7 @@ export function PDVView() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <button 
                       onClick={() => canAddItems && setShowProductMenu(true)}
                       disabled={!canAddItems}
@@ -789,24 +789,24 @@ export function PDVView() {
             initial={{ opacity: 0, scale: 1.1 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.1 }}
-            className="fixed inset-0 z-[500] glass-card m-12 bg-[#09090b]/95 border-white/10 flex flex-col overflow-hidden p-12"
+            className="fixed inset-0 z-[500] glass-card m-0 sm:m-6 xl:m-12 bg-[#09090b]/95 border-white/10 flex flex-col overflow-hidden p-4 sm:p-8 xl:p-12"
           >
-            <div className="flex justify-between items-center mb-12">
+            <div className="flex justify-between items-start gap-4 mb-6 xl:mb-12">
                <div>
-                 <h2 className="text-4xl font-black italic tracking-tighter">Adicionar à <span className="text-primary">Mesa {selectedTable.number}</span></h2>
+                 <h2 className="text-3xl sm:text-4xl font-black italic tracking-tighter leading-none">Adicionar à <span className="text-primary">Mesa {selectedTable.number}</span></h2>
                  <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">Selecione os produtos abaixo</p>
                </div>
-               <button onClick={() => setShowProductMenu(false)} className="p-6 glass rounded-3xl hover:text-rose-500 transition-all"><X size={32}/></button>
+               <button onClick={() => setShowProductMenu(false)} className="p-4 sm:p-6 glass rounded-3xl hover:text-rose-500 transition-all shrink-0"><X size={28}/></button>
             </div>
 
-            <div className="flex-1 flex gap-8 overflow-hidden">
+            <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-8 overflow-hidden min-h-0">
                {/* CATEGORIES */}
-               <div className="w-64 flex flex-col gap-3 overflow-y-auto pr-2 custom-scrollbar">
+               <div className="w-full lg:w-64 flex lg:flex-col gap-3 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto pb-2 lg:pb-0 lg:pr-2 custom-scrollbar shrink-0">
                   {categories.map(cat => (
                     <button 
                       key={cat.id}
                       onClick={() => setActiveCategory(cat.id)}
-                      className={`p-6 rounded-3xl font-black text-left uppercase text-xs tracking-widest transition-all ${
+                      className={`px-5 py-4 lg:p-6 rounded-3xl font-black text-left uppercase text-xs tracking-widest transition-all whitespace-nowrap lg:whitespace-normal ${
                         activeCategory === cat.id 
                           ? 'bg-primary text-white shadow-2xl shadow-primary/20 border border-primary' 
                           : 'bg-[#121214] border border-white/10 text-zinc-400 hover:text-white hover:bg-[#1a1a1e]'
@@ -817,8 +817,8 @@ export function PDVView() {
                   ))}
                </div>
 
-               <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar">
-                  <div className="grid grid-cols-2 gap-4">
+               <div className="flex-1 overflow-y-auto lg:pr-4 custom-scrollbar min-h-0">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                     {menu
                       .filter(p => p.visible)
                       .filter(p => !(p.remoteStockId && typeof p.stockQuantity === 'number' && p.stockQuantity <= 0))
@@ -841,14 +841,14 @@ export function PDVView() {
                             origin: 'pdv'
                           });
                         }}
-                        className="bg-[#121214] border border-white/10 rounded-3xl p-6 flex justify-between items-center group relative overflow-hidden text-left transition-all hover:bg-[#1a1a1e] shadow-lg"
+                        className="bg-[#121214] border border-white/10 rounded-3xl p-4 sm:p-6 flex justify-between items-center gap-3 group relative overflow-hidden text-left transition-all hover:bg-[#1a1a1e] shadow-lg"
                       >
                          <div className="flex items-center gap-4 min-w-0">
                            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-black transition-all shrink-0">
                               {product.modifierGroups?.length ? <Sparkles size={20} /> : <Plus size={20} />}
                            </div>
                            <div className="min-w-0">
-                             <h4 className="text-xl font-bold italic tracking-tight leading-none text-white truncate">{product.name}</h4>
+                             <h4 className="text-lg sm:text-xl font-bold italic tracking-tight leading-none text-white truncate">{product.name}</h4>
                              <div className="flex flex-wrap items-center gap-2 mt-2">
                                <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
                                  {product.categoryName || product.categoryId}
@@ -863,7 +863,7 @@ export function PDVView() {
                          </div>
                          
                          <div className="flex items-center gap-6 shrink-0">
-                           <span className="text-lg font-black italic tracking-tighter text-emerald-400">R$ {product.price.toFixed(2)}</span>
+                           <span className="text-base sm:text-lg font-black italic tracking-tighter text-emerald-400 whitespace-nowrap">R$ {product.price.toFixed(2)}</span>
                          </div>
                       </motion.button>
                     ))}
@@ -871,21 +871,21 @@ export function PDVView() {
                </div>
             </div>
 
-            <div className="mt-12 pt-12 border-t border-white/10 flex justify-between items-center">
-              <div className="flex gap-8">
+            <div className="mt-4 sm:mt-8 xl:mt-12 pt-4 sm:pt-8 xl:pt-12 border-t border-white/10 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 shrink-0">
+              <div className="flex gap-6 sm:gap-8">
                  <div>
                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1">Itens no Pedido</span>
-                   <span className="text-3xl font-black italic tracking-tighter text-white">{cart.length} ITENS</span>
+                   <span className="text-2xl sm:text-3xl font-black italic tracking-tighter text-white">{cart.length} ITENS</span>
                  </div>
                  <div>
                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1">Subtotal</span>
-                   <span className="text-3xl font-black italic tracking-tighter text-emerald-400">R$ {getOrderItemsTotal(cart).toFixed(2)}</span>
+                   <span className="text-2xl sm:text-3xl font-black italic tracking-tighter text-emerald-400">R$ {getOrderItemsTotal(cart).toFixed(2)}</span>
                  </div>
               </div>
-              <div className="flex gap-4">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                 <button 
                   onClick={() => setShowProductMenu(false)}
-                  className="btn-beco bg-zinc-800 py-8 px-12 text-xl font-black rounded-3xl"
+                  className="btn-beco bg-zinc-800 py-5 sm:py-8 px-8 sm:px-12 text-base sm:text-xl font-black rounded-3xl"
                 >
                   CANCELAR
                 </button>
@@ -912,7 +912,7 @@ export function PDVView() {
                       setShowProductMenu(false);
                     }
                   }}
-                  className="btn-beco btn-beco-purple py-8 px-24 text-xl font-black rounded-3xl shadow-2xl shadow-primary/20 disabled:opacity-20 disabled:grayscale transition-all"
+                  className="btn-beco btn-beco-purple py-5 sm:py-8 px-8 sm:px-16 xl:px-24 text-base sm:text-xl font-black rounded-3xl shadow-2xl shadow-primary/20 disabled:opacity-20 disabled:grayscale transition-all"
                 >
                   {isSendingOrder ? 'ENVIANDO...' : 'CONFIRMAR E ENVIAR'}
                 </button>
