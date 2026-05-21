@@ -362,7 +362,9 @@ export const useStore = create<AppState>((set, get) => ({
       let initialView: any = 'tablet';
       let initialAdminMode: any = 'settings';
 
-      if (fullPath.startsWith('admin/menu')) {
+      if (fullPath.startsWith('qr/') || fullPath.startsWith('mesa/')) {
+        initialView = 'qr';
+      } else if (fullPath.startsWith('admin/menu')) {
         initialView = 'admin';
         initialAdminMode = 'menu';
       } else if (fullPath.startsWith('admin/settings') || fullPath.startsWith('admin/config')) {
