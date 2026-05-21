@@ -236,10 +236,17 @@ export function PDVView() {
     });
   const totalToday = todayBills
     .reduce((acc, bill) => acc + bill.total, 0);
+  const isCashOpen = Boolean(cashState?.isOpen);
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
   const canCancelTableItem = can(currentSeller, 'cancelTableItem');
   const canCloseBill = can(currentSeller, 'closeBill');
-  const isCashOpen = Boolean(cashState?.isOpen);
+  const canOpenCash = can(currentSeller, 'openCash');
+  const canCloseCash = can(currentSeller, 'closeCash');
+  const canUseCashAction = isCashOpen ? canCloseCash : canOpenCash;
+  const canOpenTable = can(currentSeller, 'openTable');
+  const canUpdateTableStatus = can(currentSeller, 'updateTableStatus');
+  const canAddItems = can(currentSeller, 'addOrderItem') && can(currentSeller, 'sendOrderToProduction');
+  const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest');
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
 
   const parseMoneyValue = (value: string) => {
@@ -380,9 +387,12 @@ export function PDVView() {
             </button>
           )}
           <button
-            onClick={() => setCashDialog(isCashOpen ? 'close' : 'open')}
+            onClick={() => canUseCashAction && setCashDialog(isCashOpen ? 'close' : 'open')}
+            disabled={!canUseCashAction}
             className={`glass-card px-6 py-4 flex items-center gap-3 transition-all border-white/5 ${
-              isCashOpen ? 'hover:bg-rose-500/10 hover:text-rose-400' : 'hover:bg-emerald-500/10 hover:text-emerald-400'
+              canUseCashAction
+                ? (isCashOpen ? 'hover:bg-rose-500/10 hover:text-rose-400' : 'hover:bg-emerald-500/10 hover:text-emerald-400')
+                : 'opacity-40 cursor-not-allowed text-zinc-600'
             }`}
             title={cashActionLabel}
           >
@@ -596,10 +606,11 @@ export function PDVView() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (isResolved) return;
+                            if (isResolved || !canResolveServiceRequests) return;
                             resolveService(req.id);
                           }}
-                          className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-all ${isResolved ? 'bg-emerald-500 text-white hover:scale-105' : 'bg-white text-rose-600 hover:scale-110 active:scale-90'}`}
+                          disabled={!isResolved && !canResolveServiceRequests}
+                          className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-all ${isResolved ? 'bg-emerald-500 text-white hover:scale-105' : 'bg-white text-rose-600 hover:scale-110 active:scale-90'} ${!isResolved && !canResolveServiceRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
                           title={isResolved ? "Atendimento concluído" : "Dar Ciente"}
                         >
                           <Check size={24} strokeWidth={4} />
@@ -653,8 +664,13 @@ export function PDVView() {
                 <h3 className="text-2xl font-black italic tracking-tight mb-4">Mesa disponível</h3>
                 <p className="text-zinc-500 text-sm font-medium mb-12">Inicie um novo atendimento para adicionar itens e gerenciar esta mesa.</p>
                 <button 
-                  onClick={() => setShowProductMenu(true)}
-                  className="w-full btn-beco btn-beco-purple py-8 text-xl font-black rounded-3xl"
+                  onClick={() => canOpenTable && canAddItems && setShowProductMenu(true)}
+                  disabled={!canOpenTable || !canAddItems}
+                  className={`w-full btn-beco py-8 text-xl font-black rounded-3xl ${
+                    canOpenTable && canAddItems
+                      ? 'btn-beco-purple'
+                      : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                  }`}
                 >
                   ABRIR ATENDIMENTO
                 </button>
@@ -717,18 +733,29 @@ export function PDVView() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <button 
-                      onClick={() => setShowProductMenu(true)}
-                      className="btn-beco bg-zinc-800 hover:bg-zinc-700 py-6 rounded-2xl font-black text-sm"
+                      onClick={() => canAddItems && setShowProductMenu(true)}
+                      disabled={!canAddItems}
+                      className={`btn-beco py-6 rounded-2xl font-black text-sm ${
+                        canAddItems
+                          ? 'bg-zinc-800 hover:bg-zinc-700'
+                          : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                      }`}
                     >
                       ADICIONAR ITENS
                     </button>
                     {getOrderItemsTotal(managedTable?.orders || []) === 0 ? (
                       <button 
                         onClick={() => {
+                          if (!canUpdateTableStatus) return;
                           updateTableStatus(managedTable.id, 'available');
                           setSelectedTable(null);
                         }}
-                        className="btn-beco bg-rose-500/20 text-rose-500 hover:bg-rose-500/30 py-6 rounded-2xl font-black text-sm"
+                        disabled={!canUpdateTableStatus}
+                        className={`btn-beco py-6 rounded-2xl font-black text-sm ${
+                          canUpdateTableStatus
+                            ? 'bg-rose-500/20 text-rose-500 hover:bg-rose-500/30'
+                            : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                        }`}
                       >
                         LIMPAR MESA (R$ 0,00)
                       </button>
@@ -1172,13 +1199,17 @@ export function PDVView() {
                         setSelectedRequestForDetails(null);
                         return;
                       }
+                      if (!canResolveServiceRequests) return;
                       resolveService(selectedRequestForDetails.id);
                       setSelectedRequestForDetails(null);
                     }}
+                    disabled={selectedRequestForDetails.status !== 'resolved' && !canResolveServiceRequests}
                     className={`w-full py-8 text-white rounded-[2rem] text-2xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-4 ${
                       selectedRequestForDetails.status === 'resolved'
                         ? 'bg-rose-500 shadow-rose-500/20'
-                        : 'bg-emerald-500 shadow-emerald-500/20'
+                        : canResolveServiceRequests
+                          ? 'bg-emerald-500 shadow-emerald-500/20'
+                          : 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
                     }`}
                   >
                     <Check size={32} strokeWidth={4} /> {selectedRequestForDetails.status === 'resolved' ? 'Atendimento Concluído' : 'Dar Ciente'}
