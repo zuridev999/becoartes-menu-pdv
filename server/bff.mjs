@@ -2187,7 +2187,7 @@ const createServiceRequest = async ({ id, tableId, type, message = '' }) => {
   };
 };
 
-const resolveServiceRequest = async ({ requestId, tableId, type, message, currentStatus }) => {
+const resolveServiceRequest = async ({ requestId, tableId, type, message }) => {
   const newStatus = 'resolved';
   if (type === 'new_order') {
     await db.execute({
