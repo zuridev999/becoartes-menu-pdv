@@ -190,6 +190,7 @@ export const useStore = create<AppState>((set, get) => ({
     mode: 'demo',
     currency: 'BRL',
     serviceTax: 13,
+    pdvPermissions: {},
     theme: 'dark-becoartes',
     tablet: {
       inactivityTimeout: 60,

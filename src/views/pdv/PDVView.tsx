@@ -36,6 +36,7 @@ export function PDVView() {
     syncData,
     updateTableStatus,
     cashState,
+    settings,
     openCash,
     closeCash
   } = useStore();
@@ -73,7 +74,8 @@ export function PDVView() {
     const diffHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
     return diffHours < 2;
   });
-  const canClearResolvedRequests = can(currentSeller, 'manageSettings');
+  const permissionOverrides = settings.pdvPermissions;
+  const canClearResolvedRequests = can(currentSeller, 'manageSettings', permissionOverrides);
 
   // Referência para o container de scroll da lista de solicitações
   const listRef = useRef<HTMLDivElement>(null);
@@ -237,16 +239,16 @@ export function PDVView() {
   const totalToday = todayBills
     .reduce((acc, bill) => acc + bill.total, 0);
   const isCashOpen = Boolean(cashState?.isOpen);
-  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
-  const canCancelTableItem = can(currentSeller, 'cancelTableItem');
-  const canCloseBill = can(currentSeller, 'closeBill');
-  const canOpenCash = can(currentSeller, 'openCash');
-  const canCloseCash = can(currentSeller, 'closeCash');
+  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides);
+  const canCancelTableItem = can(currentSeller, 'cancelTableItem', permissionOverrides);
+  const canCloseBill = can(currentSeller, 'closeBill', permissionOverrides);
+  const canOpenCash = can(currentSeller, 'openCash', permissionOverrides);
+  const canCloseCash = can(currentSeller, 'closeCash', permissionOverrides);
   const canUseCashAction = isCashOpen ? canCloseCash : canOpenCash;
-  const canOpenTable = can(currentSeller, 'openTable');
-  const canUpdateTableStatus = can(currentSeller, 'updateTableStatus');
-  const canAddItems = can(currentSeller, 'addOrderItem') && can(currentSeller, 'sendOrderToProduction');
-  const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest');
+  const canOpenTable = can(currentSeller, 'openTable', permissionOverrides);
+  const canUpdateTableStatus = can(currentSeller, 'updateTableStatus', permissionOverrides);
+  const canAddItems = can(currentSeller, 'addOrderItem', permissionOverrides) && can(currentSeller, 'sendOrderToProduction', permissionOverrides);
+  const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides);
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
 
   const parseMoneyValue = (value: string) => {
@@ -399,7 +401,7 @@ export function PDVView() {
             <Wallet size={22} />
             <span className="text-[10px] font-black uppercase tracking-[0.18em]">{cashActionLabel}</span>
           </button>
-          {can(currentSeller, 'manageSettings') && (
+          {can(currentSeller, 'manageSettings', permissionOverrides) && (
             <button 
               onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')} 
               className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"

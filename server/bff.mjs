@@ -334,6 +334,20 @@ const canSession = (session, permission) => {
   return Boolean(permissionsByProfile[normalizePermission(session.permission)]?.[permission]);
 };
 
+const getEffectiveSessionPermissions = (session, settings = null) => {
+  const profile = normalizePermission(session?.permission);
+  return {
+    ...(permissionsByProfile[profile] || permissionsByProfile.operator),
+    ...(settings?.pdvPermissions?.[profile] || {}),
+    ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true } : {}),
+  };
+};
+
+const canSessionWithSettings = (session, permission, settings = null) => {
+  if (!session) return false;
+  return Boolean(getEffectiveSessionPermissions(session, settings)[permission]);
+};
+
 const base64UrlEncode = (value) => Buffer.from(value).toString('base64url');
 const base64UrlJson = (value) => base64UrlEncode(JSON.stringify(value));
 const signSessionPayload = (payload) => (
@@ -1162,8 +1176,8 @@ const ensureDefaultSellersReady = () => {
 
 const filterSnapshotForContext = (snapshot, { view = 'pdv', session = null } = {}) => {
   const safeView = ['tablet', 'qr', 'kitchen', 'pdv', 'admin'].includes(view) ? view : 'pdv';
-  const canViewSales = canSession(session, 'viewSalesTotals');
-  const canManageTeam = canSession(session, 'manageTeam');
+  const canViewSales = canSessionWithSettings(session, 'viewSalesTotals', snapshot.savedSettings);
+  const canManageTeam = canSessionWithSettings(session, 'manageTeam', snapshot.savedSettings);
 
   if (safeView === 'tablet' || safeView === 'qr') {
     return {
@@ -1240,7 +1254,7 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
   const safeView = ['tablet', 'qr', 'kitchen', 'pdv', 'admin'].includes(view) ? view : 'pdv';
   const needsOperationalPanel = safeView === 'pdv' || safeView === 'admin';
   const needsSellers = needsOperationalPanel;
-  const needsSalesData = needsOperationalPanel && canSession(session, 'viewSalesTotals');
+  const needsSalesData = needsOperationalPanel;
   if (needsSellers) await ensureDefaultSellersReady();
   const [catalogData, sellers, kitchenData, serviceRequests, closedBills, savedSettings, tables, auditLogs, catalogVersion, cashState] = await Promise.all([
     includeCatalog ? getCatalogData() : Promise.resolve(null),
@@ -2331,11 +2345,11 @@ const closeBillWithInventorySync = async (data, session = null) => {
   }
 
   if (serviceFeeCents !== defaultServiceFeeCents) {
-    requirePermission(session, 'editServiceFee');
+    requirePermission(session, 'editServiceFee', settings);
   }
 
   if (discountCents > 0) {
-    requirePermission(session, 'applyDiscount');
+    requirePermission(session, 'applyDiscount', settings);
   }
 
   const expectedTotalCents = subtotalCents + serviceFeeCents - discountCents;
@@ -2642,9 +2656,9 @@ const requireSession = (session) => {
   }
 };
 
-const requirePermission = (session, permission) => {
+const requirePermission = (session, permission, settings = null) => {
   requireSession(session);
-  if (!canSession(session, permission)) {
+  if (!canSessionWithSettings(session, permission, settings)) {
     const error = new Error('Permissão insuficiente.');
     error.statusCode = 403;
     throw error;
@@ -2653,7 +2667,7 @@ const requirePermission = (session, permission) => {
 
 const allowPublicOperationalOrigin = (body) => body?.origin === 'tablet' || body?.origin === 'qr';
 
-const enforceRouteAccess = (routeKey, body, session, { operationAccessAllowed = true, req = null } = {}) => {
+const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllowed = true, req = null } = {}) => {
   if (
     routeKey === 'GET /api/app/init'
     || routeKey === 'POST /api/app/sync'
@@ -2669,7 +2683,7 @@ const enforceRouteAccess = (routeKey, body, session, { operationAccessAllowed = 
 
   if (routeKey === 'POST /api/orders/send-to-kitchen') {
     if (allowPublicOperationalOrigin(body)) return;
-    requirePermission(session, 'sendOrderToProduction');
+    requirePermission(session, 'sendOrderToProduction', await getSettings());
     return;
   }
 
@@ -2718,7 +2732,7 @@ const enforceRouteAccess = (routeKey, body, session, { operationAccessAllowed = 
 
   const requiredPermission = permissionByRoute[routeKey];
   if (requiredPermission) {
-    requirePermission(session, requiredPermission);
+    requirePermission(session, requiredPermission, await getSettings());
     return;
   }
 
@@ -2806,7 +2820,7 @@ const handleApi = async (req, res, url) => {
     const body = req.method === 'GET' ? {} : await readJsonBody(req);
     const session = getSessionFromRequest(req);
     const operationAccessAllowed = isOperationIpAllowed(req) || isAdminSession(session);
-    enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
+    await enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
     const data = await handler(body, { req, url, session, operationAccessAllowed });
     sendJson(res, 200, { ok: true, data });
   } catch (error) {

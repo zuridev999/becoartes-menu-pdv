@@ -30,8 +30,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const sellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
-  const canApplyDiscount = can(currentSeller, 'applyDiscount');
-  const canEditServiceFee = can(currentSeller, 'editServiceFee');
+  const canApplyDiscount = can(currentSeller, 'applyDiscount', settings.pdvPermissions);
+  const canEditServiceFee = can(currentSeller, 'editServiceFee', settings.pdvPermissions);
   
   const subtotal = roundMoney(table.orders.reduce((acc: number, o: any) => {
     const itemPrice = o.price + (o.selectedModifiers || []).reduce((mAcc: number, m: any) => mAcc + m.price, 0);

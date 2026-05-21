@@ -135,6 +135,11 @@ export interface AppSettings {
   unitName: string;
   currency: string;
   serviceTax: number;
+  pdvPermissions?: {
+    admin?: Record<string, boolean>;
+    manager?: Record<string, boolean>;
+    operator?: Record<string, boolean>;
+  };
   tablet: {
     bannerUrls: string[];
     bannerText: string;

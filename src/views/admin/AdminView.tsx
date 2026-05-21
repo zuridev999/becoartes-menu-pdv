@@ -25,7 +25,16 @@ import { CSS } from '@dnd-kit/utilities';
 import { useStore, type Product } from '../../store';
 import { PinLoginModal } from '../../components/auth/PinLoginModal';
 import { ActionDialog } from '../../components/common/ActionDialog';
-import { can, getPermissionLabel } from '../../lib/permissions';
+import {
+  can,
+  defaultPermissionsByProfile,
+  getEffectivePermissions,
+  getPermissionLabel,
+  permissionGroups,
+  permissionLabels,
+  type PermissionKey,
+  type PermissionProfile
+} from '../../lib/permissions';
 import { createId } from '../../lib/id';
 import { getImageSrc } from '../../lib/image';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
@@ -227,6 +236,7 @@ export function AdminView() {
   const [newSellerRole, setNewSellerRole] = useState<'garçom' | 'atendente' | 'gerente' | 'outro'>('garçom');
   const [newSellerPermission, setNewSellerPermission] = useState<'admin' | 'manager' | 'operator'>('operator');
   const [newSellerPin, setNewSellerPin] = useState('1234');
+  const [showPermissionConfig, setShowPermissionConfig] = useState(false);
 
   const [movements, setMovements] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -287,14 +297,16 @@ export function AdminView() {
     return <PinLoginModal />;
   }
 
-  const canManageSettings = can(currentSeller, 'manageSettings');
-  const canManageTeam = can(currentSeller, 'manageTeam');
-  const canManageOptionals = can(currentSeller, 'manageOptionals');
-  const canAddProduct = can(currentSeller, 'addProduct');
-  const canEditProductPrice = can(currentSeller, 'editProductPrice');
-  const canDeleteProduct = can(currentSeller, 'deleteProduct');
-  const canToggleVisibility = can(currentSeller, 'toggleProductVisibility');
-  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
+  const permissionOverrides = settings.pdvPermissions;
+  const isSuperAdmin = currentSeller.permission === 'admin' && ['admin-bootstrap', 'admin-bypass', 'master'].includes(currentSeller.id);
+  const canManageSettings = can(currentSeller, 'manageSettings', permissionOverrides);
+  const canManageTeam = can(currentSeller, 'manageTeam', permissionOverrides);
+  const canManageOptionals = can(currentSeller, 'manageOptionals', permissionOverrides);
+  const canAddProduct = can(currentSeller, 'addProduct', permissionOverrides);
+  const canEditProductPrice = can(currentSeller, 'editProductPrice', permissionOverrides);
+  const canDeleteProduct = can(currentSeller, 'deleteProduct', permissionOverrides);
+  const canToggleVisibility = can(currentSeller, 'toggleProductVisibility', permissionOverrides);
+  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides);
   const canAccessProducts =
     (adminMode === 'menu' && canToggleVisibility)
     || canAddProduct
@@ -393,6 +405,37 @@ export function AdminView() {
         setEditingGroup(null);
       }
     });
+  };
+
+  const profileLabels: Record<PermissionProfile, string> = {
+    admin: 'Admin',
+    manager: 'Gerente',
+    operator: 'Operador',
+  };
+
+  const getPermissionValue = (profile: PermissionProfile, key: PermissionKey) => {
+    return getEffectivePermissions(profile, settings.pdvPermissions as any)[key];
+  };
+
+  const setPermissionValue = (profile: PermissionProfile, key: PermissionKey, value: boolean) => {
+    const coreAdminPermission = profile === 'admin' && ['accessPDV', 'manageSettings', 'managePDVPermissions'].includes(key);
+    if (coreAdminPermission) return;
+
+    updateSettings({
+      pdvPermissions: {
+        ...(settings.pdvPermissions || {}),
+        [profile]: {
+          ...(settings.pdvPermissions?.[profile] || {}),
+          [key]: value,
+        },
+      },
+    });
+  };
+
+  const resetPermissionProfile = (profile: PermissionProfile) => {
+    const nextPermissions = { ...(settings.pdvPermissions || {}) };
+    delete nextPermissions[profile];
+    updateSettings({ pdvPermissions: nextPermissions });
   };
 
   const isGroupLinkedToCategory = (categoryId: string, groupId: string) => {
@@ -1102,7 +1145,24 @@ export function AdminView() {
       )}
 
       {activeTab === 'sellers' && canManageTeam && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
+        <div className="space-y-8">
+          {isSuperAdmin && (
+            <div className="glass-card p-6 border-primary/20 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Super admin</p>
+                <h3 className="text-2xl font-black tracking-tighter">Permissões do PDV</h3>
+                <p className="text-sm font-bold text-zinc-500 mt-1">Configure o que admin, gerente e operador podem fazer no caixa, mesas, pedidos e estoque.</p>
+              </div>
+              <button
+                onClick={() => setShowPermissionConfig(true)}
+                className="btn-beco btn-beco-purple px-8 py-5 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3"
+              >
+                <Settings size={18} /> Configurar
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
           <SectionCard title="Adicionar Novo Operador" icon={Plus}>
             <div className="grid grid-cols-2 gap-6">
                <ConfigInput label="Nome Completo" value={newSellerName} onChange={setNewSellerName} />
@@ -1140,9 +1200,10 @@ export function AdminView() {
                        <button onClick={() => deleteSeller(s.id)} className="p-3 glass rounded-xl text-rose-500"><Trash2 size={18}/></button>
                     </div>
                  </div>
-               ))}
+              ))}
             </div>
           </SectionCard>
+          </div>
         </div>
       )}
 
@@ -1233,6 +1294,89 @@ export function AdminView() {
            </table>
         </div>
       )}
+
+      <AnimatePresence>
+        {showPermissionConfig && isSuperAdmin && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[900] bg-black/80 backdrop-blur-xl p-8 flex items-center justify-center"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 24 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 24 }}
+              className="w-full max-w-7xl max-h-[90vh] glass-card border-primary/20 overflow-hidden flex flex-col"
+            >
+              <div className="p-8 border-b border-white/10 flex items-center justify-between gap-6">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Configuração do PDV</p>
+                  <h2 className="text-4xl font-black tracking-tighter">Permissões por Perfil</h2>
+                  <p className="text-sm font-bold text-zinc-500 mt-2">As mudanças salvam na configuração do sistema e também são validadas no BFF.</p>
+                </div>
+                <button onClick={() => setShowPermissionConfig(false)} className="p-5 glass rounded-2xl hover:text-rose-500 transition-all">
+                  <X size={26} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-8">
+                {(['admin', 'manager', 'operator'] as PermissionProfile[]).map((profile) => (
+                  <div key={profile} className="glass border-white/10 rounded-[2rem] overflow-hidden">
+                    <div className="p-6 border-b border-white/10 flex items-center justify-between gap-4">
+                      <div>
+                        <h3 className="text-2xl font-black tracking-tighter">{profileLabels[profile]}</h3>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                          Base padrão: {Object.values(defaultPermissionsByProfile[profile]).filter(Boolean).length} permissões ativas
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => resetPermissionProfile(profile)}
+                        className="px-5 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest text-zinc-400"
+                      >
+                        Restaurar padrão
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 p-6">
+                      {permissionGroups.map((group) => (
+                        <div key={`${profile}-${group.title}`} className="bg-black/20 rounded-2xl p-5 border border-white/5">
+                          <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-4">{group.title}</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {group.keys.map((key) => {
+                              const active = getPermissionValue(profile, key);
+                              const locked = profile === 'admin' && ['accessPDV', 'manageSettings', 'managePDVPermissions'].includes(key);
+                              return (
+                                <button
+                                  key={`${profile}-${key}`}
+                                  onClick={() => setPermissionValue(profile, key, !active)}
+                                  disabled={locked}
+                                  className={`min-h-[58px] rounded-xl border px-4 py-3 text-left transition-all flex items-center gap-3 ${
+                                    active
+                                      ? 'bg-primary/15 border-primary/30 text-white'
+                                      : 'bg-white/[0.03] border-white/5 text-zinc-500'
+                                  } ${locked ? 'opacity-70 cursor-not-allowed' : 'hover:border-white/20'}`}
+                                  title={locked ? 'Permissão essencial do super admin' : undefined}
+                                >
+                                  <span className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${active ? 'bg-primary border-primary' : 'border-white/20'}`}>
+                                    {active && <Check size={13} strokeWidth={4} />}
+                                  </span>
+                                  <span className="text-xs font-black uppercase tracking-wide leading-snug">{permissionLabels[key]}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Modal de Agenda */}
       <AnimatePresence>
         {adminDialog && (
