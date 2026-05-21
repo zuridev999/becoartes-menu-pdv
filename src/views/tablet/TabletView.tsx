@@ -105,7 +105,7 @@ export function TabletView() {
 
       <AnimatePresence>
         {selectedProduct && (
-          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />
+          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} tabletLandscape />
         )}
       </AnimatePresence>
 

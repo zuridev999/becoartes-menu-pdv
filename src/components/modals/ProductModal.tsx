@@ -4,7 +4,15 @@ import { Check, X } from 'lucide-react';
 import { useStore, type Product, type Modifier } from '../../store';
 import { getImageSrc } from '../../lib/image';
 
-export function ProductModal({ product, onClose }: { product: Product, onClose: () => void }) {
+export function ProductModal({
+  product,
+  onClose,
+  tabletLandscape = false,
+}: {
+  product: Product;
+  onClose: () => void;
+  tabletLandscape?: boolean;
+}) {
   const { addToCart } = useStore();
   const [quantity, setQuantity] = useState(1);
   const [selectedModifiers, setSelectedModifiers] = useState<Modifier[]>([]);
@@ -33,24 +41,24 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[700]" />
-      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="fixed inset-0 z-[750] flex items-center justify-center p-12 pointer-events-none font-['Outfit']">
-        <div className="glass-card w-full max-w-6xl h-[85vh] flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl">
-          <div className="w-1/2 relative hidden lg:block">
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`fixed inset-0 z-[750] flex items-center justify-center pointer-events-none font-['Outfit'] ${tabletLandscape ? 'p-4 md:p-8' : 'p-12'}`}>
+        <div className={`glass-card w-full flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${tabletLandscape ? 'max-w-[1120px] h-[86vh]' : 'max-w-6xl h-[85vh]'}`}>
+          <div className={`relative ${tabletLandscape ? 'block w-[52%] min-w-[52%]' : 'w-1/2 hidden lg:block'}`}>
              <img src={getImageSrc(product.image)} className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
-             <div className="absolute bottom-16 left-16">
+             <div className={tabletLandscape ? 'absolute bottom-10 left-10 right-10' : 'absolute bottom-16 left-16'}>
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2 block">{product.categoryName}</span>
-                <h2 className="text-7xl font-black tracking-tighter italic text-white mb-4 leading-none">{product.name}</h2>
-                <p className="text-gray-400 text-xl font-medium max-w-md italic">"{product.description || 'Uma obra prima gastronômica curada especialmente para o Becoartes.'}"</p>
+                <h2 className={`${tabletLandscape ? 'text-5xl' : 'text-7xl'} font-black tracking-tighter italic text-white mb-4 leading-none`}>{product.name}</h2>
+                <p className={`${tabletLandscape ? 'text-base max-w-sm' : 'text-xl max-w-md'} text-gray-400 font-medium italic`}>"{product.description || 'Uma obra prima gastronômica curada especialmente para o Becoartes.'}"</p>
              </div>
           </div>
-          <div className="w-full lg:w-1/2 p-12 flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative">
-             <button onClick={onClose} className="absolute top-8 right-8 p-4 glass rounded-full hover:bg-white/10 text-white z-[400]"><X size={32}/></button>
+          <div className={`${tabletLandscape ? 'w-[48%] p-8' : 'w-full lg:w-1/2 p-12'} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
+             <button onClick={onClose} className={`${tabletLandscape ? 'top-5 right-5 p-3' : 'top-8 right-8 p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
              <div className="flex justify-between items-center mb-8 lg:hidden">
                 <h2 className="text-4xl font-black italic">{product.name}</h2>
              </div>
 
-             <div className="flex-1 overflow-y-auto custom-scrollbar pr-4 space-y-10">
+             <div className={`flex-1 overflow-y-auto custom-scrollbar pr-4 ${tabletLandscape ? 'space-y-6' : 'space-y-10'}`}>
                 {product.modifierGroups?.map(group => {
                   const selectedInGroup = selectedModifiers.filter(m => group.modifiers.some(gm => gm.id === m.id));
                   const isSingle = group.maxChoices === 1;
@@ -93,24 +101,24 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
                                   }
                                 }
                               }}
-                              className={`w-full min-h-[88px] grid grid-cols-[54px_1fr_auto] items-center gap-5 p-5 rounded-[1.7rem] border text-left transition-all ${
+                              className={`w-full ${tabletLandscape ? 'min-h-[78px] grid-cols-[48px_1fr_auto] gap-4 p-4' : 'min-h-[88px] grid-cols-[54px_1fr_auto] gap-5 p-5'} grid items-center rounded-[1.7rem] border text-left transition-all ${
                                 isSelected
                                   ? 'bg-gradient-to-br from-primary to-[#6f2dff] border-primary text-white shadow-2xl shadow-primary/30'
                                   : 'bg-gradient-to-br from-accent to-[#ffad1f] border-accent text-black shadow-xl shadow-accent/20 hover:scale-[1.015]'
                               }`}
                             >
-                              <div className={`w-[54px] h-[54px] rounded-2xl flex items-center justify-center border text-xl font-black ${
+                              <div className={`${tabletLandscape ? 'w-12 h-12' : 'w-[54px] h-[54px]'} rounded-2xl flex items-center justify-center border text-xl font-black ${
                                 isSelected ? 'bg-white text-primary border-white' : 'bg-black/10 text-black border-black/10'
                               }`}>
                                 {isSelected ? <Check size={26} strokeWidth={5} /> : '+'}
                               </div>
                               <div className="min-w-0">
-                                <span className="block font-black text-xl tracking-tight leading-tight">{m.name}</span>
+                                <span className={`block font-black ${tabletLandscape ? 'text-lg' : 'text-xl'} tracking-tight leading-tight`}>{m.name}</span>
                                 <span className={`mt-1 block text-[10px] font-black uppercase tracking-[0.16em] ${isSelected ? 'text-white/65' : 'text-black/55'}`}>
                                   {isSelected ? 'Selecionado, toque para remover' : 'Toque para adicionar'}
                                 </span>
                               </div>
-                              {m.price > 0 && <span className={`text-xl font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-black'}`}>+ {formatCurrency(m.price)}</span>}
+                              {m.price > 0 && <span className={`${tabletLandscape ? 'text-lg' : 'text-xl'} font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-black'}`}>+ {formatCurrency(m.price)}</span>}
                             </motion.button>
                           );
                         })}
@@ -136,7 +144,7 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
                </div>
              )}
 
-             <div className="mt-8 pt-8 border-t border-white/10 space-y-6">
+             <div className={`${tabletLandscape ? 'mt-5 pt-5 space-y-4' : 'mt-8 pt-8 space-y-6'} border-t border-white/10`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 glass p-2 rounded-2xl border-white/5">
                      <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-10 flex items-center justify-center font-black text-xl hover:text-primary transition-all">-</button>
@@ -145,13 +153,13 @@ export function ProductModal({ product, onClose }: { product: Product, onClose: 
                   </div>
                   <div className="text-right">
                      <p className="text-[10px] font-black uppercase text-gray-500 mb-1">Total do Item</p>
-                     <p className="text-4xl font-black text-accent tracking-tighter">{formatCurrency(totalPrice)}</p>
+                     <p className={`${tabletLandscape ? 'text-3xl' : 'text-4xl'} font-black text-accent tracking-tighter`}>{formatCurrency(totalPrice)}</p>
                   </div>
                 </div>
 
                 <button 
                 onClick={handleAdd}
-                className="w-full py-8 btn-beco btn-beco-purple text-2xl font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4"
+                className={`${tabletLandscape ? 'py-6 text-base' : 'py-8 text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4`}
               >
                 ADICIONAR AO PEDIDO
               </button>
