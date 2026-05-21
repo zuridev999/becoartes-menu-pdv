@@ -423,6 +423,40 @@ const requireNumber = (value, field) => {
   return parsed;
 };
 
+const toUnixSeconds = (value) => {
+  if (!value) return 0;
+  if (typeof value === 'number') return value > 9999999999 ? Math.floor(value / 1000) : Math.floor(value);
+  const parsedNumber = Number(value);
+  if (Number.isFinite(parsedNumber) && parsedNumber > 0) {
+    return parsedNumber > 9999999999 ? Math.floor(parsedNumber / 1000) : Math.floor(parsedNumber);
+  }
+  const parsedDate = Date.parse(String(value));
+  return Number.isFinite(parsedDate) ? Math.floor(parsedDate / 1000) : 0;
+};
+
+const moneyToCents = (value, field = 'money') => {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`Campo numérico inválido: ${field}`);
+    return Math.round(value * 100);
+  }
+
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  const normalized = raw
+    .replace(/[^\d,.-]/g, '')
+    .replace(/\.(?=\d{3}(?:\D|$))/g, '')
+    .replace(',', '.');
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) throw new Error(`Campo numérico inválido: ${field}`);
+  return Math.round(parsed * 100);
+};
+
+const centsToMoney = (cents) => Math.round(Number(cents || 0)) / 100;
+
+const formatMoneyBRL = (value) => (
+  centsToMoney(moneyToCents(value)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+);
+
 const getCatalogVersion = async () => {
   const res = await db.execute("SELECT value FROM app_settings WHERE key = 'catalog_version' LIMIT 1");
   return String(res.rows[0]?.value || '0');
@@ -1179,6 +1213,20 @@ const resolveOSContext = async () => {
   return { empresaId, userId, slug: OS_TENANT_SLUG };
 };
 
+const validateSessionPin = async (session, pin) => {
+  requireSession(session);
+  const safePin = String(pin || '');
+  if (!/^\d{4}$/.test(safePin)) return false;
+  if (session.id === 'admin-bypass') return isAdminBypassPin(safePin);
+
+  const sellers = await getAuthSellers({ includePins: true });
+  const seller = sellers.find((item) => item.id === session.id && item.status === 'active');
+  if (!seller) return false;
+
+  const storedPin = seller.pin || '';
+  return isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
+};
+
 const resolveCashResponsibleId = async (session) => {
   const sessionId = session?.id || '';
   if (sessionId) {
@@ -1846,8 +1894,51 @@ const openCash = async ({ openingBalance, notes }, session) => {
   return { cashState: await getCashState() };
 };
 
-const closeCash = async ({ closingBalance, notes }, session) => {
+const getCashSalesCentsSince = async (openedAt) => {
+  const openedAtUnix = toUnixSeconds(openedAt);
+  const res = await db.execute({
+    sql: `
+      SELECT payments
+      FROM closed_bills
+      WHERE CAST(strftime('%s', closed_at) AS INTEGER) >= ?
+    `,
+    args: [openedAtUnix],
+  });
+
+  return res.rows.reduce((total, row) => {
+    const payments = parseJsonArray(row.payments);
+    const cashCents = payments.reduce((sum, payment) => {
+      if (payment?.method !== 'cash') return sum;
+      return sum + moneyToCents(payment.amount || 0, 'payment.amount');
+    }, 0);
+    return total + cashCents;
+  }, 0);
+};
+
+const getExpectedClosingCents = async (cash) => {
+  const openingCents = moneyToCents(cash.saldo_inicial || 0, 'saldo_inicial');
+  const cashSalesCents = await getCashSalesCentsSince(cash.created_at);
+  const manualInCents = moneyToCents(cash.entradas_dinheiro || 0, 'entradas_dinheiro');
+  const manualOutCents = moneyToCents(cash.saidas_dinheiro || 0, 'saidas_dinheiro');
+
+  return {
+    openingCents,
+    cashSalesCents,
+    manualInCents,
+    manualOutCents,
+    expectedCents: openingCents + cashSalesCents + manualInCents - manualOutCents,
+  };
+};
+
+const closeCash = async ({ closingBalance, notes, confirmationPin }, session) => {
   requireSession(session);
+  const pinMatchesSession = await validateSessionPin(session, confirmationPin);
+  if (!pinMatchesSession) {
+    const error = new Error('PIN do usuário logado não confere. Fechamento bloqueado.');
+    error.statusCode = 403;
+    throw error;
+  }
+
   const businessDate = getBusinessDate();
   const current = await db.execute({
     sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? AND status = 'Aberto' LIMIT 1`,
@@ -1855,6 +1946,41 @@ const closeCash = async ({ closingBalance, notes }, session) => {
   });
   const cash = current.rows[0];
   if (!cash) throw new Error('Não existe caixa aberto para hoje.');
+
+  const closingCents = moneyToCents(closingBalance, 'closingBalance');
+  const closeSummary = await getExpectedClosingCents(cash);
+  const missingCents = closeSummary.expectedCents - closingCents;
+
+  if (missingCents > 0) {
+    await addAuditLog({
+      id: createId(),
+      action: 'cash_close_blocked',
+      details: JSON.stringify({
+        expected: centsToMoney(closeSummary.expectedCents),
+        declared: centsToMoney(closingCents),
+        missing: centsToMoney(missingCents),
+        opening: centsToMoney(closeSummary.openingCents),
+        cashSales: centsToMoney(closeSummary.cashSalesCents),
+        manualIn: centsToMoney(closeSummary.manualInCents),
+        manualOut: centsToMoney(closeSummary.manualOutCents),
+        sandbox: CASH_SANDBOX_MODE,
+      }),
+      origin: 'pdv',
+      authorName: session.name,
+      timestamp: new Date().toISOString(),
+    });
+
+    await safeCreateOSNotification({
+      title: 'Bloqueio: falta de dinheiro no caixa',
+      message: `${session.name || 'Usuário'} tentou fechar o caixa com ${formatMoneyBRL(centsToMoney(missingCents))} abaixo do esperado.`,
+      type: 'alert',
+      link: `/${OS_TENANT_SLUG}/controle-dinheiro`,
+    });
+
+    const error = new Error('Dinheiro físico abaixo do esperado. Chame o responsável para conferir o caixa.');
+    error.statusCode = 409;
+    throw error;
+  }
 
   const now = osTimestamp();
   await db.execute({
@@ -1864,7 +1990,7 @@ const closeCash = async ({ closingBalance, notes }, session) => {
       WHERE id = ?
     `,
     args: [
-      requireNumber(closingBalance, 'closingBalance'),
+      centsToMoney(closingCents),
       notes || cash.observacoes || '',
       now,
       cash.id,
@@ -1874,7 +2000,16 @@ const closeCash = async ({ closingBalance, notes }, session) => {
   await addAuditLog({
     id: createId(),
     action: 'cash_closed',
-    details: JSON.stringify({ closingBalance: Number(closingBalance), sandbox: CASH_SANDBOX_MODE }),
+    details: JSON.stringify({
+      closingBalance: centsToMoney(closingCents),
+      expected: centsToMoney(closeSummary.expectedCents),
+      difference: centsToMoney(closingCents - closeSummary.expectedCents),
+      opening: centsToMoney(closeSummary.openingCents),
+      cashSales: centsToMoney(closeSummary.cashSalesCents),
+      manualIn: centsToMoney(closeSummary.manualInCents),
+      manualOut: centsToMoney(closeSummary.manualOutCents),
+      sandbox: CASH_SANDBOX_MODE,
+    }),
     origin: 'pdv',
     authorName: session.name,
     timestamp: new Date().toISOString(),

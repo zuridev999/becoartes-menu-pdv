@@ -153,7 +153,7 @@ export interface AppState {
   closeShift: (closingBalance: number) => Promise<void>;
   refreshCashState: () => Promise<void>;
   openCash: (openingBalance: number, notes?: string) => Promise<void>;
-  closeCash: (closingBalance: number, notes?: string) => Promise<void>;
+  closeCash: (closingBalance: number, notes?: string, confirmationPin?: string) => Promise<void>;
 
   settings: AppSettings;
   updateSettings: (settings: Partial<AppSettings>) => Promise<void>;
@@ -1223,8 +1223,8 @@ export const useStore = create<AppState>((set, get) => ({
     get().addNotification('Caixa aberto. PDV liberado para operação.', 'info');
   },
 
-  closeCash: async (closingBalance, notes = '') => {
-    const result = await OperationalApi.closeCash(closingBalance, notes);
+  closeCash: async (closingBalance, notes = '', confirmationPin = '') => {
+    const result = await OperationalApi.closeCash(closingBalance, notes, confirmationPin);
     set({ cashState: result.cashState });
     get().addNotification('Caixa fechado. Operação do PDV bloqueada.', 'info');
   },
