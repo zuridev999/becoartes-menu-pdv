@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QR Codes das Mesas - Becoartes</title>
+    <style>
+      :root {
+        color: #111;
+        background: #f6f3ee;
+        font-family: Arial, sans-serif;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px;
+      }
+
+      header {
+        margin: 0 auto 24px;
+        max-width: 1120px;
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 28px;
+        letter-spacing: -0.04em;
+      }
+
+      p {
+        margin: 0;
+        color: #666;
+        font-size: 13px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 14px;
+        margin: 0 auto;
+        max-width: 1120px;
+      }
+
+      .card {
+        background: #fff;
+        border: 1px solid #ddd4ca;
+        border-radius: 18px;
+        padding: 14px;
+        text-align: center;
+        break-inside: avoid;
+      }
+
+      .card img {
+        display: block;
+        width: 132px;
+        height: 132px;
+        margin: 0 auto 10px;
+      }
+
+      .table {
+        font-size: 22px;
+        font-weight: 900;
+        letter-spacing: -0.04em;
+      }
+
+      .url {
+        margin-top: 4px;
+        color: #777;
+        font-size: 9px;
+        word-break: break-all;
+      }
+
+      @media print {
+        body {
+          background: #fff;
+          padding: 10mm;
+        }
+
+        header {
+          display: none;
+        }
+
+        .grid {
+          grid-template-columns: repeat(4, 1fr);
+          gap: 8mm;
+          max-width: none;
+        }
+
+        .card {
+          border: 1px solid #000;
+          border-radius: 10px;
+          padding: 6mm;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>QR Codes das Mesas</h1>
+      <p>Links permanentes para a experiencia do cliente. Cada QR aponta para https://qr.becoartes.com/mesa/N.</p>
+    </header>
+    <main class="grid" id="grid"></main>
+    <script>
+      const grid = document.getElementById('grid');
+      for (let number = 1; number <= 50; number += 1) {
+        const url = `https://qr.becoartes.com/mesa/${number}`;
+        const card = document.createElement('article');
+        card.className = 'card';
+        card.innerHTML = `
+          <img src="./mesa-${number}.svg" alt="QR Code da Mesa ${number}" />
+          <div class="table">Mesa ${number}</div>
+          <div class="url">${url}</div>
+        `;
+        grid.appendChild(card);
+      }
+    </script>
+  </body>
+</html>

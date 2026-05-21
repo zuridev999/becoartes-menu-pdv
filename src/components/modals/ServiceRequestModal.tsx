@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
-  X, Utensils, 
-  Wallet, CupSoda, Users 
+  X, Utensils, ScrollText, 
+  HelpCircle, AlertTriangle, MessageSquare, 
+  Wallet, CupSoda, Snowflake, Citrus 
 } from 'lucide-react';
 import { useStore } from '../../store';
 
@@ -12,10 +13,16 @@ export function ServiceRequestModal({ onClose }: { onClose: () => void }) {
   const [isSending, setIsSending] = useState(false);
 
   const options = [
-    { id: 'waiter', label: 'Chamar Garçom', icon: Users },
-    { id: 'bill', label: 'Fechar Conta', icon: Wallet },
-    { id: 'glass', label: 'Pedir Copo Extra', icon: CupSoda },
-    { id: 'cutlery', label: 'Pedir Talher', icon: Utensils },
+    { id: 'glass', label: 'Pedir copo extra', icon: CupSoda },
+    { id: 'cutlery', label: 'Pedir talher', icon: Utensils },
+    { id: 'napkin', label: 'Pedir guardanapo', icon: ScrollText },
+    { id: 'ice', label: 'Pedir gelo', icon: Snowflake },
+    { id: 'lemon', label: 'Pedir limão', icon: Citrus },
+    { id: 'physical_menu', label: 'Cardápio físico', icon: ScrollText },
+    { id: 'help', label: 'Ajuda com o pedido', icon: HelpCircle },
+    { id: 'bill', label: 'Chamar para fechar a conta', icon: Wallet },
+    { id: 'problem', label: 'Informar problema', icon: AlertTriangle },
+    { id: 'other', label: 'Outros', icon: MessageSquare },
   ];
 
   const handleSend = async (type: string, directLabel?: string) => {

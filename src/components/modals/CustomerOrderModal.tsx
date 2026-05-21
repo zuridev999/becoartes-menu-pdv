@@ -4,7 +4,13 @@ import { X, ShoppingBag, Trash2, Send, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 
-export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
+export function CustomerOrderModal({
+  onClose,
+  origin = 'tablet'
+}: {
+  onClose: () => void;
+  origin?: 'tablet' | 'qr';
+}) {
   const { currentTableId, tables, removeFromCart, sendToKitchen, addNotification } = useStore();
   const [isSending, setIsSending] = useState(false);
   const [isSent, setIsSent] = useState(false);
@@ -17,7 +23,7 @@ export function CustomerOrderModal({ onClose }: { onClose: () => void }) {
   const handleSendOrder = async () => {
     setIsSending(true);
     try {
-      await sendToKitchen(table.id, 'tablet');
+      await sendToKitchen(table.id, origin);
       setIsSent(true);
       setTimeout(() => {
         onClose();

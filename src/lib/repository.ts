@@ -54,6 +54,15 @@ const parseJsonArray = (value: unknown) => {
 const toStockAmount = (value: unknown) => Math.max(0, Math.trunc(Number(value || 0)));
 const osTimestamp = () => Math.floor(Date.now() / 1000);
 
+type OSPDVUserRow = {
+  id: string;
+  nome: string;
+  funcao: string | null;
+  role: string | null;
+  pin: string | null;
+  ativo: number | boolean | null;
+};
+
 export const Repository = {
   // --- MENU ---
   // --- CATEGORIES ---
@@ -136,7 +145,18 @@ export const Repository = {
   // --- MODIFIERS ---
   async getModifierGroups() {
     const [groupsRes, modifiersRes] = await Promise.all([
-      db.execute("SELECT * FROM modifier_groups WHERE status = 'active'"),
+      db.execute(`
+        SELECT
+          id,
+          name,
+          description,
+          COALESCE(min_choices, 0) as min_choices,
+          COALESCE(max_choices, 1) as max_choices,
+          COALESCE(is_required, 0) as is_required,
+          status
+        FROM modifier_groups
+        WHERE status = 'active'
+      `),
       db.execute("SELECT * FROM modifiers WHERE status = 'active' ORDER BY sort_order ASC")
     ]);
 
@@ -166,8 +186,26 @@ export const Repository = {
 
   async saveModifierGroup(group: any) {
     await db.execute({
-      sql: "INSERT OR REPLACE INTO modifier_groups (id, name, min_choices, max_choices, is_required, status) VALUES (?, ?, ?, ?, ?, ?)",
-      args: [group.id, group.name, group.minChoices || 0, group.maxChoices || 1, group.isRequired ? 1 : 0, group.status || 'active']
+      sql: `
+        INSERT INTO modifier_groups (id, name, description, min_choices, max_choices, is_required, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          description = excluded.description,
+          min_choices = excluded.min_choices,
+          max_choices = excluded.max_choices,
+          is_required = excluded.is_required,
+          status = excluded.status
+      `,
+      args: [
+        group.id,
+        group.name,
+        group.description || null,
+        group.minChoices || 0,
+        group.maxChoices || 1,
+        group.isRequired ? 1 : 0,
+        group.status || 'active'
+      ]
     });
 
     if (group.modifiers) {
@@ -322,6 +360,28 @@ export const Repository = {
       pin: row.pin as string,
       createdAt: new Date(row.created_at as string)
     }));
+  },
+
+  async getOSPDVUsers() {
+    const res = await db.execute({
+      sql: `
+        SELECT id, nome, funcao, role, pin, ativo
+        FROM users
+        WHERE empresa_id = ?
+          AND pin IS NOT NULL
+          AND trim(pin) != ''
+      `,
+      args: [OS_EMPRESA_ID]
+    });
+
+    return res.rows.map((row) => ({
+      id: row.id as string,
+      nome: row.nome as string,
+      funcao: (row.funcao as string | null) || null,
+      role: (row.role as string | null) || null,
+      pin: (row.pin as string | null) || null,
+      ativo: row.ativo as number | boolean | null,
+    } satisfies OSPDVUserRow));
   },
 
   async addSeller(s: SellerInput) {
@@ -854,10 +914,6 @@ export const Repository = {
       {
         sql: "UPDATE orders SET status = 'closed' WHERE table_id = ? AND status != 'closed'",
         args: [data.tableId]
-      },
-      {
-        sql: "UPDATE service_requests SET status = 'resolved' WHERE table_id = ? AND status != 'resolved'",
-        args: [data.tableId]
       }
     );
 
@@ -1045,62 +1101,12 @@ export const Repository = {
   },
 
   async getServiceRequests() {
-    await db.execute(`
-      INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message, created_at)
-      SELECT
-        'new_order_' || o.id,
-        o.table_id,
-        'new_order',
-        'pending',
-        COALESCE((
-          SELECT group_concat(oi.quantity || 'x ' || COALESCE(m.name, 'Item'), ', ')
-          FROM order_items oi
-          LEFT JOIN menu m ON oi.product_id = m.id
-          WHERE oi.order_id = o.id
-        ), 'Novo pedido'),
-        o.created_at
-      FROM orders o
-      WHERE o.status IN ('pending', 'preparing')
-        AND NOT EXISTS (
-          SELECT 1 FROM service_requests sr
-          WHERE sr.table_id = o.table_id
-            AND sr.status = 'pending'
-            AND sr.type = 'new_order'
-            AND sr.message = COALESCE((
-              SELECT group_concat(oi2.quantity || 'x ' || COALESCE(m2.name, 'Item'), ', ')
-              FROM order_items oi2
-              LEFT JOIN menu m2 ON oi2.product_id = m2.id
-              WHERE oi2.order_id = o.id
-            ), 'Novo pedido')
-        )
-    `);
-
     const res = await db.execute(`
-      SELECT
-        sr.id,
-        sr.table_id,
-        sr.type,
-        sr.status,
-        sr.message,
-        strftime('%Y-%m-%dT%H:%M:%SZ', sr.created_at) as created_at,
-        t.number as tableNumber
+      SELECT sr.*, t.number as tableNumber
       FROM service_requests sr
       LEFT JOIN tables t ON sr.table_id = t.id
-      WHERE sr.status IN ('pending', 'viewed', 'resolved')
-        AND NOT (
-          sr.type = 'new_order'
-          AND sr.id NOT LIKE 'new_order_%'
-          AND EXISTS (
-            SELECT 1 FROM service_requests sr2
-            WHERE sr2.table_id = sr.table_id
-              AND sr2.type = 'new_order'
-              AND sr2.message = sr.message
-              AND sr2.status = sr.status
-              AND sr2.id LIKE 'new_order_%'
-              AND abs(strftime('%s', sr2.created_at) - strftime('%s', sr.created_at)) < 300
-          )
-        )
-      ORDER BY sr.created_at DESC
+      WHERE sr.status IN ('pending', 'viewed')
+      ORDER BY sr.created_at ASC
     `);
 
     return res.rows.map((row: any) => ({
@@ -1116,7 +1122,7 @@ export const Repository = {
 
   async getClosedBills(limit = 200) {
     const res = await db.execute({
-      sql: "SELECT id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, strftime('%Y-%m-%dT%H:%M:%SZ', closed_at) as closed_at FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
+      sql: "SELECT * FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
       args: [limit]
     });
 

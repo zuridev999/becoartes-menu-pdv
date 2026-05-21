@@ -2,7 +2,10 @@ node_modules
 dist
 .git
 .env
-.env.local
-.DS_Store
-.antigravity_history
+.env.*
 scratch
+android
+*.db
+*.log
+npm-debug.log*
+.DS_Store

@@ -1,4 +1,4 @@
-import type { Category, ClosedBill, ModifierGroup, OrderItem, Product, ServiceRequest } from '../types';
+import type { Category, ClosedBill, ModifierGroup, OrderItem, Product, Seller, ServiceRequest } from '../types';
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
 
@@ -25,6 +25,13 @@ type SendToKitchenResult = {
     createdAt: string;
     tableNumber?: number;
   };
+  inventorySync?: {
+    movementCount: number;
+    unmatched: string[];
+    insufficient: string[];
+    critical: string[];
+  };
+  catalogVersion?: string | null;
 };
 
 type UpdateOrderStatusResult = {
@@ -50,6 +57,19 @@ export type CashState = {
   };
 };
 
+export type OSUserCandidate = {
+  id: string;
+  pdvSellerId: string;
+  name: string;
+  nickname?: string;
+  email?: string;
+  role: Seller['role'];
+  suggestedPermission: Seller['permission'];
+  pdvEnabled: boolean;
+  pdvStatus: Seller['status'];
+  pdvPermission: Seller['permission'];
+};
+
 const getSessionToken = () => {
   if (typeof localStorage === 'undefined') return '';
   return localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || '';
@@ -73,6 +93,7 @@ const getCurrentView = () => {
   const path = window.location.pathname.replace(/^\/+/, '');
   const host = window.location.hostname;
   if (path.startsWith('admin')) return 'admin';
+  if (path.startsWith('qr/') || path.startsWith('mesa/')) return 'qr';
   if (['tablet', 'pdv', 'kitchen', 'qr'].includes(path)) return path;
   if (host.startsWith('tablet.')) return 'tablet';
   if (host.startsWith('coz.')) return 'kitchen';
@@ -145,7 +166,7 @@ export const OperationalApi = {
       sellerPermission?: string;
     };
   }) {
-    return postJson<{ orderId: string | null }>('/api/order-items/delete', input);
+    return postJson<{ orderId: string | null; catalogVersion?: string | null }>('/api/order-items/delete', input);
   },
 
   closeBill(data: Omit<ClosedBill, 'id' | 'closedAt'>) {
@@ -166,8 +187,8 @@ export const OperationalApi = {
     return postJson<{ cashState: CashState }>('/api/cash/open', { openingBalance, notes });
   },
 
-  closeCash(closingBalance: number, notes = '') {
-    return postJson<{ cashState: CashState }>('/api/cash/close', { closingBalance, notes });
+  closeCash(closingBalance: number, notes = '', confirmationPin = '') {
+    return postJson<{ cashState: CashState }>('/api/cash/close', { closingBalance, notes, confirmationPin });
   },
 };
 
@@ -271,6 +292,18 @@ export const AdminApi = {
     return postJson<{ saved: boolean }>('/api/sellers', { seller });
   },
 
+  listOSUsersForPDV() {
+    return postJson<{ users: OSUserCandidate[] }>('/api/sellers/os-candidates', {});
+  },
+
+  activateOSSeller(osUserId: string, permission: Seller['permission'] = 'operator') {
+    return postJson<{ seller: Seller }>('/api/sellers/activate-os', { osUserId, permission, status: 'active' });
+  },
+
+  updateSeller(id: string, seller: Partial<Seller>) {
+    return postJson<{ seller: Seller }>('/api/sellers/update', { id, seller });
+  },
+
   updateSellerPin(id: string, pin: string) {
     return postJson<{ updated: boolean }>('/api/sellers/pin', { id, pin });
   },
@@ -319,6 +352,10 @@ export const OpsApi = {
     currentStatus: string;
   }) {
     return postJson<{ status: 'pending' | 'resolved' }>('/api/service-requests/resolve', input);
+  },
+
+  clearServiceRequest(requestId: string) {
+    return postJson<{ removed: boolean }>('/api/service-requests/clear', { requestId });
   },
 
   requestBill(tableId: string) {

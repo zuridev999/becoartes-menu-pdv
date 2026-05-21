@@ -137,6 +137,7 @@ export interface AppState {
   requestBill: (tableId: string) => void;
   requestService: (tableId: string, type: string, message?: string) => void;
   resolveService: (requestId: string) => void;
+  clearServiceRequest: (requestId: string) => Promise<void>;
   closeBill: (data: Omit<ClosedBill, 'id' | 'closedAt'>) => Promise<boolean>;
   updateTableStatus: (tableId: string, status: Table['status']) => void;
   updateKitchenOrderStatus: (orderId: string, status: KitchenOrder['status']) => void;
@@ -153,7 +154,7 @@ export interface AppState {
   closeShift: (closingBalance: number) => Promise<void>;
   refreshCashState: () => Promise<void>;
   openCash: (openingBalance: number, notes?: string) => Promise<void>;
-  closeCash: (closingBalance: number, notes?: string) => Promise<void>;
+  closeCash: (closingBalance: number, notes?: string, confirmationPin?: string) => Promise<void>;
 
   settings: AppSettings;
   updateSettings: (settings: Partial<AppSettings>) => Promise<void>;
@@ -189,6 +190,7 @@ export const useStore = create<AppState>((set, get) => ({
     mode: 'demo',
     currency: 'BRL',
     serviceTax: 13,
+    permissionProfiles: undefined,
     theme: 'dark-becoartes',
     tablet: {
       inactivityTimeout: 60,
@@ -223,6 +225,7 @@ export const useStore = create<AppState>((set, get) => ({
     const nextSettings = {
       ...currentSettings,
       ...newSettings,
+      permissionProfiles: newSettings.permissionProfiles || currentSettings.permissionProfiles,
       tablet: newSettings.tablet ? { ...currentSettings.tablet, ...newSettings.tablet } : currentSettings.tablet,
       kitchen: newSettings.kitchen ? { ...currentSettings.kitchen, ...newSettings.kitchen } : currentSettings.kitchen
     };
@@ -362,7 +365,9 @@ export const useStore = create<AppState>((set, get) => ({
       let initialView: any = 'tablet';
       let initialAdminMode: any = 'settings';
 
-      if (fullPath.startsWith('admin/menu')) {
+      if (fullPath.startsWith('qr/') || fullPath.startsWith('mesa/')) {
+        initialView = 'qr';
+      } else if (fullPath.startsWith('admin/menu')) {
         initialView = 'admin';
         initialAdminMode = 'menu';
       } else if (fullPath.startsWith('admin/settings') || fullPath.startsWith('admin/config')) {
@@ -651,6 +656,7 @@ export const useStore = create<AppState>((set, get) => ({
       price: product.price,
       quantity,
       selectedModifiers,
+      remoteStockId: product.remoteStockId,
       notes,
       status: 'pending',
       orderedAt: new Date()
@@ -678,7 +684,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { currentTableId } = get();
     if (!currentTableId) return;
 
-    await OperationalApi.deleteOrderItem({
+    const result = await OperationalApi.deleteOrderItem({
       itemId,
       cancelContext: context ? {
         tableNumber: context.tableNumber,
@@ -695,6 +701,11 @@ export const useStore = create<AppState>((set, get) => ({
         .map(order => ({ ...order, items: order.items.filter(item => item.id !== itemId) }))
         .filter(order => order.items.length > 0)
     }));
+
+    if (result.catalogVersion) {
+      lastCatalogVersion = result.catalogVersion;
+      await get().syncData({ includeCatalog: true });
+    }
   },
 
   requestService: async (tableId, type, message = '') => {
@@ -779,6 +790,37 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  clearServiceRequest: async (requestId) => {
+    const request = get().serviceRequests.find(r => r.id === requestId);
+    const seller = get().currentSeller;
+    if (!request || seller?.permission !== 'admin') return;
+
+    if (!hasApiSessionToken()) {
+      clearSellerSession();
+      set({ currentSeller: null });
+      get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+      return;
+    }
+
+    try {
+      await OpsApi.clearServiceRequest(requestId);
+      set((state) => ({
+        serviceRequests: state.serviceRequests.filter(r => r.id !== requestId)
+      }));
+      get().addNotification("Solicitação removida da tela.", "info");
+    } catch (error) {
+      console.error("Erro ao limpar solicitação:", error);
+      if (isSessionExpiredError(error)) {
+        clearSellerSession();
+        set({ currentSeller: null });
+        get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+        return;
+      }
+      const message = getErrorMessage(error);
+      get().addNotification(message || "Não foi possível limpar a solicitação.", "error");
+    }
+  },
+
   sendToKitchen: async (tableId, origin = 'pdv', sellerId) => {
     const table = get().tables.find(t => t.id === tableId);
     if (!table || table.cart.length === 0) return;
@@ -791,7 +833,7 @@ export const useStore = create<AppState>((set, get) => ({
       orderId
     }));
 
-    await OperationalApi.sendToKitchen({
+    const result = await OperationalApi.sendToKitchen({
       orderId,
       tableId,
       total,
@@ -800,13 +842,17 @@ export const useStore = create<AppState>((set, get) => ({
       items: persistedItems
     });
 
+    if (result.catalogVersion) {
+      lastCatalogVersion = result.catalogVersion;
+    }
+
     const newKitchenOrder: KitchenOrder = {
       id: orderId,
       tableId: tableId,
       tableNumber: table.number,
       items: persistedItems,
       status: 'pending',
-      origin: origin as 'tablet' | 'pdv',
+      origin,
       createdAt: new Date()
     };
 
@@ -850,6 +896,10 @@ export const useStore = create<AppState>((set, get) => ({
       await get().addAuditLog('order_sent', `Itens: ${table.cart.length} | Total: R$ ${total.toFixed(2)}`, table.number.toString(), origin);
     } catch (error) {
       console.warn('Pedido enviado, mas a auditoria falhou:', error);
+    }
+
+    if (result.catalogVersion) {
+      await get().syncData({ includeCatalog: true });
     }
   },
 
@@ -988,7 +1038,16 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   updateSeller: async (id, data) => {
-    console.log("Update seller not fully implemented", id, data);
+    try {
+      const result = await AdminApi.updateSeller(id, data);
+      const updatedSeller = toSessionSeller(result.seller);
+      set((state) => ({
+        sellers: state.sellers.map(s => s.id === id ? { ...s, ...updatedSeller } : s)
+      }));
+      get().addNotification("Permissões do PDV atualizadas.", "info");
+    } catch (e: any) {
+      get().addNotification(e.message || "Falha ao atualizar usuário do PDV.", 'error');
+    }
   },
 
   deleteSeller: async (id) => {
@@ -1221,8 +1280,8 @@ export const useStore = create<AppState>((set, get) => ({
     get().addNotification('Caixa aberto. PDV liberado para operação.', 'info');
   },
 
-  closeCash: async (closingBalance, notes = '') => {
-    const result = await OperationalApi.closeCash(closingBalance, notes);
+  closeCash: async (closingBalance, notes = '', confirmationPin = '') => {
+    const result = await OperationalApi.closeCash(closingBalance, notes, confirmationPin);
     set({ cashState: result.cashState });
     get().addNotification('Caixa fechado. Operação do PDV bloqueada.', 'info');
   },

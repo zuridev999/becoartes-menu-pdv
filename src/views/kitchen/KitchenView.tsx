@@ -1,125 +1,9 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react';
-import { Clock, CheckCircle2, X, AlertCircle, ChefHat, LockKeyhole, Maximize2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Clock, CheckCircle2, X, AlertCircle, ChefHat } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useStore, type Seller } from '../../store';
-import { AppApi, setApiSessionToken } from '../../lib/api';
-import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
+import { useStore } from '../../store';
 
 const KITCHEN_SYNC_INTERVAL_MS = 5000;
-
-function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
-  const { login } = useStore();
-  const [pin, setPin] = useState('');
-  const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const submitPin = async (event?: FormEvent) => {
-    event?.preventDefault();
-    if (pin.length < 4 || isSubmitting) return;
-
-    setIsSubmitting(true);
-    setError('');
-
-    try {
-      const allowed = await login(pin);
-      if (allowed) {
-        setPin('');
-        onUnlock();
-        return;
-      }
-      const setupResult = await AppApi.validateTabletSetupPin(pin);
-      if (setupResult.valid) {
-        setApiSessionToken(setupResult.sessionToken || null);
-        const kitchenSeller: Seller = setupResult.seller || {
-          id: 'kitchen-setup',
-          name: 'Cozinha',
-          nickname: 'Cozinha',
-          pin: '',
-          status: 'active',
-          role: 'atendente',
-          permission: 'operator',
-        };
-        useStore.setState({ currentSeller: kitchenSeller });
-        setPin('');
-        onUnlock();
-        return;
-      }
-      setError('PIN não autorizado nesta rede.');
-      setPin('');
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'PIN não autorizado nesta rede.');
-      setPin('');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const addDigit = (digit: string) => {
-    if (pin.length >= 4 || isSubmitting) return;
-    setError('');
-    setPin(current => `${current}${digit}`.slice(0, 4));
-  };
-
-  return (
-    <div className="fixed inset-0 z-[900] bg-[#09090b] text-white font-['Outfit'] flex items-center justify-center p-8 uppercase">
-      <form onSubmit={submitPin} className="w-full max-w-md glass rounded-[2.5rem] p-10 border-white/10 shadow-2xl">
-        <div className="w-20 h-20 rounded-[2rem] bg-primary/15 text-primary flex items-center justify-center mb-8">
-          <LockKeyhole size={38} />
-        </div>
-        <p className="text-[10px] font-black tracking-[0.35em] text-primary mb-3">COZINHA SEGURA</p>
-        <h1 className="text-5xl font-black italic tracking-tighter mb-10">Digite o PIN</h1>
-
-        <input
-          value={pin}
-          onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
-          inputMode="numeric"
-          pattern="[0-9]*"
-          autoFocus
-          className={`w-full glass py-6 rounded-3xl text-center text-5xl font-black tracking-[0.6em] outline-none border-2 transition-all ${
-            error ? 'border-rose-500 text-rose-400' : 'border-white/10 focus:border-primary'
-          }`}
-          placeholder="••••"
-        />
-
-        {error && <p className="mt-4 text-rose-400 text-[10px] font-black tracking-widest">{error}</p>}
-
-        <div className="grid grid-cols-3 gap-3 mt-8">
-          {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(digit => (
-            <button
-              type="button"
-              key={digit}
-              onClick={() => addDigit(digit)}
-              className="h-16 rounded-2xl glass border-white/5 text-2xl font-black hover:bg-white/10 active:scale-95 transition-all"
-            >
-              {digit}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setPin('')}
-            className="h-16 rounded-2xl glass border-white/5 text-xs font-black text-rose-400 hover:bg-rose-500/10 active:scale-95 transition-all"
-          >
-            LIMPAR
-          </button>
-          <button
-            type="button"
-            onClick={() => addDigit('0')}
-            className="h-16 rounded-2xl glass border-white/5 text-2xl font-black hover:bg-white/10 active:scale-95 transition-all"
-          >
-            0
-          </button>
-          <button
-            type="submit"
-            disabled={pin.length < 4 || isSubmitting}
-            className="h-16 rounded-2xl btn-beco btn-beco-purple text-xs font-black disabled:opacity-30"
-          >
-            {isSubmitting ? '...' : 'ENTRAR'}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
 
 function KitchenOrderCard({ order, index, onClick }: { order: any, index: number, onClick: () => void }) {
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -172,44 +56,15 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
         <p className="text-sm font-black uppercase tracking-[0.3em] mb-4 opacity-40">{order.items.length} Itens no Pedido</p>
         <div className={`mt-2 ${order.items.length > 5 ? 'grid grid-cols-2 gap-x-8 gap-y-3' : 'space-y-3'}`}>
           {order.items.slice(0, 10).map((item: any, idx: number) => (
-            <div key={idx} className="flex gap-3 items-start min-w-0">
-              <span className="font-black text-2xl text-black shrink-0 leading-none">{item.quantity}X</span>
-              <div className="min-w-0 flex-1">
-                <span className="font-black text-lg tracking-tighter truncate leading-none block">{item.name}</span>
-                {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {item.selectedModifiers.slice(0, 3).map((modifier: any, modifierIdx: number) => (
-                      <span key={modifierIdx} className="px-2 py-1 rounded-lg bg-black text-white text-[10px] font-black uppercase tracking-widest leading-none">
-                        + {modifier.name}
-                      </span>
-                    ))}
-                    {item.selectedModifiers.length > 3 && (
-                      <span className="px-2 py-1 rounded-lg bg-black/10 text-black text-[10px] font-black uppercase tracking-widest leading-none">
-                        +{item.selectedModifiers.length - 3}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
+            <div key={idx} className="flex gap-3 items-center min-w-0">
+              <span className="font-black text-2xl text-black shrink-0">{item.quantity}X</span>
+              <span className="font-black text-lg tracking-tighter truncate leading-none">{item.name}</span>
             </div>
           ))}
           {order.items.length > 10 && (
             <p className="text-xl font-black mt-4 ml-12 text-red-600 animate-pulse">+ {order.items.length - 10} OUTROS ITENS...</p>
           )}
         </div>
-        
-        {order.items.some((i: any) => i.notes) && (
-          <div className="mt-6 p-5 bg-red-600 rounded-3xl shadow-xl border-4 border-white animate-pulse">
-            <p className="text-[10px] font-black uppercase text-white mb-2 tracking-[0.2em]">Observações do Pedido:</p>
-            <div className="space-y-1">
-              {order.items.filter((i: any) => i.notes).map((item: any, idx: number) => (
-                <p key={idx} className="text-2xl font-black text-white leading-tight">
-                  !! {item.name}: {item.notes}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       <div className={`mt-4 pt-4 border-t flex justify-between items-center ${isDanger ? 'border-black/20' : 'border-black/5'}`}>
@@ -325,10 +180,9 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
 }
 
 export function KitchenView() {
-  const { kitchenOrders, updateKitchenOrderStatus, syncData, currentSeller } = useStore();
+  const { kitchenOrders, updateKitchenOrderStatus, syncData } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [soundReady, setSoundReady] = useState(false);
-  const [isKitchenUnlocked, setIsKitchenUnlocked] = useState(false);
   const lastOrderIds = useRef<string[]>([]);
   const hasInitializedOrderTracking = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -338,8 +192,6 @@ export function KitchenView() {
 
   // Auto-sync curto: a cozinha precisa reagir em segundos, não em ciclos longos.
   useEffect(() => {
-    if (!isKitchenUnlocked) return;
-
     let isSyncing = false;
 
     const runSync = async (reason: string) => {
@@ -374,14 +226,7 @@ export function KitchenView() {
       window.removeEventListener('online', handleResume);
       document.removeEventListener('visibilitychange', handleResume);
     };
-  }, [syncData, isKitchenUnlocked]);
-
-  useEffect(() => {
-    if (!currentSeller) {
-      setIsKitchenUnlocked(false);
-      setSoundReady(false);
-    }
-  }, [currentSeller]);
+  }, [syncData]);
 
   const getAudioContext = async (shouldResume = false) => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -409,8 +254,6 @@ export function KitchenView() {
   };
 
   useEffect(() => {
-    if (!isKitchenUnlocked) return;
-
     const handleFirstInteraction = () => {
       unlockKitchenSound();
     };
@@ -422,7 +265,7 @@ export function KitchenView() {
       window.removeEventListener('pointerdown', handleFirstInteraction);
       window.removeEventListener('keydown', handleFirstInteraction);
     };
-  }, [isKitchenUnlocked]);
+  }, []);
 
   // Função para tocar o sininho (Web Audio API)
   const playBellSound = async () => {
@@ -471,8 +314,6 @@ export function KitchenView() {
 
   // Detectar Novos Pedidos
   useEffect(() => {
-    if (!isKitchenUnlocked) return;
-
     const currentIds = activeOrders.map(o => o.id);
     const hasNewOrder = currentIds.some(id => !lastOrderIds.current.includes(id));
     
@@ -488,44 +329,17 @@ export function KitchenView() {
     }
     
     lastOrderIds.current = currentIds;
-  }, [activeOrderIds, isKitchenUnlocked]);
-
-  const requestFullscreen = async () => {
-    try {
-      const root = document.documentElement as HTMLElement & {
-        webkitRequestFullscreen?: () => Promise<void> | void;
-      };
-      if (document.fullscreenElement) return;
-      if (root.requestFullscreen) await root.requestFullscreen();
-      else if (root.webkitRequestFullscreen) await root.webkitRequestFullscreen();
-    } catch (error) {
-      console.warn('Falha ao ativar tela cheia da cozinha:', error);
-    }
-  };
-
-  if (!isKitchenUnlocked || !currentSeller) {
-    return <KitchenPinGate onUnlock={() => setIsKitchenUnlocked(true)} />;
-  }
+  }, [activeOrderIds]);
   
   return (
     <div className="p-4 bg-[#09090b] h-screen text-white font-['Outfit'] overflow-hidden flex flex-col uppercase">
-      <button
-        onClick={requestFullscreen}
-        className="fixed top-8 left-8 z-[400] w-14 h-14 rounded-2xl glass border-white/5 text-white/80 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center shadow-2xl"
-        title="Ativar tela cheia"
-      >
-        <Maximize2 size={24} />
-      </button>
-
       {/* Status Indicator */}
       <div className="fixed top-8 right-8 z-[400] flex items-center gap-4 px-6 py-3 glass rounded-2xl border-white/5 shadow-2xl">
         <div className="relative">
           <div className="w-3 h-3 bg-emerald-500 rounded-full" />
           <div className="absolute inset-0 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
         </div>
-        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
-          {getAppLabel()} {APP_BUILD_LABEL}
-        </span>
+        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Sistema Ativo</span>
         <button
           onClick={unlockKitchenSound}
           className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${

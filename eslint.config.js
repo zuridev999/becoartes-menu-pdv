@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'public', 'scratch', 'scripts']),
+  globalIgnores(['dist', 'public', 'scratch', 'scripts', '*.cjs']),
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -14,10 +14,11 @@ export default defineConfig([
     languageOptions: {
       globals: {
         ...globals.node,
-        URL: 'readonly',
+        ...globals.es2021,
       },
     },
     rules: {
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'no-empty': 'off',
     },
   },

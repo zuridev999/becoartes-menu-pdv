@@ -2,17 +2,27 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight } from 'lucide-react';
 import { useStore, type Table as TableType } from '../../store';
+import { can } from '../../lib/permissions';
 
 interface Payment {
   method: 'credit' | 'debit' | 'cash' | 'pix';
   amount: number;
 }
 
+const MAX_SERVICE_FEE_PERCENT = 13;
+
+const roundMoney = (value: number) => Number(value.toFixed(2));
+const clampServiceFeePercent = (value: number) => {
+  if (!Number.isFinite(value)) return MAX_SERVICE_FEE_PERCENT;
+  return Math.min(MAX_SERVICE_FEE_PERCENT, Math.max(0, value));
+};
+const formatPercent = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+
 export function CheckoutModal({ table, onClose }: { table: TableType, onClose: () => void }) {
   const { closeBill, settings, sellers, currentSeller } = useStore();
   const [selectedSellerId, setSelectedSellerId] = useState<string>(currentSeller?.id || '');
-  const [serviceFeeEnabled, setServiceFeeEnabled] = useState(true);
-  const [serviceFeePercent] = useState(settings.serviceTax || 13);
+  const defaultServiceFeePercent = clampServiceFeePercent(Number(settings.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
+  const [serviceFeePercent, setServiceFeePercent] = useState(defaultServiceFeePercent);
   const [discountValue, setDiscountValue] = useState(0);
   const [discountType, setDiscountType] = useState<'fixed' | 'percent'>('fixed');
   const [discountReason] = useState('');
@@ -21,16 +31,25 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const sellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
+  const canApplyDiscount = can(currentSeller, 'applyDiscount', settings.permissionProfiles);
+  const canEditServiceFee = can(currentSeller, 'editServiceFee', settings.permissionProfiles);
+  const canLaunchPayment = can(currentSeller, 'launchPayment', settings.permissionProfiles);
+  const canChangePaymentMethod = can(currentSeller, 'changePaymentMethod', settings.permissionProfiles);
+  const canSplitPayment = can(currentSeller, 'splitPayment', settings.permissionProfiles);
+  const canCancelPayment = can(currentSeller, 'cancelPayment', settings.permissionProfiles);
   
-  const subtotal = table.orders.reduce((acc: number, o: any) => {
+  const subtotal = roundMoney(table.orders.reduce((acc: number, o: any) => {
     const itemPrice = o.price + (o.selectedModifiers || []).reduce((mAcc: number, m: any) => mAcc + m.price, 0);
     return acc + (itemPrice * o.quantity);
-  }, 0);
+  }, 0));
 
-  const feeValue = serviceFeeEnabled ? subtotal * (serviceFeePercent / 100) : 0;
-  const discountAmountValue = discountType === 'fixed' ? discountValue : subtotal * (discountValue / 100);
-  const totalFinal = subtotal + feeValue - discountAmountValue;
-  const paidTotal = payments.reduce((acc: number, p: any) => acc + p.amount, 0);
+  const feeValue = roundMoney(subtotal * (serviceFeePercent / 100));
+  const rawDiscountAmount = discountType === 'fixed'
+    ? discountValue
+    : subtotal * (Math.min(100, Math.max(0, discountValue)) / 100);
+  const discountAmountValue = roundMoney(Math.min(subtotal + feeValue, Math.max(0, rawDiscountAmount)));
+  const totalFinal = roundMoney(Math.max(0, subtotal + feeValue - discountAmountValue));
+  const paidTotal = roundMoney(payments.reduce((acc: number, p: any) => acc + p.amount, 0));
   const diff = Number((totalFinal - paidTotal).toFixed(2));
   const remaining = Math.max(0, diff);
   const change = Math.max(0, -diff);
@@ -43,6 +62,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     setAmountDigits(Math.round(remaining * 100).toString());
   }, [remaining]);
 
+  useEffect(() => {
+    setServiceFeePercent(defaultServiceFeePercent);
+  }, [defaultServiceFeePercent]);
+
   const currentAmountFormatted = (Number(amountDigits) / 100).toFixed(2);
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,6 +77,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   };
 
   const handleAddPayment = () => {
+    if (!canLaunchPayment) return;
+    if (payments.length > 0 && !canSplitPayment) return;
     const val = Number(currentAmountFormatted);
     if (val <= 0) return;
     setPayments([...payments, { method: currentMethod, amount: val }]);
@@ -120,14 +145,48 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
 
               <div className="mt-6 space-y-3 pt-6 border-t border-white/10 text-sm">
                  <div className="flex justify-between text-gray-400 font-bold"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>
-                 <div className="flex justify-between text-gray-400 font-bold items-center">
-                    <button onClick={() => setServiceFeeEnabled(!serviceFeeEnabled)} className={`flex items-center gap-2 ${serviceFeeEnabled ? 'text-primary' : 'text-gray-600'}`}>
-                       <div className={`w-4 h-4 rounded border flex items-center justify-center ${serviceFeeEnabled ? 'bg-primary border-primary' : 'border-gray-600'}`}>
-                          {serviceFeeEnabled && <CheckCircle2 size={10} className="text-white"/>}
-                       </div>
-                       Taxa ({serviceFeePercent}%)
-                    </button>
-                    <span>R$ {feeValue.toFixed(2)}</span>
+                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
+                    <div className="flex justify-between text-gray-300 font-black items-center">
+                       <span>Taxa de serviço ({formatPercent(serviceFeePercent)}%)</span>
+                       <span>R$ {feeValue.toFixed(2)}</span>
+                    </div>
+                    {canEditServiceFee ? (
+                      <>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-amber-200/80">
+                          Controle separado do desconto. A taxa pode ir de 0% a 13%.
+                        </p>
+                        <div className="flex items-center gap-2">
+                          {[0, 1, 5, 10, 13].map((percent) => (
+                            <button
+                              key={percent}
+                              onClick={() => setServiceFeePercent(percent)}
+                              className={`px-3 py-2 rounded-xl text-[10px] font-black border transition-all ${serviceFeePercent === percent ? 'bg-primary text-white border-primary' : 'border-white/10 text-gray-400 hover:text-white'}`}
+                            >
+                              {percent}%
+                            </button>
+                          ))}
+                          <input
+                            type="number"
+                            min={0}
+                            max={MAX_SERVICE_FEE_PERCENT}
+                            step={0.01}
+                            value={serviceFeePercent}
+                            onChange={(e) => setServiceFeePercent(clampServiceFeePercent(Number(e.target.value)))}
+                            className="ml-auto w-20 glass px-3 py-2 rounded-xl border-white/10 outline-none text-right font-black text-primary"
+                          />
+                        </div>
+                        {serviceFeePercent > 0 && (
+                          <button
+                            onClick={() => setServiceFeePercent(0)}
+                            className="w-full py-2 rounded-xl border border-amber-500/20 text-amber-300 text-[10px] font-black uppercase tracking-widest hover:bg-amber-500/10"
+                          >
+                            Remover taxa de serviço
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-[9px] font-black uppercase tracking-widest text-gray-600">Sem permissão para alterar a taxa de serviço.</p>
+                    )}
                  </div>
                  <div className="flex justify-between text-rose-400 font-bold"><span>Desconto</span><span>- R$ {discountAmountValue.toFixed(2)}</span></div>
                  <div className="flex justify-between text-3xl font-black text-accent pt-3 border-t border-white/5 italic tracking-tighter"><span>Total</span><span>R$ {totalFinal.toFixed(2)}</span></div>
@@ -150,18 +209,25 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                        ))}
                     </select>
                  </div>
-                 <div>
+                 <div className={canApplyDiscount ? '' : 'opacity-40'}>
                     <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-3">Desconto Especial</h4>
+                    {!canApplyDiscount && (
+                      <p className="mb-2 text-[9px] font-black uppercase tracking-widest text-rose-300">
+                        Desconto bloqueado. Taxa de serviço é controlada separadamente.
+                      </p>
+                    )}
                     <div className="flex gap-3">
                        <input 
                          type="number" 
                          value={discountValue} 
-                         onChange={(e) => setDiscountValue(Number(e.target.value))}
+                         onChange={(e) => canApplyDiscount && setDiscountValue(Number(e.target.value))}
+                         disabled={!canApplyDiscount}
                          className="flex-1 glass p-4 rounded-xl border-white/10 outline-none font-bold text-base"
-                         placeholder="Valor..."
+                         placeholder={canApplyDiscount ? 'Valor...' : 'Sem permissão'}
                        />
                        <button 
-                         onClick={() => setDiscountType(discountType === 'fixed' ? 'percent' : 'fixed')}
+                         onClick={() => canApplyDiscount && setDiscountType(discountType === 'fixed' ? 'percent' : 'fixed')}
+                         disabled={!canApplyDiscount}
                          className="px-4 glass rounded-xl font-black text-primary text-sm"
                        >
                          {discountType === 'fixed' ? 'R$' : '%'}
@@ -182,8 +248,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                     ].map(m => (
                       <button 
                         key={m.id}
-                        onClick={() => setCurrentMethod(m.id as any)}
-                        className={`p-6 rounded-2xl border transition-all flex flex-col items-center gap-3 ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-105' : 'glass border-white/5 opacity-50 hover:opacity-100'}`}
+                        onClick={() => canChangePaymentMethod && setCurrentMethod(m.id as any)}
+                        disabled={!canChangePaymentMethod}
+                        className={`p-6 rounded-2xl border transition-all flex flex-col items-center gap-3 disabled:opacity-20 disabled:cursor-not-allowed ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-105' : 'glass border-white/5 opacity-50 hover:opacity-100'}`}
                       >
                         <m.icon size={26} />
                         <span className="font-black uppercase text-[9px] tracking-widest">{m.name}</span>
@@ -199,12 +266,14 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                          inputMode="numeric"
                          value={currentAmountFormatted}
                          onChange={handleAmountChange}
+                         disabled={!canLaunchPayment}
                          className="w-full glass py-4 pl-12 pr-6 rounded-2xl text-4xl font-black text-accent outline-none border-white/10"
                        />
                     </div>
                     <button 
                        onClick={handleAddPayment}
-                       className="py-4 px-8 btn-beco btn-beco-purple text-base font-black rounded-2xl"
+                       disabled={!canLaunchPayment || (payments.length > 0 && !canSplitPayment)}
+                       className="py-4 px-8 btn-beco btn-beco-purple text-base font-black rounded-2xl disabled:opacity-30 disabled:grayscale"
                     >
                        Lançar Valor
                     </button>
@@ -222,7 +291,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                          </div>
                          <div className="flex items-center gap-6">
                             <p className="text-xl font-black text-white">R$ {p.amount.toFixed(2)}</p>
-                            <button onClick={() => setPayments(payments.filter((_, i) => i !== idx))} className="text-rose-500 p-1.5 hover:bg-rose-500/10 rounded-lg"><Trash2 size={18}/></button>
+                            {canCancelPayment && (
+                              <button onClick={() => setPayments(payments.filter((_, i) => i !== idx))} className="text-rose-500 p-1.5 hover:bg-rose-500/10 rounded-lg"><Trash2 size={18}/></button>
+                            )}
                          </div>
                       </div>
                     ))}

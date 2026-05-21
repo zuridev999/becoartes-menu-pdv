@@ -31,10 +31,12 @@ export function PDVView() {
     sendToKitchen,
     serviceRequests,
     resolveService,
+    clearServiceRequest,
     login,
     syncData,
     updateTableStatus,
     cashState,
+    settings,
     openCash,
     closeCash
   } = useStore();
@@ -60,6 +62,7 @@ export function PDVView() {
   const [cashDialog, setCashDialog] = useState<'open' | 'close' | null>(null);
   const [cashValue, setCashValue] = useState('');
   const [cashNotes, setCashNotes] = useState('');
+  const [cashConfirmationPin, setCashConfirmationPin] = useState('');
   const [cashError, setCashError] = useState('');
   const [isCashSubmitting, setIsCashSubmitting] = useState(false);
   const [isEmbedded, setIsEmbedded] = useState(false);
@@ -233,21 +236,45 @@ export function PDVView() {
     });
   const totalToday = todayBills
     .reduce((acc, bill) => acc + bill.total, 0);
-  const todayPaymentTotals = todayBills.reduce((acc, bill) => {
-    bill.payments.forEach(payment => {
-      acc[payment.method] += Number(payment.amount || 0);
-    });
-    return acc;
-  }, { credit: 0, debit: 0, pix: 0, cash: 0 });
-  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
-  const canCancelTableItem = can(currentSeller, 'cancelTableItem');
-  const canCloseBill = can(currentSeller, 'closeBill');
+  const permissionOverrides = settings.permissionProfiles;
+  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides);
+  const canCancelTableItem = can(currentSeller, 'cancelTableItem', permissionOverrides);
+  const canCloseBill = can(currentSeller, 'closeBill', permissionOverrides);
+  const canOpenCash = can(currentSeller, 'openCash', permissionOverrides);
+  const canCloseCash = can(currentSeller, 'closeCash', permissionOverrides);
+  const canOpenTable = can(currentSeller, 'openTable', permissionOverrides);
+  const canAddOrderItem = can(currentSeller, 'addOrderItem', permissionOverrides);
+  const canSendOrderToProduction = can(currentSeller, 'sendOrderToProduction', permissionOverrides);
+  const isAdminSeller = currentSeller?.permission === 'admin';
   const isCashOpen = Boolean(cashState?.isOpen);
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
+  const canUseCashAction = isCashOpen ? canCloseCash : canOpenCash;
 
   const parseMoneyValue = (value: string) => {
-    const normalized = value.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+    const normalized = value.replace(/[^\d,]/g, '').replace(/\./g, '').replace(',', '.');
     return Number(normalized) || 0;
+  };
+
+  const formatMoneyInputValue = (value: string) => {
+    const digits = value.replace(/\D/g, '');
+    if (!digits) return '';
+    const cents = Number(digits);
+    return (cents / 100).toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const handleCashValueChange = (value: string) => {
+    setCashValue(formatMoneyInputValue(value));
+  };
+
+  const openCashDialog = (dialog: 'open' | 'close' | null) => {
+    setCashError('');
+    setCashValue('');
+    setCashNotes('');
+    setCashConfirmationPin('');
+    setCashDialog(dialog);
   };
 
   const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -255,13 +282,18 @@ export function PDVView() {
   const submitCashDialog = async () => {
     const value = parseMoneyValue(cashValue);
     setCashError('');
+    if (cashDialog === 'close' && cashConfirmationPin.length !== 4) {
+      setCashError('Digite o PIN de 4 dígitos do usuário logado para fechar o caixa.');
+      return;
+    }
     setIsCashSubmitting(true);
     try {
       if (cashDialog === 'open') await openCash(value, cashNotes);
-      if (cashDialog === 'close') await closeCash(value, cashNotes);
+      if (cashDialog === 'close') await closeCash(value, cashNotes, cashConfirmationPin);
       setCashDialog(null);
       setCashValue('');
       setCashNotes('');
+      setCashConfirmationPin('');
       await syncData({ includeCatalog: false });
     } catch (error) {
       setCashError(error instanceof Error ? error.message : 'Falha ao processar caixa.');
@@ -274,6 +306,10 @@ export function PDVView() {
     setSelectedTable(table);
     setCurrentTableId(table.id);
     if (table.status === 'available') {
+      if (!canOpenTable) {
+        useStore.getState().addNotification('Sem permissão para abrir mesa.', 'error');
+        return;
+      }
       setShowProductMenu(true);
       if (categories.length > 0) setActiveCategory(categories[0].id);
     }
@@ -370,17 +406,19 @@ export function PDVView() {
               <Wallet size={24} />
             </button>
           )}
-          <button
-            onClick={() => setCashDialog(isCashOpen ? 'close' : 'open')}
-            className={`glass-card px-6 py-4 flex items-center gap-3 transition-all border-white/5 ${
-              isCashOpen ? 'hover:bg-rose-500/10 hover:text-rose-400' : 'hover:bg-emerald-500/10 hover:text-emerald-400'
-            }`}
-            title={cashActionLabel}
-          >
-            <Wallet size={22} />
-            <span className="text-[10px] font-black uppercase tracking-[0.18em]">{cashActionLabel}</span>
-          </button>
-          {can(currentSeller, 'manageSettings') && (
+          {canUseCashAction && (
+            <button
+              onClick={() => openCashDialog(isCashOpen ? 'close' : 'open')}
+              className={`glass-card px-6 py-4 flex items-center gap-3 transition-all border-white/5 ${
+                isCashOpen ? 'hover:bg-rose-500/10 hover:text-rose-400' : 'hover:bg-emerald-500/10 hover:text-emerald-400'
+              }`}
+              title={cashActionLabel}
+            >
+              <Wallet size={22} />
+              <span className="text-[10px] font-black uppercase tracking-[0.18em]">{cashActionLabel}</span>
+            </button>
+          )}
+          {can(currentSeller, 'manageSettings', permissionOverrides) && (
             <button 
               onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')} 
               className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"
@@ -425,12 +463,18 @@ export function PDVView() {
             <p className="text-sm font-bold text-zinc-500 leading-relaxed mb-8">
               As mesas, lançamentos e fechamento ficam pausados até alguém da equipe abrir a casa.
             </p>
-            <button
-              onClick={() => setCashDialog('open')}
-              className="btn-beco btn-beco-purple px-10 py-5 rounded-2xl font-black uppercase tracking-widest"
-            >
-              Abrir caixa agora
-            </button>
+            {canOpenCash ? (
+              <button
+                onClick={() => openCashDialog('open')}
+                className="btn-beco btn-beco-purple px-10 py-5 rounded-2xl font-black uppercase tracking-widest"
+              >
+                Abrir caixa agora
+              </button>
+            ) : (
+              <p className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-5 py-4 text-[11px] font-black uppercase tracking-widest text-amber-200">
+                Chame um usuário com permissão para abrir o caixa.
+              </p>
+            )}
             {cashState?.lastClosingBalance !== undefined && (
               <p className="mt-5 text-[11px] font-black uppercase tracking-widest text-zinc-600">
                 Último fechamento: {formatCurrency(cashState.lastClosingBalance)}
@@ -571,16 +615,30 @@ export function PDVView() {
                            )}
                          </div>
                       </div>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          resolveService(req.id);
-                        }}
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-all ${isResolved ? 'bg-emerald-500 text-white hover:scale-105' : 'bg-white text-rose-600 hover:scale-110 active:scale-90'}`}
-                        title={isResolved ? "Desmarcar" : "Dar Ciente"}
-                      >
-                        <Check size={24} strokeWidth={4} />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {isAdminSeller && isResolved && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              clearServiceRequest(req.id);
+                            }}
+                            className="w-10 h-10 rounded-2xl flex items-center justify-center bg-black/25 text-white/70 hover:bg-rose-500 hover:text-white hover:scale-105 active:scale-95 transition-all"
+                            title="Limpar solicitação da tela"
+                          >
+                            <X size={18} strokeWidth={4} />
+                          </button>
+                        )}
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            resolveService(req.id);
+                          }}
+                          className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-all ${isResolved ? 'bg-emerald-500 text-white hover:scale-105' : 'bg-white text-rose-600 hover:scale-110 active:scale-90'}`}
+                          title={isResolved ? "Desmarcar" : "Dar Ciente"}
+                        >
+                          <Check size={24} strokeWidth={4} />
+                        </button>
+                      </div>
                     </motion.div>
                   );
                 })}
@@ -629,8 +687,15 @@ export function PDVView() {
                 <h3 className="text-2xl font-black italic tracking-tight mb-4">Mesa disponível</h3>
                 <p className="text-zinc-500 text-sm font-medium mb-12">Inicie um novo atendimento para adicionar itens e gerenciar esta mesa.</p>
                 <button 
-                  onClick={() => setShowProductMenu(true)}
-                  className="w-full btn-beco btn-beco-purple py-8 text-xl font-black rounded-3xl"
+                  onClick={() => {
+                    if (!canOpenTable || !canAddOrderItem) {
+                      useStore.getState().addNotification('Sem permissão para abrir atendimento ou adicionar itens.', 'error');
+                      return;
+                    }
+                    setShowProductMenu(true);
+                  }}
+                  disabled={!canOpenTable || !canAddOrderItem}
+                  className="w-full btn-beco btn-beco-purple py-8 text-xl font-black rounded-3xl disabled:opacity-30 disabled:grayscale"
                 >
                   ABRIR ATENDIMENTO
                 </button>
@@ -693,8 +758,15 @@ export function PDVView() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <button 
-                      onClick={() => setShowProductMenu(true)}
-                      className="btn-beco bg-zinc-800 hover:bg-zinc-700 py-6 rounded-2xl font-black text-sm"
+                      onClick={() => {
+                        if (!canAddOrderItem) {
+                          useStore.getState().addNotification('Sem permissão para adicionar item.', 'error');
+                          return;
+                        }
+                        setShowProductMenu(true);
+                      }}
+                      disabled={!canAddOrderItem}
+                      className="btn-beco bg-zinc-800 hover:bg-zinc-700 py-6 rounded-2xl font-black text-sm disabled:opacity-30 disabled:grayscale"
                     >
                       ADICIONAR ITENS
                     </button>
@@ -766,11 +838,15 @@ export function PDVView() {
 
                <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar">
                   <div className="grid grid-cols-2 gap-4">
-                    {menu.filter(p => !activeCategory || p.categoryId === activeCategory).map(product => (
+                    {menu.filter(p => p.visible && (!activeCategory || p.categoryId === activeCategory)).map(product => (
                       <motion.button
                         key={product.id}
                         whileHover={{ x: 6 }}
                         onClick={() => {
+                          if (!canAddOrderItem) {
+                            useStore.getState().addNotification('Sem permissão para adicionar item.', 'error');
+                            return;
+                          }
                           if (product.modifierGroups?.length) {
                             setSelectedProduct(product);
                             return;
@@ -833,8 +909,12 @@ export function PDVView() {
                   CANCELAR
                 </button>
                 <button 
-                  disabled={isSendingOrder || cart.length === 0}
+                  disabled={isSendingOrder || cart.length === 0 || !canSendOrderToProduction}
                   onClick={async () => {
+                    if (!canSendOrderToProduction) {
+                      useStore.getState().addNotification('Sem permissão para enviar pedido para produção.', 'error');
+                      return;
+                    }
                     if (cart.length > 0) {
                       setIsSendingOrder(true);
                       try {
@@ -898,7 +978,7 @@ export function PDVView() {
                     {cashDialog === 'open' ? 'Abrir caixa' : 'Fechar caixa'}
                   </h3>
                 </div>
-                <button onClick={() => setCashDialog(null)} className="glass p-3 rounded-2xl text-zinc-400 hover:text-white">
+                <button onClick={() => openCashDialog(null)} className="glass p-3 rounded-2xl text-zinc-400 hover:text-white">
                   <X size={22} />
                 </button>
               </div>
@@ -916,9 +996,9 @@ export function PDVView() {
                   </label>
                   <input
                     value={cashValue}
-                    onChange={(event) => setCashValue(event.target.value)}
-                    placeholder="R$ 0,00"
-                    inputMode="decimal"
+                    onChange={(event) => handleCashValueChange(event.target.value)}
+                    placeholder="0,00"
+                    inputMode="numeric"
                     className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-6 py-6 outline-none text-4xl font-black text-accent focus:border-primary/60"
                     autoFocus
                   />
@@ -932,27 +1012,22 @@ export function PDVView() {
                 )}
 
                 {cashDialog === 'close' && (
-                  <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-5">
-                    <div className="flex items-center justify-between gap-4 mb-4">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Resumo vendido hoje</p>
-                        <p className="text-2xl font-black text-emerald-400 mt-1">{formatCurrency(totalToday)}</p>
-                      </div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-600">{todayBills.length} contas</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        ['Crédito', todayPaymentTotals.credit],
-                        ['Débito', todayPaymentTotals.debit],
-                        ['Pix', todayPaymentTotals.pix],
-                        ['Dinheiro', todayPaymentTotals.cash],
-                      ].map(([label, amount]) => (
-                        <div key={label} className="rounded-2xl bg-black/20 border border-white/5 p-4">
-                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">{label}</p>
-                          <p className="mt-1 text-lg font-black text-white">{formatCurrency(Number(amount))}</p>
-                        </div>
-                      ))}
-                    </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                      Confirmar PIN do usuário logado
+                    </label>
+                    <input
+                      value={cashConfirmationPin}
+                      onChange={(event) => setCashConfirmationPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="••••"
+                      inputMode="numeric"
+                      type="password"
+                      maxLength={4}
+                      className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-6 py-5 outline-none text-3xl font-black text-white text-center tracking-[0.6em] focus:border-primary/60"
+                    />
+                    <p className="mt-2 text-[9px] font-black uppercase tracking-widest text-zinc-600">
+                      Segurança extra para evitar fechamento com sessão deixada aberta.
+                    </p>
                   </div>
                 )}
 
@@ -995,12 +1070,6 @@ export function PDVView() {
                 quantity: cancelItemDialog.item.quantity,
                 sellerName: currentSeller?.name,
                 sellerPermission: currentSeller?.permission
-              });
-              await addAuditLog({
-                action: 'item_cancelled',
-                details: { product_name: cancelItemDialog.item.name, quantity: cancelItemDialog.item.quantity },
-                table_number: cancelItemDialog.tableNumber.toString(),
-                origin: 'pdv'
               });
             }}
           />

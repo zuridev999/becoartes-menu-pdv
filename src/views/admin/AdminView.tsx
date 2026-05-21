@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp, 
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
-  GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy
+  GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote
 } from 'lucide-react';
 import {
   DndContext,
@@ -23,13 +23,23 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore, type Product } from '../../store';
+import { AdminApi, type OSUserCandidate } from '../../lib/api';
+import { db } from '../../lib/db';
 import { PinLoginModal } from '../../components/auth/PinLoginModal';
 import { ActionDialog } from '../../components/common/ActionDialog';
-import { can, getPermissionLabel } from '../../lib/permissions';
+import {
+  can,
+  defaultPermissionsByProfile,
+  getEffectivePermissions,
+  getPermissionLabel,
+  permissionGroups,
+  permissionLabels,
+  type PermissionKey,
+  type PermissionProfile,
+} from '../../lib/permissions';
 import { createId } from '../../lib/id';
 import { getImageSrc } from '../../lib/image';
-import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
-import { AppApi } from '../../lib/api';
+import { APP_BUILD_LABEL } from '../../lib/version';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
@@ -47,9 +57,16 @@ type AdminDialog = {
   onConfirm: (value?: string) => void | Promise<void>;
 };
 
+const clampServiceTaxPercent = (value: any) => {
+  const parsed = Number(String(value ?? '').replace(',', '.'));
+  if (!Number.isFinite(parsed)) return 13;
+  return Math.min(13, Math.max(0, parsed));
+};
+
 // Componente de Input fora para evitar perda de foco
 const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string }) => {
-  const isMoney = label.toLowerCase().includes('preço') || label.toLowerCase().includes('custo') || label.toLowerCase().includes('taxa');
+  const isPercent = label.includes('%');
+  const isMoney = !isPercent && (label.toLowerCase().includes('preço') || label.toLowerCase().includes('custo') || label.toLowerCase().includes('taxa'));
 
   // Formata o valor para exibição (ex: 12.50 -> "12,50")
   const formatMoney = (val: any) => {
@@ -89,9 +106,6 @@ const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { l
             type="text" 
             value={isMoney ? formatMoney(value) : value} 
             placeholder={placeholder}
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
             onChange={handleInputChange}
             className={`w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 focus:border-primary/40 focus:bg-white/[0.05] outline-none font-bold text-sm transition-all placeholder:text-zinc-700 ${isMoney ? 'text-right pr-12' : ''}`}
           />
@@ -208,7 +222,7 @@ export function AdminView() {
   const { 
     menu, updateProduct, addProduct, deleteProduct,
     settings, updateSettings,
-    sellers, addSeller, toggleSellerStatus, deleteSeller,
+    sellers, addSeller, updateSeller, toggleSellerStatus, deleteSeller, syncData,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
     adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, toggleCategoryVisibility,
     linkGroupToCategory, linkGroupToProduct, currentSeller, closedBills, addNotification,
@@ -227,10 +241,32 @@ export function AdminView() {
   const [newSellerRole, setNewSellerRole] = useState<'garçom' | 'atendente' | 'gerente' | 'outro'>('garçom');
   const [newSellerPermission, setNewSellerPermission] = useState<'admin' | 'manager' | 'operator'>('operator');
   const [newSellerPin, setNewSellerPin] = useState('1234');
+  const [osUsers, setOsUsers] = useState<OSUserCandidate[]>([]);
+  const [loadingOSUsers, setLoadingOSUsers] = useState(false);
 
   const [movements, setMovements] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
+
+  const refreshOSUsers = async () => {
+    if (!currentSeller || !can(currentSeller, 'managePDVUsers', settings.permissionProfiles)) return;
+    setLoadingOSUsers(true);
+    try {
+      const result = await AdminApi.listOSUsersForPDV();
+      setOsUsers(result.users || []);
+    } catch (error) {
+      console.warn('Falha ao carregar usuários do OS para o PDV:', error);
+      addNotification('Não consegui carregar usuários do OS agora.', 'error');
+    } finally {
+      setLoadingOSUsers(false);
+    }
+  };
+
+  useEffect(() => {
+    if (adminTab === 'sellers' && currentSeller && can(currentSeller, 'managePDVUsers', settings.permissionProfiles)) {
+      refreshOSUsers();
+    }
+  }, [adminTab, currentSeller?.id, sellers.length, settings.permissionProfiles]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -249,9 +285,12 @@ export function AdminView() {
   useEffect(() => {
     if (activeTab === 'movements') {
       const fetchMovements = async () => {
-        const res = await AppApi.fetchAuditLogs(100);
+        const res = await db.execute(`
+          SELECT * FROM audit_logs 
+          ORDER BY timestamp DESC LIMIT 100
+        `);
 
-        const formatted = res.auditLogs.map((r: any) => ({
+        const formatted = res.rows.map((r: any) => ({
           id: r.id,
           action: r.action,
           details: r.details,
@@ -287,14 +326,16 @@ export function AdminView() {
     return <PinLoginModal />;
   }
 
-  const canManageSettings = can(currentSeller, 'manageSettings');
-  const canManageTeam = can(currentSeller, 'manageTeam');
-  const canManageOptionals = can(currentSeller, 'manageOptionals');
-  const canAddProduct = can(currentSeller, 'addProduct');
-  const canEditProductPrice = can(currentSeller, 'editProductPrice');
-  const canDeleteProduct = can(currentSeller, 'deleteProduct');
-  const canToggleVisibility = can(currentSeller, 'toggleProductVisibility');
-  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals');
+  const permissionOverrides = settings.permissionProfiles;
+  const canManageSettings = can(currentSeller, 'manageSettings', permissionOverrides);
+  const canManageTeam = can(currentSeller, 'managePDVUsers', permissionOverrides);
+  const canManagePermissions = can(currentSeller, 'managePDVPermissions', permissionOverrides);
+  const canManageOptionals = can(currentSeller, 'manageOptionals', permissionOverrides);
+  const canAddProduct = can(currentSeller, 'addProduct', permissionOverrides);
+  const canEditProductPrice = can(currentSeller, 'editProductPrice', permissionOverrides);
+  const canDeleteProduct = can(currentSeller, 'deleteProduct', permissionOverrides);
+  const canToggleVisibility = can(currentSeller, 'toggleProductVisibility', permissionOverrides);
+  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides);
   const canAccessProducts =
     (adminMode === 'menu' && canToggleVisibility)
     || canAddProduct
@@ -346,6 +387,29 @@ export function AdminView() {
   }, {} as Record<string, { total: number; count: number }>);
 
   const closedBillsTotal = closedBills.reduce((acc, bill) => acc + bill.total, 0);
+  const closedBillsSubtotal = closedBills.reduce((acc, bill) => acc + bill.subtotal, 0);
+  const closedBillsServiceFees = closedBills.reduce((acc, bill) => acc + (bill.serviceFee || 0), 0);
+  const closedBillsDiscounts = closedBills.reduce((acc, bill) => acc + (bill.discount || 0), 0);
+  const permissionProfiles = settings.permissionProfiles || defaultPermissionsByProfile;
+  const profileLabels: Record<PermissionProfile, string> = {
+    admin: 'Admin',
+    manager: 'Gerente',
+    operator: 'Operador',
+  };
+  const toggleProfilePermission = (profile: PermissionProfile, permission: PermissionKey) => {
+    if (!canManagePermissions) return;
+    const currentProfile = getEffectivePermissions(profile, permissionProfiles);
+    const nextValue = !currentProfile[permission];
+    const nextProfiles = {
+      ...permissionProfiles,
+      [profile]: {
+        ...currentProfile,
+        [permission]: nextValue,
+        ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true } : {}),
+      },
+    };
+    updateSettings({ permissionProfiles: nextProfiles });
+  };
 
   const requestCategoryRename = (cat: any) => {
     setAdminDialog({
@@ -458,7 +522,7 @@ export function AdminView() {
               {currentSeller.name} • {getPermissionLabel(currentSeller)}
             </p>
             <p className="text-zinc-700 font-black uppercase tracking-[0.25em] text-[9px] mt-2 ml-2">
-              {getAppLabel()} {APP_BUILD_LABEL}
+              PDV {APP_BUILD_LABEL}
             </p>
           </div>
         </div>
@@ -489,8 +553,11 @@ export function AdminView() {
             <ConfigInput label="Nome da Unidade" value={settings.unitName} onChange={(val) => updateSettings({ unitName: val })} />
             <div className="grid grid-cols-2 gap-4">
               <ConfigInput label="Moeda" value={settings.currency} onChange={(val) => updateSettings({ currency: val })} />
-              <ConfigInput label="Taxa de Serviço (%)" type="number" value={settings.serviceTax} onChange={(val) => updateSettings({ serviceTax: val })} />
+              <ConfigInput label="Taxa de Serviço (%)" type="number" value={settings.serviceTax} onChange={(val) => updateSettings({ serviceTax: clampServiceTaxPercent(val) })} />
             </div>
+            <p className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-amber-200">
+              A taxa padrão nunca passa de 13%. Remover taxa no fechamento não vira desconto.
+            </p>
           </SectionCard>
           <SectionCard title="Tablet & Slideshow" icon={Image}>
             <ConfigInput label="Banner Automático" type="checkbox" value={settings.tablet.autoBanner} onChange={(val) => updateSettings({ tablet: { ...settings.tablet, autoBanner: val } })} />
@@ -533,6 +600,63 @@ export function AdminView() {
               <ConfigInput label="Alerta Visual" type="checkbox" value={settings.kitchen.visualAlert} onChange={(val) => updateSettings({ kitchen: { ...settings.kitchen, visualAlert: val } })} />
             </div>
           </SectionCard>
+          <div className="md:col-span-2 xl:col-span-3">
+            <SectionCard title="Permissões do PDV" icon={User}>
+              <div className="rounded-3xl border border-amber-400/20 bg-amber-400/10 px-5 py-4 text-[11px] font-black uppercase tracking-widest text-amber-200">
+                Alterações aqui afetam a interface e o backend das rotas críticas. Admin mantém acesso mínimo às configurações para evitar bloqueio acidental.
+              </div>
+              <div className="space-y-8">
+                {permissionGroups.map((group) => (
+                  <div key={group.title} className="space-y-4">
+                    <h4 className="text-xs font-black uppercase tracking-[0.25em] text-zinc-500">{group.title}</h4>
+                    <div className="overflow-x-auto rounded-3xl border border-white/10">
+                      <table className="w-full min-w-[760px] text-left">
+                        <thead className="bg-white/5">
+                          <tr className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                            <th className="p-4">Permissão</th>
+                            {(['admin', 'manager', 'operator'] as PermissionProfile[]).map((profile) => (
+                              <th key={profile} className="p-4 text-center">{profileLabels[profile]}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {group.keys.map((permission) => (
+                            <tr key={permission} className="hover:bg-white/[0.02]">
+                              <td className="p-4">
+                                <span className="text-sm font-black text-white">{permissionLabels[permission]}</span>
+                                <span className="block text-[9px] font-black uppercase tracking-widest text-zinc-600">{permission}</span>
+                              </td>
+                              {(['admin', 'manager', 'operator'] as PermissionProfile[]).map((profile) => {
+                                const checked = Boolean(getEffectivePermissions(profile, permissionProfiles)[permission]);
+                                const locked = !canManagePermissions || (profile === 'admin' && ['accessPDV', 'manageSettings', 'managePDVPermissions'].includes(permission));
+                                return (
+                                  <td key={`${profile}-${permission}`} className="p-4 text-center">
+                                    <button
+                                      type="button"
+                                      disabled={locked}
+                                      onClick={() => toggleProfilePermission(profile, permission)}
+                                      className={`mx-auto h-9 w-16 rounded-full border transition-all ${
+                                        checked
+                                          ? 'border-emerald-400/30 bg-emerald-500/20 text-emerald-300'
+                                          : 'border-white/10 bg-white/5 text-zinc-600'
+                                      } ${locked ? 'opacity-60 cursor-not-allowed' : 'hover:scale-105'}`}
+                                      title={locked ? 'Protegido para evitar bloqueio do admin' : checked ? 'Permitido' : 'Bloqueado'}
+                                    >
+                                      <span className="text-[10px] font-black uppercase">{checked ? 'ON' : 'OFF'}</span>
+                                    </button>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
         </div>
       )}
 
@@ -545,15 +669,7 @@ export function AdminView() {
             </div>
             {canAddProduct && (
               <button 
-                onClick={() => setAdminDialog({
-                  title: 'Nova Categoria',
-                  description: 'Digite o nome da categoria para o cardápio.',
-                  confirmLabel: 'Criar Categoria',
-                  input: { label: 'Nome da Categoria', placeholder: 'Ex: Entradas, Bebidas...' },
-                  onConfirm: (name) => {
-                    if (name) upsertCategory({ id: createId(), name, sortOrder: categories.length, visible: true });
-                  }
-                })} 
+                onClick={() => upsertCategory({ id: createId(), name: 'Nova Categoria', sortOrder: categories.length, visible: true })} 
                 className="px-8 py-4 bg-primary text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all flex items-center gap-3"
               >
                 <Plus size={20}/> Adicionar Categoria
@@ -668,68 +784,22 @@ export function AdminView() {
             {editingProduct && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-12 border-primary/20 sticky top-12 h-fit shadow-2xl shadow-primary/10 overflow-hidden">
                 <div className="flex justify-between items-start mb-10">
-                  <div className="flex flex-col gap-1">
-                    <h3 className="text-3xl font-black">
-                      {menu.some(p => p.id === editingProduct.id) ? 'Editar Produto' : 'Novo Produto'}
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {canAddProduct && menu.some(p => p.id === editingProduct.id) && (
-                      <button
-                        onClick={async () => {
-                          try {
-                            const duplicatedProduct = {
-                              ...editingProduct,
-                              id: createId(),
-                              name: `${editingProduct.name} (Cópia)`,
-                              price: typeof editingProduct.price === 'string'
-                                ? parseFloat(String(editingProduct.price).replace(',', '.')) || 0
-                                : Number(editingProduct.price) || 0,
-                              cost: typeof editingProduct.cost === 'string'
-                                ? parseFloat(String(editingProduct.cost).replace(',', '.')) || 0
-                                : Number(editingProduct.cost) || 0,
-                              description: editingProduct.description || '',
-                              image: editingProduct.image || '',
-                              visible: false,
-                              erpCode: '',
-                              remoteStockId: '',
-                            };
-
-                            await addProduct(duplicatedProduct);
-                            setEditingProduct(duplicatedProduct);
-                            addNotification('Produto duplicado como oculto. Revise nome, estoque e publique quando estiver pronto.', 'info');
-                          } catch (err: any) {
-                            console.error('Erro ao duplicar produto:', err);
-                            addNotification(`Erro ao duplicar: ${err.message}`, 'error');
-                          }
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-white/5 text-zinc-300 hover:bg-primary/10 hover:text-primary"
-                      >
-                        <Copy size={14}/> Duplicar
-                      </button>
-                    )}
-                    {canToggleVisibility && (
-                      <button 
-                        onClick={async () => {
-                          if (editingProduct.id.startsWith('new_')) {
-                            setEditingProduct({...editingProduct, visible: !editingProduct.visible});
-                          } else {
-                            await toggleProductVisibility(editingProduct.id);
-                            setEditingProduct({...editingProduct, visible: !editingProduct.visible});
-                          }
-                        }}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
-                      >
-                        {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
-                      </button>
-                    )}
+                  <h3 className="text-3xl font-black">Editar Produto</h3>
+                  {canToggleVisibility && (
                     <button 
-                      onClick={() => setEditingProduct(null)}
-                      className="w-10 h-10 glass rounded-full flex items-center justify-center hover:bg-rose-500/10 hover:text-rose-500 transition-all"
+                      onClick={async () => {
+                        if (editingProduct.id.startsWith('new_')) {
+                          setEditingProduct({...editingProduct, visible: !editingProduct.visible});
+                        } else {
+                          await toggleProductVisibility(editingProduct.id);
+                          setEditingProduct({...editingProduct, visible: !editingProduct.visible});
+                        }
+                      }}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
                     >
-                      <X size={20} />
+                      {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
                     </button>
-                  </div>
+                  )}
                 </div>
                 <div className="space-y-8">
                   <ConfigInput label="Nome do Produto" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} placeholder="Ex: Suco de Laranja 400ml" />
@@ -896,7 +966,11 @@ export function AdminView() {
             <div className="flex justify-between items-center mb-8 px-4">
               <h3 className="text-3xl font-black flex items-center gap-4"><Sparkles size={28}/> Grupos</h3>
               <button 
-                onClick={() => addModifierGroup({ id: createId(), name: 'Novo Grupo', minChoices: 0, maxChoices: 1, isRequired: false, status: 'active', modifiers: [] })}
+                onClick={async () => {
+                  const group = { id: createId(), name: 'Novo Grupo', minChoices: 0, maxChoices: 1, isRequired: false, status: 'active' as const, modifiers: [] };
+                  await addModifierGroup(group);
+                  setEditingGroup(group.id);
+                }}
                 className="p-3 bg-primary text-white rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all"
               >
                 <Plus size={20}/>
@@ -955,12 +1029,9 @@ export function AdminView() {
                       <h4 className="text-xl font-black mb-8 flex items-center gap-3"><Plus size={20} className="text-primary"/> Opções de Escolha</h4>
                       <div className="space-y-3">
                         {group.modifiers.map((m, idx) => (
-                          <div key={m.id || idx} className={`flex items-center gap-4 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all ${m.status === 'inactive' ? 'opacity-45 grayscale' : ''}`}>
+                          <div key={m.id || idx} className="flex items-center gap-4 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all">
                             <input 
                               value={m.name} 
-                              autoComplete="off"
-                              autoCorrect="off"
-                              spellCheck={false}
                               onChange={(e) => {
                                 const newMods = [...group.modifiers];
                                 newMods[idx] = { ...m, name: e.target.value };
@@ -972,7 +1043,6 @@ export function AdminView() {
                               <span className="text-[10px] font-black text-gray-500 uppercase">R$</span>
                               <input 
                                 type="number"
-                                autoComplete="off"
                                 value={m.price} 
                                 onChange={(e) => {
                                   const newMods = [...group.modifiers];
@@ -982,22 +1052,6 @@ export function AdminView() {
                                 className="w-20 bg-transparent outline-none font-bold text-sm text-right"
                               />
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newMods = [...group.modifiers];
-                                newMods[idx] = { ...m, status: m.status === 'inactive' ? 'active' : 'inactive' };
-                                updateModifierGroup(group.id, { modifiers: newMods });
-                              }}
-                              title={m.status === 'inactive' ? 'Mostrar no tablet' : 'Ocultar do tablet'}
-                              className={`p-2 rounded-lg transition-all ${
-                                m.status === 'inactive'
-                                  ? 'text-gray-500 hover:bg-white/10 hover:text-white'
-                                  : 'text-emerald-400 hover:bg-emerald-500/10'
-                              }`}
-                            >
-                              {m.status === 'inactive' ? <EyeOff size={16}/> : <Eye size={16}/>}
-                            </button>
                             <button onClick={() => {
                               const newMods = group.modifiers.filter((_, i) => i !== idx);
                               updateModifierGroup(group.id, { modifiers: newMods });
@@ -1127,22 +1181,90 @@ export function AdminView() {
             <button onClick={async () => { await addSeller({ id: createId(), name: newSellerName, role: newSellerRole, permission: newSellerPermission, pin: newSellerPin, status: 'active' }); setNewSellerName(''); setNewSellerPin('1234'); }} className="w-full btn-beco btn-beco-purple py-6 font-black mt-4">Registrar Vendedor</button>
           </SectionCard>
 
+          <SectionCard title="Usuários do Becoartes OS" icon={User}>
+            <div className="space-y-4">
+              {loadingOSUsers && <p className="text-xs font-black uppercase tracking-widest text-zinc-500">Carregando usuários do OS...</p>}
+              {!loadingOSUsers && osUsers.length === 0 && (
+                <p className="text-xs font-black uppercase tracking-widest text-zinc-500">Nenhum usuário operacional do OS encontrado.</p>
+              )}
+              {osUsers.map((user) => (
+                <div key={user.id} className="flex items-center justify-between gap-4 p-5 glass rounded-2xl border-white/5">
+                  <div className="min-w-0">
+                    <p className="font-black text-base truncate">{user.name}</p>
+                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">
+                      OS • {user.role} • {user.pdvEnabled ? `PDV ${user.pdvStatus}` : 'não ativado'}
+                    </p>
+                  </div>
+                  {user.pdvEnabled ? (
+                    <span className="px-4 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-widest">Espelhado</span>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        await AdminApi.activateOSSeller(user.id, user.suggestedPermission || 'operator');
+                        await syncData();
+                        await refreshOSUsers();
+                        addNotification(`${user.name} ativado no PDV.`, 'info');
+                      }}
+                      className="px-5 py-3 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20"
+                    >
+                      Ativar no PDV
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+
+          <div className="lg:col-span-2">
           <SectionCard title="Equipe Ativa" icon={User}>
             <div className="space-y-4">
                {sellers.map((s: any) => (
-                 <div key={s.id} className="flex items-center justify-between p-6 glass rounded-2xl border-white/5">
+                 <div key={s.id} className="p-6 glass rounded-2xl border-white/5 space-y-5">
+                  <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-6">
                        <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center font-black">{s.name.charAt(0)}</div>
-                       <div><p className="font-black text-lg">{s.name}</p><p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{s.role} • {s.permission}</p></div>
+                       <div>
+                        <p className="font-black text-lg">{s.name}</p>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{s.source === 'os' ? 'Becoartes OS' : 'PDV'} • {s.role}</p>
+                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                        <button onClick={() => toggleSellerStatus(s.id)} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest ${s.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>{s.status === 'active' ? 'Ativo' : 'Inativo'}</button>
                        <button onClick={() => deleteSeller(s.id)} className="p-3 glass rounded-xl text-rose-500"><Trash2 size={18}/></button>
                     </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-gray-500">Perfil de permissão do PDV</label>
+                      <select
+                        value={s.permission}
+                        onChange={(e) => updateSeller(s.id, { permission: e.target.value as any })}
+                        className="w-full glass p-4 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent"
+                      >
+                        <option value="admin" className="bg-[#0a0a0c]">Admin full access</option>
+                        <option value="manager" className="bg-[#0a0a0c]">Gerente</option>
+                        <option value="operator" className="bg-[#0a0a0c]">Operador</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-gray-500">Cargo no PDV</label>
+                      <select
+                        value={s.role}
+                        onChange={(e) => updateSeller(s.id, { role: e.target.value as any })}
+                        className="w-full glass p-4 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent"
+                      >
+                        <option value="garçom" className="bg-[#0a0a0c]">Garçom</option>
+                        <option value="atendente" className="bg-[#0a0a0c]">Atendente</option>
+                        <option value="gerente" className="bg-[#0a0a0c]">Gerente</option>
+                        <option value="outro" className="bg-[#0a0a0c]">Outro</option>
+                      </select>
+                    </div>
+                  </div>
                  </div>
                ))}
             </div>
           </SectionCard>
+          </div>
         </div>
       )}
 
@@ -1153,6 +1275,11 @@ export function AdminView() {
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Total Fechado</span>
               <p className="text-4xl font-black text-emerald-400 mt-3">R$ {closedBillsTotal.toFixed(2)}</p>
               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">{closedBills.length} mesas fechadas</p>
+              <div className="grid grid-cols-3 gap-2 mt-4 text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                <span>Produtos R$ {closedBillsSubtotal.toFixed(2)}</span>
+                <span>Taxa R$ {closedBillsServiceFees.toFixed(2)}</span>
+                <span>Desc. R$ {closedBillsDiscounts.toFixed(2)}</span>
+              </div>
             </div>
             {(['credit', 'debit', 'pix', 'cash'] as const).map((method) => {
               const Icon = method === 'cash' ? Banknote : method === 'pix' ? Wallet : CreditCard;
@@ -1178,6 +1305,9 @@ export function AdminView() {
                   <th className="p-8">Horário</th>
                   <th className="p-8">Operador</th>
                   <th className="p-8">Pagamentos</th>
+                  <th className="p-8 text-right">Produtos</th>
+                  <th className="p-8 text-right">Taxa</th>
+                  <th className="p-8 text-right">Desconto</th>
                   <th className="p-8 text-right">Total</th>
                 </tr>
               </thead>
@@ -1196,6 +1326,9 @@ export function AdminView() {
                         ))}
                       </div>
                     </td>
+                    <td className="p-8 text-right font-black text-zinc-300">R$ {bill.subtotal.toFixed(2)}</td>
+                    <td className="p-8 text-right font-black text-primary">R$ {(bill.serviceFee || 0).toFixed(2)}</td>
+                    <td className="p-8 text-right font-black text-rose-400">R$ {(bill.discount || 0).toFixed(2)}</td>
                     <td className="p-8 text-right font-black text-emerald-400">R$ {bill.total.toFixed(2)}</td>
                   </tr>
                 ))}

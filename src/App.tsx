@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useStore } from './store';
+import { initDB } from './lib/db';
 import { AnimatePresence } from 'framer-motion';
 
 // Componentes Comuns
@@ -26,6 +27,7 @@ function App() {
 
   useEffect(() => {
     const start = async () => {
+      await initDB();
       await init();
       postOSMessage('ready', {
         view: useStore.getState().activeView,

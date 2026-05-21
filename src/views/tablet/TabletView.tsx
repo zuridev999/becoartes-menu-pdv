@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShoppingBag, Tablet as TabletIcon, Bell, FileText } from 'lucide-react';
 import { useStore, type Product } from '../../store';
@@ -18,6 +18,50 @@ export function TabletView() {
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
+  const [forceLandscapeKiosk, setForceLandscapeKiosk] = useState(false);
+
+  useEffect(() => {
+    const updateViewportMode = () => {
+      const width = window.visualViewport?.width || window.innerWidth;
+      const height = window.visualViewport?.height || window.innerHeight;
+      document.documentElement.style.setProperty('--beco-vw', `${width}px`);
+      document.documentElement.style.setProperty('--beco-vh', `${height}px`);
+
+      const params = new URLSearchParams(window.location.search);
+      const override = params.get('tabletLandscape');
+      if (override === '1') {
+        setForceLandscapeKiosk(true);
+        document.documentElement.classList.add('beco-tablet-kiosk-landscape');
+        return;
+      }
+      if (override === '0') {
+        setForceLandscapeKiosk(false);
+        document.documentElement.classList.remove('beco-tablet-kiosk-landscape');
+        return;
+      }
+
+      const userAgent = navigator.userAgent.toLowerCase();
+      const isAndroid = userAgent.includes('android');
+      const isTabletSize = Math.min(width, height) >= 560;
+      const shouldRotate = isAndroid && isTabletSize && height > width;
+      setForceLandscapeKiosk(shouldRotate);
+      document.documentElement.classList.toggle('beco-tablet-kiosk-landscape', shouldRotate);
+    };
+
+    updateViewportMode();
+    window.addEventListener('resize', updateViewportMode);
+    window.addEventListener('orientationchange', updateViewportMode);
+    window.visualViewport?.addEventListener('resize', updateViewportMode);
+
+    return () => {
+      window.removeEventListener('resize', updateViewportMode);
+      window.removeEventListener('orientationchange', updateViewportMode);
+      window.visualViewport?.removeEventListener('resize', updateViewportMode);
+      document.documentElement.classList.remove('beco-tablet-kiosk-landscape');
+      document.documentElement.style.removeProperty('--beco-vw');
+      document.documentElement.style.removeProperty('--beco-vh');
+    };
+  }, []);
 
   // Sincronização Automática (60s)
   useEffect(() => {
@@ -29,16 +73,27 @@ export function TabletView() {
   }, [syncData]);
 
   const currentTable = tables.find(t => t.id === currentTableId);
+  const wrapTabletKiosk = (children: ReactNode) => (
+    forceLandscapeKiosk ? (
+      <div className="tablet-kiosk-landscape">
+        <div className="tablet-kiosk-landscape__stage">
+          {children}
+        </div>
+      </div>
+    ) : (
+      children
+    )
+  );
 
   // Se não tem mesa selecionada ou não desbloqueou com PIN
   if (!currentTableId || !isUnlocked) {
-    return <TabletEntry onUnlock={() => setIsUnlocked(true)} />;
+    return wrapTabletKiosk(<TabletEntry onUnlock={() => setIsUnlocked(true)} />);
   }
 
   const viewMode = settings.tablet.viewMode;
 
   return (
-    <div className="flex h-screen bg-[#0a0a0c] text-white font-['Outfit'] overflow-hidden relative">
+    wrapTabletKiosk(<div className="tablet-kiosk-frame flex h-screen bg-[#0a0a0c] text-white font-['Outfit'] overflow-hidden relative">
       {/* Header */}
       <div className="fixed top-0 left-0 right-0 h-24 glass border-b border-white/5 z-[100] flex items-center justify-between px-12 backdrop-blur-3xl bg-black/40">
         <div className="flex items-center gap-12">
@@ -105,7 +160,7 @@ export function TabletView() {
 
       <AnimatePresence>
         {selectedProduct && (
-          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />
+          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} tabletLandscape={forceLandscapeKiosk} />
         )}
       </AnimatePresence>
 
@@ -128,6 +183,6 @@ export function TabletView() {
       </AnimatePresence>
 
       <PWAHandler />
-    </div>
+    </div>)
   );
 }

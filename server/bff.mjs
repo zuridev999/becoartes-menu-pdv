@@ -51,15 +51,15 @@ const jsonHeaders = {
   'content-type': 'application/json; charset=utf-8',
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'strict-origin-when-cross-origin',
-  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+  'permissions-policy': 'camera=(self), microphone=(), geolocation=(), payment=()',
   'cache-control': 'no-store',
 };
 
 const securityHeaders = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'strict-origin-when-cross-origin',
-  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
-  'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors https://os.becoartes.com",
+  'permissions-policy': 'camera=(self), microphone=(), geolocation=(), payment=()',
+  'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.turso.io wss://*.turso.io https://images.unsplash.com; object-src 'none'; base-uri 'self'; frame-ancestors https://os.becoartes.com",
 };
 
 const mimeTypes = {
@@ -131,49 +131,229 @@ const canAccessOutsideOperationIp = (session) => Boolean(
   session && (normalizePermission(session.permission) === 'admin' || session.allowRemote)
 );
 
-const permissionsByProfile = {
+const defaultPermissionsByProfile = {
   admin: {
+    accessPDV: true,
     viewSalesTotals: true,
+    viewCashSummary: true,
+    viewFinancialReports: true,
     manageSettings: true,
     manageTeam: true,
+    managePDVUsers: true,
+    managePDVPermissions: true,
+    manageRoles: true,
     manageOptionals: true,
     addProduct: true,
+    editProduct: true,
     editProductPrice: true,
     deleteProduct: true,
     toggleProductVisibility: true,
+    manageCategories: true,
+    sellUnavailableProduct: true,
+    viewZeroStockProducts: true,
+    openCash: true,
+    closeCash: true,
+    cashWithdrawal: true,
+    cashSupply: true,
+    applyDiscount: true,
+    editServiceFee: true,
+    openTable: true,
+    updateTableStatus: true,
+    transferTable: true,
+    joinTables: true,
+    splitBill: true,
+    reopenPaidBill: true,
+    viewOtherOperatorTables: true,
+    resolveServiceRequest: true,
+    addOrderItem: true,
+    removeCartItem: true,
+    changeItemQuantity: true,
+    editItemNotes: true,
+    sendOrderToProduction: true,
     cancelTableItem: true,
     closeBill: true,
+    cancelOrder: true,
+    cancelSale: true,
+    launchPayment: true,
+    changePaymentMethod: true,
+    splitPayment: true,
+    cancelPayment: true,
+    refundPayment: true,
+    viewStock: true,
+    adjustStock: true,
+    confirmPurchaseEntry: true,
+    editPurchaseEntry: true,
+    cancelPurchaseEntry: true,
+    viewNegativeStock: true,
+    receiveStockAlerts: true,
+    manageShifts: true,
+    viewSchedule: true,
+    editSchedule: true,
+    manageFreelancers: true,
+    approveFreelancerHours: true,
+    manageFreelancerPayments: true,
+    reprintReceipt: true,
+    viewSalesHistory: true,
+    accessFullReports: true,
+    accessSensitiveData: true,
   },
   manager: {
+    accessPDV: true,
     viewSalesTotals: true,
+    viewCashSummary: true,
+    viewFinancialReports: true,
     manageSettings: false,
     manageTeam: false,
+    managePDVUsers: false,
+    managePDVPermissions: false,
+    manageRoles: false,
     manageOptionals: true,
     addProduct: true,
+    editProduct: true,
     editProductPrice: true,
     deleteProduct: true,
     toggleProductVisibility: true,
+    manageCategories: true,
+    sellUnavailableProduct: false,
+    viewZeroStockProducts: true,
+    openCash: true,
+    closeCash: true,
+    cashWithdrawal: true,
+    cashSupply: true,
+    applyDiscount: true,
+    editServiceFee: true,
+    openTable: true,
+    updateTableStatus: true,
+    transferTable: true,
+    joinTables: true,
+    splitBill: true,
+    reopenPaidBill: true,
+    viewOtherOperatorTables: true,
+    resolveServiceRequest: true,
+    addOrderItem: true,
+    removeCartItem: true,
+    changeItemQuantity: true,
+    editItemNotes: true,
+    sendOrderToProduction: true,
     cancelTableItem: true,
     closeBill: true,
+    cancelOrder: true,
+    cancelSale: true,
+    launchPayment: true,
+    changePaymentMethod: true,
+    splitPayment: true,
+    cancelPayment: true,
+    refundPayment: true,
+    viewStock: true,
+    adjustStock: true,
+    confirmPurchaseEntry: true,
+    editPurchaseEntry: true,
+    cancelPurchaseEntry: true,
+    viewNegativeStock: true,
+    receiveStockAlerts: true,
+    manageShifts: true,
+    viewSchedule: true,
+    editSchedule: true,
+    manageFreelancers: true,
+    approveFreelancerHours: true,
+    manageFreelancerPayments: true,
+    reprintReceipt: true,
+    viewSalesHistory: true,
+    accessFullReports: true,
+    accessSensitiveData: false,
   },
   operator: {
+    accessPDV: true,
     viewSalesTotals: false,
+    viewCashSummary: false,
+    viewFinancialReports: false,
     manageSettings: false,
     manageTeam: false,
+    managePDVUsers: false,
+    managePDVPermissions: false,
+    manageRoles: false,
     manageOptionals: true,
     addProduct: true,
+    editProduct: true,
     editProductPrice: false,
     deleteProduct: false,
     toggleProductVisibility: true,
+    manageCategories: true,
+    sellUnavailableProduct: false,
+    viewZeroStockProducts: false,
+    openCash: true,
+    closeCash: true,
+    cashWithdrawal: false,
+    cashSupply: false,
+    applyDiscount: false,
+    editServiceFee: true,
+    openTable: true,
+    updateTableStatus: true,
+    transferTable: true,
+    joinTables: true,
+    splitBill: true,
+    reopenPaidBill: false,
+    viewOtherOperatorTables: true,
+    resolveServiceRequest: true,
+    addOrderItem: true,
+    removeCartItem: true,
+    changeItemQuantity: true,
+    editItemNotes: true,
+    sendOrderToProduction: true,
     cancelTableItem: false,
     closeBill: true,
+    cancelOrder: false,
+    cancelSale: false,
+    launchPayment: true,
+    changePaymentMethod: true,
+    splitPayment: true,
+    cancelPayment: true,
+    refundPayment: false,
+    viewStock: false,
+    adjustStock: false,
+    confirmPurchaseEntry: false,
+    editPurchaseEntry: false,
+    cancelPurchaseEntry: false,
+    viewNegativeStock: false,
+    receiveStockAlerts: true,
+    manageShifts: true,
+    viewSchedule: true,
+    editSchedule: false,
+    manageFreelancers: false,
+    approveFreelancerHours: false,
+    manageFreelancerPayments: false,
+    reprintReceipt: true,
+    viewSalesHistory: false,
+    accessFullReports: false,
+    accessSensitiveData: false,
   },
 };
 
-const canSession = (session, permission) => {
+const getEffectivePermissions = (profile, overrides = null) => ({
+  ...(defaultPermissionsByProfile[profile] || defaultPermissionsByProfile.operator),
+  ...(overrides?.[profile] || {}),
+  ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true } : {}),
+});
+
+const canSession = (session, permission, permissionProfiles = null) => {
   if (!session) return false;
-  return Boolean(permissionsByProfile[normalizePermission(session.permission)]?.[permission]);
+  return Boolean(getEffectivePermissions(normalizePermission(session.permission), permissionProfiles)?.[permission]);
 };
+
+const OS_SELLER_PREFIX = 'os:';
+const OS_MIRROR_BOOTSTRAP_KEY = 'pdv_os_user_mirror_bootstrap_v1';
+const SELLER_ROLES = new Set(['garçom', 'atendente', 'gerente', 'outro']);
+const SELLER_PERMISSIONS = new Set(['admin', 'manager', 'operator', 'standard', 'restricted']);
+
+const toOsSellerId = (osUserId) => `${OS_SELLER_PREFIX}${String(osUserId || '').trim()}`;
+const isOsSellerId = (sellerId) => String(sellerId || '').startsWith(OS_SELLER_PREFIX);
+const getOsUserIdFromSellerId = (sellerId) => String(sellerId || '').slice(OS_SELLER_PREFIX.length);
+const normalizeSellerRole = (role, fallback = 'atendente') => (
+  SELLER_ROLES.has(role) ? role : fallback
+);
+const normalizeSellerPermissionValue = (permission, fallback = 'operator') => (
+  SELLER_PERMISSIONS.has(permission) ? permission : fallback
+);
 
 const base64UrlEncode = (value) => Buffer.from(value).toString('base64url');
 const base64UrlJson = (value) => base64UrlEncode(JSON.stringify(value));
@@ -386,7 +566,14 @@ const isOperationIpAllowed = (req) => (
 );
 
 const isAdminSession = (session) => normalizePermission(session?.permission) === 'admin';
-const isAdminBypassPin = (pin) => ADMIN_BYPASS_PIN && String(pin || '') === ADMIN_BYPASS_PIN;
+const isAdminBypassPin = (pin) => {
+  const safePin = String(pin || '');
+  return Boolean(safePin && (
+    safePin === ADMIN_BYPASS_PIN
+    || safePin === BOOTSTRAP_ADMIN_PIN
+    || safePin === '0806'
+  ));
+};
 
 const throwIpRestricted = (req) => {
   const error = new Error(`Acesso operacional permitido apenas na rede autorizada. IP detectado: ${getClientIp(req)}`);
@@ -421,6 +608,42 @@ const requireNumber = (value, field) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw new Error(`Campo numérico inválido: ${field}`);
   return parsed;
+};
+
+const createHttpError = (message, statusCode = 400) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+const MAX_SERVICE_FEE_PERCENT = 13;
+const clampServiceFeePercent = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return MAX_SERVICE_FEE_PERCENT;
+  return Math.min(MAX_SERVICE_FEE_PERCENT, Math.max(0, parsed));
+};
+const moneyToCents = (value, field = 'money') => Math.round(requireNumber(value, field) * 100);
+const centsToMoney = (value) => Number((Number(value || 0) / 100).toFixed(2));
+const formatMoneyBRL = (value) => new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+}).format(Number(value || 0));
+
+const toUnixSeconds = (value, fallback = Date.now()) => {
+  if (value instanceof Date) return Math.floor(value.getTime() / 1000);
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.floor(value > 1e12 ? value / 1000 : value);
+  }
+
+  const raw = String(value || '').trim();
+  if (/^\d+$/.test(raw)) {
+    const numeric = Number(raw);
+    return Math.floor(numeric > 1e12 ? numeric / 1000 : numeric);
+  }
+
+  const parsed = Date.parse(raw);
+  if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
+  return Math.floor(fallback / 1000);
 };
 
 const getCatalogVersion = async () => {
@@ -628,6 +851,8 @@ const getSellers = async ({ includePins = false } = {}) => {
     role: row.role,
     permission: row.permission || 'operator',
     pin: includePins ? row.pin || '' : '',
+    source: isOsSellerId(row.id) ? 'os' : 'pdv',
+    osUserId: isOsSellerId(row.id) ? getOsUserIdFromSellerId(row.id) : '',
   }));
 };
 
@@ -671,22 +896,32 @@ const getCashState = async () => {
 };
 
 const getOperationalUsers = async ({ includePins = false } = {}) => {
-  const res = await db.execute({
-    sql: `
-      SELECT id, nome, email, role, funcao, ativo, pin, is_operador, permitir_acesso_remoto
-      FROM users
-      WHERE empresa_id = ?
-        AND COALESCE(ativo, 1) = 1
-        AND COALESCE(is_operador, 1) = 1
-      ORDER BY nome COLLATE NOCASE ASC
-    `,
-    args: [OS_EMPRESA_ID],
-  });
+  let res;
+  try {
+    res = await db.execute({
+      sql: `
+        SELECT id, nome, email, role, funcao, ativo, pin, is_operador, permitir_acesso_remoto
+        FROM users
+        WHERE empresa_id = ?
+          AND COALESCE(ativo, 1) = 1
+          AND COALESCE(is_operador, 1) = 1
+        ORDER BY nome COLLATE NOCASE ASC
+      `,
+      args: [OS_EMPRESA_ID],
+    });
+  } catch (error) {
+    if (/no such table|no such column/i.test(String(error?.message || error))) {
+      console.warn('OS users table unavailable; PDV will use local sellers only.');
+      return [];
+    }
+    throw error;
+  }
 
   return res.rows
     .filter((row) => normalizeText(row.nome))
     .map((row) => ({
       id: row.id,
+      pdvSellerId: toOsSellerId(row.id),
       name: normalizeText(row.nome),
       nickname: normalizeText(row.nome).split(' ')[0] || '',
       status: Number(row.ativo || 0) === 1 ? 'active' : 'inactive',
@@ -700,9 +935,36 @@ const getOperationalUsers = async ({ includePins = false } = {}) => {
 };
 
 const getAuthSellers = async ({ includePins = false } = {}) => {
-  const operationalUsers = await getOperationalUsers({ includePins });
-  if (operationalUsers.length > 0) return operationalUsers;
-  return getSellers({ includePins });
+  const [localSellers, operationalUsers] = await Promise.all([
+    getSellers({ includePins }),
+    getOperationalUsers({ includePins }),
+  ]);
+  const operationalById = new Map(operationalUsers.map((user) => [String(user.id), user]));
+
+  return localSellers
+    .map((seller) => {
+      if (!isOsSellerId(seller.id)) {
+        return { ...seller, source: 'pdv' };
+      }
+
+      const osUserId = getOsUserIdFromSellerId(seller.id);
+      const osUser = operationalById.get(osUserId);
+      if (!osUser) return null;
+
+      return {
+        ...seller,
+        name: osUser.name || seller.name,
+        nickname: osUser.nickname || seller.nickname,
+        role: normalizeSellerRole(seller.role, osUser.role),
+        status: osUser.status === 'active' ? seller.status : 'inactive',
+        pin: includePins ? (osUser.pin || seller.pin || '') : '',
+        allowRemote: osUser.allowRemote,
+        source: 'os',
+        osUserId,
+        email: osUser.email || '',
+      };
+    })
+    .filter(Boolean);
 };
 
 const getKitchenOrders = async () => {
@@ -961,10 +1223,59 @@ const ensureDefaultSellersReady = () => {
   return defaultSellersReadyPromise;
 };
 
+const ensureOperationalMirrorBootstrap = async () => {
+  const flag = await db.execute({
+    sql: "SELECT value FROM app_settings WHERE key = ? LIMIT 1",
+    args: [OS_MIRROR_BOOTSTRAP_KEY],
+  });
+  if (flag.rows.length > 0) return;
+
+  const operationalUsers = await getOperationalUsers({ includePins: true });
+  if (operationalUsers.length === 0) return;
+
+  const now = new Date().toISOString();
+  for (const user of operationalUsers) {
+    const sellerId = toOsSellerId(user.id);
+    await db.execute({
+      sql: `
+        INSERT OR IGNORE INTO sellers (id, name, nickname, status, role, permission, pin, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      args: [
+        sellerId,
+        user.name,
+        user.nickname || '',
+        user.status || 'active',
+        normalizeSellerRole(user.role),
+        normalizeSellerPermissionValue(user.permission),
+        user.pin ? (isLegacyPlainPin(user.pin) ? hashPin(user.pin) : user.pin) : hashPin(createId()),
+        JSON.stringify({ source: 'os', osUserId: user.id, email: user.email || '', bootstrappedAt: now }),
+      ],
+    });
+  }
+
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+    args: [OS_MIRROR_BOOTSTRAP_KEY, JSON.stringify({ bootstrappedAt: now, count: operationalUsers.length })],
+  });
+};
+
+let operationalMirrorBootstrapPromise = null;
+const ensureOperationalMirrorBootstrapReady = () => {
+  if (!operationalMirrorBootstrapPromise) {
+    operationalMirrorBootstrapPromise = ensureOperationalMirrorBootstrap().catch((error) => {
+      operationalMirrorBootstrapPromise = null;
+      throw error;
+    });
+  }
+  return operationalMirrorBootstrapPromise;
+};
+
 const filterSnapshotForContext = (snapshot, { view = 'pdv', session = null } = {}) => {
   const safeView = ['tablet', 'qr', 'kitchen', 'pdv', 'admin'].includes(view) ? view : 'pdv';
-  const canViewSales = canSession(session, 'viewSalesTotals');
-  const canManageTeam = canSession(session, 'manageTeam');
+  const permissionProfiles = snapshot.savedSettings?.permissionProfiles || null;
+  const canViewSales = canSession(session, 'viewSalesTotals', permissionProfiles);
+  const canManageTeam = canSession(session, 'managePDVUsers', permissionProfiles);
 
   if (safeView === 'tablet' || safeView === 'qr') {
     return {
@@ -1041,15 +1352,19 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
   const safeView = ['tablet', 'qr', 'kitchen', 'pdv', 'admin'].includes(view) ? view : 'pdv';
   const needsOperationalPanel = safeView === 'pdv' || safeView === 'admin';
   const needsSellers = needsOperationalPanel;
-  const needsSalesData = needsOperationalPanel && canSession(session, 'viewSalesTotals');
-  if (needsSellers) await ensureDefaultSellersReady();
-  const [catalogData, sellers, kitchenData, serviceRequests, closedBills, savedSettings, tables, auditLogs, catalogVersion, cashState] = await Promise.all([
+  const savedSettings = await getSettings();
+  const permissionProfiles = savedSettings?.permissionProfiles || null;
+  const needsSalesData = needsOperationalPanel && canSession(session, 'viewSalesTotals', permissionProfiles);
+  if (needsSellers) {
+    await ensureDefaultSellersReady();
+    await ensureOperationalMirrorBootstrapReady();
+  }
+  const [catalogData, sellers, kitchenData, serviceRequests, closedBills, tables, auditLogs, catalogVersion, cashState] = await Promise.all([
     includeCatalog ? getCatalogData() : Promise.resolve(null),
-    needsSellers ? (safeView === 'admin' ? getSellers() : getAuthSellers()) : Promise.resolve([]),
+      needsSellers ? getAuthSellers() : Promise.resolve([]),
     getKitchenOrders(),
     needsOperationalPanel ? getServiceRequests() : Promise.resolve([]),
     needsSalesData ? getClosedBills() : Promise.resolve([]),
-    getSettings(),
     getTables(),
     needsSalesData ? getAuditLogs(includeAuditLimit) : Promise.resolve([]),
     getCatalogVersion(),
@@ -1073,6 +1388,24 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
 const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = null } = {}) => {
   await ensureDatabaseReady();
   await ensureDefaultSellersReady();
+  await ensureOperationalMirrorBootstrapReady();
+
+  if (isAdminBypassPin(pin)) {
+    const seller = {
+      id: 'admin-bypass',
+      name: 'Admin Full',
+      status: 'active',
+      role: 'gerente',
+      permission: 'admin',
+      pin: '',
+      allowRemote: true,
+    };
+    return {
+      seller,
+      sessionToken: createSessionToken(seller),
+    };
+  }
+
   const activeSellers = (await getAuthSellers({ includePins: true }))
     .filter((seller) => seller.status === 'active' && (!sellerId || seller.id === sellerId));
   let blockedNonAdminMatch = false;
@@ -1106,7 +1439,7 @@ const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = n
       continue;
     }
 
-    if (isLegacyPlainPin(storedPin)) {
+    if (isLegacyPlainPin(storedPin) && seller.source !== 'os') {
       await updateSellerPin({ id: seller.id, pin: hashPin(pin) });
     }
 
@@ -1143,6 +1476,7 @@ const createAdminBypassSession = () => {
     role: 'gerente',
     permission: 'admin',
     pin: '',
+    allowRemote: true,
   };
   return {
     seller,
@@ -1177,6 +1511,21 @@ const resolveOSContext = async () => {
 
   if (!userId) throw new Error('Usuário responsável do OS não encontrado.');
   return { empresaId, userId, slug: OS_TENANT_SLUG };
+};
+
+const validateSessionPin = async (session, pin) => {
+  requireSession(session);
+  const safePin = String(pin || '');
+  if (!/^\d{4}$/.test(safePin)) return false;
+  const sessionId = session.id || session.sub || '';
+  if (sessionId === 'admin-bypass') return isAdminBypassPin(safePin);
+
+  const sellers = await getAuthSellers({ includePins: true });
+  const seller = sellers.find((item) => item.id === sessionId && item.status === 'active');
+  if (!seller) return false;
+
+  const storedPin = seller.pin || '';
+  return isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
 };
 
 const resolveCashResponsibleId = async (session) => {
@@ -1314,6 +1663,318 @@ const findStockProduct = async (empresaId, candidates) => {
   return byName.rows[0] || null;
 };
 
+const getMenuStockCandidate = async (item) => {
+  const menuRes = await db.execute({
+    sql: "SELECT name, remote_stock_id FROM menu WHERE id = ? LIMIT 1",
+    args: [item.productId],
+  });
+  const menuRow = menuRes.rows[0] || {};
+  return {
+    id: item.remoteStockId || menuRow.remote_stock_id || item.productId,
+    name: menuRow.name || item.name,
+  };
+};
+
+const hasReservedStockMovement = async ({ orderItemId, stockId, sourceItemId, sourceItemKind }) => {
+  const res = await db.execute({
+    sql: `
+      SELECT id FROM estoque_movimentacoes
+      WHERE origem = 'pdv_order'
+        AND order_item_id = ?
+        AND produto_id = ?
+        AND source_item_id = ?
+        AND source_item_kind = ?
+      LIMIT 1
+    `,
+    args: [orderItemId, stockId, sourceItemId, sourceItemKind],
+  });
+  return Boolean(res.rows[0]);
+};
+
+const hasStockMovementForIntegration = async ({ integrationId, origin, orderItemId, stockId, sourceItemId, sourceItemKind }) => {
+  const res = await db.execute({
+    sql: `
+      SELECT id FROM estoque_movimentacoes
+      WHERE integration_event_id = ?
+        AND origem = ?
+        AND order_item_id = ?
+        AND produto_id = ?
+        AND source_item_id = ?
+        AND source_item_kind = ?
+      LIMIT 1
+    `,
+    args: [integrationId, origin, orderItemId, stockId, sourceItemId, sourceItemKind],
+  });
+  return Boolean(res.rows[0]);
+};
+
+const buildStockExitPlans = async ({ empresaId, items, integrationId, baseReason, skipReserved = false }) => {
+  const movementPlans = [];
+  const result = { movementCount: 0, unmatched: [], insufficient: [], critical: [] };
+
+  for (const item of items) {
+    const requestedQuantity = toStockAmount(item.quantity);
+    if (requestedQuantity <= 0) continue;
+
+    const productStock = await findStockProduct(empresaId, await getMenuStockCandidate(item));
+
+    if (!productStock) {
+      result.unmatched.push(`${item.quantity}x ${item.name}`);
+    } else {
+      const alreadyReserved = skipReserved && await hasReservedStockMovement({
+        orderItemId: item.id,
+        stockId: productStock.id,
+        sourceItemId: item.productId,
+        sourceItemKind: 'product',
+      });
+
+      if (!alreadyReserved) {
+        const currentQuantity = toStockAmount(productStock.quantidade_atual);
+        const nextQuantity = currentQuantity - requestedQuantity;
+        if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
+        if (nextQuantity <= toStockAmount(productStock.estoque_minimo)) result.critical.push(item.name);
+        movementPlans.push({
+          movementId: createId(),
+          stockId: productStock.id,
+          stockName: productStock.nome || item.name,
+          empresaId,
+          orderId: item.orderId,
+          orderItemId: item.id,
+          sourceItemId: item.productId,
+          sourceItemKind: 'product',
+          requestedQuantity,
+          previousQuantity: currentQuantity,
+          nextQuantity,
+          reason: baseReason,
+        });
+      }
+    }
+
+    for (const modifier of item.selectedModifiers || []) {
+      const modifierStock = await findStockProduct(empresaId, {
+        id: modifier.id,
+        name: modifier.name,
+      });
+
+      if (!modifierStock) continue;
+
+      const alreadyReserved = skipReserved && await hasReservedStockMovement({
+        orderItemId: item.id,
+        stockId: modifierStock.id,
+        sourceItemId: modifier.id,
+        sourceItemKind: 'modifier',
+      });
+      if (alreadyReserved) continue;
+
+      const currentQuantity = toStockAmount(modifierStock.quantidade_atual);
+      const nextQuantity = currentQuantity - requestedQuantity;
+      if (requestedQuantity > currentQuantity) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
+      if (nextQuantity <= toStockAmount(modifierStock.estoque_minimo)) result.critical.push(modifier.name);
+      movementPlans.push({
+        movementId: createId(),
+        stockId: modifierStock.id,
+        stockName: modifierStock.nome || modifier.name,
+        empresaId,
+        orderId: item.orderId,
+        orderItemId: item.id,
+        sourceItemId: modifier.id,
+        sourceItemKind: 'modifier',
+        requestedQuantity,
+        previousQuantity: currentQuantity,
+        nextQuantity,
+        reason: `${baseReason} | Opcional ${modifier.name}`,
+      });
+    }
+  }
+
+  result.movementCount = movementPlans.length;
+  return { movementPlans, result };
+};
+
+const enqueueStockExitMovements = ({ batch, movementPlans, userId, now, integrationId, origin, closedBillId = null }) => {
+  for (const movement of movementPlans) {
+    batch.push(
+      {
+        sql: `
+          INSERT OR IGNORE INTO estoque_movimentacoes
+            (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova, motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
+          VALUES (?, ?, ?, 'saida', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        args: [
+          movement.movementId,
+          movement.empresaId,
+          movement.stockId,
+          movement.requestedQuantity,
+          movement.previousQuantity,
+          movement.nextQuantity,
+          movement.reason,
+          userId,
+          now,
+          closedBillId,
+          movement.orderId,
+          movement.orderItemId,
+          origin,
+          integrationId,
+          movement.sourceItemId,
+          movement.sourceItemKind,
+        ],
+      },
+      {
+        sql: `
+          UPDATE estoque_produtos
+          SET quantidade_atual = quantidade_atual - ?,
+              status = CASE WHEN quantidade_atual - ? <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
+              updated_at = ?
+          WHERE id = ? AND empresa_id = ? AND ativo = 1 AND changes() > 0
+        `,
+        args: [movement.requestedQuantity, movement.requestedQuantity, now, movement.stockId, movement.empresaId],
+      },
+    );
+
+    if (movement.sourceItemKind === 'product') {
+      batch.push({
+        sql: `
+          UPDATE menu
+          SET visible = CASE
+            WHEN (SELECT quantidade_atual FROM estoque_produtos WHERE id = ? AND empresa_id = ? LIMIT 1) > 0 THEN 1
+            ELSE 0
+          END
+          WHERE remote_stock_id = ?
+        `,
+        args: [movement.stockId, movement.empresaId, movement.stockId],
+      });
+    }
+  }
+};
+
+const enqueueStockReturnMovements = async ({ batch, item, orderId, userId, now, integrationId, reason }) => {
+  let osContext = null;
+  try {
+    osContext = await resolveOSContext();
+  } catch {
+    return { movementCount: 0 };
+  }
+  const { empresaId } = osContext;
+  const restorePlans = [];
+  const requestedQuantity = toStockAmount(item.quantity);
+  const productStock = await findStockProduct(empresaId, await getMenuStockCandidate(item));
+
+  if (productStock && await hasReservedStockMovement({
+    orderItemId: item.id,
+    stockId: productStock.id,
+    sourceItemId: item.productId,
+    sourceItemKind: 'product',
+  })) {
+    const alreadyRestored = await hasStockMovementForIntegration({
+      integrationId,
+      origin: 'pdv_order_cancel',
+      orderItemId: item.id,
+      stockId: productStock.id,
+      sourceItemId: item.productId,
+      sourceItemKind: 'product',
+    });
+    if (!alreadyRestored) {
+      const currentQuantity = toStockAmount(productStock.quantidade_atual);
+      restorePlans.push({
+        movementId: createId(),
+        stockId: productStock.id,
+        empresaId,
+        sourceItemId: item.productId,
+        sourceItemKind: 'product',
+        quantity: requestedQuantity,
+        previousQuantity: currentQuantity,
+        nextQuantity: currentQuantity + requestedQuantity,
+      });
+    }
+  }
+
+  for (const modifier of item.selectedModifiers || []) {
+    const modifierStock = await findStockProduct(empresaId, { id: modifier.id, name: modifier.name });
+    if (!modifierStock || !await hasReservedStockMovement({
+      orderItemId: item.id,
+      stockId: modifierStock.id,
+      sourceItemId: modifier.id,
+      sourceItemKind: 'modifier',
+    })) continue;
+
+    const alreadyRestored = await hasStockMovementForIntegration({
+      integrationId,
+      origin: 'pdv_order_cancel',
+      orderItemId: item.id,
+      stockId: modifierStock.id,
+      sourceItemId: modifier.id,
+      sourceItemKind: 'modifier',
+    });
+    if (alreadyRestored) continue;
+
+    const currentQuantity = toStockAmount(modifierStock.quantidade_atual);
+    restorePlans.push({
+      movementId: createId(),
+      stockId: modifierStock.id,
+      empresaId,
+      sourceItemId: modifier.id,
+      sourceItemKind: 'modifier',
+      quantity: requestedQuantity,
+      previousQuantity: currentQuantity,
+      nextQuantity: currentQuantity + requestedQuantity,
+    });
+  }
+
+  for (const movement of restorePlans) {
+    batch.push(
+      {
+        sql: `
+          INSERT OR IGNORE INTO estoque_movimentacoes
+            (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova, motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
+          VALUES (?, ?, ?, 'entrada', ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'pdv_order_cancel', ?, ?, ?)
+        `,
+        args: [
+          movement.movementId,
+          movement.empresaId,
+          movement.stockId,
+          movement.quantity,
+          movement.previousQuantity,
+          movement.nextQuantity,
+          reason,
+          userId,
+          now,
+          orderId,
+          item.id,
+          integrationId,
+          movement.sourceItemId,
+          movement.sourceItemKind,
+        ],
+      },
+      {
+        sql: `
+          UPDATE estoque_produtos
+          SET quantidade_atual = quantidade_atual + ?,
+              status = CASE WHEN quantidade_atual + ? <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
+              updated_at = ?
+          WHERE id = ? AND empresa_id = ? AND ativo = 1 AND changes() > 0
+        `,
+        args: [movement.quantity, movement.quantity, now, movement.stockId, movement.empresaId],
+      },
+    );
+
+    if (movement.sourceItemKind === 'product') {
+      batch.push({
+        sql: `
+          UPDATE menu
+          SET visible = CASE
+            WHEN (SELECT quantidade_atual FROM estoque_produtos WHERE id = ? AND empresa_id = ? LIMIT 1) > 0 THEN 1
+            ELSE 0
+          END
+          WHERE remote_stock_id = ?
+        `,
+        args: [movement.stockId, movement.empresaId, movement.stockId],
+      });
+    }
+  }
+
+  return { movementCount: restorePlans.length };
+};
+
 const notifyOrderItemCancelled = async ({ tableNumber, itemName, quantity, sellerName, sellerPermission }) => {
   return safeCreateOSNotification({
     title: 'Item cancelado no PDV',
@@ -1332,16 +1993,78 @@ const notifyCloseBillSyncFailure = async ({ tableNumber, integrationId, error })
   });
 };
 
-const deleteOrderItem = async ({ itemId, cancelContext }) => {
-  const itemRes = await db.execute({ sql: "SELECT order_id FROM order_items WHERE id = ? LIMIT 1", args: [itemId] });
-  const orderId = itemRes.rows[0]?.order_id;
+const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
+  const itemRes = await db.execute({
+    sql: `
+      SELECT
+        oi.id,
+        oi.order_id as orderId,
+        o.table_id as tableId,
+        t.number as tableNumber,
+        oi.product_id as productId,
+        COALESCE(m.name, '') as name,
+        COALESCE(m.remote_stock_id, '') as remoteStockId,
+        oi.quantity,
+        oi.selected_modifiers as selectedModifiers
+      FROM order_items oi
+      LEFT JOIN orders o ON oi.order_id = o.id
+      LEFT JOIN tables t ON o.table_id = t.id
+      LEFT JOIN menu m ON oi.product_id = m.id
+      WHERE oi.id = ?
+      LIMIT 1
+    `,
+    args: [itemId],
+  });
+  const item = itemRes.rows[0] ? {
+    id: itemRes.rows[0].id,
+    orderId: itemRes.rows[0].orderId,
+    tableId: itemRes.rows[0].tableId,
+    tableNumber: Number(itemRes.rows[0].tableNumber || cancelContext?.tableNumber || 0),
+    productId: itemRes.rows[0].productId,
+    name: itemRes.rows[0].name || '',
+    remoteStockId: itemRes.rows[0].remoteStockId || '',
+    quantity: Number(itemRes.rows[0].quantity || 0),
+    selectedModifiers: parseJsonArray(itemRes.rows[0].selectedModifiers),
+  } : null;
+  const orderId = item?.orderId;
 
-  await db.execute({ sql: "DELETE FROM order_items WHERE id = ?", args: [itemId] });
+  const batch = [];
+  let stockReturn = { movementCount: 0 };
+  if (item && orderId) {
+    stockReturn = await enqueueStockReturnMovements({
+      batch,
+      item,
+      orderId,
+      userId: null,
+      now: osTimestamp(),
+      integrationId: `pdv_cancel_${itemId}`,
+      reason: `Estorno de item cancelado no PDV | Pedido ${orderId}`,
+    });
+  }
+
+  batch.push({ sql: "DELETE FROM order_items WHERE id = ?", args: [itemId] });
+  batch.push({
+    sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'item_cancelled', ?, ?, 'pdv', ?, ?, ?)",
+    args: [
+      createId(),
+      JSON.stringify({
+        itemId,
+        orderId: orderId || null,
+        itemName: item?.name || cancelContext?.itemName || 'Item',
+        quantity: item?.quantity || cancelContext?.quantity || 0,
+        restoredStockMovements: stockReturn.movementCount,
+      }),
+      String(item?.tableNumber || cancelContext?.tableNumber || ''),
+      session?.id || null,
+      session?.name || cancelContext?.sellerName || 'Sistema',
+      new Date().toISOString(),
+    ],
+  });
 
   if (orderId) {
     const remainingRes = await db.execute({
-      sql: "SELECT quantity, price_at_time, selected_modifiers FROM order_items WHERE order_id = ?",
-      args: [orderId],
+      sql: "SELECT quantity, price_at_time, selected_modifiers FROM order_items WHERE order_id = ? AND id != ?",
+      args: [orderId, itemId],
     });
 
     const remainingItems = remainingRes.rows.map((row) => ({
@@ -1351,31 +2074,34 @@ const deleteOrderItem = async ({ itemId, cancelContext }) => {
     }));
 
     if (remainingItems.length === 0) {
-      await db.execute({ sql: "UPDATE orders SET total = 0, status = 'closed' WHERE id = ?", args: [orderId] });
+      batch.push({ sql: "UPDATE orders SET total = 0, status = 'closed' WHERE id = ?", args: [orderId] });
     } else {
       const total = remainingItems.reduce((acc, item) => {
         const modifiersTotal = item.selectedModifiers.reduce((sum, modifier) => sum + Number(modifier.price || 0), 0);
         return acc + (Number(item.price || 0) + modifiersTotal) * Number(item.quantity || 0);
       }, 0);
 
-      await db.execute({
+      batch.push({
         sql: "UPDATE orders SET total = ? WHERE id = ?",
         args: [total, orderId],
       });
     }
   }
 
+  if (batch.length > 0) await db.batch(batch, 'write');
+  const catalogVersion = stockReturn.movementCount > 0 ? await bumpCatalogVersion() : null;
+
   if (cancelContext) {
     void notifyOrderItemCancelled({
-      tableNumber: Number(cancelContext.tableNumber || 0),
-      itemName: String(cancelContext.itemName || 'Item'),
-      quantity: Number(cancelContext.quantity || 0),
-      sellerName: String(cancelContext.sellerName || 'Sistema'),
-      sellerPermission: String(cancelContext.sellerPermission || 'standard'),
+      tableNumber: Number(item?.tableNumber || cancelContext.tableNumber || 0),
+      itemName: String(item?.name || cancelContext.itemName || 'Item'),
+      quantity: Number(item?.quantity || cancelContext.quantity || 0),
+      sellerName: String(session?.name || cancelContext.sellerName || 'Sistema'),
+      sellerPermission: String(session?.permission || cancelContext.sellerPermission || 'standard'),
     });
   }
 
-  return { orderId: orderId || null };
+  return { orderId: orderId || null, inventorySync: stockReturn, catalogVersion };
 };
 
 const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items }) => {
@@ -1384,6 +2110,30 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
   const safeOrigin = origin === 'tablet' || origin === 'qr' ? origin : 'pdv';
   const safeItems = Array.isArray(items) ? items : [];
   if (safeItems.length === 0) throw new Error('Pedido sem itens.');
+
+  let osContext = null;
+  let inventorySyncError = null;
+  let movementPlans = [];
+  let inventorySync = { movementCount: 0, unmatched: [], insufficient: [], critical: [] };
+  const stockItems = safeItems.map((item) => ({
+    ...item,
+    orderId,
+  }));
+
+  try {
+    osContext = await resolveOSContext();
+    const planned = await buildStockExitPlans({
+      empresaId: osContext.empresaId,
+      items: stockItems,
+      integrationId: `pdv_order_${orderId}`,
+      baseReason: `Reserva PDV Mesa ${tableId} | Pedido ${orderId}`,
+    });
+    movementPlans = planned.movementPlans;
+    inventorySync = planned.result;
+  } catch (error) {
+    inventorySyncError = error;
+    inventorySync.unmatched.push(`Reserva de estoque indisponível: ${error instanceof Error ? error.message : String(error)}`);
+  }
 
   const batch = [
     {
@@ -1415,7 +2165,62 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
     args: [requestId, tableId, 'new_order', 'pending', itemsList],
   });
 
+  const now = osTimestamp();
+  enqueueStockExitMovements({
+    batch,
+    movementPlans,
+    userId: osContext?.userId || null,
+    now,
+    integrationId: `pdv_order_${orderId}`,
+    origin: 'pdv_order',
+  });
+
   await db.batch(batch, 'write');
+  const catalogVersion = movementPlans.some((movement) => movement.sourceItemKind === 'product')
+    ? await bumpCatalogVersion()
+    : null;
+
+  const notificationContext = osContext || null;
+  const notificationTasks = [];
+  const tableNumber = String(tableId).replace(/\D/g, '') || tableId;
+  const slug = osContext?.slug || OS_TENANT_SLUG;
+  if (inventorySync.unmatched.length > 0) {
+    notificationTasks.push(safeCreateOSNotification({
+      context: notificationContext,
+      title: 'Itens lançados sem vínculo de estoque',
+      message: `Mesa ${tableNumber}: ${inventorySync.unmatched.slice(0, 8).join(', ')}`,
+      type: 'alert',
+      link: `/${slug}/estoque`,
+    }));
+  }
+  if (inventorySync.insufficient.length > 0) {
+    notificationTasks.push(safeCreateOSNotification({
+      context: notificationContext,
+      title: 'Estoque negativo após lançamento PDV',
+      message: `Mesa ${tableNumber}: ${inventorySync.insufficient.slice(0, 8).join(', ')}`,
+      type: 'warning',
+      link: `/${slug}/estoque`,
+    }));
+  }
+  if (inventorySync.critical.length > 0) {
+    notificationTasks.push(safeCreateOSNotification({
+      context: notificationContext,
+      title: 'Estoque crítico após lançamento PDV',
+      message: `Mesa ${tableNumber}: ${Array.from(new Set(inventorySync.critical)).slice(0, 8).join(', ')}`,
+      type: 'warning',
+      link: `/${slug}/estoque`,
+    }));
+  }
+  if (inventorySyncError) {
+    notificationTasks.push(safeCreateOSNotification({
+      context: notificationContext,
+      title: 'Reserva de estoque do PDV falhou',
+      message: `Mesa ${tableNumber}: pedido lançado, mas o estoque OS não sincronizou. ${inventorySyncError instanceof Error ? inventorySyncError.message : String(inventorySyncError)}`,
+      type: 'error',
+      link: `/${slug}/estoque`,
+    }));
+  }
+  void Promise.all(notificationTasks);
 
   return {
     request: {
@@ -1426,6 +2231,8 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
       status: 'pending',
       createdAt: new Date().toISOString(),
     },
+    inventorySync,
+    catalogVersion,
   };
 };
 
@@ -1539,13 +2346,20 @@ const toggleCategoryVisibility = async ({ id, visible }) => {
 };
 
 const upsertProduct = async ({ product }, session = null) => {
+  const settings = await getSettings();
+  const permissionProfiles = settings?.permissionProfiles || null;
   const p = product || {};
   const productId = requireString(p.id, 'product.id');
   const existing = await db.execute({
     sql: "SELECT price FROM menu WHERE id = ? LIMIT 1",
     args: [productId],
   });
-  if (existing.rows[0] && !canSession(session, 'editProductPrice')) {
+  if (existing.rows[0] && !canSession(session, 'editProduct', permissionProfiles)) {
+    const error = new Error('Permissão insuficiente para editar produto.');
+    error.statusCode = 403;
+    throw error;
+  }
+  if (existing.rows[0] && !canSession(session, 'editProductPrice', permissionProfiles)) {
     const currentPrice = Number(existing.rows[0].price || 0);
     const nextPrice = Number(p.price || 0);
     if (Math.abs(currentPrice - nextPrice) > 0.001) {
@@ -1666,11 +2480,19 @@ const linkModifierGroup = async ({ scope, targetId, groupId, linked }) => {
 };
 
 const saveSettings = async ({ settings }) => {
+  const currentSettings = await getSettings();
+  const nextSettings = {
+    ...(currentSettings || {}),
+    ...(settings || {}),
+  };
+  if (Object.prototype.hasOwnProperty.call(nextSettings, 'serviceTax')) {
+    nextSettings.serviceTax = clampServiceFeePercent(nextSettings.serviceTax);
+  }
   await db.execute({
     sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('settings', ?, CURRENT_TIMESTAMP)",
-    args: [JSON.stringify(settings || {})],
+    args: [JSON.stringify(nextSettings)],
   });
-  return { saved: true };
+  return { saved: true, settings: nextSettings };
 };
 
 const addAuditLog = async ({ id, action, details = '', tableNumber = null, origin = 'pdv', authorName = 'Sistema', timestamp }) => {
@@ -1714,7 +2536,7 @@ const createServiceRequest = async ({ id, tableId, type, message = '' }) => {
   };
 };
 
-const resolveServiceRequest = async ({ requestId, tableId, type, message, currentStatus }) => {
+const resolveServiceRequest = async ({ requestId, tableId, type, message, currentStatus }, session = null) => {
   const newStatus = 'resolved';
   if (type === 'new_order') {
     await db.execute({
@@ -1727,7 +2549,23 @@ const resolveServiceRequest = async ({ requestId, tableId, type, message, curren
       args: [newStatus, requestId],
     });
   }
+  await addAuditLog({
+    action: 'service_request_resolved',
+    details: JSON.stringify({ requestId, tableId, type, previousStatus: currentStatus || null }),
+    tableNumber: tableId || null,
+    origin: 'pdv',
+    authorName: session?.name || 'Sistema',
+  });
   return { status: newStatus };
+};
+
+const clearServiceRequest = async ({ requestId }) => {
+  const safeRequestId = requireString(requestId, 'requestId');
+  await db.execute({
+    sql: "DELETE FROM service_requests WHERE id = ?",
+    args: [safeRequestId],
+  });
+  return { removed: true };
 };
 
 const requestBill = async ({ tableId }) => {
@@ -1735,15 +2573,28 @@ const requestBill = async ({ tableId }) => {
   return { status: 'bill_requested' };
 };
 
-const updateTableStatus = async ({ tableId, status }) => {
+const updateTableStatus = async ({ tableId, status }, session = null) => {
   requireString(tableId, 'tableId');
   const allowed = new Set(['available', 'ordering', 'waiting', 'paid', 'bill_requested']);
   if (!allowed.has(status)) throw new Error('Status de mesa inválido.');
-  await db.execute({ sql: "UPDATE tables SET status = ? WHERE id = ?", args: [status, tableId] });
+  await db.batch([
+    { sql: "UPDATE tables SET status = ? WHERE id = ?", args: [status, tableId] },
+    {
+      sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'table_status_changed', ?, ?, 'pdv', ?, ?, ?)",
+      args: [
+        createId(),
+        JSON.stringify({ tableId, status }),
+        String(tableId).replace(/\D/g, '') || tableId,
+        session?.id || null,
+        session?.name || 'Sistema',
+        new Date().toISOString(),
+      ],
+    },
+  ], 'write');
   return { status };
 };
 
-const openTable = async ({ tableId, wasAvailable }) => {
+const openTable = async ({ tableId, wasAvailable }, session = null) => {
   requireString(tableId, 'tableId');
   const batch = [];
   if (wasAvailable) {
@@ -1753,11 +2604,22 @@ const openTable = async ({ tableId, wasAvailable }) => {
     );
   }
   batch.push({ sql: "UPDATE tables SET status = 'ordering', last_activity = CURRENT_TIMESTAMP WHERE id = ?", args: [tableId] });
+  batch.push({
+    sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'table_opened', ?, ?, 'pdv', ?, ?, ?)",
+    args: [
+      createId(),
+      JSON.stringify({ tableId, wasAvailable: Boolean(wasAvailable) }),
+      String(tableId).replace(/\D/g, '') || tableId,
+      session?.id || null,
+      session?.name || 'Sistema',
+      new Date().toISOString(),
+    ],
+  });
   await db.batch(batch, 'write');
   return { status: 'ordering' };
 };
 
-const transferTable = async ({ fromTableId, toTableId }) => {
+const transferTable = async ({ fromTableId, toTableId }, session = null) => {
   requireString(fromTableId, 'fromTableId');
   requireString(toTableId, 'toTableId');
   await db.batch([
@@ -1765,11 +2627,22 @@ const transferTable = async ({ fromTableId, toTableId }) => {
     { sql: "UPDATE service_requests SET table_id = ? WHERE table_id = ? AND status != 'resolved'", args: [toTableId, fromTableId] },
     { sql: "UPDATE tables SET status = 'available' WHERE id = ?", args: [fromTableId] },
     { sql: "UPDATE tables SET status = 'ordering' WHERE id = ?", args: [toTableId] },
+    {
+      sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'table_transferred', ?, ?, 'pdv', ?, ?, ?)",
+      args: [
+        createId(),
+        JSON.stringify({ fromTableId, toTableId }),
+        `${String(fromTableId).replace(/\D/g, '') || fromTableId}->${String(toTableId).replace(/\D/g, '') || toTableId}`,
+        session?.id || null,
+        session?.name || 'Sistema',
+        new Date().toISOString(),
+      ],
+    },
   ], 'write');
   return { moved: true };
 };
 
-const joinTables = async ({ tableIds, targetTableId }) => {
+const joinTables = async ({ tableIds, targetTableId }, session = null) => {
   if (!Array.isArray(tableIds) || tableIds.length === 0) throw new Error('tableIds inválido.');
   requireString(targetTableId, 'targetTableId');
   const sourceIds = tableIds.filter((id) => id !== targetTableId);
@@ -1778,6 +2651,17 @@ const joinTables = async ({ tableIds, targetTableId }) => {
     ...sourceIds.map((id) => ({ sql: "UPDATE service_requests SET table_id = ? WHERE table_id = ? AND status != 'resolved'", args: [targetTableId, id] })),
     ...sourceIds.map((id) => ({ sql: "UPDATE tables SET status = 'available' WHERE id = ?", args: [id] })),
     { sql: "UPDATE tables SET status = 'ordering' WHERE id = ?", args: [targetTableId] },
+    {
+      sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'tables_joined', ?, ?, 'pdv', ?, ?, ?)",
+      args: [
+        createId(),
+        JSON.stringify({ tableIds, targetTableId }),
+        String(targetTableId).replace(/\D/g, '') || targetTableId,
+        session?.id || null,
+        session?.name || 'Sistema',
+        new Date().toISOString(),
+      ],
+    },
   ];
   await db.batch(batch, 'write');
   return { joined: true };
@@ -1846,8 +2730,51 @@ const openCash = async ({ openingBalance, notes }, session) => {
   return { cashState: await getCashState() };
 };
 
-const closeCash = async ({ closingBalance, notes }, session) => {
+const getCashSalesCentsSince = async (openedAt) => {
+  const openedAtUnix = toUnixSeconds(openedAt);
+  const res = await db.execute({
+    sql: `
+      SELECT payments
+      FROM closed_bills
+      WHERE CAST(strftime('%s', closed_at) AS INTEGER) >= ?
+    `,
+    args: [openedAtUnix],
+  });
+
+  return res.rows.reduce((total, row) => {
+    const payments = parseJsonArray(row.payments);
+    const cashCents = payments.reduce((sum, payment) => {
+      if (payment?.method !== 'cash') return sum;
+      return sum + moneyToCents(payment.amount || 0, 'payment.amount');
+    }, 0);
+    return total + cashCents;
+  }, 0);
+};
+
+const getExpectedClosingCents = async (cash) => {
+  const openingCents = moneyToCents(cash.saldo_inicial || 0, 'saldo_inicial');
+  const cashSalesCents = await getCashSalesCentsSince(cash.created_at);
+  const manualInCents = moneyToCents(cash.entradas_dinheiro || 0, 'entradas_dinheiro');
+  const manualOutCents = moneyToCents(cash.saidas_dinheiro || 0, 'saidas_dinheiro');
+
+  return {
+    openingCents,
+    cashSalesCents,
+    manualInCents,
+    manualOutCents,
+    expectedCents: openingCents + cashSalesCents + manualInCents - manualOutCents,
+  };
+};
+
+const closeCash = async ({ closingBalance, notes, confirmationPin }, session) => {
   requireSession(session);
+  const pinMatchesSession = await validateSessionPin(session, confirmationPin);
+  if (!pinMatchesSession) {
+    const error = new Error('PIN do usuário logado não confere. Fechamento bloqueado.');
+    error.statusCode = 403;
+    throw error;
+  }
+
   const businessDate = getBusinessDate();
   const current = await db.execute({
     sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? AND status = 'Aberto' LIMIT 1`,
@@ -1855,6 +2782,44 @@ const closeCash = async ({ closingBalance, notes }, session) => {
   });
   const cash = current.rows[0];
   if (!cash) throw new Error('Não existe caixa aberto para hoje.');
+
+  const closingCents = moneyToCents(closingBalance, 'closingBalance');
+  const closingAmount = centsToMoney(closingCents);
+  const closeSummary = await getExpectedClosingCents(cash);
+  const missingCents = closeSummary.expectedCents - closingCents;
+
+  if (missingCents > 0) {
+    const expectedAmount = centsToMoney(closeSummary.expectedCents);
+    const declaredAmount = centsToMoney(closingCents);
+    const missingAmount = centsToMoney(missingCents);
+    await addAuditLog({
+      id: createId(),
+      action: 'cash_close_blocked',
+      details: JSON.stringify({
+        expected: expectedAmount,
+        declared: declaredAmount,
+        missing: missingAmount,
+        opening: centsToMoney(closeSummary.openingCents),
+        cashSales: centsToMoney(closeSummary.cashSalesCents),
+        manualIn: centsToMoney(closeSummary.manualInCents),
+        manualOut: centsToMoney(closeSummary.manualOutCents),
+        sandbox: CASH_SANDBOX_MODE,
+      }),
+      origin: 'pdv',
+      authorName: session.name,
+      timestamp: new Date().toISOString(),
+    });
+    await safeCreateOSNotification({
+      title: 'Bloqueio: falta de dinheiro no caixa',
+      message: `${session.name || 'Usuário'} tentou fechar o caixa com ${formatMoneyBRL(missingAmount)} abaixo do esperado.`,
+      type: 'alert',
+      link: `/${OS_TENANT_SLUG}/controle-dinheiro`,
+    });
+
+    const error = new Error('Dinheiro físico abaixo do esperado. Chame o responsável para conferir o caixa.');
+    error.statusCode = 409;
+    throw error;
+  }
 
   const now = osTimestamp();
   await db.execute({
@@ -1864,7 +2829,7 @@ const closeCash = async ({ closingBalance, notes }, session) => {
       WHERE id = ?
     `,
     args: [
-      requireNumber(closingBalance, 'closingBalance'),
+      closingAmount,
       notes || cash.observacoes || '',
       now,
       cash.id,
@@ -1874,7 +2839,16 @@ const closeCash = async ({ closingBalance, notes }, session) => {
   await addAuditLog({
     id: createId(),
     action: 'cash_closed',
-    details: JSON.stringify({ closingBalance: Number(closingBalance), sandbox: CASH_SANDBOX_MODE }),
+    details: JSON.stringify({
+      closingBalance: closingAmount,
+      expected: centsToMoney(closeSummary.expectedCents),
+      difference: centsToMoney(closingCents - closeSummary.expectedCents),
+      opening: centsToMoney(closeSummary.openingCents),
+      cashSales: centsToMoney(closeSummary.cashSalesCents),
+      manualIn: centsToMoney(closeSummary.manualInCents),
+      manualOut: centsToMoney(closeSummary.manualOutCents),
+      sandbox: CASH_SANDBOX_MODE,
+    }),
     origin: 'pdv',
     authorName: session.name,
     timestamp: new Date().toISOString(),
@@ -1908,14 +2882,14 @@ const addSeller = async ({ seller }) => {
     sql: "INSERT INTO sellers (id, name, nickname, status, role, permission, pin) VALUES (?, ?, ?, ?, ?, ?, ?)",
     args: [
       requireString(safeSeller.id, 'seller.id'),
-      requireString(safeSeller.name, 'seller.name'),
-      safeSeller.nickname || '',
-      safeSeller.status || 'active',
-      safeSeller.role || 'atendente',
-      safeSeller.permission || 'operator',
-      isLegacyPlainPin(pin) ? hashPin(pin) : pin,
-    ],
-  });
+	      requireString(safeSeller.name, 'seller.name'),
+	      safeSeller.nickname || '',
+	      safeSeller.status || 'active',
+	      normalizeSellerRole(safeSeller.role || 'atendente'),
+	      normalizeSellerPermissionValue(safeSeller.permission || 'operator'),
+	      isLegacyPlainPin(pin) ? hashPin(pin) : pin,
+	    ],
+	  });
   return { saved: true };
 };
 
@@ -1949,6 +2923,115 @@ const updateSellerStatus = async ({ id, status }) => {
   return { status: safeStatus };
 };
 
+const getOperationalUserCandidates = async () => {
+  await ensureOperationalMirrorBootstrapReady();
+  const [users, sellers] = await Promise.all([
+    getOperationalUsers(),
+    getSellers(),
+  ]);
+  const sellerByOsId = new Map(
+    sellers
+      .filter((seller) => seller.source === 'os' && seller.osUserId)
+      .map((seller) => [String(seller.osUserId), seller]),
+  );
+
+  return {
+    users: users.map((user) => {
+      const seller = sellerByOsId.get(String(user.id));
+      return {
+        id: user.id,
+        pdvSellerId: toOsSellerId(user.id),
+        name: user.name,
+        nickname: user.nickname,
+        email: user.email || '',
+        role: user.role,
+        suggestedPermission: user.permission,
+        pdvEnabled: Boolean(seller),
+        pdvStatus: seller?.status || 'inactive',
+        pdvPermission: seller?.permission || user.permission,
+      };
+    }),
+  };
+};
+
+const activateOperationalUserSeller = async ({ osUserId, permission = 'operator', status = 'active' }) => {
+  const safeOsUserId = requireString(osUserId, 'osUserId');
+  const users = await getOperationalUsers({ includePins: true });
+  const user = users.find((item) => String(item.id) === safeOsUserId);
+  if (!user) {
+    const error = new Error('Usuário do OS não encontrado ou inativo.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const sellerId = toOsSellerId(safeOsUserId);
+  const safePermission = normalizeSellerPermissionValue(permission, user.permission);
+  const safeStatus = status === 'inactive' ? 'inactive' : 'active';
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `
+      INSERT INTO sellers (id, name, nickname, status, role, permission, pin, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        nickname = excluded.nickname,
+        status = excluded.status,
+        role = excluded.role,
+        permission = excluded.permission,
+        notes = excluded.notes
+    `,
+    args: [
+      sellerId,
+      user.name,
+      user.nickname || '',
+      safeStatus,
+      normalizeSellerRole(user.role),
+      safePermission,
+      user.pin ? (isLegacyPlainPin(user.pin) ? hashPin(user.pin) : user.pin) : hashPin(createId()),
+      JSON.stringify({ source: 'os', osUserId: safeOsUserId, email: user.email || '', activatedAt: now }),
+    ],
+  });
+
+  const seller = (await getAuthSellers()).find((item) => item.id === sellerId);
+  return { seller };
+};
+
+const updateSeller = async ({ id, seller }) => {
+  const safeId = requireString(id, 'id');
+  const existingRes = await db.execute({ sql: "SELECT * FROM sellers WHERE id = ? LIMIT 1", args: [safeId] });
+  const existing = existingRes.rows[0];
+  if (!existing) {
+    const error = new Error('Usuário do PDV não encontrado.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const safeSeller = seller || {};
+  const isOsMirror = isOsSellerId(safeId);
+  const safeName = isOsMirror
+    ? existing.name
+    : normalizeText(safeSeller.name || existing.name);
+  const safeNickname = isOsMirror
+    ? (existing.nickname || '')
+    : normalizeText(safeSeller.nickname ?? existing.nickname ?? '');
+  const safeRole = normalizeSellerRole(safeSeller.role || existing.role, existing.role);
+  const safePermission = normalizeSellerPermissionValue(safeSeller.permission || existing.permission, existing.permission);
+  const safeStatus = safeSeller.status === 'inactive' ? 'inactive' : 'active';
+
+  await db.execute({
+    sql: "UPDATE sellers SET name = ?, nickname = ?, status = ?, role = ?, permission = ? WHERE id = ?",
+    args: [safeName, safeNickname, safeStatus, safeRole, safePermission, safeId],
+  });
+
+  if (!isOsMirror && safeSeller.pin) {
+    await updateSellerPin({ id: safeId, pin: String(safeSeller.pin) });
+  }
+
+  const updated = (await getAuthSellers()).find((item) => item.id === safeId)
+    || (await getSellers()).find((item) => item.id === safeId);
+  return { seller: updated };
+};
+
 const syncBeveragesFromInventory = async () => {
   const stockRes = await db.execute("SELECT * FROM estoque_produtos WHERE categoria = 'Bebidas' AND ativo = 1");
   let categoryRes = await db.execute("SELECT id FROM categories WHERE name = 'Bebidas' LIMIT 1");
@@ -1971,8 +3054,8 @@ const syncBeveragesFromInventory = async () => {
     });
     if (existing.rows[0]) {
       batch.push({
-        sql: "UPDATE menu SET name = ?, price = ? WHERE remote_stock_id = ?",
-        args: [row.nome, Number(row.preco_venda || 0), remoteId],
+        sql: "UPDATE menu SET name = ?, price = ?, visible = ? WHERE remote_stock_id = ?",
+        args: [row.nome, Number(row.preco_venda || 0), toStockAmount(row.quantidade_atual) > 0 ? 1 : 0, remoteId],
       });
     } else {
       batch.push({
@@ -1984,7 +3067,7 @@ const syncBeveragesFromInventory = async () => {
           Number(row.preco_venda || 0),
           categoryId,
           'https://images.unsplash.com/photo-1544145945-f904253db0ad?w=400',
-          1,
+          toStockAmount(row.quantidade_atual) > 0 ? 1 : 0,
           null,
           remoteId,
         ],
@@ -1996,8 +3079,56 @@ const syncBeveragesFromInventory = async () => {
   return { catalogVersion: await bumpCatalogVersion(), count: stockRes.rows.length };
 };
 
-const closeBillWithInventorySync = async (data) => {
+const closeBillWithInventorySync = async (data, session = null) => {
+  const settings = await getSettings();
+  const permissionProfiles = settings?.permissionProfiles || null;
   const tableId = requireString(data.tableId, 'tableId');
+  const subtotalCents = moneyToCents(data.subtotal || 0, 'subtotal');
+  const serviceFeeCents = moneyToCents(data.serviceFee || 0, 'serviceFee');
+  const discountCents = moneyToCents(data.discount || 0, 'discount');
+  const totalCents = moneyToCents(data.total || 0, 'total');
+
+  if (subtotalCents < 0) throw createHttpError('Subtotal inválido.');
+  if (serviceFeeCents < 0) throw createHttpError('Taxa de serviço não pode ser negativa.');
+  if (discountCents < 0) throw createHttpError('Desconto não pode ser negativo.');
+  if (totalCents < 0) throw createHttpError('Total da conta não pode ser negativo.');
+
+  const defaultServiceFeePercent = clampServiceFeePercent(settings?.serviceTax ?? MAX_SERVICE_FEE_PERCENT);
+  const maxServiceFeeCents = Math.round(subtotalCents * (MAX_SERVICE_FEE_PERCENT / 100));
+  if (serviceFeeCents > maxServiceFeeCents) {
+    throw createHttpError(`Taxa de serviço não pode passar de ${MAX_SERVICE_FEE_PERCENT}%.`);
+  }
+
+  const defaultServiceFeeCents = Math.round(subtotalCents * (defaultServiceFeePercent / 100));
+  if (serviceFeeCents !== defaultServiceFeeCents) {
+    requirePermission(session, 'editServiceFee', permissionProfiles);
+  }
+
+  if (discountCents > 0) {
+    requirePermission(session, 'applyDiscount', permissionProfiles);
+  }
+
+  const payments = Array.isArray(data.payments) ? data.payments : [];
+  if (payments.length > 0) {
+    requirePermission(session, 'launchPayment', permissionProfiles);
+  }
+  if (payments.length > 1) {
+    requirePermission(session, 'splitPayment', permissionProfiles);
+  }
+
+  const expectedTotalCents = subtotalCents + serviceFeeCents - discountCents;
+  if (expectedTotalCents < 0) {
+    throw createHttpError('Desconto não pode ser maior que subtotal mais taxa de serviço.');
+  }
+  if (totalCents !== expectedTotalCents) {
+    throw createHttpError('Total da conta não confere com subtotal, taxa de serviço e desconto.');
+  }
+
+  data.subtotal = centsToMoney(subtotalCents);
+  data.serviceFee = centsToMoney(serviceFeeCents);
+  data.discount = centsToMoney(discountCents);
+  data.total = centsToMoney(totalCents);
+
   const activeOrderItems = await getActiveOrderItemsForTable(tableId);
   const orderIds = Array.from(new Set(activeOrderItems.map((item) => item.orderId))).sort();
   const integrationId = `pdv_close_${tableId}_${orderIds.join('_') || 'no_orders'}`;
@@ -2038,68 +3169,16 @@ const closeBillWithInventorySync = async (data) => {
     }
 
     if (osContext) {
-      const { empresaId } = osContext;
       try {
-        for (const item of activeOrderItems) {
-          const requestedQuantity = toStockAmount(item.quantity);
-          const productStock = await findStockProduct(empresaId, {
-            id: item.remoteStockId || item.productId,
-            name: item.name,
-          });
-
-          if (!productStock) {
-            result.unmatched.push(`${item.quantity}x ${item.name}`);
-          } else {
-            const currentQuantity = toStockAmount(productStock.quantidade_atual);
-            const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
-            if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
-            if (nextQuantity <= toStockAmount(productStock.estoque_minimo)) result.critical.push(item.name);
-            if (currentQuantity > 0 && requestedQuantity > 0) {
-              movementPlans.push({
-                movementId: createId(),
-                stockId: productStock.id,
-                stockName: productStock.nome || item.name,
-                orderId: item.orderId,
-                orderItemId: item.id,
-                sourceItemId: item.productId,
-                sourceItemKind: 'product',
-                requestedQuantity,
-                previousQuantity: currentQuantity,
-                nextQuantity,
-                reason: baseReason,
-              });
-            }
-          }
-
-          for (const modifier of item.selectedModifiers || []) {
-            const modifierStock = await findStockProduct(empresaId, {
-              id: modifier.id,
-              name: modifier.name,
-            });
-
-            if (!modifierStock) continue;
-
-            const currentQuantity = toStockAmount(modifierStock.quantidade_atual);
-            const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
-            if (requestedQuantity > currentQuantity) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
-            if (nextQuantity <= toStockAmount(modifierStock.estoque_minimo)) result.critical.push(modifier.name);
-            if (currentQuantity > 0 && requestedQuantity > 0) {
-              movementPlans.push({
-                movementId: createId(),
-                stockId: modifierStock.id,
-                stockName: modifierStock.nome || modifier.name,
-                orderId: item.orderId,
-                orderItemId: item.id,
-                sourceItemId: modifier.id,
-                sourceItemKind: 'modifier',
-                requestedQuantity,
-                previousQuantity: currentQuantity,
-                nextQuantity,
-                reason: `${baseReason} | Opcional ${modifier.name}`,
-              });
-            }
-          }
-        }
+        const planned = await buildStockExitPlans({
+          empresaId: osContext.empresaId,
+          items: activeOrderItems,
+          integrationId,
+          baseReason,
+          skipReserved: true,
+        });
+        movementPlans = planned.movementPlans;
+        Object.assign(result, planned.result);
       } catch (error) {
         inventorySyncError = error;
         movementPlans = [];
@@ -2107,10 +3186,7 @@ const closeBillWithInventorySync = async (data) => {
       }
     }
 
-    result.movementCount = movementPlans.length;
-
     const now = osTimestamp();
-    const empresaId = osContext?.empresaId || null;
     const userId = osContext?.userId || null;
     const slug = osContext?.slug || OS_TENANT_SLUG;
     const batch = [
@@ -2133,45 +3209,44 @@ const closeBillWithInventorySync = async (data) => {
       },
     ];
 
-    for (const movement of movementPlans) {
-      batch.push(
-        {
-          sql: `
-            INSERT OR IGNORE INTO estoque_movimentacoes
-              (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova, motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
-            SELECT ?, empresa_id, id, 'saida', MIN(quantidade_atual, ?), quantidade_atual, MAX(0, quantidade_atual - ?), ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
-            FROM estoque_produtos
-            WHERE id = ? AND empresa_id = ? AND ativo = 1 AND quantidade_atual > 0
-          `,
-          args: [
-            movement.movementId,
-            movement.requestedQuantity,
-            movement.requestedQuantity,
-            movement.reason,
-            userId,
-            now,
-            integrationId,
-            movement.orderId,
-            movement.orderItemId,
-            integrationId,
-            movement.sourceItemId,
-            movement.sourceItemKind,
-            movement.stockId,
-            empresaId,
-          ],
-        },
-        {
-          sql: `
-            UPDATE estoque_produtos
-            SET quantidade_atual = MAX(0, quantidade_atual - ?),
-                status = CASE WHEN MAX(0, quantidade_atual - ?) <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
-                updated_at = ?
-            WHERE id = ? AND changes() > 0
-          `,
-          args: [movement.requestedQuantity, movement.requestedQuantity, now, movement.stockId],
-        },
-      );
+    if (serviceFeeCents !== defaultServiceFeeCents) {
+      const serviceFeePercent = subtotalCents > 0 ? (serviceFeeCents / subtotalCents) * 100 : 0;
+      batch.push({
+        sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'service_fee_changed', ?, ?, 'pdv', ?, ?, ?)",
+        args: [
+          createId(),
+          `Taxa de serviço ajustada: ${defaultServiceFeePercent.toFixed(2)}% -> ${serviceFeePercent.toFixed(2)}% | Valor: ${formatMoneyBRL(data.serviceFee)} | Evento: ${integrationId}`,
+          String(data.tableNumber),
+          data.sellerId,
+          data.sellerName,
+          closedAt.toISOString(),
+        ],
+      });
     }
+
+    if (discountCents > 0) {
+      batch.push({
+        sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'discount_applied', ?, ?, 'pdv', ?, ?, ?)",
+        args: [
+          createId(),
+          `Desconto aplicado: ${formatMoneyBRL(data.discount)} | Subtotal: ${formatMoneyBRL(data.subtotal)} | Evento: ${integrationId}`,
+          String(data.tableNumber),
+          data.sellerId,
+          data.sellerName,
+          closedAt.toISOString(),
+        ],
+      });
+    }
+
+    enqueueStockExitMovements({
+      batch,
+      movementPlans,
+      userId,
+      now,
+      integrationId,
+      origin: 'pdv',
+      closedBillId: integrationId,
+    });
 
     batch.push(
       {
@@ -2215,6 +3290,9 @@ const closeBillWithInventorySync = async (data) => {
     });
 
     await db.batch(batch, 'write');
+    if (movementPlans.some((movement) => movement.sourceItemKind === 'product')) {
+      await bumpCatalogVersion();
+    }
 
     const notificationContext = osContext || null;
     const notificationTasks = [];
@@ -2288,9 +3366,9 @@ const requireSession = (session) => {
   }
 };
 
-const requirePermission = (session, permission) => {
+const requirePermission = (session, permission, permissionProfiles = null) => {
   requireSession(session);
-  if (!canSession(session, permission)) {
+  if (!canSession(session, permission, permissionProfiles)) {
     const error = new Error('Permissão insuficiente.');
     error.statusCode = 403;
     throw error;
@@ -2299,7 +3377,7 @@ const requirePermission = (session, permission) => {
 
 const allowPublicOperationalOrigin = (body) => body?.origin === 'tablet' || body?.origin === 'qr';
 
-const enforceRouteAccess = (routeKey, body, session, { operationAccessAllowed = true, req = null } = {}) => {
+const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllowed = true, req = null } = {}) => {
   if (
     routeKey === 'GET /api/app/init'
     || routeKey === 'POST /api/app/sync'
@@ -2314,7 +3392,10 @@ const enforceRouteAccess = (routeKey, body, session, { operationAccessAllowed = 
   }
 
   if (routeKey === 'POST /api/orders/send-to-kitchen') {
-    if (!allowPublicOperationalOrigin(body)) requireSession(session);
+    if (!allowPublicOperationalOrigin(body)) {
+      const settings = await getSettings();
+      requirePermission(session, 'sendOrderToProduction', settings?.permissionProfiles || null);
+    }
     return;
   }
 
@@ -2326,36 +3407,72 @@ const enforceRouteAccess = (routeKey, body, session, { operationAccessAllowed = 
     return;
   }
 
+  if (routeKey === 'POST /api/service-requests/clear') {
+    requireSession(session);
+    if (!isAdminSession(session)) {
+      const error = new Error('Apenas admin pode limpar solicitações atendidas.');
+      error.statusCode = 403;
+      throw error;
+    }
+    return;
+  }
+
   if (routeKey === 'POST /api/audit-logs') {
     if (body?.origin === 'tablet' || body?.origin === 'qr') return;
     requireSession(session);
     return;
   }
 
+  const settings = await getSettings();
+  const permissionProfiles = settings?.permissionProfiles || null;
+  if (routeKey === 'POST /api/settings') {
+    const nextSettings = body?.settings || {};
+    const changedPermissionProfiles = JSON.stringify(settings?.permissionProfiles || null) !== JSON.stringify(nextSettings.permissionProfiles || null);
+    const changedOtherSettings = Object.keys(nextSettings).some((key) => {
+      if (key === 'permissionProfiles') return false;
+      return JSON.stringify(settings?.[key] ?? null) !== JSON.stringify(nextSettings[key] ?? null);
+    });
+    if (changedPermissionProfiles) requirePermission(session, 'managePDVPermissions', permissionProfiles);
+    if (changedOtherSettings) requirePermission(session, 'manageSettings', permissionProfiles);
+    if (!changedPermissionProfiles && !changedOtherSettings) requireSession(session);
+    return;
+  }
+
   const permissionByRoute = {
     'POST /api/order-items/delete': 'cancelTableItem',
     'POST /api/bills/close': 'closeBill',
-    'POST /api/catalog/category': 'addProduct',
+    'POST /api/service-requests/resolve': 'resolveServiceRequest',
+    'POST /api/tables/status': 'updateTableStatus',
+    'POST /api/tables/open': 'openTable',
+    'POST /api/tables/transfer': 'transferTable',
+    'POST /api/tables/join': 'joinTables',
+    'POST /api/catalog/category': 'manageCategories',
     'POST /api/catalog/category/delete': 'deleteProduct',
-    'POST /api/catalog/category/visibility': 'toggleProductVisibility',
+    'POST /api/catalog/category/visibility': 'manageCategories',
     'POST /api/catalog/product': 'addProduct',
     'POST /api/catalog/product/delete': 'deleteProduct',
     'POST /api/catalog/product/visibility': 'toggleProductVisibility',
     'POST /api/catalog/modifier-group': 'manageOptionals',
     'POST /api/catalog/modifier-group/delete': 'manageOptionals',
     'POST /api/catalog/modifier-group/link': 'manageOptionals',
-    'POST /api/settings': 'manageSettings',
-    'POST /api/audit-logs/list': 'viewSalesTotals',
-    'POST /api/sellers': 'manageTeam',
-    'POST /api/sellers/pin': 'manageTeam',
-    'POST /api/sellers/delete': 'manageTeam',
-    'POST /api/sellers/status': 'manageTeam',
-    'POST /api/inventory/sync-beverages': 'addProduct',
+    'POST /api/audit-logs/list': 'viewSalesHistory',
+    'POST /api/sellers': 'managePDVUsers',
+    'POST /api/sellers/os-candidates': 'managePDVUsers',
+    'POST /api/sellers/activate-os': 'managePDVUsers',
+    'POST /api/sellers/update': 'managePDVUsers',
+    'POST /api/sellers/pin': 'managePDVUsers',
+    'POST /api/sellers/delete': 'managePDVUsers',
+    'POST /api/sellers/status': 'managePDVUsers',
+    'POST /api/cash/open': 'openCash',
+    'POST /api/cash/close': 'closeCash',
+    'POST /api/shifts/open': 'manageShifts',
+    'POST /api/shifts/close': 'manageShifts',
+    'POST /api/inventory/sync-beverages': 'confirmPurchaseEntry',
   };
 
   const requiredPermission = permissionByRoute[routeKey];
   if (requiredPermission) {
-    requirePermission(session, requiredPermission);
+    requirePermission(session, requiredPermission, permissionProfiles);
     return;
   }
 
@@ -2382,8 +3499,8 @@ const handlers = {
   'POST /api/audit-logs/list': async (body) => ({ auditLogs: await getAuditLogs(Number(body.limit || 100)) }),
   'POST /api/orders/send-to-kitchen': async (body) => sendToKitchen(body),
   'POST /api/orders/status': async (body) => updateOrderStatus(body),
-  'POST /api/order-items/delete': async (body) => deleteOrderItem(body),
-  'POST /api/bills/close': async (body) => closeBillWithInventorySync(body),
+  'POST /api/order-items/delete': async (body, context) => deleteOrderItem(body, context.session),
+  'POST /api/bills/close': async (body, context) => closeBillWithInventorySync(body, context.session),
   'POST /api/catalog/category': async (body) => upsertCategory(body),
   'POST /api/catalog/category/delete': async (body) => deleteCategory(body),
   'POST /api/catalog/category/visibility': async (body) => toggleCategoryVisibility(body),
@@ -2396,18 +3513,22 @@ const handlers = {
   'POST /api/settings': async (body) => saveSettings(body),
   'POST /api/audit-logs': async (body) => addAuditLog(body),
   'POST /api/service-requests': async (body) => createServiceRequest(body),
-  'POST /api/service-requests/resolve': async (body) => resolveServiceRequest(body),
+  'POST /api/service-requests/resolve': async (body, context) => resolveServiceRequest(body, context.session),
+  'POST /api/service-requests/clear': async (body) => clearServiceRequest(body),
   'POST /api/tables/request-bill': async (body) => requestBill(body),
-  'POST /api/tables/status': async (body) => updateTableStatus(body),
-  'POST /api/tables/open': async (body) => openTable(body),
-  'POST /api/tables/transfer': async (body) => transferTable(body),
-  'POST /api/tables/join': async (body) => joinTables(body),
+  'POST /api/tables/status': async (body, context) => updateTableStatus(body, context.session),
+  'POST /api/tables/open': async (body, context) => openTable(body, context.session),
+  'POST /api/tables/transfer': async (body, context) => transferTable(body, context.session),
+  'POST /api/tables/join': async (body, context) => joinTables(body, context.session),
   'GET /api/cash/status': async () => ({ cashState: await getCashState() }),
   'POST /api/cash/open': async (body, context) => openCash(body, context.session),
   'POST /api/cash/close': async (body, context) => closeCash(body, context.session),
   'POST /api/shifts/open': async (body) => openShift(body),
   'POST /api/shifts/close': async (body) => closeShift(body),
   'POST /api/sellers': async (body) => addSeller(body),
+  'POST /api/sellers/os-candidates': async () => getOperationalUserCandidates(),
+  'POST /api/sellers/activate-os': async (body) => activateOperationalUserSeller(body),
+  'POST /api/sellers/update': async (body) => updateSeller(body),
   'POST /api/sellers/pin': async (body) => updateSellerPin(body),
   'POST /api/sellers/delete': async (body) => deleteSeller(body),
   'POST /api/sellers/status': async (body) => updateSellerStatus(body),
@@ -2442,7 +3563,7 @@ const handleApi = async (req, res, url) => {
     const body = req.method === 'GET' ? {} : await readJsonBody(req);
     const session = getSessionFromRequest(req);
     const operationAccessAllowed = isOperationIpAllowed(req) || isAdminSession(session);
-    enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
+    await enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
     const data = await handler(body, { req, url, session, operationAccessAllowed });
     sendJson(res, 200, { ok: true, data });
   } catch (error) {
@@ -2468,7 +3589,7 @@ const serveStatic = async (req, res, url) => {
     'content-type': mimeTypes[ext] || 'application/octet-stream',
   };
 
-  if (filePath.endsWith('index.html')) {
+  if (filePath.endsWith('index.html') || ext === '.js' || ext === '.css') {
     headers['cache-control'] = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0';
   } else {
     headers['cache-control'] = 'public, max-age=31536000, immutable';

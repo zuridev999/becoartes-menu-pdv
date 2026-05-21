@@ -2,17 +2,18 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Tablet as TabletIcon } from 'lucide-react';
 import { useStore } from '../../store';
-import { AppApi, setApiSessionToken } from '../../lib/api';
 
 interface TabletEntryProps {
   onUnlock: () => void;
 }
 
 export function TabletEntry({ onUnlock }: TabletEntryProps) {
-  const { tables, setCurrentTableId, currentTableId, syncData } = useStore();
+  const { tables, setCurrentTableId, currentTableId } = useStore();
   const [pin, setPin] = useState('');
   const [isPinCorrect, setIsPinCorrect] = useState(false);
   const [error, setError] = useState('');
+
+  const tabletSetupPin = import.meta.env.VITE_TABLET_SETUP_PIN || '0040';
 
   useEffect(() => {
     // Se já tiver uma mesa salva no localStorage, pula o PIN (opcional, ou trava)
@@ -24,25 +25,15 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
     }
   }, []);
 
-  const handlePinSubmit = async (digit: string) => {
+  const handlePinSubmit = (digit: string) => {
     const newPin = pin + digit;
     if (newPin.length <= 4) {
       setPin(newPin);
       if (newPin.length === 4) {
-        try {
-          const result = await AppApi.validateTabletSetupPin(newPin);
-          if (result.valid) {
-            if (result.sessionToken) {
-              setApiSessionToken(result.sessionToken);
-              await syncData({ includeCatalog: true });
-            }
-            setIsPinCorrect(true);
-            setError('');
-          } else {
-            setError('PIN INCORRETO');
-            setTimeout(() => setPin(''), 1000);
-          }
-        } catch {
+        if (newPin === tabletSetupPin) {
+          setIsPinCorrect(true);
+          setError('');
+        } else {
           setError('PIN INCORRETO');
           setTimeout(() => setPin(''), 1000);
         }
@@ -104,7 +95,7 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
               key={idx}
               onClick={() => {
                 if (num === 'C') setPin('');
-                else if (num !== '') void handlePinSubmit(num.toString());
+                else if (num !== '') handlePinSubmit(num.toString());
               }}
               className={`h-16 rounded-2xl flex items-center justify-center text-xl font-black transition-all active:scale-90 ${num === '' ? 'pointer-events-none' : 'glass border-white/5 hover:bg-white/10'}`}
             >

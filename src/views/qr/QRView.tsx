@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ShoppingBag, LayoutDashboard, Bell, FileText } from 'lucide-react';
 import { useStore, type Product } from '../../store';
@@ -9,16 +9,59 @@ import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
 
 export function QRView() {
-  const { currentTableId, tables } = useStore();
+  const { currentTableId, tables, setCurrentTableId } = useStore();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
+  const [routeTableNumber, setRouteTableNumber] = useState<number | null>(null);
 
-  const currentTable = tables.find(t => t.id === currentTableId);
+  useEffect(() => {
+    const pathMatch = window.location.pathname.match(/(?:^|\/)mesa\/(\d+)(?:\/)?$/);
+    const params = new URLSearchParams(window.location.search);
+    const tableFromUrl = pathMatch?.[1] || params.get('mesa') || params.get('table');
+    const tableNumber = Number(tableFromUrl);
 
-  // QR View no Becoartes não trava em mesa, mostra cardápio direto.
-  // Se houver ID na URL ele vincula, se não mostra tudo livre.
+    if (!Number.isFinite(tableNumber) || tableNumber <= 0) return;
+
+    setRouteTableNumber(tableNumber);
+
+    const table = tables.find(t => t.number === tableNumber);
+    if (table && table.id !== currentTableId) {
+      setCurrentTableId(table.id);
+    }
+  }, [currentTableId, setCurrentTableId, tables]);
+
+  const routeTable = routeTableNumber ? tables.find(t => t.number === routeTableNumber) : null;
+  const currentTable = routeTableNumber ? routeTable : tables.find(t => t.id === currentTableId);
+
+  if (routeTableNumber && tables.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-8 text-center">
+        <div className="glass-card max-w-md p-8 border-primary/30">
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">Validando mesa</p>
+          <h1 className="text-4xl font-black tracking-tighter mb-3">Mesa {routeTableNumber}</h1>
+          <p className="text-sm font-bold text-gray-400">
+            Estamos abrindo o cardápio desta mesa.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (routeTableNumber && tables.length > 0 && !routeTable) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-8 text-center">
+        <div className="glass-card max-w-md p-8 border-red-500/30">
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-red-300 mb-3">Mesa não encontrada</p>
+          <h1 className="text-4xl font-black tracking-tighter mb-3">Mesa {routeTableNumber}</h1>
+          <p className="text-sm font-bold text-gray-400">
+            Este QR Code não encontrou uma mesa ativa. Chame a equipe para conferir o cadastro.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const cartTotal = currentTable?.cart.reduce((acc, o) => {
     const itemPrice = o.price + (o.selectedModifiers?.reduce((mAcc, m) => mAcc + m.price, 0) || 0);
@@ -92,7 +135,7 @@ export function QRView() {
 
       <AnimatePresence>
         {isOrderOpen && (
-          <CustomerOrderModal onClose={() => setIsOrderOpen(false)} />
+          <CustomerOrderModal onClose={() => setIsOrderOpen(false)} origin="qr" />
         )}
       </AnimatePresence>
 

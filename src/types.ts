@@ -65,6 +65,7 @@ export interface OrderItem {
   price: number;
   quantity: number;
   selectedModifiers: Modifier[];
+  remoteStockId?: string;
   notes?: string;
   orderedAt?: Date;
   status?: 'pending' | 'preparing' | 'ready' | 'delivered';
@@ -88,7 +89,7 @@ export interface KitchenOrder {
   items: OrderItem[];
   status: 'pending' | 'preparing' | 'ready';
   createdAt: Date;
-  origin: 'tablet' | 'pdv';
+  origin: 'tablet' | 'pdv' | 'qr';
   chefNotes?: string;
 }
 
@@ -129,12 +130,17 @@ export interface Seller {
   status: 'active' | 'inactive';
   role: 'garçom' | 'atendente' | 'gerente' | 'outro';
   permission: 'admin' | 'manager' | 'operator' | 'standard' | 'restricted';
+  source?: 'pdv' | 'os';
+  osUserId?: string;
+  email?: string;
+  allowRemote?: boolean;
 }
 
 export interface AppSettings {
   unitName: string;
   currency: string;
   serviceTax: number;
+  permissionProfiles?: Record<string, Record<string, boolean>>;
   tablet: {
     bannerUrls: string[];
     bannerText: string;

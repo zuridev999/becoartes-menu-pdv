@@ -49,6 +49,10 @@ export const initDB = async () => {
       "ALTER TABLE sellers ADD COLUMN pin TEXT DEFAULT '1234'",
       "ALTER TABLE orders ADD COLUMN origin TEXT DEFAULT 'pdv'",
       "ALTER TABLE order_items ADD COLUMN notes TEXT",
+      "ALTER TABLE modifier_groups ADD COLUMN description TEXT",
+      "ALTER TABLE modifier_groups ADD COLUMN min_choices INTEGER DEFAULT 0",
+      "ALTER TABLE modifier_groups ADD COLUMN max_choices INTEGER DEFAULT 1",
+      "ALTER TABLE modifier_groups ADD COLUMN is_required INTEGER DEFAULT 0",
       "ALTER TABLE modifier_groups ADD COLUMN status TEXT DEFAULT 'active'",
       "ALTER TABLE modifiers ADD COLUMN status TEXT DEFAULT 'active'",
       "ALTER TABLE modifiers ADD COLUMN sort_order INTEGER DEFAULT 0",
@@ -66,6 +70,16 @@ export const initDB = async () => {
     ];
 
     for (const sql of migrations) {
+      try { await db.execute(sql); } catch {}
+    }
+
+    const dataMigrations = [
+      "UPDATE modifier_groups SET min_choices = COALESCE(min_selection, min_choices, 0)",
+      "UPDATE modifier_groups SET max_choices = COALESCE(max_selection, max_choices, 1)",
+      "UPDATE modifier_groups SET is_required = CASE WHEN COALESCE(min_choices, 0) > 0 THEN 1 ELSE COALESCE(is_required, 0) END"
+    ];
+
+    for (const sql of dataMigrations) {
       try { await db.execute(sql); } catch {}
     }
 
