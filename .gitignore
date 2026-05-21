@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local one-off database/debug scripts. Keep real maintenance scripts in scripts/.
+check_*.cjs
+test_*.cjs
