@@ -268,14 +268,14 @@ export function AdminView() {
   }, [activeTab]);
 
   const SectionCard = ({ title, icon: Icon, children }: { title: string, icon: any, children: React.ReactNode }) => (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-10 border-white/5 h-full">
-      <div className="flex items-center gap-4 mb-10 border-b border-white/5 pb-6">
-        <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-inner">
-          <Icon size={24} />
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6 sm:p-10 border-white/5 h-full">
+      <div className="flex items-center gap-4 mb-8 sm:mb-10 border-b border-white/5 pb-5 sm:pb-6">
+        <div className="w-11 h-11 sm:w-12 sm:h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-inner shrink-0">
+          <Icon size={22} />
         </div>
-        <h3 className="text-2xl font-black tracking-tighter">{title}</h3>
+        <h3 className="text-2xl font-black tracking-tighter leading-tight">{title}</h3>
       </div>
-      <div className="space-y-8">
+      <div className="space-y-6 sm:space-y-8">
         {children}
       </div>
     </motion.div>
@@ -443,26 +443,27 @@ export function AdminView() {
   };
 
   return (
-    <div className="p-16 bg-[#0a0a0c] min-h-screen text-white font-['Outfit'] pb-48 overflow-y-auto custom-scrollbar h-screen">
-      <div className="flex justify-between items-end mb-16">
-        <div className="flex items-center gap-8">
+    <div className="p-4 sm:p-8 xl:p-16 bg-[#0a0a0c] min-h-screen text-white font-['Outfit'] pb-32 sm:pb-48 overflow-x-hidden overflow-y-auto custom-scrollbar h-screen">
+      <div className="flex flex-col xl:flex-row xl:justify-between xl:items-end gap-6 sm:gap-8 mb-10 sm:mb-16">
+        <div className="flex items-center gap-4 sm:gap-8 min-w-0">
           <button 
             onClick={() => useStore.getState().setActiveView('pdv')}
-            className="w-16 h-16 glass rounded-2xl flex items-center justify-center text-zinc-500 hover:text-white transition-all border-white/5"
+            className="w-14 h-14 sm:w-16 sm:h-16 glass rounded-2xl flex items-center justify-center text-zinc-500 hover:text-white transition-all border-white/5 shrink-0"
           >
-            <ArrowLeft size={32} />
+            <ArrowLeft size={28} />
           </button>
-          <div>
-            <h1 className="text-7xl font-black tracking-tighter">Beco <span className="text-primary">Control</span></h1>
-            <p className="text-gray-500 font-bold uppercase tracking-[0.4em] text-[10px] mt-3 ml-2 italic">
+          <div className="min-w-0">
+            <h1 className="text-5xl sm:text-7xl font-black tracking-tighter leading-none">Beco <span className="text-primary">Control</span></h1>
+            <p className="text-gray-500 font-bold uppercase tracking-[0.28em] sm:tracking-[0.4em] text-[9px] sm:text-[10px] mt-3 sm:ml-2 italic break-words">
               {currentSeller.name} • {getPermissionLabel(currentSeller)}
             </p>
-            <p className="text-zinc-700 font-black uppercase tracking-[0.25em] text-[9px] mt-2 ml-2">
+            <p className="text-zinc-700 font-black uppercase tracking-[0.2em] sm:tracking-[0.25em] text-[9px] mt-2 sm:ml-2 break-words">
               {getAppLabel()} {APP_BUILD_LABEL}
             </p>
           </div>
         </div>
-        <div className="flex glass p-2 rounded-[2rem] border-white/5">
+        <div className="w-full xl:w-auto overflow-x-auto custom-scrollbar pb-2 xl:pb-0">
+        <div className="flex w-max min-w-full xl:min-w-0 glass p-2 rounded-[2rem] border-white/5">
           {[
             { id: 'config', name: 'Geral', icon: Settings },
             { id: 'categories', name: 'Categorias', icon: LayoutDashboard },
@@ -476,10 +477,11 @@ export function AdminView() {
             return allowedTabIds.has(tab.id);
           })
           .map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-8 py-4 rounded-[1.5rem] flex items-center gap-3 font-black text-xs uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-gray-500 hover:text-white'}`}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-5 sm:px-8 py-4 rounded-[1.5rem] flex items-center gap-3 font-black text-[11px] sm:text-xs uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-gray-500 hover:text-white'}`}>
               <tab.icon size={18}/> {tab.name}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
