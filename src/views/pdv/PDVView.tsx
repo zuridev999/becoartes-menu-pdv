@@ -31,6 +31,7 @@ export function PDVView() {
     sendToKitchen,
     serviceRequests,
     resolveService,
+    clearServiceRequest,
     login,
     syncData,
     updateTableStatus,
@@ -72,6 +73,7 @@ export function PDVView() {
     const diffHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
     return diffHours < 2;
   });
+  const canClearResolvedRequests = can(currentSeller, 'manageSettings');
 
   // Referência para o container de scroll da lista de solicitações
   const listRef = useRef<HTMLDivElement>(null);
@@ -578,16 +580,31 @@ export function PDVView() {
                            )}
                          </div>
                       </div>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          resolveService(req.id);
-                        }}
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-all ${isResolved ? 'bg-emerald-500 text-white hover:scale-105' : 'bg-white text-rose-600 hover:scale-110 active:scale-90'}`}
-                        title={isResolved ? "Desmarcar" : "Dar Ciente"}
-                      >
-                        <Check size={24} strokeWidth={4} />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {canClearResolvedRequests && isResolved && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              clearServiceRequest(req.id);
+                            }}
+                            className="w-10 h-10 rounded-2xl flex items-center justify-center bg-white/10 text-white/70 border border-white/10 hover:bg-white hover:text-zinc-950 transition-all active:scale-90"
+                            title="Limpar solicitação"
+                          >
+                            <X size={18} strokeWidth={4} />
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isResolved) return;
+                            resolveService(req.id);
+                          }}
+                          className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-all ${isResolved ? 'bg-emerald-500 text-white hover:scale-105' : 'bg-white text-rose-600 hover:scale-110 active:scale-90'}`}
+                          title={isResolved ? "Atendimento concluído" : "Dar Ciente"}
+                        >
+                          <Check size={24} strokeWidth={4} />
+                        </button>
+                      </div>
                     </motion.div>
                   );
                 })}
@@ -1151,6 +1168,10 @@ export function PDVView() {
                 <div className="grid grid-cols-1 gap-4 mt-10">
                   <button 
                     onClick={() => {
+                      if (selectedRequestForDetails.status === 'resolved') {
+                        setSelectedRequestForDetails(null);
+                        return;
+                      }
                       resolveService(selectedRequestForDetails.id);
                       setSelectedRequestForDetails(null);
                     }}
@@ -1160,8 +1181,19 @@ export function PDVView() {
                         : 'bg-emerald-500 shadow-emerald-500/20'
                     }`}
                   >
-                    <Check size={32} strokeWidth={4} /> {selectedRequestForDetails.status === 'resolved' ? 'Reabrir Solicitação' : 'Dar Ciente'}
+                    <Check size={32} strokeWidth={4} /> {selectedRequestForDetails.status === 'resolved' ? 'Atendimento Concluído' : 'Dar Ciente'}
                   </button>
+                  {canClearResolvedRequests && selectedRequestForDetails.status === 'resolved' && (
+                    <button
+                      onClick={() => {
+                        clearServiceRequest(selectedRequestForDetails.id);
+                        setSelectedRequestForDetails(null);
+                      }}
+                      className="w-full py-6 text-white/80 rounded-[2rem] text-xl font-black uppercase tracking-widest border border-white/10 bg-white/5 hover:bg-white hover:text-zinc-950 active:scale-95 transition-all flex items-center justify-center gap-4"
+                    >
+                      <X size={28} strokeWidth={4} /> Limpar Solicitação
+                    </button>
+                  )}
                 </div>
               </div>
             </motion.div>

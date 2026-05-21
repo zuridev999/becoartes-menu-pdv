@@ -322,6 +322,10 @@ export const OpsApi = {
     return postJson<{ status: 'pending' | 'resolved' }>('/api/service-requests/resolve', input);
   },
 
+  clearServiceRequest(requestId: string) {
+    return postJson<{ requestId: string; cleared: boolean }>('/api/service-requests/clear', { requestId });
+  },
+
   requestBill(tableId: string) {
     return postJson<{ status: 'bill_requested' }>('/api/tables/request-bill', { tableId });
   },

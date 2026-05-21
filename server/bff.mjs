@@ -1790,6 +1790,19 @@ const resolveServiceRequest = async ({ requestId, tableId, type, message, curren
   return { status: newStatus };
 };
 
+const clearServiceRequest = async ({ requestId }) => {
+  const safeRequestId = requireString(requestId, 'requestId');
+  const result = await db.execute({
+    sql: "DELETE FROM service_requests WHERE id = ? AND status = 'resolved'",
+    args: [safeRequestId],
+  });
+
+  return {
+    requestId: safeRequestId,
+    cleared: Number(result.rowsAffected || 0) > 0,
+  };
+};
+
 const requestBill = async ({ tableId }) => {
   await db.execute({ sql: "UPDATE tables SET status = ? WHERE id = ?", args: ['bill_requested', tableId] });
   return { status: 'bill_requested' };
@@ -2533,6 +2546,7 @@ const enforceRouteAccess = (routeKey, body, session, { operationAccessAllowed = 
     'POST /api/catalog/modifier-group/delete': 'manageOptionals',
     'POST /api/catalog/modifier-group/link': 'manageOptionals',
     'POST /api/settings': 'manageSettings',
+    'POST /api/service-requests/clear': 'manageSettings',
     'POST /api/audit-logs/list': 'viewSalesTotals',
     'POST /api/sellers': 'manageTeam',
     'POST /api/sellers/pin': 'manageTeam',
@@ -2585,6 +2599,7 @@ const handlers = {
   'POST /api/audit-logs': async (body) => addAuditLog(body),
   'POST /api/service-requests': async (body) => createServiceRequest(body),
   'POST /api/service-requests/resolve': async (body) => resolveServiceRequest(body),
+  'POST /api/service-requests/clear': async (body) => clearServiceRequest(body),
   'POST /api/tables/request-bill': async (body) => requestBill(body),
   'POST /api/tables/status': async (body) => updateTableStatus(body),
   'POST /api/tables/open': async (body) => openTable(body),

@@ -137,6 +137,7 @@ export interface AppState {
   requestBill: (tableId: string) => void;
   requestService: (tableId: string, type: string, message?: string) => void;
   resolveService: (requestId: string) => void;
+  clearServiceRequest: (requestId: string) => Promise<void>;
   closeBill: (data: Omit<ClosedBill, 'id' | 'closedAt'>) => Promise<boolean>;
   updateTableStatus: (tableId: string, status: Table['status']) => void;
   updateKitchenOrderStatus: (orderId: string, status: KitchenOrder['status']) => void;
@@ -778,6 +779,35 @@ export const useStore = create<AppState>((set, get) => ({
       }
       const message = getErrorMessage(error);
       get().addNotification(message || "Não foi possível dar ciente. Tente novamente.", "error");
+    }
+  },
+
+  clearServiceRequest: async (requestId) => {
+    const request = get().serviceRequests.find(r => r.id === requestId);
+    if (!request || request.status !== 'resolved') return;
+
+    if (!hasApiSessionToken()) {
+      clearSellerSession();
+      set({ currentSeller: null });
+      get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+      return;
+    }
+
+    try {
+      await OpsApi.clearServiceRequest(requestId);
+      set((state) => ({
+        serviceRequests: state.serviceRequests.filter(r => r.id !== requestId)
+      }));
+    } catch (error) {
+      console.error("Erro ao limpar solicitação:", error);
+      if (isSessionExpiredError(error)) {
+        clearSellerSession();
+        set({ currentSeller: null });
+        get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+        return;
+      }
+      const message = getErrorMessage(error);
+      get().addNotification(message || "Não foi possível limpar a solicitação.", "error");
     }
   },
 
