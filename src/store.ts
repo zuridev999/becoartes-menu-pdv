@@ -653,6 +653,7 @@ export const useStore = create<AppState>((set, get) => ({
       categoryName: product.categoryName,
       name: product.name,
       price: product.price,
+      remoteStockId: product.remoteStockId,
       quantity,
       selectedModifiers,
       notes,
@@ -824,7 +825,7 @@ export const useStore = create<AppState>((set, get) => ({
       orderId
     }));
 
-    await OperationalApi.sendToKitchen({
+    const sendResult = await OperationalApi.sendToKitchen({
       orderId,
       tableId,
       total,
@@ -870,6 +871,9 @@ export const useStore = create<AppState>((set, get) => ({
     }));
 
     get().addNotification(`Novo pedido da Mesa ${table.number}!`, 'order', tableId);
+    if (sendResult.inventorySyncError) {
+      get().addNotification("Pedido lançado, mas a baixa de estoque falhou. Confira o estoque.", "error", tableId);
+    }
 
     postOSMessage('table_alert', {
       tableId,
@@ -883,6 +887,10 @@ export const useStore = create<AppState>((set, get) => ({
       await get().addAuditLog('order_sent', `Itens: ${table.cart.length} | Total: R$ ${total.toFixed(2)}`, table.number.toString(), origin);
     } catch (error) {
       console.warn('Pedido enviado, mas a auditoria falhou:', error);
+    }
+
+    if (sendResult.inventorySync?.movementCount || sendResult.inventorySync?.catalogVersion) {
+      await get().syncData({ includeCatalog: true });
     }
   },
 

@@ -25,6 +25,14 @@ type SendToKitchenResult = {
     createdAt: string;
     tableNumber?: number;
   };
+  inventorySync?: {
+    movementCount: number;
+    unmatched: string[];
+    insufficient: string[];
+    critical: string[];
+    catalogVersion?: string | null;
+  } | null;
+  inventorySyncError?: string | null;
 };
 
 type UpdateOrderStatusResult = {

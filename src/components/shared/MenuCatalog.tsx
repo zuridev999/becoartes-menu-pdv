@@ -24,6 +24,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid' }: MenuCatalogP
 
   const filteredMenu = menu.filter(p => {
     if (!p.visible) return false;
+    if (p.remoteStockId && typeof p.stockQuantity === 'number' && p.stockQuantity <= 0) return false;
     
     // Check Category Schedule
     const cat = dbCategories.find(c => c.id === p.categoryId);

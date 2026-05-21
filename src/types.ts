@@ -52,6 +52,8 @@ export interface Product {
   modifierGroups: ModifierGroup[];
   erpCode?: string;
   remoteStockId?: string;
+  stockQuantity?: number | null;
+  stockMinimum?: number | null;
   cost?: number;
 }
 
@@ -63,6 +65,7 @@ export interface OrderItem {
   categoryName?: string;
   name: string;
   price: number;
+  remoteStockId?: string;
   quantity: number;
   selectedModifiers: Modifier[];
   notes?: string;

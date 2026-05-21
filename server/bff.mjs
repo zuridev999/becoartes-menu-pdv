@@ -654,9 +654,14 @@ const getCategories = async () => {
 
 const getMenu = async () => {
   const res = await db.execute(`
-    SELECT m.*, c.name as category_name
+    SELECT
+      m.*,
+      c.name as category_name,
+      ep.quantidade_atual as stock_quantity,
+      ep.estoque_minimo as stock_minimum
     FROM menu m
     LEFT JOIN categories c ON m.category_id = c.id
+    LEFT JOIN estoque_produtos ep ON ep.id = m.remote_stock_id AND ep.ativo = 1
   `);
   return res.rows.map((row) => ({
     id: row.id,
@@ -670,6 +675,8 @@ const getMenu = async () => {
     schedule: parseJsonObject(row.schedule_config),
     erpCode: row.erp_code || '',
     remoteStockId: row.remote_stock_id || '',
+    stockQuantity: row.remote_stock_id ? Number(row.stock_quantity || 0) : null,
+    stockMinimum: row.remote_stock_id ? Number(row.stock_minimum || 0) : null,
     cost: Number(row.cost || 0),
     modifierGroups: [],
   }));
@@ -1477,6 +1484,38 @@ const getActiveOrderItemsForTable = async (tableId) => {
   }));
 };
 
+const getOpenOrderItems = async () => {
+  const res = await db.execute({
+    sql: `
+      SELECT
+        oi.id,
+        oi.order_id as orderId,
+        oi.product_id as productId,
+        COALESCE(m.name, '') as name,
+        COALESCE(m.remote_stock_id, '') as remoteStockId,
+        oi.quantity,
+        oi.selected_modifiers as selectedModifiers,
+        t.number as tableNumber
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      JOIN tables t ON t.id = o.table_id
+      LEFT JOIN menu m ON oi.product_id = m.id
+      WHERE o.status != 'closed'
+    `,
+  });
+
+  return res.rows.map((row) => ({
+    id: row.id,
+    orderId: row.orderId,
+    productId: row.productId,
+    name: row.name || '',
+    remoteStockId: row.remoteStockId || '',
+    quantity: Number(row.quantity || 0),
+    selectedModifiers: parseJsonArray(row.selectedModifiers),
+    tableNumber: Number(row.tableNumber || 0),
+  }));
+};
+
 const claimIntegrationEvent = async (id, type, tableId, payload) => {
   const now = Date.now();
   const inserted = await db.execute({
@@ -1539,6 +1578,189 @@ const findStockProduct = async (empresaId, candidates) => {
   });
 
   return byName.rows[0] || null;
+};
+
+const hasPdvStockMovement = async ({ orderItemId, sourceItemKind, sourceItemId }) => {
+  if (!orderItemId || !sourceItemKind || !sourceItemId) return false;
+  const res = await db.execute({
+    sql: `
+      SELECT id
+      FROM estoque_movimentacoes
+      WHERE origem = 'pdv'
+        AND order_item_id = ?
+        AND source_item_kind = ?
+        AND source_item_id = ?
+      LIMIT 1
+    `,
+    args: [orderItemId, sourceItemKind, sourceItemId],
+  });
+  return Boolean(res.rows[0]?.id);
+};
+
+const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber, reason, closedBillId = null }) => {
+  const result = { movementCount: 0, unmatched: [], insufficient: [], critical: [], catalogVersion: null };
+  const safeItems = Array.isArray(items) ? items : [];
+  if (safeItems.length === 0) return result;
+
+  const osContext = await resolveOSContext();
+  const { empresaId, userId, slug } = osContext;
+  const now = osTimestamp();
+  const movementPlans = [];
+
+  for (const item of safeItems) {
+    const requestedQuantity = toStockAmount(item.quantity);
+    if (requestedQuantity <= 0) continue;
+
+    const productSourceId = item.productId;
+    const alreadyMovedProduct = await hasPdvStockMovement({
+      orderItemId: item.id,
+      sourceItemKind: 'product',
+      sourceItemId: productSourceId,
+    });
+
+    if (!alreadyMovedProduct) {
+      const productStock = await findStockProduct(empresaId, {
+        id: item.remoteStockId || item.productId,
+        name: item.name,
+      });
+
+      if (!productStock) {
+        result.unmatched.push(`${item.quantity}x ${item.name}`);
+      } else {
+        const currentQuantity = Number(productStock.quantidade_atual || 0);
+        const nextQuantity = currentQuantity - requestedQuantity;
+        if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
+        if (nextQuantity <= Number(productStock.estoque_minimo || 0)) result.critical.push(item.name);
+        movementPlans.push({
+          movementId: createId(),
+          stockId: productStock.id,
+          stockName: productStock.nome || item.name,
+          orderId: item.orderId,
+          orderItemId: item.id,
+          sourceItemId: productSourceId,
+          sourceItemKind: 'product',
+          requestedQuantity,
+          previousQuantity: currentQuantity,
+          nextQuantity,
+          reason,
+        });
+      }
+    }
+
+    for (const modifier of item.selectedModifiers || []) {
+      const modifierSourceId = modifier.id;
+      const alreadyMovedModifier = await hasPdvStockMovement({
+        orderItemId: item.id,
+        sourceItemKind: 'modifier',
+        sourceItemId: modifierSourceId,
+      });
+      if (alreadyMovedModifier) continue;
+
+      const modifierStock = await findStockProduct(empresaId, {
+        id: modifierSourceId,
+        name: modifier.name,
+      });
+      if (!modifierStock) continue;
+
+      const currentQuantity = Number(modifierStock.quantidade_atual || 0);
+      const nextQuantity = currentQuantity - requestedQuantity;
+      if (requestedQuantity > currentQuantity) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
+      if (nextQuantity <= Number(modifierStock.estoque_minimo || 0)) result.critical.push(modifier.name);
+      movementPlans.push({
+        movementId: createId(),
+        stockId: modifierStock.id,
+        stockName: modifierStock.nome || modifier.name,
+        orderId: item.orderId,
+        orderItemId: item.id,
+        sourceItemId: modifierSourceId,
+        sourceItemKind: 'modifier',
+        requestedQuantity,
+        previousQuantity: currentQuantity,
+        nextQuantity,
+        reason: `${reason} | Opcional ${modifier.name}`,
+      });
+    }
+  }
+
+  const batch = [];
+  for (const movement of movementPlans) {
+    batch.push(
+      {
+        sql: `
+          INSERT OR IGNORE INTO estoque_movimentacoes
+            (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova, motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
+          SELECT ?, empresa_id, id, 'saida', ?, quantidade_atual, quantidade_atual - ?, ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
+          FROM estoque_produtos
+          WHERE id = ? AND empresa_id = ? AND ativo = 1
+        `,
+        args: [
+          movement.movementId,
+          movement.requestedQuantity,
+          movement.requestedQuantity,
+          movement.reason,
+          userId,
+          now,
+          closedBillId,
+          movement.orderId,
+          movement.orderItemId,
+          integrationId,
+          movement.sourceItemId,
+          movement.sourceItemKind,
+          movement.stockId,
+          empresaId,
+        ],
+      },
+      {
+        sql: `
+          UPDATE estoque_produtos
+          SET quantidade_atual = quantidade_atual - ?,
+              status = CASE WHEN quantidade_atual - ? <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
+              updated_at = ?
+          WHERE id = ? AND empresa_id = ? AND ativo = 1
+        `,
+        args: [movement.requestedQuantity, movement.requestedQuantity, now, movement.stockId, empresaId],
+      },
+    );
+  }
+
+  if (batch.length > 0) {
+    await db.batch(batch, 'write');
+    result.catalogVersion = await bumpCatalogVersion();
+  }
+
+  result.movementCount = movementPlans.length;
+
+  const notificationTasks = [];
+  if (result.unmatched.length > 0) {
+    notificationTasks.push(safeCreateOSNotification({
+      context: osContext,
+      title: 'Itens do PDV sem vínculo de estoque',
+      message: `Mesa ${tableNumber}: ${result.unmatched.slice(0, 8).join(', ')}`,
+      type: 'alert',
+      link: `/${slug}/estoque`,
+    }));
+  }
+  if (result.insufficient.length > 0) {
+    notificationTasks.push(safeCreateOSNotification({
+      context: osContext,
+      title: 'Estoque negativo em venda PDV',
+      message: `Mesa ${tableNumber}: ${result.insufficient.slice(0, 8).join(', ')}`,
+      type: 'warning',
+      link: `/${slug}/estoque`,
+    }));
+  }
+  if (result.critical.length > 0) {
+    notificationTasks.push(safeCreateOSNotification({
+      context: osContext,
+      title: 'Estoque crítico após lançamento PDV',
+      message: `Mesa ${tableNumber}: ${Array.from(new Set(result.critical)).slice(0, 8).join(', ')}`,
+      type: 'warning',
+      link: `/${slug}/estoque`,
+    }));
+  }
+  void Promise.all(notificationTasks);
+
+  return result;
 };
 
 const notifyOrderItemCancelled = async ({ tableNumber, itemName, quantity, sellerName, sellerPermission }) => {
@@ -1644,6 +1866,28 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
 
   await db.batch(batch, 'write');
 
+  let inventorySync = null;
+  let inventorySyncError = null;
+  try {
+    const tableRes = await db.execute({ sql: "SELECT number FROM tables WHERE id = ? LIMIT 1", args: [tableId] });
+    const tableNumber = Number(tableRes.rows[0]?.number || 0);
+    inventorySync = await syncPdvOrderItemsToInventory({
+      items: safeItems.map((item) => ({ ...item, orderId })),
+      integrationId: `pdv_order_${orderId}`,
+      tableNumber,
+      reason: `Venda PDV Mesa ${tableNumber} | Lançamento ${orderId}`,
+    });
+  } catch (error) {
+    inventorySyncError = error;
+    console.error('Falha ao baixar estoque no lançamento do pedido:', error);
+    void safeCreateOSNotification({
+      title: 'Baixa de estoque no lançamento falhou',
+      message: `Pedido ${orderId}: ${error instanceof Error ? error.message : String(error)}`,
+      type: 'error',
+      link: `/${OS_TENANT_SLUG}/estoque`,
+    });
+  }
+
   return {
     request: {
       id: requestId,
@@ -1653,6 +1897,8 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
       status: 'pending',
       createdAt: new Date().toISOString(),
     },
+    inventorySync,
+    inventorySyncError: inventorySyncError instanceof Error ? inventorySyncError.message : inventorySyncError ? String(inventorySyncError) : null,
   };
 };
 
@@ -2323,6 +2569,44 @@ const syncBeveragesFromInventory = async () => {
   return { catalogVersion: await bumpCatalogVersion(), count: stockRes.rows.length };
 };
 
+const syncOpenOrdersInventory = async () => {
+  const items = await getOpenOrderItems();
+  const byTable = new Map();
+  for (const item of items) {
+    const tableItems = byTable.get(item.tableNumber) || [];
+    tableItems.push(item);
+    byTable.set(item.tableNumber, tableItems);
+  }
+
+  const results = [];
+  for (const [tableNumber, tableItems] of byTable.entries()) {
+    try {
+      const result = await syncPdvOrderItemsToInventory({
+        items: tableItems,
+        integrationId: `pdv_open_orders_backfill_${tableNumber}`,
+        tableNumber,
+        reason: `Baixa retroativa PDV Mesa ${tableNumber}`,
+      });
+      results.push({ tableNumber, ...result });
+    } catch (error) {
+      results.push({
+        tableNumber,
+        movementCount: 0,
+        unmatched: [],
+        insufficient: [],
+        critical: [],
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return {
+    tables: results.length,
+    movementCount: results.reduce((sum, result) => sum + Number(result.movementCount || 0), 0),
+    results,
+  };
+};
+
 const closeBillWithInventorySync = async (data, session = null) => {
   const tableId = requireString(data.tableId, 'tableId');
   const settings = await getSettings();
@@ -2410,36 +2694,51 @@ const closeBillWithInventorySync = async (data, session = null) => {
       try {
         for (const item of activeOrderItems) {
           const requestedQuantity = toStockAmount(item.quantity);
-          const productStock = await findStockProduct(empresaId, {
-            id: item.remoteStockId || item.productId,
-            name: item.name,
+          const alreadyMovedProduct = await hasPdvStockMovement({
+            orderItemId: item.id,
+            sourceItemKind: 'product',
+            sourceItemId: item.productId,
           });
 
-          if (!productStock) {
-            result.unmatched.push(`${item.quantity}x ${item.name}`);
-          } else {
-            const currentQuantity = toStockAmount(productStock.quantidade_atual);
-            const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
-            if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
-            if (nextQuantity <= toStockAmount(productStock.estoque_minimo)) result.critical.push(item.name);
-            if (currentQuantity > 0 && requestedQuantity > 0) {
-              movementPlans.push({
-                movementId: createId(),
-                stockId: productStock.id,
-                stockName: productStock.nome || item.name,
-                orderId: item.orderId,
-                orderItemId: item.id,
-                sourceItemId: item.productId,
-                sourceItemKind: 'product',
-                requestedQuantity,
-                previousQuantity: currentQuantity,
-                nextQuantity,
-                reason: baseReason,
-              });
+          if (!alreadyMovedProduct) {
+            const productStock = await findStockProduct(empresaId, {
+              id: item.remoteStockId || item.productId,
+              name: item.name,
+            });
+
+            if (!productStock) {
+              result.unmatched.push(`${item.quantity}x ${item.name}`);
+            } else {
+              const currentQuantity = Number(productStock.quantidade_atual || 0);
+              const nextQuantity = currentQuantity - requestedQuantity;
+              if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
+              if (nextQuantity <= Number(productStock.estoque_minimo || 0)) result.critical.push(item.name);
+              if (requestedQuantity > 0) {
+                movementPlans.push({
+                  movementId: createId(),
+                  stockId: productStock.id,
+                  stockName: productStock.nome || item.name,
+                  orderId: item.orderId,
+                  orderItemId: item.id,
+                  sourceItemId: item.productId,
+                  sourceItemKind: 'product',
+                  requestedQuantity,
+                  previousQuantity: currentQuantity,
+                  nextQuantity,
+                  reason: baseReason,
+                });
+              }
             }
           }
 
           for (const modifier of item.selectedModifiers || []) {
+            const alreadyMovedModifier = await hasPdvStockMovement({
+              orderItemId: item.id,
+              sourceItemKind: 'modifier',
+              sourceItemId: modifier.id,
+            });
+            if (alreadyMovedModifier) continue;
+
             const modifierStock = await findStockProduct(empresaId, {
               id: modifier.id,
               name: modifier.name,
@@ -2447,11 +2746,11 @@ const closeBillWithInventorySync = async (data, session = null) => {
 
             if (!modifierStock) continue;
 
-            const currentQuantity = toStockAmount(modifierStock.quantidade_atual);
-            const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
+            const currentQuantity = Number(modifierStock.quantidade_atual || 0);
+            const nextQuantity = currentQuantity - requestedQuantity;
             if (requestedQuantity > currentQuantity) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
-            if (nextQuantity <= toStockAmount(modifierStock.estoque_minimo)) result.critical.push(modifier.name);
-            if (currentQuantity > 0 && requestedQuantity > 0) {
+            if (nextQuantity <= Number(modifierStock.estoque_minimo || 0)) result.critical.push(modifier.name);
+            if (requestedQuantity > 0) {
               movementPlans.push({
                 movementId: createId(),
                 stockId: modifierStock.id,
@@ -2507,9 +2806,9 @@ const closeBillWithInventorySync = async (data, session = null) => {
           sql: `
             INSERT OR IGNORE INTO estoque_movimentacoes
               (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova, motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
-            SELECT ?, empresa_id, id, 'saida', MIN(quantidade_atual, ?), quantidade_atual, MAX(0, quantidade_atual - ?), ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
+            SELECT ?, empresa_id, id, 'saida', ?, quantidade_atual, quantidade_atual - ?, ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
             FROM estoque_produtos
-            WHERE id = ? AND empresa_id = ? AND ativo = 1 AND quantidade_atual > 0
+            WHERE id = ? AND empresa_id = ? AND ativo = 1
           `,
           args: [
             movement.movementId,
@@ -2531,12 +2830,12 @@ const closeBillWithInventorySync = async (data, session = null) => {
         {
           sql: `
             UPDATE estoque_produtos
-            SET quantidade_atual = MAX(0, quantidade_atual - ?),
-                status = CASE WHEN MAX(0, quantidade_atual - ?) <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
+            SET quantidade_atual = quantidade_atual - ?,
+                status = CASE WHEN quantidade_atual - ? <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
                 updated_at = ?
-            WHERE id = ? AND changes() > 0
+            WHERE id = ? AND empresa_id = ? AND ativo = 1
           `,
-          args: [movement.requestedQuantity, movement.requestedQuantity, now, movement.stockId],
+          args: [movement.requestedQuantity, movement.requestedQuantity, now, movement.stockId, empresaId],
         },
       );
     }
@@ -2583,6 +2882,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
     });
 
     await db.batch(batch, 'write');
+    if (result.movementCount > 0) await bumpCatalogVersion();
 
     const notificationContext = osContext || null;
     const notificationTasks = [];
@@ -2722,6 +3022,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/sellers/delete': 'manageTeam',
     'POST /api/sellers/status': 'manageTeam',
     'POST /api/inventory/sync-beverages': 'addProduct',
+    'POST /api/inventory/sync-open-orders': 'manageSettings',
     'POST /api/tables/status': 'updateTableStatus',
     'POST /api/tables/open': 'openTable',
     'POST /api/tables/transfer': 'transferTable',
@@ -2790,6 +3091,7 @@ const handlers = {
   'POST /api/sellers/delete': async (body) => deleteSeller(body),
   'POST /api/sellers/status': async (body) => updateSellerStatus(body),
   'POST /api/inventory/sync-beverages': async () => syncBeveragesFromInventory(),
+  'POST /api/inventory/sync-open-orders': async () => syncOpenOrdersInventory(),
 };
 
 const handleApi = async (req, res, url) => {

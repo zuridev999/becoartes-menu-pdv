@@ -819,7 +819,11 @@ export function PDVView() {
 
                <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar">
                   <div className="grid grid-cols-2 gap-4">
-                    {menu.filter(p => !activeCategory || p.categoryId === activeCategory).map(product => (
+                    {menu
+                      .filter(p => p.visible)
+                      .filter(p => !(p.remoteStockId && typeof p.stockQuantity === 'number' && p.stockQuantity <= 0))
+                      .filter(p => !activeCategory || p.categoryId === activeCategory)
+                      .map(product => (
                       <motion.button
                         key={product.id}
                         whileHover={{ x: 6 }}
