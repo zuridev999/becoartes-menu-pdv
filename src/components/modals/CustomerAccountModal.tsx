@@ -1,13 +1,7 @@
 import { motion } from 'framer-motion';
 import { X, FileText, Receipt, LayoutDashboard } from 'lucide-react';
 import { useStore } from '../../store';
-
-const MAX_SERVICE_FEE_PERCENT = 13;
-const clampServiceFeePercent = (value: number) => {
-  if (!Number.isFinite(value)) return MAX_SERVICE_FEE_PERCENT;
-  return Math.min(MAX_SERVICE_FEE_PERCENT, Math.max(0, value));
-};
-const formatPercent = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
 
 export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
   const { currentTableId, tables, settings } = useStore();
@@ -15,14 +9,14 @@ export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
 
   if (!table) return null;
 
-  const subtotal = table.orders.reduce((acc, o) => {
+  const subtotal = roundMoney(table.orders.reduce((acc, o) => {
     const modifiersTotal = o.selectedModifiers?.reduce((mAcc, m) => mAcc + m.price, 0) || 0;
     return acc + ((o.price + modifiersTotal) * o.quantity);
-  }, 0);
+  }, 0));
 
   const serviceFeePercent = clampServiceFeePercent(Number(settings.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
-  const serviceFee = subtotal * (serviceFeePercent / 100);
-  const total = subtotal + serviceFee;
+  const serviceFee = calculateServiceFee(subtotal, serviceFeePercent);
+  const total = calculateBillTotal({ subtotal, serviceFee, discount: 0 });
 
   return (
     <motion.div 

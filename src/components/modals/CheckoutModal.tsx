@@ -2,20 +2,13 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight } from 'lucide-react';
 import { useStore, type Table as TableType } from '../../store';
+import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
 import { can } from '../../lib/permissions';
 
 interface Payment {
   method: 'credit' | 'debit' | 'cash' | 'pix';
   amount: number;
 }
-
-const MAX_SERVICE_FEE_PERCENT = 13;
-const roundMoney = (value: number) => Number(value.toFixed(2));
-const clampServiceFeePercent = (value: number) => {
-  if (!Number.isFinite(value)) return MAX_SERVICE_FEE_PERCENT;
-  return Math.min(MAX_SERVICE_FEE_PERCENT, Math.max(0, value));
-};
-const formatPercent = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 
 export function CheckoutModal({ table, onClose }: { table: TableType, onClose: () => void }) {
   const { closeBill, settings, sellers, currentSeller } = useStore();
@@ -43,16 +36,18 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     return acc + (itemPrice * o.quantity);
   }, 0));
 
-  const feeValue = roundMoney(subtotal * (serviceFeePercent / 100));
+  const feeValue = calculateServiceFee(subtotal, serviceFeePercent);
   const rawDiscountAmount = discountType === 'fixed'
     ? discountValue
     : subtotal * (Math.min(100, Math.max(0, discountValue)) / 100);
   const discountAmountValue = canApplyDiscount ? roundMoney(Math.min(subtotal + feeValue, Math.max(0, rawDiscountAmount))) : 0;
-  const totalFinal = roundMoney(Math.max(0, subtotal + feeValue - discountAmountValue));
+  const totalFinal = calculateBillTotal({ subtotal, serviceFee: feeValue, discount: discountAmountValue });
   const paidTotal = roundMoney(payments.reduce((acc: number, p: any) => acc + p.amount, 0));
   const diff = Number((totalFinal - paidTotal).toFixed(2));
   const remaining = Math.max(0, diff);
   const change = Math.max(0, -diff);
+  const hasCashPayment = payments.some((payment) => payment.method === 'cash');
+  const hasInvalidOverpayment = paidTotal > totalFinal && !hasCashPayment;
 
   const [amountDigits, setAmountDigits] = useState<string>(() => {
     return Math.round(remaining * 100).toString();
@@ -66,6 +61,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     setServiceFeePercent(defaultServiceFeePercent);
   }, [defaultServiceFeePercent]);
 
+  const currentPaymentAmount = Number(amountDigits) / 100;
+  const currentPaymentCreatesInvalidChange = roundMoney(paidTotal + currentPaymentAmount) > totalFinal
+    && currentMethod !== 'cash'
+    && !hasCashPayment;
   const currentAmountFormatted = (Number(amountDigits) / 100).toFixed(2);
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,12 +78,15 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const handleAddPayment = () => {
     if (!canLaunchPayment) return;
     if (payments.length >= 1 && !canSplitPayment) return;
-    const val = Number(currentAmountFormatted);
+    const val = currentPaymentAmount;
     if (val <= 0) return;
+    const nextPaidTotal = roundMoney(paidTotal + val);
+    if (nextPaidTotal > totalFinal && currentMethod !== 'cash' && !hasCashPayment) return;
     setPayments([...payments, { method: currentMethod, amount: val }]);
   };
 
   const handleFinish = async () => {
+    if (hasInvalidOverpayment || remaining > 0 || !selectedSellerId || !canLaunchPayment || !canCloseBill) return;
     const seller = sellerOptions.find(s => s.id === selectedSellerId);
     const success = await closeBill({
       tableId: table.id,
@@ -271,7 +273,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                     </div>
                     <button 
                        onClick={handleAddPayment}
-                       disabled={!canLaunchPayment || (payments.length >= 1 && !canSplitPayment)}
+                       disabled={!canLaunchPayment || (payments.length >= 1 && !canSplitPayment) || currentPaymentCreatesInvalidChange}
                        className="py-4 px-8 btn-beco btn-beco-purple text-base font-black rounded-2xl disabled:opacity-30 disabled:grayscale"
                     >
                        Lançar Valor
@@ -285,6 +287,11 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                  {canLaunchPayment && payments.length >= 1 && !canSplitPayment && (
                    <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
                      Seu perfil não pode dividir pagamento em mais de uma forma.
+                   </p>
+                 )}
+                 {(hasInvalidOverpayment || currentPaymentCreatesInvalidChange) && (
+                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-rose-400">
+                     Valor acima do total só é permitido em dinheiro, porque gera troco.
                    </p>
                  )}
 
@@ -326,15 +333,15 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
               </div>
 
               <button 
-                 disabled={remaining > 0 || !selectedSellerId || !canLaunchPayment || !canCloseBill}
+                 disabled={remaining > 0 || hasInvalidOverpayment || !selectedSellerId || !canLaunchPayment || !canCloseBill}
                  onClick={handleFinish}
                  className="w-full btn-beco btn-beco-purple py-5 text-2xl font-black mt-6 shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-4 group rounded-2xl"
               >
                  FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={26}/>
               </button>
-              {(remaining > 0 || !selectedSellerId || !canLaunchPayment || !canCloseBill) && (
+              {(remaining > 0 || hasInvalidOverpayment || !selectedSellerId || !canLaunchPayment || !canCloseBill) && (
                 <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-rose-500 mt-3 animate-pulse">
-                  {!canCloseBill ? 'Sem permissão para fechar conta' : !canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSellerId ? 'Selecione o Operador para liberar' : `Falta receber R$ ${remaining.toFixed(2)}`}
+                  {!canCloseBill ? 'Sem permissão para fechar conta' : !canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSellerId ? 'Selecione o Operador para liberar' : hasInvalidOverpayment ? 'Troco só pode existir em pagamento em dinheiro' : `Falta receber R$ ${remaining.toFixed(2)}`}
                 </p>
               )}
            </div>
