@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import QRCode from 'qrcode';
+import JSZip from 'jszip';
 import {
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
-  GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy
+  GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy,
+  QrCode, Download, Archive, RefreshCcw, ExternalLink
 } from 'lucide-react';
 import {
   DndContext,
@@ -38,7 +41,7 @@ import {
 import { createId } from '../../lib/id';
 import { getImageSrc } from '../../lib/image';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
-import { AppApi } from '../../lib/api';
+import { AdminApi, AppApi } from '../../lib/api';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
@@ -52,6 +55,8 @@ type AdminDialog = {
     label: string;
     defaultValue?: string;
     placeholder?: string;
+    type?: string;
+    inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
   };
   onConfirm: (value?: string) => void | Promise<void>;
 };
@@ -66,6 +71,80 @@ type AuditMovement = {
   timestamp: string;
 };
 
+const QR_PUBLIC_BASE_URL = 'https://qr.becoartes.com';
+
+const normalizeQrRangeValue = (value: string, fallback: number) => {
+  const parsed = Math.trunc(Number(value));
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, 999);
+};
+
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+const dataUrlToBlob = async (dataUrl: string) => {
+  const response = await fetch(dataUrl);
+  return response.blob();
+};
+
+const loadImageFromDataUrl = (dataUrl: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+  const image = new window.Image();
+  image.onload = () => resolve(image);
+  image.onerror = reject;
+  image.src = dataUrl;
+});
+
+const buildPrintableQrBlob = async (tableNumber: number, qrUrl: string) => {
+  const qrDataUrl = await QRCode.toDataURL(qrUrl, {
+    errorCorrectionLevel: 'H',
+    margin: 2,
+    width: 920,
+    color: {
+      dark: '#0a0a0c',
+      light: '#ffffff',
+    },
+  });
+  const qrImage = await loadImageFromDataUrl(qrDataUrl);
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200;
+  canvas.height = 1600;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return dataUrlToBlob(qrDataUrl);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = '#0a0a0c';
+  ctx.font = '900 82px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Becoartes', 600, 150);
+
+  ctx.fillStyle = '#6f2dbd';
+  ctx.font = '900 120px Arial, sans-serif';
+  ctx.fillText(`MESA ${tableNumber}`, 600, 300);
+
+  ctx.drawImage(qrImage, 140, 385, 920, 920);
+
+  ctx.fillStyle = '#0a0a0c';
+  ctx.font = '700 34px Arial, sans-serif';
+  ctx.fillText('Aponte a câmera e faça seu pedido', 600, 1380);
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '700 28px Arial, sans-serif';
+  ctx.fillText(qrUrl.replace(/^https?:\/\//, ''), 600, 1440);
+
+  return new Promise<Blob>((resolve) => {
+    canvas.toBlob((blob) => resolve(blob || new Blob()), 'image/png', 0.95);
+  });
+};
+
 const auditActionLabels: Record<string, string> = {
   bill_closed: 'Conta fechada',
   item_removed: 'Item cancelado',
@@ -76,6 +155,7 @@ const auditActionLabels: Record<string, string> = {
   cash_closed: 'Caixa fechado',
   discount_applied: 'Desconto aplicado',
   service_tax_changed: 'Taxa de serviço alterada',
+  qr_table_regenerated: 'QR Code de mesa renovado',
   payment_registered: 'Pagamento registrado',
   cash_close_blocked: 'Fechamento de caixa bloqueado',
   Lançamento_Manual: 'Lançamento manual',
@@ -332,7 +412,7 @@ export function AdminView() {
   const {
     menu, updateProduct, addProduct, deleteProduct,
     settings, updateSettings,
-    sellers, addSeller, toggleSellerStatus, deleteSeller,
+    tables, sellers, addSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
     adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, toggleCategoryVisibility,
     linkGroupToCategory, linkGroupToProduct, currentSeller, closedBills, addNotification,
@@ -360,6 +440,9 @@ export function AdminView() {
   const [auditEndDate, setAuditEndDate] = useState('');
   const [auditAuthor, setAuditAuthor] = useState('');
   const [auditAction, setAuditAction] = useState('');
+  const [qrRangeStart, setQrRangeStart] = useState('1');
+  const [qrRangeEnd, setQrRangeEnd] = useState('50');
+  const [isQrDownloading, setIsQrDownloading] = useState(false);
   const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
@@ -463,12 +546,74 @@ export function AdminView() {
   const canEditProductFields = !editingProductExists || canEditProduct;
   const canEditProductMoney = !editingProductExists || canEditProductPrice;
   const canSaveEditingProduct = Boolean(editingProduct && (editingProductExists ? (canEditProduct || canEditProductPrice) : canAddProduct));
+  const sortedQrTables = [...tables].sort((a, b) => a.number - b.number);
+  const availableQrNumbers = sortedQrTables.map((table) => table.number);
+  const qrMinTable = availableQrNumbers[0] || 1;
+  const qrMaxTable = availableQrNumbers[availableQrNumbers.length - 1] || 50;
+  const getQrRevision = (tableNumber: number) => settings.qrCodes?.tableRevisions?.[String(tableNumber)] || '';
+  const getQrUrl = (tableNumber: number) => {
+    const revision = getQrRevision(tableNumber);
+    return `${QR_PUBLIC_BASE_URL}/mesa/${tableNumber}${revision ? `?v=${encodeURIComponent(revision)}` : ''}`;
+  };
+  const downloadTableQr = async (tableNumber: number) => {
+    try {
+      const blob = await buildPrintableQrBlob(tableNumber, getQrUrl(tableNumber));
+      downloadBlob(blob, `becoartes-mesa-${String(tableNumber).padStart(2, '0')}.png`);
+      addNotification(`QR Code da mesa ${tableNumber} baixado.`, 'info');
+    } catch (error) {
+      console.error('Erro ao gerar QR Code:', error);
+      addNotification('Não foi possível gerar este QR Code.', 'error');
+    }
+  };
+  const downloadQrRangeZip = async () => {
+    const from = normalizeQrRangeValue(qrRangeStart, qrMinTable);
+    const to = normalizeQrRangeValue(qrRangeEnd, qrMaxTable);
+    const start = Math.min(from, to);
+    const end = Math.max(from, to);
+    const selectedNumbers = availableQrNumbers.filter((number) => number >= start && number <= end);
+
+    if (selectedNumbers.length === 0) {
+      addNotification('Nenhuma mesa encontrada nesse intervalo.', 'error');
+      return;
+    }
+
+    setIsQrDownloading(true);
+    try {
+      const zip = new JSZip();
+      for (const tableNumber of selectedNumbers) {
+        const blob = await buildPrintableQrBlob(tableNumber, getQrUrl(tableNumber));
+        zip.file(`mesa-${String(tableNumber).padStart(2, '0')}.png`, blob);
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      downloadBlob(zipBlob, `becoartes-qrcodes-mesas-${start}-${end}.zip`);
+      addNotification(`${selectedNumbers.length} QR Codes baixados em ZIP.`, 'info');
+    } catch (error) {
+      console.error('Erro ao gerar ZIP de QR Codes:', error);
+      addNotification('Não foi possível gerar o pacote de QR Codes.', 'error');
+    } finally {
+      setIsQrDownloading(false);
+    }
+  };
+  const requestQrRegeneration = (tableNumber: number) => {
+    setAdminDialog({
+      title: `Gerar novo QR da Mesa ${tableNumber}?`,
+      description: 'Use apenas se o impresso atual precisar ser substituído. A rota da mesa continua permanente, mas a imagem baixada terá uma nova versão.',
+      confirmLabel: 'Gerar novo QR',
+      input: { label: 'PIN admin', placeholder: 'Digite o PIN admin', type: 'password', inputMode: 'numeric' },
+      onConfirm: async (pin) => {
+        const result = await AdminApi.regenerateTableQr(tableNumber, pin || '');
+        updateSettings({ qrCodes: result.qrCodes });
+        addNotification(`QR Code da mesa ${tableNumber} renovado. Baixe a nova imagem.`, 'info');
+      }
+    });
+  };
 
   const allowedTabIds = new Set([
     ...(canAccessProducts ? ['products'] : []),
     ...(canManageCategories ? ['categories'] : []),
     ...(canManageOptionals ? ['optionals'] : []),
     ...(isAdminProfile && canManageSettings ? ['config'] : []),
+    ...(isAdminProfile && canManageSettings ? ['qrcodes'] : []),
     ...(isAdminProfile && canManageTeam ? ['sellers'] : []),
     ...(isAdminProfile && canViewSalesTotals ? ['finance', 'movements'] : []),
   ]);
@@ -724,6 +869,7 @@ export function AdminView() {
             { id: 'products', name: 'Produtos', icon: Package },
             { id: 'optionals', name: 'Opcionais', icon: Sparkles },
             { id: 'sellers', name: 'Equipe', icon: User },
+            { id: 'qrcodes', name: 'QR Mesas', icon: QrCode },
             { id: 'finance', name: 'Fechamentos', icon: Wallet },
             { id: 'movements', name: 'Auditoria', icon: TrendingUp },
           ]
@@ -789,6 +935,125 @@ export function AdminView() {
               <ConfigInput label="Alerta Visual" type="checkbox" value={settings.kitchen.visualAlert} onChange={(val) => updateSettings({ kitchen: { ...settings.kitchen, visualAlert: val } })} />
             </div>
           </SectionCard>
+        </div>
+      )}
+
+      {activeTab === 'qrcodes' && isAdminProfile && canManageSettings && (
+        <div className="max-w-7xl mx-auto space-y-8">
+          <div className="glass-card border-primary/20 p-6 sm:p-10 rounded-[2rem] sm:rounded-[3rem]">
+            <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-8">
+              <div className="max-w-3xl">
+                <div className="w-16 h-16 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mb-6">
+                  <QrCode size={30} />
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-[0.32em] text-primary mb-3">QR Code permanente</p>
+                <h3 className="text-4xl sm:text-5xl font-black tracking-tighter mb-4">QR Codes das mesas</h3>
+                <p className="text-sm sm:text-base font-bold text-zinc-400 leading-relaxed">
+                  Cada QR abre direto a experiência do cliente em <strong className="text-white">{QR_PUBLIC_BASE_URL}</strong>.
+                  Eles foram pensados para impressão: não expiram e continuam funcionando após reiniciar, atualizar ou trocar sessão.
+                </p>
+              </div>
+
+              <div className="glass rounded-[2rem] border-white/10 p-5 sm:p-6 w-full xl:w-[430px]">
+                <p className="text-[10px] font-black uppercase tracking-[0.26em] text-zinc-500 mb-4">Baixar pacote</p>
+                <div className="grid grid-cols-2 gap-4 mb-5">
+                  <div>
+                    <label className="block text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-2">De</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={qrRangeStart}
+                      onChange={(event) => setQrRangeStart(event.target.value)}
+                      className="w-full glass p-4 rounded-2xl border-white/10 outline-none font-black text-lg focus:border-primary/40"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-2">Até</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={qrRangeEnd}
+                      onChange={(event) => setQrRangeEnd(event.target.value)}
+                      className="w-full glass p-4 rounded-2xl border-white/10 outline-none font-black text-lg focus:border-primary/40"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={downloadQrRangeZip}
+                  disabled={isQrDownloading}
+                  className="w-full btn-beco btn-beco-purple py-5 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 disabled:opacity-50"
+                >
+                  <Archive size={18} /> {isQrDownloading ? 'Gerando ZIP...' : 'Baixar ZIP'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            {sortedQrTables.length === 0 ? (
+              <div className="col-span-full glass-card p-10 text-center border-white/10">
+                <p className="text-sm font-bold text-zinc-400">Nenhuma mesa cadastrada para gerar QR Code.</p>
+              </div>
+            ) : sortedQrTables.map((table) => {
+              const revision = getQrRevision(table.number);
+              const rotatedAt = settings.qrCodes?.lastRotatedAt?.[String(table.number)] || '';
+              const url = getQrUrl(table.number);
+
+              return (
+                <div key={table.id} className="glass-card border-white/10 rounded-[2rem] p-6 flex flex-col gap-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-zinc-500">Mesa</p>
+                      <h4 className="text-4xl font-black tracking-tighter">{table.number}</h4>
+                    </div>
+                    <div className="px-3 py-2 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[9px] font-black uppercase tracking-widest">
+                      Permanente
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-black/30 border border-white/10 p-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-2">Link público</p>
+                    <p className="text-xs font-bold text-zinc-300 break-all leading-relaxed">{url}</p>
+                    {revision && (
+                      <p className="text-[9px] font-black uppercase tracking-widest text-primary mt-3">
+                        Versão {revision}{rotatedAt ? ` • ${new Date(rotatedAt).toLocaleString('pt-BR')}` : ''}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+                      className="glass py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-300 hover:text-white transition-all flex items-center justify-center gap-2"
+                    >
+                      <ExternalLink size={15} /> Abrir
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await navigator.clipboard?.writeText(url);
+                        addNotification(`Link da mesa ${table.number} copiado.`, 'info');
+                      }}
+                      className="glass py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-300 hover:text-white transition-all flex items-center justify-center gap-2"
+                    >
+                      <Copy size={15} /> Copiar
+                    </button>
+                    <button
+                      onClick={() => downloadTableQr(table.number)}
+                      className="glass py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-300 hover:text-white transition-all flex items-center justify-center gap-2"
+                    >
+                      <Download size={15} /> PNG
+                    </button>
+                    <button
+                      onClick={() => requestQrRegeneration(table.number)}
+                      className="glass py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-amber-300 hover:text-amber-200 transition-all flex items-center justify-center gap-2 border-amber-500/20"
+                    >
+                      <RefreshCcw size={15} /> Novo
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

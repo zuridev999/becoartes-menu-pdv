@@ -2456,6 +2456,71 @@ const saveSettings = async ({ settings }, session = null) => {
   return { saved: true };
 };
 
+const regenerateTableQr = async ({ tableNumber, adminPin }, session = null) => {
+  const settings = await getSettings();
+  requirePermission(session, 'managePDVPermissions', settings);
+
+  if (!isAdminSession(session)) {
+    const error = new Error('Apenas admin pode gerar novo QR Code de mesa.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const safeTableNumber = Math.trunc(Number(tableNumber || 0));
+  if (!Number.isFinite(safeTableNumber) || safeTableNumber <= 0 || safeTableNumber > 999) {
+    throw new Error('Número da mesa inválido.');
+  }
+
+  const pinIsValid = await validateSessionPin(session, adminPin);
+  if (!pinIsValid) {
+    const error = new Error('PIN admin não confere. QR Code não foi alterado.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const tableRes = await db.execute({
+    sql: 'SELECT id FROM tables WHERE number = ? LIMIT 1',
+    args: [String(safeTableNumber)],
+  });
+  if (!tableRes.rows[0]) {
+    throw new Error(`Mesa ${safeTableNumber} não encontrada.`);
+  }
+
+  const tableKey = String(safeTableNumber);
+  const revision = createId().replace(/-/g, '').slice(0, 12);
+  const rotatedAt = new Date().toISOString();
+  const nextQrCodes = {
+    ...(settings?.qrCodes || {}),
+    tableRevisions: {
+      ...(settings?.qrCodes?.tableRevisions || {}),
+      [tableKey]: revision,
+    },
+    lastRotatedAt: {
+      ...(settings?.qrCodes?.lastRotatedAt || {}),
+      [tableKey]: rotatedAt,
+    },
+  };
+  const nextSettings = {
+    ...(settings || {}),
+    qrCodes: nextQrCodes,
+  };
+
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('settings', ?, CURRENT_TIMESTAMP)",
+    args: [JSON.stringify(nextSettings)],
+  });
+
+  await addAuditLog({
+    action: 'qr_table_regenerated',
+    details: JSON.stringify({ tableNumber: safeTableNumber, revision }),
+    tableNumber: String(safeTableNumber),
+    origin: 'pdv',
+    authorName: session?.name || 'Admin',
+  });
+
+  return { tableNumber: safeTableNumber, revision, qrCodes: nextQrCodes };
+};
+
 const addAuditLog = async ({ id, action, details = '', tableNumber = null, origin = 'pdv', authorName = 'Sistema', timestamp }) => {
   const logId = id || createId();
   const createdAt = timestamp || new Date().toISOString();
@@ -3479,6 +3544,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/catalog/modifier-group/delete': 'manageOptionals',
     'POST /api/catalog/modifier-group/link': 'manageOptionals',
     'POST /api/settings': 'manageSettings',
+    'POST /api/qrcodes/regenerate': 'managePDVPermissions',
     'POST /api/service-requests/clear': 'manageSettings',
     'POST /api/audit-logs/list': 'viewSalesTotals',
     'POST /api/sellers': 'managePDVUsers',
@@ -3544,6 +3610,7 @@ const handlers = {
   'POST /api/catalog/modifier-group/delete': async (body) => deleteModifierGroup(body),
   'POST /api/catalog/modifier-group/link': async (body) => linkModifierGroup(body),
   'POST /api/settings': async (body, context) => saveSettings(body, context.session),
+  'POST /api/qrcodes/regenerate': async (body, context) => regenerateTableQr(body, context.session),
   'POST /api/audit-logs': async (body) => addAuditLog(body),
   'POST /api/service-requests': async (body) => createServiceRequest(body),
   'POST /api/service-requests/resolve': async (body) => resolveServiceRequest(body),

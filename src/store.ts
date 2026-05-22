@@ -11,6 +11,8 @@ import type {
 
 export type { Product, Table, OrderItem, KitchenOrder, ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier };
 
+type AdminTab = 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance' | 'qrcodes';
+
 const TABLET_TABLE_STORAGE_KEY = 'beco_tablet_table_id';
 const LEGACY_TABLET_TABLE_STORAGE_KEY = 'becoartes_tablet_table_id';
 const SELLER_SESSION_STORAGE_KEY = 'beco_seller_session';
@@ -91,10 +93,10 @@ export interface AppState {
   syncData: (options?: { includeCatalog?: boolean }) => Promise<void>;
   addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string } | string, details?: string, tableNumber?: string, origin?: string) => Promise<void>;
   activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
-  adminTab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance';
+  adminTab: AdminTab;
   adminMode: 'menu' | 'settings';
   isLoading: boolean;
-  setAdminTab: (tab: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance') => void;
+  setAdminTab: (tab: AdminTab) => void;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
   cashState: CashState | null;
   serverTimeOffset: number;
@@ -102,7 +104,7 @@ export interface AppState {
   currentTableId: string | null;
   setCurrentTableId: (id: string | null) => void;
   init: () => Promise<void>;
-  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance', mode?: 'menu' | 'settings') => void;
+  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: AdminTab, mode?: 'menu' | 'settings') => void;
   toggleProductVisibility: (id: string) => void;
   toggleCategoryVisibility: (id: string) => void;
   addProduct: (product: Product) => Promise<void>;
@@ -190,6 +192,10 @@ export const useStore = create<AppState>((set, get) => ({
     mode: 'demo',
     currency: 'BRL',
     serviceTax: 13,
+    qrCodes: {
+      tableRevisions: {},
+      lastRotatedAt: {}
+    },
     pdvPermissions: {},
     theme: 'dark-becoartes',
     tablet: {
@@ -226,7 +232,19 @@ export const useStore = create<AppState>((set, get) => ({
       ...currentSettings,
       ...newSettings,
       tablet: newSettings.tablet ? { ...currentSettings.tablet, ...newSettings.tablet } : currentSettings.tablet,
-      kitchen: newSettings.kitchen ? { ...currentSettings.kitchen, ...newSettings.kitchen } : currentSettings.kitchen
+      kitchen: newSettings.kitchen ? { ...currentSettings.kitchen, ...newSettings.kitchen } : currentSettings.kitchen,
+      qrCodes: newSettings.qrCodes ? {
+        ...currentSettings.qrCodes,
+        ...newSettings.qrCodes,
+        tableRevisions: {
+          ...(currentSettings.qrCodes?.tableRevisions || {}),
+          ...(newSettings.qrCodes.tableRevisions || {})
+        },
+        lastRotatedAt: {
+          ...(currentSettings.qrCodes?.lastRotatedAt || {}),
+          ...(newSettings.qrCodes.lastRotatedAt || {})
+        }
+      } : currentSettings.qrCodes
     };
 
     set({ settings: nextSettings });

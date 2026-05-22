@@ -1,7 +1,7 @@
 {
   "name": "becoartes-menu-pdv",
   "private": true,
-  "version": "1.4.11",
+  "version": "1.4.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,9 +20,12 @@
     "@libsql/client": "^0.17.3",
     "@tailwindcss/postcss": "^4.0.0",
     "@tailwindcss/vite": "^4.0.0",
+    "@types/qrcode": "^1.5.6",
     "clsx": "^2.1.1",
     "framer-motion": "^12.0.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.474.0",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sharp": "^0.34.5",

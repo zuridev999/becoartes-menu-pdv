@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { InputHTMLAttributes } from 'react';
 import { motion } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, X } from 'lucide-react';
 
@@ -13,6 +14,8 @@ type ActionDialogProps = {
     label: string;
     defaultValue?: string;
     placeholder?: string;
+    type?: string;
+    inputMode?: InputHTMLAttributes<HTMLInputElement>['inputMode'];
   };
   onClose: () => void;
   onConfirm?: (value?: string) => void | Promise<void>;
@@ -80,6 +83,8 @@ export function ActionDialog({
           <div className="space-y-2 mb-8">
             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{input.label}</label>
             <input
+              type={input.type || 'text'}
+              inputMode={input.inputMode}
               autoFocus
               value={value}
               onChange={(event) => setValue(event.target.value)}

@@ -13,7 +13,7 @@ type BridgeMessage = {
 };
 
 type AppView = 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr';
-type AdminTab = 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance';
+type AdminTab = 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance' | 'qrcodes';
 type AdminMode = 'menu' | 'settings';
 
 export type OSBridgeCommand =
@@ -35,7 +35,7 @@ const configuredOrigins = (import.meta.env.VITE_OS_ALLOWED_ORIGINS || DEFAULT_OS
 export const OS_ALLOWED_ORIGINS = new Set(configuredOrigins);
 
 const allowedViews = new Set<AppView>(['tablet', 'pdv', 'admin', 'kitchen', 'qr']);
-const allowedTabs = new Set<AdminTab>(['config', 'products', 'categories', 'optionals', 'sellers', 'movements', 'finance']);
+const allowedTabs = new Set<AdminTab>(['config', 'products', 'categories', 'optionals', 'sellers', 'movements', 'finance', 'qrcodes']);
 const allowedModes = new Set<AdminMode>(['menu', 'settings']);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (

@@ -293,6 +293,17 @@ export const AdminApi = {
     return postJson<{ status: 'active' | 'inactive' }>('/api/sellers/status', { id, status });
   },
 
+  regenerateTableQr(tableNumber: number, adminPin: string) {
+    return postJson<{
+      tableNumber: number;
+      revision: string;
+      qrCodes: {
+        tableRevisions: Record<string, string>;
+        lastRotatedAt: Record<string, string>;
+      };
+    }>('/api/qrcodes/regenerate', { tableNumber, adminPin });
+  },
+
   syncBeveragesFromInventory() {
     return postJson<{ catalogVersion: string; count: number }>('/api/inventory/sync-beverages', {});
   },

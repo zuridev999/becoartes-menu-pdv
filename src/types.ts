@@ -142,6 +142,10 @@ export interface AppSettings {
   unitName: string;
   currency: string;
   serviceTax: number;
+  qrCodes?: {
+    tableRevisions?: Record<string, string>;
+    lastRotatedAt?: Record<string, string>;
+  };
   pdvPermissions?: {
     admin?: Record<string, boolean>;
     manager?: Record<string, boolean>;
