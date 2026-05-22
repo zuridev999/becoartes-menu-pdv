@@ -1965,6 +1965,45 @@ const notifyCloseBillSyncFailure = async ({ tableNumber, integrationId, error })
   });
 };
 
+const validateOrderItemsAvailability = async ({ items, session, settings, isPublicOrigin }) => {
+  const productIds = Array.from(new Set((items || []).map((item) => item.productId).filter(Boolean)));
+  if (productIds.length === 0) return;
+
+  const productRes = await db.execute({
+    sql: `
+      SELECT
+        m.id,
+        m.name,
+        m.visible,
+        m.remote_stock_id,
+        ep.quantidade_atual as stock_quantity
+      FROM menu m
+      LEFT JOIN estoque_produtos ep ON ep.id = m.remote_stock_id AND ep.ativo = 1
+      WHERE m.id IN (${productIds.map(() => '?').join(',')})
+    `,
+    args: productIds,
+  });
+  const productById = new Map(productRes.rows.map((row) => [row.id, row]));
+  const canSellUnavailable = !isPublicOrigin && canSessionWithSettings(session, 'sellUnavailableProduct', settings);
+
+  for (const productId of productIds) {
+    const product = productById.get(productId);
+    if (!product) throw new Error('Produto não encontrado no cardápio.');
+    const productName = String(product.name || 'Produto');
+    const isVisible = Number(product.visible || 0) === 1;
+    if (!isVisible && !canSellUnavailable) {
+      const error = new Error(`${productName} está invisível no PDV.`);
+      error.statusCode = 403;
+      throw error;
+    }
+    if (product.remote_stock_id && Number(product.stock_quantity || 0) <= 0 && !canSellUnavailable) {
+      const error = new Error(`${productName} está sem estoque disponível.`);
+      error.statusCode = 403;
+      throw error;
+    }
+  }
+};
+
 const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
   const itemRes = await db.execute({
     sql: "SELECT oi.order_id, o.table_id FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1",
@@ -2022,12 +2061,19 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
   requireString(orderId, 'orderId');
   requireString(tableId, 'tableId');
   const safeOrigin = origin === 'tablet' || origin === 'qr' ? origin : 'pdv';
+  const settings = await getSettings();
   if (safeOrigin === 'pdv') {
     await ensureTableAccess(tableId, session);
   }
   const effectiveSellerId = safeOrigin === 'pdv' ? (session?.id || sellerId || null) : (sellerId || null);
   const safeItems = Array.isArray(items) ? items : [];
   if (safeItems.length === 0) throw new Error('Pedido sem itens.');
+  await validateOrderItemsAvailability({
+    items: safeItems,
+    session,
+    settings,
+    isPublicOrigin: safeOrigin === 'tablet' || safeOrigin === 'qr',
+  });
 
   const batch = [
     {
@@ -2240,19 +2286,50 @@ const toggleCategoryVisibility = async ({ id, visible }) => {
 const upsertProduct = async ({ product }, session = null) => {
   const p = product || {};
   const productId = requireString(p.id, 'product.id');
+  const settings = await getSettings();
   const existing = await db.execute({
-    sql: "SELECT price FROM menu WHERE id = ? LIMIT 1",
+    sql: "SELECT name, description, price, cost, category_id, image, visible, erp_code, remote_stock_id, schedule_config FROM menu WHERE id = ? LIMIT 1",
     args: [productId],
   });
-  if (existing.rows[0] && !canSession(session, 'editProductPrice')) {
-    const currentPrice = Number(existing.rows[0].price || 0);
+  const currentProduct = existing.rows[0] || null;
+  if (!currentProduct) {
+    requirePermission(session, 'addProduct', settings);
+  }
+
+  if (currentProduct) {
+    const nextSchedule = p.schedule ? JSON.stringify(p.schedule) : null;
+    const productDataChanged = (
+      String(currentProduct.name || '') !== String(p.name || '')
+      || String(currentProduct.description || '') !== String(p.description || '')
+      || String(currentProduct.category_id || '') !== String(p.categoryId || '')
+      || String(currentProduct.image || '') !== String(p.image || '')
+      || String(currentProduct.erp_code || '') !== String(p.erpCode || '')
+      || String(currentProduct.remote_stock_id || '') !== String(p.remoteStockId || '')
+      || String(currentProduct.schedule_config || '') !== String(nextSchedule || '')
+      || Array.isArray(p.modifierGroups)
+    );
+    if (productDataChanged) {
+      requirePermission(session, 'editProduct', settings);
+    }
+
+    const currentPrice = Number(currentProduct.price || 0);
     const nextPrice = Number(p.price || 0);
     if (Math.abs(currentPrice - nextPrice) > 0.001) {
-      const error = new Error('Permissão insuficiente para alterar preço.');
-      error.statusCode = 403;
-      throw error;
+      requirePermission(session, 'editProductPrice', settings);
+    }
+
+    const currentCost = Number(currentProduct.cost || 0);
+    const nextCost = Number(p.cost || 0);
+    if (Math.abs(currentCost - nextCost) > 0.001) {
+      requirePermission(session, 'editProductPrice', settings);
+    }
+
+    const currentVisible = Number(currentProduct.visible || 0) === 1;
+    if (currentVisible !== Boolean(p.visible)) {
+      requirePermission(session, 'toggleProductVisibility', settings);
     }
   }
+
   await db.execute({
     sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category, category_id, image, visible, erp_code, remote_stock_id, schedule_config, cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     args: [
@@ -3386,10 +3463,9 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/order-items/delete': 'cancelTableItem',
     'POST /api/bills/close': 'closeBill',
     'POST /api/service-requests/resolve': 'resolveServiceRequest',
-    'POST /api/catalog/category': 'addProduct',
-    'POST /api/catalog/category/delete': 'deleteProduct',
-    'POST /api/catalog/category/visibility': 'toggleProductVisibility',
-    'POST /api/catalog/product': 'addProduct',
+    'POST /api/catalog/category': 'manageCategories',
+    'POST /api/catalog/category/delete': 'manageCategories',
+    'POST /api/catalog/category/visibility': 'manageCategories',
     'POST /api/catalog/product/delete': 'deleteProduct',
     'POST /api/catalog/product/visibility': 'toggleProductVisibility',
     'POST /api/catalog/modifier-group': 'manageOptionals',
@@ -3402,7 +3478,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/sellers/pin': 'managePDVUsers',
     'POST /api/sellers/delete': 'managePDVUsers',
     'POST /api/sellers/status': 'managePDVUsers',
-    'POST /api/inventory/sync-beverages': 'addProduct',
+    'POST /api/inventory/sync-beverages': 'confirmPurchaseEntry',
     'POST /api/inventory/sync-open-orders': 'manageSettings',
     'POST /api/tables/status': 'updateTableStatus',
     'POST /api/tables/open': 'openTable',

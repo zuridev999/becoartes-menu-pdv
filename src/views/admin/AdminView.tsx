@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp, 
+import {
+  Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
   GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy
 } from 'lucide-react';
@@ -165,7 +165,7 @@ const formatAuditDetails = (details: string) => {
 };
 
 // Componente de Input fora para evitar perda de foco
-const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string }) => {
+const ConfigInput = ({ label, value, onChange, type = 'text', placeholder, disabled = false }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string, disabled?: boolean }) => {
   const isMoney = label.toLowerCase().includes('preço') || label.toLowerCase().includes('custo') || label.toLowerCase().includes('taxa');
 
   // Formata o valor para exibição (ex: 12.50 -> "12,50")
@@ -193,8 +193,9 @@ const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { l
     <div className="space-y-2">
       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">{label}</label>
       {type === 'checkbox' ? (
-        <button 
+        <button
           onClick={() => onChange(!value)}
+          disabled={disabled}
           className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between font-bold text-sm ${value ? 'bg-primary/10 text-primary border-primary/20' : 'bg-white/5 text-gray-500 border-white/5'}`}
         >
           {value ? 'Ativado' : 'Desativado'}
@@ -202,15 +203,16 @@ const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { l
         </button>
       ) : (
         <div className="relative">
-          <input 
-            type="text" 
-            value={isMoney ? formatMoney(value) : value} 
+          <input
+            type="text"
+            value={isMoney ? formatMoney(value) : value}
             placeholder={placeholder}
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
             onChange={handleInputChange}
-            className={`w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 focus:border-primary/40 focus:bg-white/[0.05] outline-none font-bold text-sm transition-all placeholder:text-zinc-700 ${isMoney ? 'text-right pr-12' : ''}`}
+            disabled={disabled}
+            className={`w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 focus:border-primary/40 focus:bg-white/[0.05] outline-none font-bold text-sm transition-all placeholder:text-zinc-700 ${isMoney ? 'text-right pr-12' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
           />
           {isMoney && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-600">R$</span>}
         </div>
@@ -219,7 +221,7 @@ const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { l
   );
 };
 
-function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisibility, isExpanded, onToggleExpand, updateProduct, categories, onRenameCategory, onDeleteCategory }: any) {
+function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisibility, isExpanded, onToggleExpand, updateProduct, categories, onRenameCategory, onDeleteCategory, canManageCategories }: any) {
   const {
     attributes,
     listeners,
@@ -239,9 +241,9 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
   const categoryProducts = menu.filter((p: any) => p.categoryId === cat.id);
 
   return (
-    <div 
-      ref={setNodeRef} 
-      style={style} 
+    <div
+      ref={setNodeRef}
+      style={style}
       className="border-b border-white/5 hover:bg-white/[0.01] transition-all group relative"
     >
       <div className="flex items-center justify-between p-8">
@@ -258,33 +260,37 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <button 
-            onClick={() => toggleCategoryVisibility(cat.id)} 
-            className={`p-4 glass rounded-xl transition-all ${cat.visible ? 'text-primary' : 'text-gray-500 opacity-50'}`}
-          >
-            {cat.visible ? <Eye size={18}/> : <EyeOff size={18}/>}
-          </button>
-          <button 
-            onClick={() => setSchedulingItem({ type: 'category', id: cat.id, name: cat.name, config: cat.schedule })} 
-            className={`p-4 glass rounded-xl ${cat.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}
-          >
-            <Clock size={18}/>
-          </button>
-          <button onClick={() => onRenameCategory(cat)} className="p-4 glass rounded-xl text-primary"><Settings size={18}/></button>
-          <button 
-            onClick={() => onDeleteCategory(cat)} 
-            className="p-4 glass rounded-xl text-rose-500 hover:bg-rose-500/10"
-          >
-            <Trash2 size={18}/>
-          </button>
+          {canManageCategories && (
+            <>
+              <button
+                onClick={() => toggleCategoryVisibility(cat.id)}
+                className={`p-4 glass rounded-xl transition-all ${cat.visible ? 'text-primary' : 'text-gray-500 opacity-50'}`}
+              >
+                {cat.visible ? <Eye size={18}/> : <EyeOff size={18}/>}
+              </button>
+              <button
+                onClick={() => setSchedulingItem({ type: 'category', id: cat.id, name: cat.name, config: cat.schedule })}
+                className={`p-4 glass rounded-xl ${cat.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}
+              >
+                <Clock size={18}/>
+              </button>
+              <button onClick={() => onRenameCategory(cat)} className="p-4 glass rounded-xl text-primary"><Settings size={18}/></button>
+              <button
+                onClick={() => onDeleteCategory(cat)}
+                className="p-4 glass rounded-xl text-rose-500 hover:bg-rose-500/10"
+              >
+                <Trash2 size={18}/>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       <AnimatePresence>
         {isExpanded && (
-          <motion.div 
-            initial={{ height: 0, opacity: 0 }} 
-            animate={{ height: 'auto', opacity: 1 }} 
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden bg-black/20"
           >
@@ -300,9 +306,10 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
                     </div>
                     <div className="flex items-center gap-4">
                       <label className="text-[9px] font-black uppercase text-zinc-500">Mover para:</label>
-                      <select 
+                      <select
                         value={cat.id}
                         onChange={(e) => updateProduct(p.id, { categoryId: e.target.value })}
+                        disabled={!canManageCategories}
                         className="bg-white/5 p-2 rounded-lg text-[10px] font-bold outline-none border border-white/5 focus:border-primary/40"
                       >
                         {categories.map((c: any) => (
@@ -322,7 +329,7 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
 }
 
 export function AdminView() {
-  const { 
+  const {
     menu, updateProduct, addProduct, deleteProduct,
     settings, updateSettings,
     sellers, addSeller, toggleSellerStatus, deleteSeller,
@@ -438,19 +445,26 @@ export function AdminView() {
   const canManageTeam = can(currentSeller, 'manageTeam', permissionOverrides);
   const canManageOptionals = can(currentSeller, 'manageOptionals', permissionOverrides);
   const canAddProduct = can(currentSeller, 'addProduct', permissionOverrides);
+  const canEditProduct = can(currentSeller, 'editProduct', permissionOverrides);
   const canEditProductPrice = can(currentSeller, 'editProductPrice', permissionOverrides);
   const canDeleteProduct = can(currentSeller, 'deleteProduct', permissionOverrides);
   const canToggleVisibility = can(currentSeller, 'toggleProductVisibility', permissionOverrides);
+  const canManageCategories = can(currentSeller, 'manageCategories', permissionOverrides);
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides);
   const canAccessProducts =
     (adminMode === 'menu' && canToggleVisibility)
     || canAddProduct
+    || canEditProduct
     || canEditProductPrice
     || canDeleteProduct;
+  const editingProductExists = Boolean(editingProduct && menu.some(p => p.id === editingProduct.id));
+  const canEditProductFields = !editingProductExists || canEditProduct;
+  const canEditProductMoney = !editingProductExists || canEditProductPrice;
+  const canSaveEditingProduct = Boolean(editingProduct && (editingProductExists ? (canEditProduct || canEditProductPrice) : canAddProduct));
 
   const allowedTabIds = new Set([
     ...(canAccessProducts ? ['products'] : []),
-    ...(canAddProduct ? ['categories'] : []),
+    ...(canManageCategories ? ['categories'] : []),
     ...(canManageOptionals ? ['optionals'] : []),
     ...(isAdminProfile && canManageSettings ? ['config'] : []),
     ...(isAdminProfile && canManageTeam ? ['sellers'] : []),
@@ -598,7 +612,7 @@ export function AdminView() {
           let width = img.width;
           let height = img.height;
           const max = 800;
-          
+
           if (width > height) {
             if (width > max) {
               height *= max / width;
@@ -610,7 +624,7 @@ export function AdminView() {
               height = max;
             }
           }
-          
+
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
@@ -627,7 +641,7 @@ export function AdminView() {
     <div className="p-4 sm:p-8 xl:p-16 bg-[#0a0a0c] min-h-screen text-white font-['Outfit'] pb-32 sm:pb-48 overflow-x-hidden overflow-y-auto custom-scrollbar h-screen">
       <div className="flex flex-col gap-6 sm:gap-8 mb-10 sm:mb-16">
         <div className="flex items-center gap-4 sm:gap-8 min-w-0">
-          <button 
+          <button
             onClick={() => useStore.getState().setActiveView('pdv')}
             className="w-14 h-14 sm:w-16 sm:h-16 glass rounded-2xl flex items-center justify-center text-zinc-500 hover:text-white transition-all border-white/5 shrink-0"
           >
@@ -683,8 +697,8 @@ export function AdminView() {
               <div className="space-y-3">
                 {settings.tablet?.bannerUrls?.map((url: string, idx: number) => (
                   <div key={idx} className="flex gap-2 group">
-                    <input 
-                      value={url} 
+                    <input
+                      value={url}
                       onChange={(e) => {
                         const newUrls = [...settings.tablet.bannerUrls];
                         newUrls[idx] = e.target.value;
@@ -701,7 +715,7 @@ export function AdminView() {
                     </button>
                   </div>
                 ))}
-                  <button 
+                  <button
                   onClick={() => updateSettings({ tablet: { ...settings.tablet, bannerUrls: [...(settings.tablet?.bannerUrls || []), ''] } })}
                   className="w-full p-4 glass border-dashed border-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/5 text-primary transition-all"
                 >
@@ -719,15 +733,15 @@ export function AdminView() {
         </div>
       )}
 
-      {activeTab === 'categories' && canAddProduct && (
+      {activeTab === 'categories' && canManageCategories && (
         <div className="max-w-6xl mx-auto space-y-6">
           <div className="flex justify-between items-center mb-12 px-8">
             <div>
               <h3 className="text-4xl font-black flex items-center gap-4"><LayoutDashboard size={36}/> Gestão de Categorias</h3>
               <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] mt-2 italic">Arraste para reordenar a exibição no Tablet</p>
             </div>
-            {canAddProduct && (
-              <button 
+            {canManageCategories && (
+              <button
                 onClick={() => setAdminDialog({
                   title: 'Nova Categoria',
                   description: 'Digite o nome da categoria para o cardápio.',
@@ -736,7 +750,7 @@ export function AdminView() {
                   onConfirm: (name) => {
                     if (name) upsertCategory({ id: createId(), name, sortOrder: categories.length, visible: true });
                   }
-                })} 
+                })}
                 className="px-8 py-4 bg-primary text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all flex items-center gap-3"
               >
                 <Plus size={20}/> Adicionar Categoria
@@ -744,20 +758,20 @@ export function AdminView() {
             )}
           </div>
           <div className="glass rounded-[3rem] border-white/5 overflow-hidden shadow-2xl">
-            <DndContext 
+            <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
             >
-              <SortableContext 
+              <SortableContext
                 items={categories.map(c => c.id)}
                 strategy={verticalListSortingStrategy}
               >
                 {categories.map((cat) => (
-                  <SortableCategoryItem 
-                    key={cat.id} 
-                    cat={cat} 
-                    menu={menu} 
+                  <SortableCategoryItem
+                    key={cat.id}
+                    cat={cat}
+                    menu={menu}
                     setSchedulingItem={setSchedulingItem}
                     toggleCategoryVisibility={toggleCategoryVisibility}
                     isExpanded={expandedCategoryId === cat.id}
@@ -766,6 +780,7 @@ export function AdminView() {
                     categories={categories}
                     onRenameCategory={requestCategoryRename}
                     onDeleteCategory={requestCategoryDelete}
+                    canManageCategories={canManageCategories}
                   />
                 ))}
               </SortableContext>
@@ -782,8 +797,8 @@ export function AdminView() {
                 <h3 className="text-3xl font-black flex items-center gap-4"><Package size={28}/> Catálogo</h3>
                 <div className="relative w-full sm:w-auto">
                   <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     placeholder="Buscar produto..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -824,7 +839,7 @@ export function AdminView() {
                         </div>
                         <div className="flex items-center gap-2 sm:gap-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
                           {canToggleVisibility && (
-                            <button 
+                            <button
                               onClick={() => toggleProductVisibility(p.id)}
                               className={`p-3 sm:p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
                               title={p.visible ? 'Ocultar do Cardápio' : 'Mostrar no Cardápio'}
@@ -832,9 +847,11 @@ export function AdminView() {
                               {p.visible ? <Eye size={20}/> : <EyeOff size={20}/>}
                             </button>
                           )}
-                          {canEditProductPrice && (
+                          {(canEditProduct || canEditProductPrice) && (
                             <>
-                              <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-3 sm:p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
+                              {canEditProduct && (
+                                <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-3 sm:p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
+                              )}
                               <button onClick={() => setEditingProduct(p)} className="p-3 sm:p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
                             </>
                           )}
@@ -892,7 +909,7 @@ export function AdminView() {
                       </button>
                     )}
                     {canToggleVisibility && (
-                      <button 
+                      <button
                         onClick={async () => {
                           if (editingProduct.id.startsWith('new_')) {
                             setEditingProduct({...editingProduct, visible: !editingProduct.visible});
@@ -906,7 +923,7 @@ export function AdminView() {
                         {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
                       </button>
                     )}
-                    <button 
+                    <button
                       onClick={() => setEditingProduct(null)}
                       className="w-10 h-10 glass rounded-full flex items-center justify-center hover:bg-rose-500/10 hover:text-rose-500 transition-all"
                     >
@@ -915,14 +932,15 @@ export function AdminView() {
                   </div>
                 </div>
                 <div className="space-y-8">
-                  <ConfigInput label="Nome do Produto" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} placeholder="Ex: Suco de Laranja 400ml" />
+                  <ConfigInput label="Nome do Produto" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} placeholder="Ex: Suco de Laranja 400ml" disabled={!canEditProductFields} />
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">Categoria</label>
                       <div className="relative group">
-                        <select 
-                          value={editingProduct.categoryId} 
+                        <select
+                          value={editingProduct.categoryId}
                           onChange={(e) => setEditingProduct({...editingProduct, categoryId: e.target.value})}
+                          disabled={!canEditProductFields}
                           className="w-full bg-white/[0.03] p-4 rounded-2xl border border-white/5 outline-none font-bold text-sm transition-all appearance-none cursor-pointer hover:bg-white/[0.05] focus:border-primary/40"
                         >
                           {categories.map(c => <option key={c.id} value={c.id} className="bg-[#0a0a0c]">{c.name}</option>)}
@@ -932,8 +950,8 @@ export function AdminView() {
                         </div>
                       </div>
                     </div>
-                    <ConfigInput label="Preço" type="number" value={editingProduct.price} onChange={(v) => setEditingProduct({...editingProduct, price: v})} placeholder="0,00" />
-                    <ConfigInput label="Custo" type="number" value={editingProduct.cost || 0} onChange={(v) => setEditingProduct({...editingProduct, cost: v})} placeholder="0,00" />
+                    <ConfigInput label="Preço" type="number" value={editingProduct.price} onChange={(v) => setEditingProduct({...editingProduct, price: v})} placeholder="0,00" disabled={!canEditProductMoney} />
+                    <ConfigInput label="Custo" type="number" value={editingProduct.cost || 0} onChange={(v) => setEditingProduct({...editingProduct, cost: v})} placeholder="0,00" disabled={!canEditProductMoney} />
                   </div>
                   <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Vincular Opcionais</label>
@@ -941,17 +959,18 @@ export function AdminView() {
                       {modifierGroups.map(mg => {
                         const isLinked = editingProduct.modifierGroups?.some(g => g.id === mg.id);
                         return (
-                          <button 
+                          <button
                             key={mg.id}
                             type="button"
                             onClick={() => {
+                              if (!canEditProductFields) return;
                               const currentGroups = editingProduct.modifierGroups || [];
-                              const newGroups = isLinked 
+                              const newGroups = isLinked
                                 ? currentGroups.filter(g => g.id !== mg.id)
                                 : [...currentGroups, mg];
                               setEditingProduct({ ...editingProduct, modifierGroups: newGroups });
                             }}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isLinked ? 'bg-primary text-white' : 'glass text-gray-500'}`}
+                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isLinked ? 'bg-primary text-white' : 'glass text-gray-500'} ${!canEditProductFields ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
                             {mg.name}
                           </button>
@@ -961,15 +980,17 @@ export function AdminView() {
                   </div>
                   <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Imagem do Produto</label>
-                    <div 
+                    <div
                       onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                       onDrop={async (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         const file = e.dataTransfer.files?.[0];
                         if (file) {
-                          const compressed = await compressImage(file);
-                          setEditingProduct({ ...editingProduct, image: compressed });
+                          if (canEditProductFields) {
+                            const compressed = await compressImage(file);
+                            setEditingProduct({ ...editingProduct, image: compressed });
+                          }
                         }
                       }}
                       className="relative h-48 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 group hover:border-primary/40 hover:bg-white/[0.04] transition-all overflow-hidden cursor-pointer"
@@ -995,10 +1016,11 @@ export function AdminView() {
                           </div>
                         </>
                       )}
-                      <input 
-                        type="file" 
+                      <input
+                        type="file"
                         accept="image/*"
-                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                        disabled={!canEditProductFields}
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (file) {
@@ -1009,22 +1031,22 @@ export function AdminView() {
                       />
                     </div>
                   </div>
-                  <ConfigInput label="Descrição" value={editingProduct.description || ''} onChange={(v) => setEditingProduct({...editingProduct, description: v})} />
+                  <ConfigInput label="Descrição" value={editingProduct.description || ''} onChange={(v) => setEditingProduct({...editingProduct, description: v})} disabled={!canEditProductFields} />
                   <div className="grid grid-cols-2 gap-4">
-                    <ConfigInput label="Código ERP" value={editingProduct.erpCode || ''} onChange={(v) => setEditingProduct({...editingProduct, erpCode: v})} placeholder="Ex: PRD-001" />
-                    <ConfigInput label="ID Estoque Remoto" value={editingProduct.remoteStockId || ''} onChange={(v) => setEditingProduct({...editingProduct, remoteStockId: v})} placeholder="Ex: stock_abc" />
+                    <ConfigInput label="Código ERP" value={editingProduct.erpCode || ''} onChange={(v) => setEditingProduct({...editingProduct, erpCode: v})} placeholder="Ex: PRD-001" disabled={!canEditProductFields} />
+                    <ConfigInput label="ID Estoque Remoto" value={editingProduct.remoteStockId || ''} onChange={(v) => setEditingProduct({...editingProduct, remoteStockId: v})} placeholder="Ex: stock_abc" disabled={!canEditProductFields} />
                   </div>
                   <div className="relative group">
-                    <ConfigInput label="Ou cole a URL da Imagem" value={editingProduct.image || ''} onChange={(v) => setEditingProduct({...editingProduct, image: v})} />
+                    <ConfigInput label="Ou cole a URL da Imagem" value={editingProduct.image || ''} onChange={(v) => setEditingProduct({...editingProduct, image: v})} disabled={!canEditProductFields} />
                   </div>
-                  {(canAddProduct || canEditProductPrice) && (
-                  <button 
-                    onClick={async () => { 
+                  {canSaveEditingProduct && (
+                  <button
+                    onClick={async () => {
                       try {
-                        const cleanProduct = {
+                        const cleanProduct: any = {
                           ...editingProduct,
-                          price: typeof editingProduct.price === 'string' 
-                            ? parseFloat(String(editingProduct.price).replace(',', '.')) || 0 
+                          price: typeof editingProduct.price === 'string'
+                            ? parseFloat(String(editingProduct.price).replace(',', '.')) || 0
                             : Number(editingProduct.price) || 0,
                           cost: typeof editingProduct.cost === 'string'
                             ? parseFloat(String(editingProduct.cost).replace(',', '.')) || 0
@@ -1034,6 +1056,9 @@ export function AdminView() {
                           erpCode: editingProduct.erpCode || "",
                           remoteStockId: editingProduct.remoteStockId || "",
                         };
+                        if (!canEditProductFields) {
+                          delete cleanProduct.modifierGroups;
+                        }
 
                         const exists = menu.find(p => p.id === editingProduct.id);
                         if (exists) {
@@ -1046,7 +1071,7 @@ export function AdminView() {
                         console.error("Erro no form:", err);
                         addNotification(`Erro ao salvar: ${err.message}`, 'error');
                       }
-                    }} 
+                    }}
                     className="w-full btn-beco btn-beco-purple py-6 font-black shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all"
                   >
                     SALVAR ALTERAÇÕES
@@ -1055,7 +1080,7 @@ export function AdminView() {
 
                   {canDeleteProduct && (
                   <div className="pt-6 border-t border-white/5 flex flex-col items-center gap-4">
-	                    <button 
+	                    <button
 	                      onClick={() => {
 	                        requestProductDelete(editingProduct);
 	                      }}
@@ -1078,7 +1103,7 @@ export function AdminView() {
           <div className="xl:col-span-1 space-y-6">
             <div className="flex justify-between items-center mb-8 px-4">
               <h3 className="text-3xl font-black flex items-center gap-4"><Sparkles size={28}/> Grupos</h3>
-              <button 
+              <button
                 onClick={() => addModifierGroup({ id: createId(), name: 'Novo Grupo', minChoices: 0, maxChoices: 1, isRequired: false, status: 'active', modifiers: [] })}
                 className="p-3 bg-primary text-white rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all"
               >
@@ -1087,8 +1112,8 @@ export function AdminView() {
             </div>
             <div className="glass rounded-[3rem] border-white/5 overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar">
               {(modifierGroups || []).map((group) => (
-                <button 
-                  key={group.id} 
+                <button
+                  key={group.id}
                   onClick={() => setEditingGroup(group.id)}
                   className={`w-full p-8 border-b border-white/5 text-left transition-all group ${editingGroup === group.id ? 'bg-primary/10 border-primary/20' : 'hover:bg-white/[0.02]'}`}
                 >
@@ -1139,8 +1164,8 @@ export function AdminView() {
                       <div className="space-y-3">
                         {group.modifiers.map((m, idx) => (
                           <div key={m.id || idx} className={`flex items-center gap-4 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all ${m.status === 'inactive' ? 'opacity-45 grayscale' : ''}`}>
-                            <input 
-                              value={m.name} 
+                            <input
+                              value={m.name}
                               autoComplete="off"
                               autoCorrect="off"
                               spellCheck={false}
@@ -1153,10 +1178,10 @@ export function AdminView() {
                             />
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] font-black text-gray-500 uppercase">R$</span>
-                              <input 
+                              <input
                                 type="number"
                                 autoComplete="off"
-                                value={m.price} 
+                                value={m.price}
                                 onChange={(e) => {
                                   const newMods = [...group.modifiers];
                                   newMods[idx] = { ...m, price: Number(e.target.value) || 0 };
@@ -1187,7 +1212,7 @@ export function AdminView() {
                             }} className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"><X size={16}/></button>
                           </div>
                         ))}
-                        <button 
+                        <button
                           onClick={() => {
                             const newMods = [...group.modifiers, { id: createId(), name: 'Nova Opção', price: 0, status: 'active' as const }];
                             updateModifierGroup(group.id, { modifiers: newMods });
@@ -1209,9 +1234,9 @@ export function AdminView() {
                               const linked = isGroupLinkedToCategory(cat.id, group.id);
                               const productCount = menu.filter(p => p.categoryId === cat.id).length;
                               return (
-	                            <button 
+	                            <button
 	                              key={cat.id}
-	                              onClick={() => linkGroupToCategory(cat.id, group.id, !linked)} 
+	                              onClick={() => linkGroupToCategory(cat.id, group.id, !linked)}
 	                              className={`w-full p-4 rounded-xl text-left flex justify-between items-center group transition-all border ${linked ? 'bg-primary/10 border-primary/30 text-primary' : 'glass border-white/5 hover:border-primary/40'}`}
 	                            >
                                 <div>
@@ -1237,7 +1262,7 @@ export function AdminView() {
                               const inherited = isGroupInheritedByProduct(p, group.id);
                               const lockedByCategory = inherited && !direct;
                               return (
-	                            <button 
+	                            <button
 	                              key={p.id}
 	                              onClick={() => {
                                   if (lockedByCategory) return;
@@ -1662,7 +1687,7 @@ export function AdminView() {
       {/* Modal de Agenda */}
       <AnimatePresence>
         {schedulingItem && (
-          <ScheduleModal 
+          <ScheduleModal
             title={schedulingItem.name}
             initialConfig={schedulingItem.config}
             onClose={() => setSchedulingItem(null)}

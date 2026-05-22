@@ -251,6 +251,8 @@ export function PDVView() {
   const canViewOtherOperatorTables = can(currentSeller, 'viewOtherOperatorTables', permissionOverrides);
   const canAddOrderItem = can(currentSeller, 'addOrderItem', permissionOverrides);
   const canSendOrderToProduction = can(currentSeller, 'sendOrderToProduction', permissionOverrides);
+  const canSellUnavailableProduct = can(currentSeller, 'sellUnavailableProduct', permissionOverrides);
+  const canViewZeroStockProducts = can(currentSeller, 'viewZeroStockProducts', permissionOverrides);
   const canAddItems = canAddOrderItem && canSendOrderToProduction;
   const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides);
   const isAdminProfile = currentSeller.permission === 'admin';
@@ -843,8 +845,8 @@ export function PDVView() {
                <div className="flex-1 overflow-y-auto lg:pr-4 custom-scrollbar min-h-0">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                     {menu
-                      .filter(p => p.visible)
-                      .filter(p => !(p.remoteStockId && typeof p.stockQuantity === 'number' && p.stockQuantity <= 0))
+                      .filter(p => p.visible || canSellUnavailableProduct)
+                      .filter(p => canViewZeroStockProducts || !(p.remoteStockId && typeof p.stockQuantity === 'number' && p.stockQuantity <= 0))
                       .filter(p => !activeCategory || p.categoryId === activeCategory)
                       .map(product => (
                       <motion.button
