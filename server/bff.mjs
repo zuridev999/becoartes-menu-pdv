@@ -420,6 +420,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS tables (id TEXT PRIMARY KEY, number TEXT NOT NULL, status TEXT NOT NULL, last_activity DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, table_id TEXT, total REAL NOT NULL, status TEXT NOT NULL, origin TEXT DEFAULT 'pdv', created_by_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, payment_method TEXT)",
     "CREATE TABLE IF NOT EXISTS order_items (id TEXT PRIMARY KEY, order_id TEXT, product_id TEXT, quantity INTEGER NOT NULL, price_at_time REAL NOT NULL, selected_modifiers TEXT, notes TEXT)",
+    "CREATE TABLE IF NOT EXISTS production_tickets (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, station TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS service_requests (id TEXT PRIMARY KEY, table_id TEXT, type TEXT NOT NULL, status TEXT NOT NULL, message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS sellers (id TEXT PRIMARY KEY, name TEXT NOT NULL, nickname TEXT, status TEXT NOT NULL, role TEXT NOT NULL, permission TEXT DEFAULT 'standard', pin TEXT DEFAULT '1234', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, details TEXT, table_number TEXT, origin TEXT, author_id TEXT, author_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -462,6 +463,7 @@ const ensureDatabase = async () => {
 
   const indexes = [
     "CREATE INDEX IF NOT EXISTS idx_orders_table_status ON orders(table_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_production_tickets_order ON production_tickets(order_id, station, status)",
     "CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)",
     "CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id)",
     "CREATE INDEX IF NOT EXISTS idx_stock_empresa_nome ON estoque_produtos(empresa_id, ativo, nome)",
@@ -934,14 +936,91 @@ const getAuthSellers = async ({ includePins = false } = {}) => {
   return getSellers({ includePins });
 };
 
-const getKitchenOrders = async () => {
+const PRODUCTION_STATIONS = new Set(['kitchen', 'bar']);
+const BEVERAGE_TERMS = [
+  'bebida', 'bebidas', 'drink', 'drinks', 'cerveja', 'chopp', 'chope', 'long neck',
+  'refrigerante', 'coca', 'guarana', 'fanta', 'sprite', 'soda', 'tonica',
+  'agua', 'água', 'suco', 'energetico', 'energético', 'destilado', 'gin',
+  'vodka', 'whisky', 'rum', 'tequila', 'vinho', 'aperol', 'caipirinha', 'saquerinha',
+];
+const FOOD_TERMS = [
+  'comida', 'comidas', 'cozinha', 'porcao', 'porção', 'porcoes', 'porções',
+  'burguer', 'burger', 'hamburguer', 'hambúrguer', 'prato', 'salgado', 'sobremesa',
+  'acai', 'açaí', 'frango', 'carne', 'batata', 'cheddar', 'bacon', 'queijo',
+  'arroz', 'feijao', 'feijão', 'molho',
+];
+
+const normalizeProductionText = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase();
+
+const textHasAny = (value, terms) => {
+  const normalized = normalizeProductionText(value);
+  return terms.some((term) => normalized.includes(normalizeProductionText(term)));
+};
+
+const resolveProductionStation = ({ categoryName = '', name = '', fallback = 'kitchen' } = {}) => {
+  const source = `${categoryName} ${name}`;
+  if (textHasAny(source, BEVERAGE_TERMS)) return 'bar';
+  if (textHasAny(source, FOOD_TERMS)) return 'kitchen';
+  return PRODUCTION_STATIONS.has(fallback) ? fallback : 'kitchen';
+};
+
+const splitItemsByProductionStation = (items = []) => {
+  const result = { kitchen: [], bar: [] };
+
+  for (const item of items) {
+    const itemStation = resolveProductionStation({
+      categoryName: item.categoryName || item.category_name || '',
+      name: item.name || '',
+      fallback: 'kitchen',
+    });
+    const sameStationModifiers = [];
+
+    for (const modifier of item.selectedModifiers || []) {
+      const modifierStation = resolveProductionStation({
+        name: modifier?.name || '',
+        fallback: itemStation,
+      });
+
+      if (modifierStation === itemStation) {
+        sameStationModifiers.push(modifier);
+        continue;
+      }
+
+      result[modifierStation].push({
+        ...item,
+        id: `${item.id}:${modifier.id || normalizeProductionText(modifier.name || 'modifier')}`,
+        productId: modifier.id || item.productId,
+        name: modifier.name || 'Adicional',
+        price: Number(modifier.price || 0),
+        selectedModifiers: [],
+        notes: item.notes ? `${item.notes} | Adicional de ${item.name}` : `Adicional de ${item.name}`,
+      });
+    }
+
+    result[itemStation].push({
+      ...item,
+      selectedModifiers: sameStationModifiers,
+    });
+  }
+
+  return Object.fromEntries(
+    Object.entries(result).filter(([, stationItems]) => stationItems.length > 0)
+  );
+};
+
+const getKitchenOrders = async (view = 'pdv') => {
+  const stationFilter = view === 'bar' ? 'bar' : view === 'kitchen' ? 'kitchen' : null;
   const [ordersRes, itemsRes, nowRes] = await Promise.all([
     db.execute("SELECT o.id, o.status, o.table_id, o.origin, strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) as created_at, t.number as tableNumber FROM orders o JOIN tables t ON o.table_id = t.id WHERE o.status IN ('pending', 'preparing') ORDER BY o.created_at ASC"),
     db.execute(`
-      SELECT oi.*, m.name
+      SELECT oi.*, m.name, m.category_id, c.name as category_name
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       JOIN menu m ON oi.product_id = m.id
+      LEFT JOIN categories c ON m.category_id = c.id
       WHERE o.status IN ('pending', 'preparing')
     `),
     db.execute("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now') as serverNow"),
@@ -954,6 +1033,8 @@ const getKitchenOrders = async () => {
       id: row.id,
       orderId: row.order_id,
       productId: row.product_id,
+      categoryId: row.category_id,
+      categoryName: row.category_name,
       name: row.name || '',
       price: Number(row.price_at_time || 0),
       quantity: Number(row.quantity || 0),
@@ -962,16 +1043,75 @@ const getKitchenOrders = async () => {
     });
   });
 
+  const ticketStatements = [];
+  const orderById = {};
+  const ticketsByOrder = {};
+  ordersRes.rows.forEach((row) => {
+    const split = splitItemsByProductionStation(itemsByOrder[row.id] || []);
+    orderById[row.id] = { row, split };
+    for (const station of Object.keys(split)) {
+      const ticketId = `${row.id}:${station}`;
+      if (!ticketsByOrder[row.id]) ticketsByOrder[row.id] = {};
+      ticketsByOrder[row.id][station] = {
+        id: ticketId,
+        orderId: row.id,
+        station,
+        status: row.status,
+        createdAt: row.created_at,
+      };
+      ticketStatements.push({
+        sql: "INSERT OR IGNORE INTO production_tickets (id, order_id, station, status, created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)",
+        args: [ticketId, row.id, station, row.created_at],
+      });
+    }
+  });
+
+  if (ticketStatements.length > 0) {
+    await db.batch(ticketStatements, 'write');
+  }
+
+  const orderIds = ordersRes.rows.map((row) => row.id);
+  if (orderIds.length > 0) {
+    const placeholders = orderIds.map(() => '?').join(',');
+    const ticketsRes = await db.execute({
+      sql: `SELECT id, order_id, station, status, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at FROM production_tickets WHERE order_id IN (${placeholders})`,
+      args: orderIds,
+    });
+    ticketsRes.rows.forEach((ticket) => {
+      if (!ticketsByOrder[ticket.order_id]) ticketsByOrder[ticket.order_id] = {};
+      ticketsByOrder[ticket.order_id][ticket.station] = {
+        id: ticket.id,
+        orderId: ticket.order_id,
+        station: ticket.station,
+        status: ticket.status,
+        createdAt: ticket.created_at,
+      };
+    });
+  }
+
+  const productionOrders = [];
+  for (const orderId of Object.keys(orderById)) {
+    const { row, split } = orderById[orderId];
+    for (const [station, stationItems] of Object.entries(split)) {
+      if (stationFilter && station !== stationFilter) continue;
+      const ticket = ticketsByOrder[orderId]?.[station] || {};
+      if (ticket.status === 'ready') continue;
+      productionOrders.push({
+        id: ticket.id || `${orderId}:${station}`,
+        orderId,
+        station,
+        tableId: row.table_id,
+        tableNumber: Number(row.tableNumber),
+        status: ticket.status || row.status,
+        origin: row.origin || 'pdv',
+        createdAt: ticket.createdAt || row.created_at,
+        items: stationItems,
+      });
+    }
+  }
+
   return {
-    orders: ordersRes.rows.map((row) => ({
-      id: row.id,
-      tableId: row.table_id,
-      tableNumber: Number(row.tableNumber),
-      status: row.status,
-      origin: row.origin || 'pdv',
-      createdAt: row.created_at,
-      items: itemsByOrder[row.id] || [],
-    })),
+    orders: productionOrders,
     serverNow: nowRes.rows[0]?.serverNow || new Date().toISOString(),
   };
 };
@@ -1191,7 +1331,7 @@ const ensureDefaultSellersReady = () => {
 };
 
 const filterSnapshotForContext = (snapshot, { view = 'pdv', session = null } = {}) => {
-  const safeView = ['tablet', 'qr', 'kitchen', 'pdv', 'admin'].includes(view) ? view : 'pdv';
+  const safeView = ['tablet', 'qr', 'kitchen', 'bar', 'pdv', 'admin'].includes(view) ? view : 'pdv';
   const canViewSales = canSessionWithSettings(session, 'viewSalesTotals', snapshot.savedSettings);
   const canManageTeam = canSessionWithSettings(session, 'manageTeam', snapshot.savedSettings);
 
@@ -1205,7 +1345,7 @@ const filterSnapshotForContext = (snapshot, { view = 'pdv', session = null } = {
     };
   }
 
-  if (safeView === 'kitchen') {
+  if (safeView === 'kitchen' || safeView === 'bar') {
     return {
       ...snapshot,
       sellers: [],
@@ -1267,7 +1407,7 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
   }
 
   await ensureDatabaseReady();
-  const safeView = ['tablet', 'qr', 'kitchen', 'pdv', 'admin'].includes(view) ? view : 'pdv';
+  const safeView = ['tablet', 'qr', 'kitchen', 'bar', 'pdv', 'admin'].includes(view) ? view : 'pdv';
   const needsOperationalPanel = safeView === 'pdv' || safeView === 'admin';
   const needsSellers = needsOperationalPanel;
   const needsSalesData = needsOperationalPanel;
@@ -1275,7 +1415,7 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
   const [catalogData, sellers, kitchenData, serviceRequests, closedBills, savedSettings, tables, auditLogs, catalogVersion, cashState] = await Promise.all([
     includeCatalog ? getCatalogData() : Promise.resolve(null),
     needsSellers ? (safeView === 'admin' ? getSellers() : getAuthSellers()) : Promise.resolve([]),
-    getKitchenOrders(),
+    getKitchenOrders(safeView),
     needsOperationalPanel ? getServiceRequests() : Promise.resolve([]),
     needsSalesData ? getClosedBills() : Promise.resolve([]),
     getSettings(),
@@ -1912,18 +2052,7 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
   };
 };
 
-const updateOrderStatus = async ({ orderId, status }) => {
-  requireString(orderId, 'orderId');
-  const safeStatus = ['pending', 'preparing', 'ready', 'closed'].includes(status) ? status : null;
-  if (!safeStatus) throw new Error('Status inválido.');
-
-  await db.execute({
-    sql: "UPDATE orders SET status = ? WHERE id = ?",
-    args: [safeStatus, orderId],
-  });
-
-  if (safeStatus !== 'ready') return { request: null };
-
+const createOrderReadyRequest = async (orderId) => {
   const orderRes = await db.execute({
     sql: `
       SELECT o.table_id, t.number as tableNumber
@@ -1976,6 +2105,48 @@ const updateOrderStatus = async ({ orderId, status }) => {
       createdAt: request?.created_at || new Date().toISOString(),
     },
   };
+};
+
+const updateOrderStatus = async ({ orderId, status }) => {
+  requireString(orderId, 'orderId');
+  const safeStatus = ['pending', 'preparing', 'ready', 'closed'].includes(status) ? status : null;
+  if (!safeStatus) throw new Error('Status inválido.');
+
+  const ticketRes = await db.execute({
+    sql: "SELECT id, order_id FROM production_tickets WHERE id = ? LIMIT 1",
+    args: [orderId],
+  });
+  const ticket = ticketRes.rows[0];
+
+  if (ticket) {
+    await db.execute({
+      sql: "UPDATE production_tickets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      args: [safeStatus, orderId],
+    });
+
+    if (safeStatus !== 'ready') return { request: null };
+
+    const remainingRes = await db.execute({
+      sql: "SELECT COUNT(*) as count FROM production_tickets WHERE order_id = ? AND status != 'ready'",
+      args: [ticket.order_id],
+    });
+    if (Number(remainingRes.rows[0]?.count || 0) > 0) return { request: null };
+
+    await db.execute({
+      sql: "UPDATE orders SET status = 'ready' WHERE id = ?",
+      args: [ticket.order_id],
+    });
+
+    return createOrderReadyRequest(ticket.order_id);
+  }
+
+  await db.execute({
+    sql: "UPDATE orders SET status = ? WHERE id = ?",
+    args: [safeStatus, orderId],
+  });
+
+  if (safeStatus !== 'ready') return { request: null };
+  return createOrderReadyRequest(orderId);
 };
 
 const bumpCatalogVersion = async () => {

@@ -86,6 +86,8 @@ export interface Table {
 
 export interface KitchenOrder {
   id: string;
+  orderId?: string;
+  station?: 'kitchen' | 'bar';
   tableId: string;
   tableNumber: number;
   items: OrderItem[];

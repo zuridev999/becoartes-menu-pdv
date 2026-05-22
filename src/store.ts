@@ -374,8 +374,11 @@ export const useStore = create<AppState>((set, get) => ({
         initialAdminMode = 'settings';
       } else if (['tablet', 'pdv', 'admin', 'kitchen', 'qr'].includes(fullPath)) {
         initialView = fullPath;
+      } else if (fullPath === 'bar') {
+        initialView = 'kitchen';
       } else if (hostname.startsWith('pdv.')) initialView = 'pdv';
       else if (hostname.startsWith('coz.')) initialView = 'kitchen';
+      else if (hostname.startsWith('bar.')) initialView = 'kitchen';
       else if (hostname.startsWith('tablet.')) initialView = 'tablet';
       else if (hostname.startsWith('qr.')) initialView = 'qr';
       else {
@@ -908,7 +911,7 @@ export const useStore = create<AppState>((set, get) => ({
           tableId: order.tableId,
           tableNumber: order.tableNumber,
           type: 'order_ready',
-          message: itemsList,
+          message: result.request.message || itemsList,
           status: 'pending',
           createdAt: result.request.createdAt
         };

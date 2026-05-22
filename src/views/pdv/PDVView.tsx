@@ -40,6 +40,7 @@ export function PDVView() {
     openCash,
     closeCash
   } = useStore();
+  const kitchenOrders = useStore((state) => state.kitchenOrders);
 
   const [pin, setPin] = useState('');
   const [isSendingOrder, setIsSendingOrder] = useState(false);
@@ -297,11 +298,17 @@ export function PDVView() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
+  const hasProductionInProgress = (table: TableType) => {
+    return kitchenOrders.some(order => order.tableId === table.id && order.status !== 'ready');
+  };
+
+  const getStatusColor = (table: TableType) => {
+    switch (table.status) {
       case 'available': return 'bg-zinc-800/50 border-zinc-700/50 text-zinc-500';
-      case 'ordering': return 'bg-purple-600/20 border-purple-500/30 text-purple-400';
-      case 'bill_requested': return 'bg-amber-600/20 border-amber-500/30 text-amber-400';
+      case 'bill_requested': return 'bg-rose-600/20 border-rose-500/40 text-rose-400';
+      case 'ordering': return hasProductionInProgress(table)
+        ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+        : 'bg-purple-600/20 border-purple-500/30 text-purple-400';
       default: return 'bg-zinc-800/50 border-zinc-700/50 text-zinc-500';
     }
   };
@@ -484,7 +491,10 @@ export function PDVView() {
                 <div className="w-3 h-3 rounded-full bg-purple-600/40 border border-purple-500" /> Ocupada
               </span>
               <span className="flex items-center gap-2 text-[10px] font-black uppercase text-amber-400">
-                <div className="w-3 h-3 rounded-full bg-amber-600/40 border border-amber-500" /> Conta
+                <div className="w-3 h-3 rounded-full bg-amber-500/40 border border-amber-400" /> Em preparo
+              </span>
+              <span className="flex items-center gap-2 text-[10px] font-black uppercase text-rose-400">
+                <div className="w-3 h-3 rounded-full bg-rose-600/40 border border-rose-500" /> Conta
               </span>
             </div>
           </div>
@@ -498,7 +508,7 @@ export function PDVView() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => handleTableClick(table)}
-                className={`h-32 sm:h-40 rounded-[2rem] sm:rounded-[2.5rem] border-2 p-4 sm:p-6 flex flex-col justify-between transition-all relative overflow-hidden group ${getStatusColor(table.status)}`}
+                className={`h-32 sm:h-40 rounded-[2rem] sm:rounded-[2.5rem] border-2 p-4 sm:p-6 flex flex-col justify-between transition-all relative overflow-hidden group ${getStatusColor(table)}`}
               >
                 <div className="flex justify-between items-start relative z-10">
                   <span className="text-3xl font-black italic tracking-tighter">{table.number}</span>

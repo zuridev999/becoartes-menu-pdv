@@ -9,6 +9,7 @@ const KITCHEN_SYNC_INTERVAL_MS = 5000;
 
 function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
   const { login } = useStore();
+  const stationLabel = getAppLabel() === 'Bar' ? 'BAR' : 'COZINHA';
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -32,8 +33,8 @@ function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
         setApiSessionToken(setupResult.sessionToken || null);
         const kitchenSeller: Seller = setupResult.seller || {
           id: 'kitchen-setup',
-          name: 'Cozinha',
-          nickname: 'Cozinha',
+          name: stationLabel,
+          nickname: stationLabel,
           pin: '',
           status: 'active',
           role: 'atendente',
@@ -66,7 +67,7 @@ function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
         <div className="w-20 h-20 rounded-[2rem] bg-primary/15 text-primary flex items-center justify-center mb-8">
           <LockKeyhole size={38} />
         </div>
-        <p className="text-[10px] font-black tracking-[0.35em] text-primary mb-3">COZINHA SEGURA</p>
+        <p className="text-[10px] font-black tracking-[0.35em] text-primary mb-3">{stationLabel} SEGURO</p>
         <h1 className="text-5xl font-black italic tracking-tighter mb-10">Digite o PIN</h1>
 
         <input
@@ -334,6 +335,8 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
 
 export function KitchenView() {
   const { kitchenOrders, updateKitchenOrderStatus, syncData, currentSeller } = useStore();
+  const stationLabel = getAppLabel() === 'Bar' ? 'bar' : 'cozinha';
+  const stationTitle = getAppLabel() === 'Bar' ? 'Bar' : 'Cozinha';
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [soundReady, setSoundReady] = useState(false);
   const [isKitchenUnlocked, setIsKitchenUnlocked] = useState(false);
@@ -357,7 +360,7 @@ export function KitchenView() {
         console.log(`Kitchen syncing: ${reason}`);
         await syncData();
       } catch (error) {
-        console.warn('Falha ao sincronizar cozinha:', error);
+        console.warn(`Falha ao sincronizar ${stationLabel}:`, error);
       } finally {
         isSyncing = false;
       }
@@ -411,7 +414,7 @@ export function KitchenView() {
       const audioCtx = await getAudioContext(true);
       setSoundReady(audioCtx?.state === 'running');
     } catch (error) {
-      console.warn('Falha ao ativar som da cozinha:', error);
+      console.warn(`Falha ao ativar som do ${stationLabel}:`, error);
       setSoundReady(false);
     }
   };
@@ -439,7 +442,7 @@ export function KitchenView() {
       if (!audioCtx) return;
       
       if (audioCtx.state === 'suspended') {
-        console.warn("AudioContext suspenso. Clique em Ativar Som na cozinha.");
+        console.warn(`AudioContext suspenso. Clique em Ativar Som no ${stationLabel}.`);
         setSoundReady(false);
         return;
       }
@@ -560,7 +563,7 @@ export function KitchenView() {
           <div className="h-full flex flex-col items-center justify-center text-center opacity-30">
             <ChefHat size={80} className="mb-8" />
             <h2 className="text-5xl font-black italic tracking-tighter mb-4">Nenhum Pedido Pendente</h2>
-            <p className="text-[10px] font-black uppercase tracking-[0.4em]">Aguardando novas comandas da cozinha...</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.4em]">Aguardando novas comandas do {stationTitle}...</p>
           </div>
         )}
       </div>

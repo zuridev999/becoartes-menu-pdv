@@ -82,9 +82,10 @@ const getCurrentView = () => {
   const host = window.location.hostname;
   if (path.startsWith('admin')) return 'admin';
   if (path.startsWith('qr/') || path.startsWith('mesa/')) return 'qr';
-  if (['tablet', 'pdv', 'kitchen', 'qr'].includes(path)) return path;
+  if (['tablet', 'pdv', 'kitchen', 'bar', 'qr'].includes(path)) return path;
   if (host.startsWith('tablet.')) return 'tablet';
   if (host.startsWith('coz.')) return 'kitchen';
+  if (host.startsWith('bar.')) return 'bar';
   if (host.startsWith('qr.')) return 'qr';
   return 'pdv';
 };

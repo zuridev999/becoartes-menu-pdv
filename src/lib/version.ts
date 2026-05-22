@@ -11,6 +11,7 @@ export const getAppLabel = () => {
   const host = window.location.hostname;
   if (host.includes('tablet')) return 'Tablet';
   if (host.includes('coz')) return 'Cozinha';
+  if (host.includes('bar')) return 'Bar';
   if (host.includes('qr')) return 'QR';
   return 'PDV';
 };
