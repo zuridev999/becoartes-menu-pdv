@@ -492,6 +492,9 @@ export function AdminView() {
     return acc;
   }, {} as Record<string, { total: number; count: number }>);
 
+  const closedBillsSubtotal = closedBills.reduce((acc, bill) => acc + bill.subtotal, 0);
+  const closedBillsServiceFee = closedBills.reduce((acc, bill) => acc + bill.serviceFee, 0);
+  const closedBillsDiscount = closedBills.reduce((acc, bill) => acc + bill.discount, 0);
   const closedBillsTotal = closedBills.reduce((acc, bill) => acc + bill.total, 0);
 
   const requestCategoryRename = (cat: any) => {
@@ -1330,11 +1333,31 @@ export function AdminView() {
                  <div key={s.id} className="flex items-center justify-between p-6 glass rounded-2xl border-white/5">
                     <div className="flex items-center gap-6">
                        <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center font-black">{s.name.charAt(0)}</div>
-                       <div><p className="font-black text-lg">{s.name}</p><p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{s.role} • {s.permission}</p></div>
+                       <div>
+                         <p className="font-black text-lg">{s.name}</p>
+                         <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{s.role} • {s.permission}</p>
+                         <span className={`inline-flex mt-2 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${s.source === 'os' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-primary/10 text-primary'}`}>
+                           {s.source === 'os' ? 'Espelhado do OS' : 'Usuário próprio PDV'}
+                         </span>
+                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                       <button onClick={() => toggleSellerStatus(s.id)} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest ${s.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>{s.status === 'active' ? 'Ativo' : 'Inativo'}</button>
-                       <button onClick={() => deleteSeller(s.id)} className="p-3 glass rounded-xl text-rose-500"><Trash2 size={18}/></button>
+                       <button
+                         onClick={() => s.source !== 'os' && toggleSellerStatus(s.id)}
+                         disabled={s.source === 'os'}
+                         className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed ${s.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}
+                         title={s.source === 'os' ? 'Usuário vem do Becoartes OS. Ative/desative no OS.' : undefined}
+                       >
+                         {s.status === 'active' ? 'Ativo' : 'Inativo'}
+                       </button>
+                       <button
+                         onClick={() => s.source !== 'os' && deleteSeller(s.id)}
+                         disabled={s.source === 'os'}
+                         className="p-3 glass rounded-xl text-rose-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                         title={s.source === 'os' ? 'Usuário espelhado do OS não é apagado pelo PDV.' : 'Excluir usuário próprio do PDV'}
+                       >
+                         <Trash2 size={18}/>
+                       </button>
                     </div>
                  </div>
               ))}
@@ -1348,10 +1371,28 @@ export function AdminView() {
         <div className="space-y-10">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="glass-card p-8 border-white/5">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Total Fechado</span>
-              <p className="text-4xl font-black text-emerald-400 mt-3">R$ {closedBillsTotal.toFixed(2)}</p>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Produtos vendidos</span>
+              <p className="text-4xl font-black text-white mt-3">R$ {closedBillsSubtotal.toFixed(2)}</p>
               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">{closedBills.length} mesas fechadas</p>
             </div>
+            <div className="glass-card p-8 border-white/5">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Taxa de serviço</span>
+              <p className="text-4xl font-black text-amber-300 mt-3">R$ {closedBillsServiceFee.toFixed(2)}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Separado do desconto</p>
+            </div>
+            <div className="glass-card p-8 border-white/5">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Descontos</span>
+              <p className="text-4xl font-black text-rose-400 mt-3">R$ {closedBillsDiscount.toFixed(2)}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Não inclui taxa removida</p>
+            </div>
+            <div className="glass-card p-8 border-white/5">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Total recebido</span>
+              <p className="text-4xl font-black text-emerald-400 mt-3">R$ {closedBillsTotal.toFixed(2)}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Produtos + taxa - desconto</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {(['credit', 'debit', 'pix', 'cash'] as const).map((method) => {
               const Icon = method === 'cash' ? Banknote : method === 'pix' ? Wallet : CreditCard;
               const summary = paymentSummary[method] || { total: 0, count: 0 };
@@ -1375,6 +1416,9 @@ export function AdminView() {
                   <th className="p-8">Mesa</th>
                   <th className="p-8">Horário</th>
                   <th className="p-8">Operador</th>
+                  <th className="p-8 text-right">Produtos</th>
+                  <th className="p-8 text-right">Taxa</th>
+                  <th className="p-8 text-right">Desconto</th>
                   <th className="p-8">Pagamentos</th>
                   <th className="p-8 text-right">Total</th>
                 </tr>
@@ -1385,6 +1429,9 @@ export function AdminView() {
                     <td className="p-8 font-black text-xl">{bill.tableNumber}</td>
                     <td className="p-8 font-medium text-gray-400">{new Date(bill.closedAt).toLocaleString('pt-BR')}</td>
                     <td className="p-8 font-black text-primary">{bill.sellerName}</td>
+                    <td className="p-8 text-right font-black text-zinc-300">R$ {bill.subtotal.toFixed(2)}</td>
+                    <td className="p-8 text-right font-black text-amber-300">R$ {bill.serviceFee.toFixed(2)}</td>
+                    <td className="p-8 text-right font-black text-rose-400">R$ {bill.discount.toFixed(2)}</td>
                     <td className="p-8">
                       <div className="flex flex-wrap gap-2">
                         {(bill.payments || []).map((payment, idx) => (

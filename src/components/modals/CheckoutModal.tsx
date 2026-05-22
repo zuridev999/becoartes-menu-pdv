@@ -34,6 +34,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const canEditServiceFee = can(currentSeller, 'editServiceFee', settings.pdvPermissions);
   const canLaunchPayment = can(currentSeller, 'launchPayment', settings.pdvPermissions);
   const canSplitPayment = can(currentSeller, 'splitPayment', settings.pdvPermissions);
+  const canChangePaymentMethod = can(currentSeller, 'changePaymentMethod', settings.pdvPermissions);
+  const canCancelPayment = can(currentSeller, 'cancelPayment', settings.pdvPermissions);
+  const canCloseBill = can(currentSeller, 'closeBill', settings.pdvPermissions);
   
   const subtotal = roundMoney(table.orders.reduce((acc: number, o: any) => {
     const itemPrice = o.price + (o.selectedModifiers || []).reduce((mAcc: number, m: any) => mAcc + m.price, 0);
@@ -245,8 +248,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                     ].map(m => (
                       <button 
                         key={m.id}
-                        onClick={() => setCurrentMethod(m.id as any)}
-                        className={`p-6 rounded-2xl border transition-all flex flex-col items-center gap-3 ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-105' : 'glass border-white/5 opacity-50 hover:opacity-100'}`}
+                        onClick={() => canChangePaymentMethod && setCurrentMethod(m.id as any)}
+                        disabled={!canChangePaymentMethod}
+                        className={`p-6 rounded-2xl border transition-all flex flex-col items-center gap-3 ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-105' : 'glass border-white/5 opacity-50 hover:opacity-100'} ${!canChangePaymentMethod ? 'cursor-not-allowed grayscale' : ''}`}
                       >
                         <m.icon size={26} />
                         <span className="font-black uppercase text-[9px] tracking-widest">{m.name}</span>
@@ -296,7 +300,14 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                          </div>
                          <div className="flex items-center gap-6">
                             <p className="text-xl font-black text-white">R$ {p.amount.toFixed(2)}</p>
-                            <button onClick={() => setPayments(payments.filter((_, i) => i !== idx))} className="text-rose-500 p-1.5 hover:bg-rose-500/10 rounded-lg"><Trash2 size={18}/></button>
+                            <button
+                              onClick={() => canCancelPayment && setPayments(payments.filter((_, i) => i !== idx))}
+                              disabled={!canCancelPayment}
+                              className="text-rose-500 p-1.5 hover:bg-rose-500/10 rounded-lg disabled:opacity-20 disabled:cursor-not-allowed"
+                              title={canCancelPayment ? 'Remover pagamento' : 'Sem permissão para cancelar pagamento'}
+                            >
+                              <Trash2 size={18}/>
+                            </button>
                          </div>
                       </div>
                     ))}
@@ -315,15 +326,15 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
               </div>
 
               <button 
-                 disabled={remaining > 0 || !selectedSellerId || !canLaunchPayment}
+                 disabled={remaining > 0 || !selectedSellerId || !canLaunchPayment || !canCloseBill}
                  onClick={handleFinish}
                  className="w-full btn-beco btn-beco-purple py-5 text-2xl font-black mt-6 shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-4 group rounded-2xl"
               >
                  FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={26}/>
               </button>
-              {(remaining > 0 || !selectedSellerId || !canLaunchPayment) && (
+              {(remaining > 0 || !selectedSellerId || !canLaunchPayment || !canCloseBill) && (
                 <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-rose-500 mt-3 animate-pulse">
-                  {!canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSellerId ? 'Selecione o Operador para liberar' : `Falta receber R$ ${remaining.toFixed(2)}`}
+                  {!canCloseBill ? 'Sem permissão para fechar conta' : !canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSellerId ? 'Selecione o Operador para liberar' : `Falta receber R$ ${remaining.toFixed(2)}`}
                 </p>
               )}
            </div>

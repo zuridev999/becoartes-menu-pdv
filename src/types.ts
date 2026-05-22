@@ -134,6 +134,8 @@ export interface Seller {
   status: 'active' | 'inactive';
   role: 'garçom' | 'atendente' | 'gerente' | 'outro';
   permission: 'admin' | 'manager' | 'operator' | 'standard' | 'restricted';
+  source?: 'os' | 'pdv';
+  allowRemote?: boolean;
 }
 
 export interface AppSettings {
