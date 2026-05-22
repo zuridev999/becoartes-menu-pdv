@@ -255,6 +255,10 @@ export const useStore = create<AppState>((set, get) => ({
   currentSeller: null,
 
   login: async (pin, sellerId) => {
+    // Login por PIN precisa ser troca de identidade, não continuidade da sessão anterior.
+    clearSellerSession();
+    set({ currentSeller: null });
+
     let result;
     try {
       result = await AppApi.login(pin, sellerId);

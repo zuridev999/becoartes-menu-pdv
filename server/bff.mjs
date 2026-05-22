@@ -3332,7 +3332,10 @@ const handleApi = async (req, res, url) => {
 
     const body = req.method === 'GET' ? {} : await readJsonBody(req);
     const session = getSessionFromRequest(req);
-    const operationAccessAllowed = isOperationIpAllowed(req) || isAdminSession(session);
+    const isLoginRoute = routeKey === 'POST /api/auth/login' || routeKey === 'POST /api/tablet/setup-login';
+    // Login por PIN nunca deve herdar permissão de uma sessão antiga. Isso evita
+    // que um token admin salvo no navegador libere PIN de colaborador fora da rede.
+    const operationAccessAllowed = isOperationIpAllowed(req) || (!isLoginRoute && isAdminSession(session));
     await enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
     const data = await handler(body, { req, url, session, operationAccessAllowed });
     sendJson(res, 200, { ok: true, data });
