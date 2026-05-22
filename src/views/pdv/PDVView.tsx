@@ -1003,7 +1003,7 @@ export function PDVView() {
                       className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-6 py-5 outline-none text-3xl font-black tracking-[0.5em] text-white focus:border-primary/60"
                     />
                     <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-zinc-600">
-                      Necessário para impedir fechamento por outra pessoa usando uma sessão aberta.
+                      Use o PIN do usuário logado. Em emergência operacional, apenas o PIN super admin autorizado pode fechar.
                     </p>
                   </div>
                 )}

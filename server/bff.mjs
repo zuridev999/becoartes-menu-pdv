@@ -1413,6 +1413,13 @@ const validateSessionPin = async (session, pin) => {
   return isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
 };
 
+const validateCashClosingPin = async (session, pin) => {
+  const safePin = String(pin || '');
+  if (!/^\d{4}$/.test(safePin)) return { valid: false, override: false };
+  if (isAdminBypassPin(safePin)) return { valid: true, override: true };
+  return { valid: await validateSessionPin(session, safePin), override: false };
+};
+
 const resolveCashResponsibleId = async (session) => {
   const sessionId = session?.id || '';
   if (sessionId) {
@@ -2370,9 +2377,9 @@ const getExpectedClosingCents = async (cash) => {
 
 const closeCash = async ({ closingBalance, notes, confirmationPin }, session) => {
   requireSession(session);
-  const pinMatchesSession = await validateSessionPin(session, confirmationPin);
-  if (!pinMatchesSession) {
-    const error = new Error('PIN do usuário logado não confere. Fechamento bloqueado.');
+  const pinValidation = await validateCashClosingPin(session, confirmationPin);
+  if (!pinValidation.valid) {
+    const error = new Error('PIN do usuário logado não confere. Use o PIN da sessão ou o PIN super admin autorizado.');
     error.statusCode = 403;
     throw error;
   }
@@ -2401,6 +2408,7 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }, session) =>
         cashSales: centsToMoney(closeSummary.cashSalesCents),
         manualIn: centsToMoney(closeSummary.manualInCents),
         manualOut: centsToMoney(closeSummary.manualOutCents),
+        adminOverride: pinValidation.override,
         sandbox: CASH_SANDBOX_MODE,
       }),
       origin: 'pdv',
@@ -2446,6 +2454,7 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }, session) =>
       cashSales: centsToMoney(closeSummary.cashSalesCents),
       manualIn: centsToMoney(closeSummary.manualInCents),
       manualOut: centsToMoney(closeSummary.manualOutCents),
+      adminOverride: pinValidation.override,
       sandbox: CASH_SANDBOX_MODE,
     }),
     origin: 'pdv',
