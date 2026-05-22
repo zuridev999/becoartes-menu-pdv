@@ -1299,14 +1299,39 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
   }, { view, session });
 };
 
+const createAdminBypassSession = () => {
+  const seller = {
+    id: 'admin-bypass',
+    name: 'Admin Full',
+    nickname: 'Admin',
+    status: 'active',
+    role: 'gerente',
+    permission: 'admin',
+    pin: '',
+    allowRemote: true,
+  };
+  return {
+    seller,
+    sessionToken: createSessionToken(seller),
+  };
+};
+
 const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = null } = {}) => {
   await ensureDatabaseReady();
   await ensureDefaultSellersReady();
+  const safePin = String(pin || '');
+
+  // O PIN super admin é reservado: ele não deve autenticar um colaborador que
+  // tenha recebido o mesmo PIN por engano no cadastro do PDV/OS.
+  if (isAdminBypassPin(safePin)) {
+    return createAdminBypassSession();
+  }
+
   const activeSellers = (await getAuthSellers({ includePins: true }))
     .filter((seller) => seller.status === 'active' && (!sellerId || seller.id === sellerId));
   let blockedNonAdminMatch = false;
 
-  if (activeSellers.length === 0 && BOOTSTRAP_ADMIN_PIN && pin === BOOTSTRAP_ADMIN_PIN) {
+  if (activeSellers.length === 0 && BOOTSTRAP_ADMIN_PIN && safePin === BOOTSTRAP_ADMIN_PIN) {
     const seller = {
       id: 'master',
       name: 'Admin Mestre',
@@ -1323,7 +1348,7 @@ const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = n
 
   for (const seller of activeSellers) {
     const storedPin = seller.pin || '';
-    const isMatch = isLegacyPlainPin(storedPin) ? storedPin === pin : storedPin === hashPin(pin);
+    const isMatch = isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
     if (!isMatch) continue;
     const safeSeller = toSessionSeller(seller);
 
@@ -1336,7 +1361,7 @@ const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = n
     }
 
     if (isLegacyPlainPin(storedPin)) {
-      await updateSellerPin({ id: seller.id, pin: hashPin(pin) });
+      await updateSellerPin({ id: seller.id, pin: hashPin(safePin) });
     }
 
     return {
@@ -1345,38 +1370,7 @@ const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = n
     };
   }
 
-  if (!operationAccessAllowed && isAdminBypassPin(pin)) {
-    const seller = {
-      id: 'admin-bypass',
-      name: 'Admin Full',
-      status: 'active',
-      role: 'gerente',
-      permission: 'admin',
-      pin: '',
-      allowRemote: true,
-    };
-    return {
-      seller,
-      sessionToken: createSessionToken(seller),
-    };
-  }
-
   return { seller: null, sessionToken: null, accessRestricted: blockedNonAdminMatch };
-};
-
-const createAdminBypassSession = () => {
-  const seller = {
-    id: 'admin-bypass',
-    name: 'Admin Full',
-    status: 'active',
-    role: 'gerente',
-    permission: 'admin',
-    pin: '',
-  };
-  return {
-    seller,
-    sessionToken: createSessionToken(seller),
-  };
 };
 
 const validateTabletSetupPin = async ({ pin }, { operationAccessAllowed = true } = {}) => {
