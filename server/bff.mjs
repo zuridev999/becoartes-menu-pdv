@@ -2399,7 +2399,7 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }, session) =>
   }
 
   const cash = await getOpenCashRow();
-  if (!cash) throw new Error('Não existe caixa aberto para hoje.');
+  if (!cash) throw new Error('Não existe caixa aberto.');
 
   const closingCents = moneyToCents(closingBalance, 'closingBalance');
   const closeSummary = await getExpectedClosingCents(cash);
