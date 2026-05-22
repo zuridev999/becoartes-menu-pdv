@@ -32,6 +32,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     : currentSeller ? [currentSeller, ...sellers] : sellers;
   const canApplyDiscount = can(currentSeller, 'applyDiscount', settings.pdvPermissions);
   const canEditServiceFee = can(currentSeller, 'editServiceFee', settings.pdvPermissions);
+  const canLaunchPayment = can(currentSeller, 'launchPayment', settings.pdvPermissions);
+  const canSplitPayment = can(currentSeller, 'splitPayment', settings.pdvPermissions);
   
   const subtotal = roundMoney(table.orders.reduce((acc: number, o: any) => {
     const itemPrice = o.price + (o.selectedModifiers || []).reduce((mAcc: number, m: any) => mAcc + m.price, 0);
@@ -72,6 +74,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   };
 
   const handleAddPayment = () => {
+    if (!canLaunchPayment) return;
+    if (payments.length >= 1 && !canSplitPayment) return;
     const val = Number(currentAmountFormatted);
     if (val <= 0) return;
     setPayments([...payments, { method: currentMethod, amount: val }]);
@@ -263,11 +267,22 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                     </div>
                     <button 
                        onClick={handleAddPayment}
-                       className="py-4 px-8 btn-beco btn-beco-purple text-base font-black rounded-2xl"
+                       disabled={!canLaunchPayment || (payments.length >= 1 && !canSplitPayment)}
+                       className="py-4 px-8 btn-beco btn-beco-purple text-base font-black rounded-2xl disabled:opacity-30 disabled:grayscale"
                     >
                        Lançar Valor
                     </button>
                  </div>
+                 {!canLaunchPayment && (
+                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-rose-400">
+                     Seu perfil não pode lançar pagamentos.
+                   </p>
+                 )}
+                 {canLaunchPayment && payments.length >= 1 && !canSplitPayment && (
+                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                     Seu perfil não pode dividir pagamento em mais de uma forma.
+                   </p>
+                 )}
 
                  <div className="space-y-3">
                     {payments.map((p, idx) => (
@@ -300,15 +315,15 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
               </div>
 
               <button 
-                 disabled={remaining > 0 || !selectedSellerId}
+                 disabled={remaining > 0 || !selectedSellerId || !canLaunchPayment}
                  onClick={handleFinish}
                  className="w-full btn-beco btn-beco-purple py-5 text-2xl font-black mt-6 shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-4 group rounded-2xl"
               >
                  FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={26}/>
               </button>
-              {(remaining > 0 || !selectedSellerId) && (
+              {(remaining > 0 || !selectedSellerId || !canLaunchPayment) && (
                 <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-rose-500 mt-3 animate-pulse">
-                  {!selectedSellerId ? 'Selecione o Operador para liberar' : `Falta receber R$ ${remaining.toFixed(2)}`}
+                  {!canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSellerId ? 'Selecione o Operador para liberar' : `Falta receber R$ ${remaining.toFixed(2)}`}
                 </p>
               )}
            </div>

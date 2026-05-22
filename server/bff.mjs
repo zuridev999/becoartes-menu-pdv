@@ -850,6 +850,8 @@ const getSellers = async ({ includePins = false } = {}) => {
     role: row.role,
     permission: row.permission || 'operator',
     pin: includePins ? row.pin || '' : '',
+    allowRemote: false,
+    source: 'pdv',
   }));
 };
 
@@ -931,9 +933,16 @@ const getOperationalUsers = async ({ includePins = false } = {}) => {
 };
 
 const getAuthSellers = async ({ includePins = false } = {}) => {
-  const operationalUsers = await getOperationalUsers({ includePins });
-  if (operationalUsers.length > 0) return operationalUsers;
-  return getSellers({ includePins });
+  const [operationalUsers, pdvUsers] = await Promise.all([
+    getOperationalUsers({ includePins }),
+    getSellers({ includePins }),
+  ]);
+  const seenIds = new Set();
+  return [...operationalUsers, ...pdvUsers].filter((seller) => {
+    if (seenIds.has(seller.id)) return false;
+    seenIds.add(seller.id);
+    return true;
+  });
 };
 
 const PRODUCTION_STATIONS = new Set(['kitchen', 'bar']);
@@ -2817,6 +2826,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
   const serviceFeeCents = moneyToCents(data.serviceFee || 0, 'serviceFee');
   const discountCents = moneyToCents(data.discount || 0, 'discount');
   const totalCents = moneyToCents(data.total || 0, 'total');
+  const payments = Array.isArray(data.payments) ? data.payments : [];
 
   if (subtotalCents < 0) throw new Error('Subtotal inválido.');
   if (serviceFeeCents < 0) throw new Error('Taxa de serviço não pode ser negativa.');
@@ -2839,6 +2849,31 @@ const closeBillWithInventorySync = async (data, session = null) => {
     requirePermission(session, 'applyDiscount', settings);
   }
 
+  if (payments.length === 0 && totalCents > 0) {
+    throw new Error('Lance ao menos um pagamento antes de fechar a conta.');
+  }
+
+  if (payments.length > 0) {
+    requirePermission(session, 'launchPayment', settings);
+  }
+
+  if (payments.length > 1) {
+    requirePermission(session, 'splitPayment', settings);
+  }
+
+  const validPaymentMethods = new Set(['credit', 'debit', 'cash', 'pix']);
+  let paymentTotalCents = 0;
+  let hasCashPayment = false;
+  for (const payment of payments) {
+    if (!validPaymentMethods.has(payment?.method)) {
+      throw new Error('Forma de pagamento inválida.');
+    }
+    const paymentCents = moneyToCents(payment.amount || 0, 'payment.amount');
+    if (paymentCents <= 0) throw new Error('Pagamento precisa ter valor maior que zero.');
+    paymentTotalCents += paymentCents;
+    if (payment.method === 'cash') hasCashPayment = true;
+  }
+
   const expectedTotalCents = subtotalCents + serviceFeeCents - discountCents;
   if (expectedTotalCents < 0) {
     throw new Error('Desconto não pode ser maior que subtotal mais taxa de serviço.');
@@ -2848,10 +2883,22 @@ const closeBillWithInventorySync = async (data, session = null) => {
     throw new Error('Total da conta não confere com subtotal, taxa de serviço e desconto.');
   }
 
+  if (paymentTotalCents < totalCents) {
+    throw new Error('Pagamentos lançados não cobrem o total da conta.');
+  }
+
+  if (paymentTotalCents > totalCents && !hasCashPayment) {
+    throw new Error('Troco só pode existir quando houver pagamento em dinheiro.');
+  }
+
   data.subtotal = centsToMoney(subtotalCents);
   data.serviceFee = centsToMoney(serviceFeeCents);
   data.discount = centsToMoney(discountCents);
   data.total = centsToMoney(totalCents);
+  data.payments = payments.map((payment) => ({
+    method: payment.method,
+    amount: centsToMoney(moneyToCents(payment.amount || 0, 'payment.amount')),
+  }));
 
   const activeOrderItems = await getActiveOrderItemsForTable(tableId);
   const orderIds = Array.from(new Set(activeOrderItems.map((item) => item.orderId))).sort();
@@ -3043,18 +3090,76 @@ const closeBillWithInventorySync = async (data, session = null) => {
       );
     }
 
-    batch.push(
+    const serviceFeePercent = subtotalCents > 0 ? Number(((serviceFeeCents / subtotalCents) * 100).toFixed(2)) : 0;
+    const auditAuthorId = session?.id || data.sellerId;
+    const auditAuthorName = session?.name || data.sellerName || 'Sistema';
+    const auditEntries = [
       {
-        sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'bill_closed', ?, ?, 'pdv', ?, ?, ?)",
+        action: 'bill_closed',
+        details: {
+          subtotal: data.subtotal,
+          serviceFee: data.serviceFee,
+          serviceFeePercent,
+          discount: data.discount,
+          total: data.total,
+          paid: centsToMoney(paymentTotalCents),
+          change: centsToMoney(Math.max(0, paymentTotalCents - totalCents)),
+          payments: data.payments,
+          sellerName: data.sellerName,
+          inventoryMovements: result.movementCount,
+          eventId: integrationId,
+        },
+      },
+    ];
+
+    if (serviceFeeCents !== defaultServiceFeeCents) {
+      auditEntries.push({
+        action: 'service_tax_changed',
+        details: {
+          defaultPercent: defaultServiceFeePercent,
+          appliedPercent: serviceFeePercent,
+          defaultAmount: centsToMoney(defaultServiceFeeCents),
+          appliedAmount: data.serviceFee,
+          delta: centsToMoney(serviceFeeCents - defaultServiceFeeCents),
+        },
+      });
+    }
+
+    if (discountCents > 0) {
+      auditEntries.push({
+        action: 'discount_applied',
+        details: {
+          discount: data.discount,
+          discountReason: data.discountReason || 'Sem motivo informado',
+          totalBeforeDiscount: centsToMoney(subtotalCents + serviceFeeCents),
+          totalAfterDiscount: data.total,
+        },
+      });
+    }
+
+    auditEntries.push({
+      action: 'payment_registered',
+      details: {
+        total: data.total,
+        paid: centsToMoney(paymentTotalCents),
+        change: centsToMoney(Math.max(0, paymentTotalCents - totalCents)),
+        payments: data.payments,
+      },
+    });
+
+    batch.push(
+      ...auditEntries.map((entry) => ({
+        sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, ?, ?, ?, 'pdv', ?, ?, ?)",
         args: [
           createId(),
-          `Fechamento: R$ ${Number(data.total || 0).toFixed(2)} | Estoque: ${result.movementCount} movimentação(ões) | Evento: ${integrationId}`,
+          entry.action,
+          JSON.stringify(entry.details),
           String(data.tableNumber),
-          data.sellerId,
-          data.sellerName,
+          auditAuthorId,
+          auditAuthorName,
           closedAt.toISOString(),
         ],
-      },
+      })),
       {
         sql: "UPDATE tables SET status = 'available', last_activity = ? WHERE id = ?",
         args: [closedAt.toISOString(), tableId],

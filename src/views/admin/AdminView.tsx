@@ -76,6 +76,8 @@ const auditActionLabels: Record<string, string> = {
   cash_closed: 'Caixa fechado',
   discount_applied: 'Desconto aplicado',
   service_tax_changed: 'Taxa de serviço alterada',
+  payment_registered: 'Pagamento registrado',
+  cash_close_blocked: 'Fechamento de caixa bloqueado',
   Lançamento_Manual: 'Lançamento manual',
 };
 
@@ -97,7 +99,17 @@ const parseAuditDetails = (details: string) => {
 
 const formatAuditValue = (key: string, value: any) => {
   if (value === null || value === undefined || value === '') return '';
-  if (typeof value === 'number' && ['total', 'subtotal', 'discount', 'serviceTax', 'service_tax', 'amount', 'value'].some((term) => key.toLowerCase().includes(term))) {
+  if (key === 'payments' && Array.isArray(value)) {
+    const paymentLabels: Record<string, string> = { credit: 'Crédito', debit: 'Débito', cash: 'Dinheiro', pix: 'PIX' };
+    return value.map((payment) => {
+      const amount = Number(payment?.amount || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      return `${paymentLabels[payment?.method] || payment?.method || 'Pagamento'} ${amount}`;
+    }).join(', ');
+  }
+  if (typeof value === 'number' && key.toLowerCase().includes('percent')) {
+    return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+  }
+  if (typeof value === 'number' && ['total', 'subtotal', 'discount', 'servicetax', 'service_tax', 'servicefee', 'amount', 'value', 'paid', 'change', 'delta'].some((term) => key.toLowerCase().includes(term))) {
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
   if (Array.isArray(value)) return value.map((item) => (typeof item === 'object' ? formatAuditDetails(JSON.stringify(item)) : String(item))).join(', ');
@@ -112,10 +124,25 @@ const auditDetailLabels: Record<string, string> = {
   subtotal: 'Subtotal',
   serviceTax: 'Taxa de serviço',
   service_tax: 'Taxa de serviço',
+  serviceFee: 'Taxa de serviço',
+  serviceFeePercent: 'Taxa aplicada',
   discount: 'Desconto',
+  discountReason: 'Motivo',
   total: 'Total',
+  paid: 'Pago',
+  change: 'Troco',
   payments: 'Pagamentos',
   reason: 'Motivo',
+  sellerName: 'Operador',
+  inventoryMovements: 'Movimentos de estoque',
+  eventId: 'Evento',
+  defaultPercent: 'Taxa padrão',
+  appliedPercent: 'Taxa usada',
+  defaultAmount: 'Valor padrão',
+  appliedAmount: 'Valor usado',
+  delta: 'Diferença',
+  totalBeforeDiscount: 'Total antes do desconto',
+  totalAfterDiscount: 'Total após desconto',
   oldValue: 'Antes',
   newValue: 'Depois',
 };
