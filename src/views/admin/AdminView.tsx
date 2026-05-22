@@ -72,6 +72,17 @@ type AuditMovement = {
 };
 
 const QR_PUBLIC_BASE_URL = 'https://qr.becoartes.com';
+const QR_MENU_TEMPLATE_URL = '/qr/menu-qr-template.jpg';
+const QR_TEMPLATE_WIDTH = 3875;
+const QR_TEMPLATE_HEIGHT = 5463;
+const QR_REPLACE_BOX = {
+  left: 893,
+  top: 2185,
+  width: 1997,
+  height: 2115,
+};
+const QR_SIZE = 1860;
+const QR_TOP_OFFSET = 26;
 
 const normalizeQrRangeValue = (value: string, fallback: number) => {
   const parsed = Math.trunc(Number(value));
@@ -95,53 +106,53 @@ const dataUrlToBlob = async (dataUrl: string) => {
   return response.blob();
 };
 
-const loadImageFromDataUrl = (dataUrl: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
   const image = new window.Image();
   image.onload = () => resolve(image);
   image.onerror = reject;
-  image.src = dataUrl;
+  image.src = src;
 });
 
 const buildPrintableQrBlob = async (tableNumber: number, qrUrl: string) => {
   const qrDataUrl = await QRCode.toDataURL(qrUrl, {
     errorCorrectionLevel: 'H',
-    margin: 2,
-    width: 920,
+    margin: 1,
+    width: QR_SIZE,
     color: {
-      dark: '#0a0a0c',
+      dark: '#000000',
       light: '#ffffff',
     },
   });
-  const qrImage = await loadImageFromDataUrl(qrDataUrl);
+  const [templateImage, qrImage] = await Promise.all([
+    loadImage(QR_MENU_TEMPLATE_URL),
+    loadImage(qrDataUrl),
+  ]);
   const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 1600;
+  canvas.width = QR_TEMPLATE_WIDTH;
+  canvas.height = QR_TEMPLATE_HEIGHT;
   const ctx = canvas.getContext('2d');
   if (!ctx) return dataUrlToBlob(qrDataUrl);
 
+  ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
+
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(QR_REPLACE_BOX.left, QR_REPLACE_BOX.top, QR_REPLACE_BOX.width, QR_REPLACE_BOX.height);
 
-  ctx.fillStyle = '#0a0a0c';
-  ctx.font = '900 82px Arial, sans-serif';
+  const qrLeft = QR_REPLACE_BOX.left + Math.round((QR_REPLACE_BOX.width - QR_SIZE) / 2);
+  const qrTop = QR_REPLACE_BOX.top + QR_TOP_OFFSET;
+  ctx.drawImage(qrImage, qrLeft, qrTop, QR_SIZE, QR_SIZE);
+
+  ctx.fillStyle = '#000000';
   ctx.textAlign = 'center';
-  ctx.fillText('Becoartes', 600, 150);
-
-  ctx.fillStyle = '#6f2dbd';
-  ctx.font = '900 120px Arial, sans-serif';
-  ctx.fillText(`MESA ${tableNumber}`, 600, 300);
-
-  ctx.drawImage(qrImage, 140, 385, 920, 920);
-
-  ctx.fillStyle = '#0a0a0c';
-  ctx.font = '700 34px Arial, sans-serif';
-  ctx.fillText('Aponte a câmera e faça seu pedido', 600, 1380);
-  ctx.fillStyle = '#6b7280';
-  ctx.font = '700 28px Arial, sans-serif';
-  ctx.fillText(qrUrl.replace(/^https?:\/\//, ''), 600, 1440);
+  ctx.textBaseline = 'middle';
+  ctx.font = '900 126px Arial, Helvetica, sans-serif';
+  const labelCenterX = QR_REPLACE_BOX.left + Math.round(QR_REPLACE_BOX.width / 2);
+  const labelTop = qrTop + QR_SIZE - 4;
+  const labelHeight = QR_REPLACE_BOX.top + QR_REPLACE_BOX.height - labelTop;
+  ctx.fillText(`Mesa ${tableNumber}`, labelCenterX, labelTop + Math.round(labelHeight * 0.42));
 
   return new Promise<Blob>((resolve) => {
-    canvas.toBlob((blob) => resolve(blob || new Blob()), 'image/png', 0.95);
+    canvas.toBlob((blob) => resolve(blob || new Blob()), 'image/jpeg', 0.94);
   });
 };
 
@@ -558,7 +569,7 @@ export function AdminView() {
   const downloadTableQr = async (tableNumber: number) => {
     try {
       const blob = await buildPrintableQrBlob(tableNumber, getQrUrl(tableNumber));
-      downloadBlob(blob, `becoartes-mesa-${String(tableNumber).padStart(2, '0')}.png`);
+      downloadBlob(blob, `becoartes-mesa-${String(tableNumber).padStart(2, '0')}.jpg`);
       addNotification(`QR Code da mesa ${tableNumber} baixado.`, 'info');
     } catch (error) {
       console.error('Erro ao gerar QR Code:', error);
@@ -582,7 +593,7 @@ export function AdminView() {
       const zip = new JSZip();
       for (const tableNumber of selectedNumbers) {
         const blob = await buildPrintableQrBlob(tableNumber, getQrUrl(tableNumber));
-        zip.file(`mesa-${String(tableNumber).padStart(2, '0')}.png`, blob);
+        zip.file(`mesa-${String(tableNumber).padStart(2, '0')}.jpg`, blob);
       }
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       downloadBlob(zipBlob, `becoartes-qrcodes-mesas-${start}-${end}.zip`);
@@ -1041,7 +1052,7 @@ export function AdminView() {
                       onClick={() => downloadTableQr(table.number)}
                       className="glass py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-300 hover:text-white transition-all flex items-center justify-center gap-2"
                     >
-                      <Download size={15} /> PNG
+                      <Download size={15} /> JPG
                     </button>
                     <button
                       onClick={() => requestQrRegeneration(table.number)}
