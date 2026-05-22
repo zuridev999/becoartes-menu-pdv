@@ -56,6 +56,87 @@ type AdminDialog = {
   onConfirm: (value?: string) => void | Promise<void>;
 };
 
+type AuditMovement = {
+  id: string;
+  action: string;
+  details: string;
+  table: string;
+  origin: string;
+  author: string;
+  timestamp: string;
+};
+
+const auditActionLabels: Record<string, string> = {
+  bill_closed: 'Conta fechada',
+  item_removed: 'Item cancelado',
+  item_added: 'Item adicionado',
+  order_sent: 'Pedido enviado',
+  order_ready: 'Pedido pronto',
+  cash_opened: 'Caixa aberto',
+  cash_closed: 'Caixa fechado',
+  discount_applied: 'Desconto aplicado',
+  service_tax_changed: 'Taxa de serviço alterada',
+  Lançamento_Manual: 'Lançamento manual',
+};
+
+const getAuditActionLabel = (action: string) => {
+  if (auditActionLabels[action]) return auditActionLabels[action];
+  return action
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toLocaleUpperCase('pt-BR'));
+};
+
+const parseAuditDetails = (details: string) => {
+  if (!details) return null;
+  try {
+    return JSON.parse(details);
+  } catch {
+    return details;
+  }
+};
+
+const formatAuditValue = (key: string, value: any) => {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'number' && ['total', 'subtotal', 'discount', 'serviceTax', 'service_tax', 'amount', 'value'].some((term) => key.toLowerCase().includes(term))) {
+    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+  if (Array.isArray(value)) return value.map((item) => (typeof item === 'object' ? formatAuditDetails(JSON.stringify(item)) : String(item))).join(', ');
+  if (typeof value === 'object') return formatAuditDetails(JSON.stringify(value));
+  return String(value);
+};
+
+const auditDetailLabels: Record<string, string> = {
+  product_name: 'Produto',
+  itemName: 'Item',
+  quantity: 'Quantidade',
+  subtotal: 'Subtotal',
+  serviceTax: 'Taxa de serviço',
+  service_tax: 'Taxa de serviço',
+  discount: 'Desconto',
+  total: 'Total',
+  payments: 'Pagamentos',
+  reason: 'Motivo',
+  oldValue: 'Antes',
+  newValue: 'Depois',
+};
+
+const formatAuditDetails = (details: string) => {
+  const parsed = parseAuditDetails(details);
+  if (!parsed) return 'Sem detalhes';
+  if (typeof parsed === 'string') return parsed;
+  if (typeof parsed !== 'object') return String(parsed);
+
+  const parts = Object.entries(parsed)
+    .map(([key, value]) => {
+      const formatted = formatAuditValue(key, value);
+      if (!formatted) return '';
+      return `${auditDetailLabels[key] || getAuditActionLabel(key)}: ${formatted}`;
+    })
+    .filter(Boolean);
+
+  return parts.length ? parts.join(' • ') : 'Sem detalhes';
+};
+
 // Componente de Input fora para evitar perda de foco
 const ConfigInput = ({ label, value, onChange, type = 'text', placeholder }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string }) => {
   const isMoney = label.toLowerCase().includes('preço') || label.toLowerCase().includes('custo') || label.toLowerCase().includes('taxa');
@@ -238,7 +319,12 @@ export function AdminView() {
   const [newSellerPin, setNewSellerPin] = useState('1234');
   const [showPermissionConfig, setShowPermissionConfig] = useState(false);
 
-  const [movements, setMovements] = useState<any[]>([]);
+  const [movements, setMovements] = useState<AuditMovement[]>([]);
+  const [auditStartDate, setAuditStartDate] = useState('');
+  const [auditEndDate, setAuditEndDate] = useState('');
+  const [auditAuthor, setAuditAuthor] = useState('');
+  const [auditAction, setAuditAction] = useState('');
+  const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
 
@@ -259,23 +345,36 @@ export function AdminView() {
   useEffect(() => {
     if (activeTab === 'movements') {
       const fetchMovements = async () => {
-        const res = await AppApi.fetchAuditLogs(100);
+        setIsAuditLoading(true);
+        try {
+          const res = await AppApi.fetchAuditLogs(100, {
+            startDate: auditStartDate,
+            endDate: auditEndDate,
+            author: auditAuthor,
+            action: auditAction,
+          });
 
-        const formatted = res.auditLogs.map((r: any) => ({
-          id: r.id,
-          action: r.action,
-          details: r.details,
-          table: r.table_number,
-          origin: r.origin || 'pdv',
-          author: r.author_name,
-          timestamp: r.timestamp
-        }));
+          const formatted = res.auditLogs.map((r: any) => ({
+            id: r.id,
+            action: r.action,
+            details: r.details,
+            table: r.table_number,
+            origin: r.origin || 'pdv',
+            author: r.author_name || 'Sistema',
+            timestamp: r.timestamp
+          }));
 
-        setMovements(formatted);
+          setMovements(formatted);
+        } catch (error) {
+          console.error('Erro ao carregar auditoria:', error);
+          addNotification('Não foi possível carregar a auditoria agora.', 'info');
+        } finally {
+          setIsAuditLoading(false);
+        }
       };
       fetchMovements();
     }
-  }, [activeTab]);
+  }, [activeTab, auditStartDate, auditEndDate, auditAuthor, auditAction, addNotification]);
 
   const SectionCard = ({ title, icon: Icon, children }: { title: string, icon: any, children: React.ReactNode }) => (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6 sm:p-10 border-white/5 h-full">
@@ -292,6 +391,14 @@ export function AdminView() {
   );
 
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+  const auditAuthorOptions = Array.from(new Set([
+    ...sellers.map((seller: any) => seller.name).filter(Boolean),
+    ...movements.map((movement) => movement.author).filter(Boolean),
+  ])).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const auditActionOptions = Array.from(new Set([
+    ...Object.keys(auditActionLabels),
+    ...movements.map((movement) => movement.action).filter(Boolean),
+  ])).sort((a, b) => getAuditActionLabel(a).localeCompare(getAuditActionLabel(b), 'pt-BR'));
 
   if (!currentSeller) {
     return <PinLoginModal />;
@@ -1270,31 +1377,113 @@ export function AdminView() {
       )}
 
       {activeTab === 'movements' && canViewSalesTotals && (
-        <div className="glass rounded-[3rem] border-white/5 overflow-hidden">
-           <table className="w-full text-left">
-              <thead className="bg-white/5">
-                 <tr className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-                    <th className="p-8">Horário</th>
-                    <th className="p-8">Ação</th>
-                    <th className="p-8">Mesa</th>
-                    <th className="p-8">Detalhes</th>
-                    <th className="p-8">Origem</th>
-                    <th className="p-8">Autor</th>
-                 </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                 {movements.map((m: any) => (
-                   <tr key={m.id} className="hover:bg-white/[0.01] transition-all">
-                      <td className="p-8 font-medium text-gray-400">{new Date(m.timestamp).toLocaleTimeString()}</td>
-                      <td className="p-8"><span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${m.action === 'bill_closed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-primary/10 text-primary'}`}>{m.action.replace('_', ' ')}</span></td>
-                      <td className="p-8 font-black text-xl">{m.table}</td>
-                      <td className="p-8 text-gray-300 font-medium">{m.details}</td>
-                      <td className="p-8"><span className="text-[10px] font-black uppercase tracking-widest bg-white/10 px-2 py-1 rounded">{m.origin}</span></td>
-                      <td className="p-8 font-black text-primary">{m.author}</td>
-                   </tr>
-                 ))}
-              </tbody>
-           </table>
+        <div className="space-y-5">
+          <div className="glass rounded-[2rem] border-white/5 p-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Início</span>
+                <input
+                  type="date"
+                  value={auditStartDate}
+                  onChange={(event) => setAuditStartDate(event.target.value)}
+                  className="w-full bg-white/5 border border-white/5 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-primary/50"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Fim</span>
+                <input
+                  type="date"
+                  value={auditEndDate}
+                  onChange={(event) => setAuditEndDate(event.target.value)}
+                  className="w-full bg-white/5 border border-white/5 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-primary/50"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Usuário</span>
+                <select
+                  value={auditAuthor}
+                  onChange={(event) => setAuditAuthor(event.target.value)}
+                  className="w-full bg-white/5 border border-white/5 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-primary/50"
+                >
+                  <option value="" className="bg-[#0a0a0c]">Todos</option>
+                  {auditAuthorOptions.map((author) => (
+                    <option key={author} value={author} className="bg-[#0a0a0c]">{author}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Ação</span>
+                <select
+                  value={auditAction}
+                  onChange={(event) => setAuditAction(event.target.value)}
+                  className="w-full bg-white/5 border border-white/5 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-primary/50"
+                >
+                  <option value="" className="bg-[#0a0a0c]">Todas</option>
+                  {auditActionOptions.map((action) => (
+                    <option key={action} value={action} className="bg-[#0a0a0c]">{getAuditActionLabel(action)}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    setAuditStartDate('');
+                    setAuditEndDate('');
+                    setAuditAuthor('');
+                    setAuditAction('');
+                  }}
+                  className="w-full rounded-2xl bg-white/5 border border-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-white/10"
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass rounded-[3rem] border-white/5 overflow-hidden">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full min-w-[980px] text-left">
+                <thead className="bg-white/5">
+                  <tr className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                    <th className="p-6">Data e horário</th>
+                    <th className="p-6">Ação</th>
+                    <th className="p-6">Mesa</th>
+                    <th className="p-6">Detalhes</th>
+                    <th className="p-6">Usuário</th>
+                    <th className="p-6">Origem</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {isAuditLoading ? (
+                    <tr>
+                      <td colSpan={6} className="p-10 text-center text-xs font-black uppercase tracking-widest text-zinc-500">Carregando auditoria...</td>
+                    </tr>
+                  ) : movements.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-10 text-center text-xs font-black uppercase tracking-widest text-zinc-500">Nenhum registro encontrado com esses filtros.</td>
+                    </tr>
+                  ) : movements.map((m) => (
+                    <tr key={m.id} className="hover:bg-white/[0.02] transition-all align-top">
+                      <td className="p-6 font-bold text-gray-400 whitespace-nowrap">
+                        {new Date(m.timestamp).toLocaleDateString('pt-BR')} às {new Date(m.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </td>
+                      <td className="p-6">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase whitespace-nowrap ${m.action === 'bill_closed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-primary/10 text-primary'}`}>
+                          {getAuditActionLabel(m.action)}
+                        </span>
+                      </td>
+                      <td className="p-6 font-black text-lg whitespace-nowrap">{m.table ? `Mesa ${m.table}` : '-'}</td>
+                      <td className="p-6 text-gray-300 font-medium max-w-xl leading-relaxed">{formatAuditDetails(m.details)}</td>
+                      <td className="p-6 font-black text-primary whitespace-nowrap">{m.author || 'Sistema'}</td>
+                      <td className="p-6">
+                        <span className="text-[10px] font-black uppercase tracking-widest bg-white/10 px-2 py-1 rounded">{m.origin}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 

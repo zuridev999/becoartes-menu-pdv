@@ -224,8 +224,8 @@ export const AppApi = {
     return postJson<{ valid: boolean; sessionToken?: string | null; seller?: any | null }>('/api/tablet/setup-login', { pin });
   },
 
-  fetchAuditLogs(limit = 100) {
-    return postJson<{ auditLogs: any[] }>('/api/audit-logs/list', { limit });
+  fetchAuditLogs(limit = 100, filters: { startDate?: string; endDate?: string; author?: string; action?: string } = {}) {
+    return postJson<{ auditLogs: any[] }>('/api/audit-logs/list', { limit, ...filters });
   },
 };
 

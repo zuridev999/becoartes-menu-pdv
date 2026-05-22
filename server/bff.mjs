@@ -1228,10 +1228,30 @@ const getSettings = async () => {
   return parseJsonObject(res.rows[0]?.value) || null;
 };
 
-const getAuditLogs = async (limit = 50) => {
+const getAuditLogs = async ({ limit = 50, startDate = '', endDate = '', author = '', action = '' } = {}) => {
+  const where = [];
+  const args = [];
+
+  if (startDate) {
+    where.push("datetime(timestamp) >= datetime(?)");
+    args.push(`${startDate} 00:00:00`);
+  }
+  if (endDate) {
+    where.push("datetime(timestamp) <= datetime(?)");
+    args.push(`${endDate} 23:59:59`);
+  }
+  if (author) {
+    where.push("author_name = ?");
+    args.push(author);
+  }
+  if (action) {
+    where.push("action = ?");
+    args.push(action);
+  }
+
   const res = await db.execute({
-    sql: "SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?",
-    args: [Math.min(Number(limit) || 50, AUDIT_LOG_LIMIT)],
+    sql: `SELECT * FROM audit_logs ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY timestamp DESC LIMIT ?`,
+    args: [...args, Math.min(Number(limit) || 50, AUDIT_LOG_LIMIT)],
   });
   return res.rows.map((row) => ({
     id: row.id,
@@ -3240,7 +3260,15 @@ const handlers = {
   }),
   'POST /api/auth/login': async (body, context) => login(body, context),
   'POST /api/tablet/setup-login': async (body, context) => validateTabletSetupPin(body, context),
-  'POST /api/audit-logs/list': async (body) => ({ auditLogs: await getAuditLogs(Number(body.limit || 100)) }),
+  'POST /api/audit-logs/list': async (body) => ({
+    auditLogs: await getAuditLogs({
+      limit: Number(body.limit || 100),
+      startDate: String(body.startDate || ''),
+      endDate: String(body.endDate || ''),
+      author: String(body.author || ''),
+      action: String(body.action || ''),
+    })
+  }),
   'POST /api/orders/send-to-kitchen': async (body) => sendToKitchen(body),
   'POST /api/orders/status': async (body) => updateOrderStatus(body),
   'POST /api/order-items/delete': async (body) => deleteOrderItem(body),
