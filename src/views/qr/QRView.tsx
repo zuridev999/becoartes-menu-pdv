@@ -69,14 +69,14 @@ export function QRView() {
   }, 0) || 0;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit']">
+    <div className="h-[100dvh] overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
       {/* Header Mobile-Friendly */}
-      <div className="fixed top-0 left-0 right-0 h-20 glass border-b border-white/5 z-50 flex items-center justify-between px-6 backdrop-blur-3xl bg-black/40">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-primary/20 rounded-2xl flex items-center justify-center text-primary">
-            <LayoutDashboard size={20} />
+      <div className="fixed top-0 left-0 right-0 h-16 sm:h-20 glass border-b border-white/5 z-50 flex items-center justify-between px-3 sm:px-6 backdrop-blur-3xl bg-black/50">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          <div className="w-10 h-10 bg-primary/20 rounded-2xl flex shrink-0 items-center justify-center text-primary">
+            <LayoutDashboard size={18} />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[8px] font-black uppercase text-gray-500">Mesa</p>
             <h2 className="text-xl font-black tracking-tighter">{currentTable?.number}</h2>
           </div>
@@ -85,15 +85,17 @@ export function QRView() {
         <div className="flex items-center gap-2">
           <button 
             onClick={() => setIsServiceOpen(true)} 
-            className="p-3 glass rounded-xl text-primary"
+            className="p-3 glass rounded-xl text-primary active:scale-95 transition-all"
+            aria-label="Chamar atendimento"
           >
-            <Bell size={20} />
+            <Bell size={18} />
           </button>
           <button 
             onClick={() => setIsOrderOpen(true)}
-            className="btn-beco btn-beco-purple px-4 py-3 relative"
+            className="btn-beco btn-beco-purple px-4 py-3 relative active:scale-95"
+            aria-label="Ver pedido"
           >
-            <ShoppingBag size={20} />
+            <ShoppingBag size={18} />
             {currentTable?.cart.length > 0 && (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-accent text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-[#0a0a0c]">
                 {currentTable.cart.length}
@@ -103,15 +105,15 @@ export function QRView() {
         </div>
       </div>
 
-      <div className="pt-20 pb-24">
+      <div className="h-full pt-16 sm:pt-20 pb-[6.5rem] sm:pb-28">
         <MenuCatalog onProductSelect={setSelectedProduct} viewMode="grid" />
       </div>
 
       {/* Floating Action Button para ver a conta */}
-      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
+      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50">
         <button 
           onClick={() => setIsAccountOpen(true)}
-          className="glass-card px-8 py-4 flex items-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 scale-110 active:scale-95 transition-all"
+          className="w-full sm:w-auto glass-card px-5 sm:px-8 py-4 flex items-center justify-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 sm:scale-110 active:scale-95 transition-all"
         >
           <FileText size={20} className="text-accent" />
           <div className="text-left">
@@ -123,7 +125,7 @@ export function QRView() {
 
       <AnimatePresence>
         {selectedProduct && (
-          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />
+          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} tabletLandscape />
         )}
       </AnimatePresence>
 

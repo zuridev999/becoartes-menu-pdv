@@ -42,36 +42,36 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid' }: MenuCatalogP
   });
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full min-h-0 overflow-hidden max-md:flex-col">
       {/* Sidebar de Categorias */}
-      <div className="w-72 glass border-r border-white/5 flex flex-col pt-10 pb-8 px-4 z-30">
-        <div className="flex-1 space-y-3 overflow-y-auto pr-2 custom-scrollbar">
+      <div className="w-full md:w-72 shrink-0 glass border-b md:border-b-0 md:border-r border-white/5 flex flex-col pt-3 md:pt-10 pb-3 md:pb-8 px-3 md:px-4 z-30">
+        <div className="flex md:flex-col flex-nowrap md:flex-1 gap-2 md:gap-3 overflow-x-auto md:overflow-y-auto md:pr-2 custom-scrollbar">
           {availableCategories.map(cat => (
             <button 
               key={cat} 
               onClick={() => setSelectedCategory(cat)} 
-              className={`w-full p-6 rounded-[2rem] text-left transition-all flex items-center justify-between group ${selectedCategory === cat ? 'bg-gradient-to-br from-primary to-purple-600 text-white shadow-2xl scale-[1.05]' : 'text-gray-500 hover:bg-white/5'}`}
+              className={`shrink-0 md:w-full px-4 py-3 md:p-6 rounded-2xl md:rounded-[2rem] text-left transition-all flex items-center justify-between gap-3 group ${selectedCategory === cat ? 'bg-gradient-to-br from-primary to-purple-600 text-white shadow-2xl md:scale-[1.05]' : 'text-gray-500 hover:bg-white/5'}`}
             >
               <div>
-                <p className={`font-black text-[10px] uppercase tracking-widest ${selectedCategory === cat ? 'text-white/70' : 'text-primary'}`}>
+                <p className={`font-black text-[8px] md:text-[10px] uppercase tracking-widest ${selectedCategory === cat ? 'text-white/70' : 'text-primary'}`}>
                   Categoria
                 </p>
-                <h4 className="font-black text-lg tracking-tighter italic">{cat}</h4>
+                <h4 className="font-black text-sm md:text-lg tracking-tighter italic whitespace-nowrap">{cat}</h4>
               </div>
-              <ChevronRight size={20} className={`${selectedCategory === cat ? 'opacity-100' : 'opacity-0'}`} />
+              <ChevronRight size={18} className={`hidden md:block ${selectedCategory === cat ? 'opacity-100' : 'opacity-0'}`} />
             </button>
           ))}
         </div>
       </div>
 
       {/* Grid de Produtos */}
-      <div className="flex-1 p-12 overflow-y-auto custom-scrollbar bg-white/[0.01]">
-         <div className="flex justify-between items-center mb-16">
-            <div>
-              <h3 className="text-6xl font-black tracking-tighter italic">{selectedCategory}</h3>
-              <p className="text-primary font-black uppercase tracking-[0.5em] text-[10px] mt-2">Escolha seus favoritos</p>
+      <div className="flex-1 min-h-0 p-4 sm:p-8 lg:p-12 overflow-y-auto custom-scrollbar bg-white/[0.01]">
+         <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6 md:mb-16">
+            <div className="min-w-0">
+              <h3 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter italic leading-none truncate">{selectedCategory}</h3>
+              <p className="text-primary font-black uppercase tracking-[0.28em] md:tracking-[0.5em] text-[9px] md:text-[10px] mt-2">Escolha seus favoritos</p>
             </div>
-            <div className="relative w-96">
+            <div className="relative w-full md:w-96">
                <input 
                 type="text" 
                 placeholder="Pesquisar..." 
@@ -90,22 +90,22 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid' }: MenuCatalogP
                   }
                   setSearchQuery(val);
                 }} 
-                className="w-full glass p-6 pl-14 rounded-3xl border-white/10 text-xl font-bold focus:border-primary outline-none transition-all" 
+                className="w-full glass p-4 md:p-6 pl-12 md:pl-14 rounded-2xl md:rounded-3xl border-white/10 text-base md:text-xl font-bold focus:border-primary outline-none transition-all" 
                />
-               <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
+               <Search className="absolute left-4 md:left-6 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
             </div>
          </div>
 
          {viewMode === 'grid' ? (
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 pb-4">
              {filteredMenu.map(p => (
-               <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className="glass-card flex flex-col p-6 border-white/5 hover:border-primary/30 group transition-all">
-                  <div className="relative h-64 mb-6 rounded-3xl overflow-hidden">
+               <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className="glass-card flex flex-col p-4 md:p-6 border-white/5 hover:border-primary/30 group transition-all text-left active:scale-[0.98]">
+                  <div className="relative h-40 sm:h-48 md:h-64 mb-4 md:mb-6 rounded-2xl md:rounded-3xl overflow-hidden">
                     <img src={getImageSrc(p.image)} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" />
-                    <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-xl px-4 py-2 rounded-xl font-black text-accent border border-white/10">R$ {p.price.toFixed(2)}</div>
+                    <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-black/60 backdrop-blur-xl px-3 md:px-4 py-2 rounded-xl font-black text-accent border border-white/10 text-sm md:text-base">R$ {p.price.toFixed(2)}</div>
                   </div>
-                  <h4 className="font-black text-2xl mb-2 italic tracking-tighter leading-none">{p.name}</h4>
-                  <p className="text-gray-500 font-bold text-sm line-clamp-2 leading-relaxed">{p.description}</p>
+                  <h4 className="font-black text-xl md:text-2xl mb-2 italic tracking-tighter leading-none">{p.name}</h4>
+                  <p className="text-gray-500 font-bold text-xs md:text-sm line-clamp-2 leading-relaxed">{p.description}</p>
                </motion.button>
              ))}
            </div>
