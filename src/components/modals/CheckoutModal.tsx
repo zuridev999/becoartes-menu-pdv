@@ -259,6 +259,11 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                       </button>
                     ))}
                  </div>
+                 {!canChangePaymentMethod && (
+                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                     Forma de pagamento fixa em crédito para este perfil.
+                   </p>
+                 )}
 
                  <div className="flex gap-4 items-center mb-6">
                     <div className="flex-1 relative">

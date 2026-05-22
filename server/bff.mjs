@@ -37,6 +37,7 @@ const CLOSED_BILLS_LIMIT = Number(process.env.CLOSED_BILLS_LIMIT || 200);
 const AUDIT_LOG_LIMIT = Number(process.env.AUDIT_LOG_LIMIT || 100);
 const CASH_SANDBOX_MODE = process.env.CASH_SANDBOX_MODE === '1';
 const CASH_TABLE = CASH_SANDBOX_MODE ? 'pdv_cash_sandbox' : 'caixa_diario';
+const DEFAULT_PAYMENT_METHOD = 'credit';
 
 if (!tursoUrl || !tursoAuthToken) {
   throw new Error('Missing Turso configuration for BFF runtime.');
@@ -2866,14 +2867,22 @@ const closeBillWithInventorySync = async (data, session = null) => {
   const validPaymentMethods = new Set(['credit', 'debit', 'cash', 'pix']);
   let paymentTotalCents = 0;
   let hasCashPayment = false;
+  let usesNonDefaultPaymentMethod = false;
   for (const payment of payments) {
     if (!validPaymentMethods.has(payment?.method)) {
       throw new Error('Forma de pagamento inválida.');
+    }
+    if (payment.method !== DEFAULT_PAYMENT_METHOD) {
+      usesNonDefaultPaymentMethod = true;
     }
     const paymentCents = moneyToCents(payment.amount || 0, 'payment.amount');
     if (paymentCents <= 0) throw new Error('Pagamento precisa ter valor maior que zero.');
     paymentTotalCents += paymentCents;
     if (payment.method === 'cash') hasCashPayment = true;
+  }
+
+  if (usesNonDefaultPaymentMethod) {
+    requirePermission(session, 'changePaymentMethod', settings);
   }
 
   const expectedTotalCents = subtotalCents + serviceFeeCents - discountCents;
