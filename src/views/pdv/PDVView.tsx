@@ -38,7 +38,8 @@ export function PDVView() {
     cashState,
     settings,
     openCash,
-    closeCash
+    closeCash,
+    addNotification
   } = useStore();
   const kitchenOrders = useStore((state) => state.kitchenOrders);
 
@@ -230,7 +231,6 @@ export function PDVView() {
   const cart = currentTable?.cart || [];
 
   // Stats
-  const activeTablesCount = tables.filter(t => t.status === 'ordering' || t.status === 'bill_requested').length;
   const todayStr = new Date().toLocaleDateString('pt-BR');
   const todayBills = closedBills
     .filter(bill => {
@@ -248,12 +248,18 @@ export function PDVView() {
   const canUseCashAction = isCashOpen ? canCloseCash : canOpenCash;
   const canOpenTable = can(currentSeller, 'openTable', permissionOverrides);
   const canUpdateTableStatus = can(currentSeller, 'updateTableStatus', permissionOverrides);
+  const canViewOtherOperatorTables = can(currentSeller, 'viewOtherOperatorTables', permissionOverrides);
   const canAddOrderItem = can(currentSeller, 'addOrderItem', permissionOverrides);
   const canSendOrderToProduction = can(currentSeller, 'sendOrderToProduction', permissionOverrides);
   const canAddItems = canAddOrderItem && canSendOrderToProduction;
   const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides);
   const isAdminProfile = currentSeller.permission === 'admin';
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
+  const canAccessTable = (table: TableType) => (
+    canViewOtherOperatorTables || !table.currentSellerId || table.currentSellerId === currentSeller.id
+  );
+  const visibleTables = tables.filter(canAccessTable);
+  const activeTablesCount = visibleTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested').length;
 
   const parseMoneyValue = (value: string) => {
     const digits = value.replace(/\D/g, '');
@@ -293,6 +299,10 @@ export function PDVView() {
   };
 
   const handleTableClick = (table: TableType) => {
+    if (!canAccessTable(table)) {
+      addNotification('Mesa vinculada a outro operador.', 'error');
+      return;
+    }
     setSelectedTable(table);
     setCurrentTableId(table.id);
     if (table.status === 'available') {
@@ -503,7 +513,7 @@ export function PDVView() {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
-            {tables
+            {visibleTables
               .filter(t => !showOnlyActive || t.status !== 'available')
               .map((table) => (
               <motion.button
@@ -659,7 +669,7 @@ export function PDVView() {
 
       {/* SELECTED TABLE OVERLAY (Management) */}
       <AnimatePresence>
-        {selectedTable && (
+        {selectedTable && managedTable && canAccessTable(managedTable) && (
           <motion.div 
             initial={{ x: 600 }}
             animate={{ x: 0 }}
@@ -797,7 +807,7 @@ export function PDVView() {
 
       {/* PRODUCT SELECTION OVERLAY */}
       <AnimatePresence>
-        {showProductMenu && selectedTable && (
+        {showProductMenu && selectedTable && managedTable && canAccessTable(managedTable) && (
           <motion.div 
             initial={{ opacity: 0, scale: 1.1 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1091,7 +1101,7 @@ export function PDVView() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {showCheckout && selectedTable && (
+        {showCheckout && selectedTable && managedTable && canAccessTable(managedTable) && (
           <CheckoutModal 
             table={managedTable || selectedTable} 
             onClose={() => {

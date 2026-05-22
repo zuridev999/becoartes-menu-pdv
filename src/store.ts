@@ -880,7 +880,8 @@ export const useStore = create<AppState>((set, get) => ({
         orders: [...t.orders, ...persistedItems],
         cart: [],
         status: 'ordering',
-        lastActivity: new Date()
+        lastActivity: new Date(),
+        currentSellerId: sellerId || t.currentSellerId
       } : t)
     }));
 
@@ -1025,7 +1026,11 @@ export const useStore = create<AppState>((set, get) => ({
   updateTableStatus: async (tableId, status) => {
     await OpsApi.updateTableStatus(tableId, status);
     set((state) => ({
-      tables: state.tables.map(t => t.id === tableId ? { ...t, status } : t)
+      tables: state.tables.map(t => t.id === tableId ? {
+        ...t,
+        status,
+        currentSellerId: status === 'available' || status === 'paid' ? '' : t.currentSellerId
+      } : t)
     }));
   },
 
@@ -1194,7 +1199,7 @@ export const useStore = create<AppState>((set, get) => ({
     await OpsApi.openTable(tableId, currentTable?.status === 'available');
 
     set((state) => ({
-      tables: state.tables.map(t => t.id === tableId ? { ...t, status: 'ordering', orders: initialItems, lastActivity: new Date() } : t),
+      tables: state.tables.map(t => t.id === tableId ? { ...t, status: 'ordering', orders: initialItems, lastActivity: new Date(), currentSellerId: sellerId || t.currentSellerId } : t),
       serviceRequests: state.serviceRequests.map(r => r.tableId === tableId ? { ...r, status: 'resolved' } : r)
     }));
 
@@ -1217,8 +1222,8 @@ export const useStore = create<AppState>((set, get) => ({
 
     set((state) => ({
       tables: state.tables.map(t => {
-        if (t.id === fromTableId) return { ...t, status: 'available', orders: [] };
-        if (t.id === toTableId) return { ...t, status: 'ordering', orders: [...t.orders, ...fromTable.orders] };
+        if (t.id === fromTableId) return { ...t, status: 'available', orders: [], currentSellerId: '' };
+        if (t.id === toTableId) return { ...t, status: 'ordering', orders: [...t.orders, ...fromTable.orders], currentSellerId: fromTable.currentSellerId || t.currentSellerId };
         return t;
       })
     }));
@@ -1242,8 +1247,8 @@ export const useStore = create<AppState>((set, get) => ({
 
     set((state) => ({
       tables: state.tables.map(t => {
-        if (tableIds.includes(t.id) && t.id !== targetTableId) return { ...t, status: 'available', orders: [] };
-        if (t.id === targetTableId) return { ...t, status: 'ordering', orders: [...t.orders, ...allOrders] };
+        if (tableIds.includes(t.id) && t.id !== targetTableId) return { ...t, status: 'available', orders: [], currentSellerId: '' };
+        if (t.id === targetTableId) return { ...t, status: 'ordering', orders: [...t.orders, ...allOrders], currentSellerId: t.currentSellerId || state.tables.find(table => tableIds.includes(table.id) && table.currentSellerId)?.currentSellerId };
         return t;
       })
     }));

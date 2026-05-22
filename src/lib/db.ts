@@ -26,7 +26,7 @@ export const initDB = async () => {
       "CREATE TABLE IF NOT EXISTS product_modifier_groups (product_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(product_id, group_id), FOREIGN KEY(product_id) REFERENCES menu(id), FOREIGN KEY(group_id) REFERENCES modifier_groups(id))",
       "CREATE TABLE IF NOT EXISTS category_modifier_groups (category_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(category_id, group_id), FOREIGN KEY(category_id) REFERENCES categories(id), FOREIGN KEY(group_id) REFERENCES modifier_groups(id))",
       // Operacional
-      "CREATE TABLE IF NOT EXISTS tables (id TEXT PRIMARY KEY, number TEXT NOT NULL, status TEXT NOT NULL, last_activity DATETIME DEFAULT CURRENT_TIMESTAMP)",
+      "CREATE TABLE IF NOT EXISTS tables (id TEXT PRIMARY KEY, number TEXT NOT NULL, status TEXT NOT NULL, last_activity DATETIME DEFAULT CURRENT_TIMESTAMP, current_seller_id TEXT)",
       "CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, table_id TEXT, total REAL NOT NULL, status TEXT NOT NULL, origin TEXT DEFAULT 'pdv', created_by_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, payment_method TEXT, FOREIGN KEY(table_id) REFERENCES tables(id), FOREIGN KEY(created_by_id) REFERENCES sellers(id))",
       "CREATE TABLE IF NOT EXISTS order_items (id TEXT PRIMARY KEY, order_id TEXT, product_id TEXT, quantity INTEGER NOT NULL, price_at_time REAL NOT NULL, selected_modifiers TEXT, notes TEXT, FOREIGN KEY(order_id) REFERENCES orders(id), FOREIGN KEY(product_id) REFERENCES menu(id))",
       "CREATE TABLE IF NOT EXISTS service_requests (id TEXT PRIMARY KEY, table_id TEXT, type TEXT NOT NULL, status TEXT NOT NULL, message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(table_id) REFERENCES tables(id))",
@@ -55,6 +55,7 @@ export const initDB = async () => {
       "ALTER TABLE product_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
       "ALTER TABLE category_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
       "ALTER TABLE service_requests ADD COLUMN message TEXT",
+      "ALTER TABLE tables ADD COLUMN current_seller_id TEXT",
       "ALTER TABLE closed_bills ADD COLUMN table_id TEXT",
       "ALTER TABLE estoque_movimentacoes ADD COLUMN closed_bill_id TEXT",
       "ALTER TABLE estoque_movimentacoes ADD COLUMN order_id TEXT",

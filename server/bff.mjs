@@ -418,7 +418,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS modifiers (id TEXT PRIMARY KEY, group_id TEXT, name TEXT NOT NULL, price REAL NOT NULL, status TEXT DEFAULT 'active', sort_order INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS product_modifier_groups (product_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(product_id, group_id))",
     "CREATE TABLE IF NOT EXISTS category_modifier_groups (category_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(category_id, group_id))",
-    "CREATE TABLE IF NOT EXISTS tables (id TEXT PRIMARY KEY, number TEXT NOT NULL, status TEXT NOT NULL, last_activity DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS tables (id TEXT PRIMARY KEY, number TEXT NOT NULL, status TEXT NOT NULL, last_activity DATETIME DEFAULT CURRENT_TIMESTAMP, current_seller_id TEXT)",
     "CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, table_id TEXT, total REAL NOT NULL, status TEXT NOT NULL, origin TEXT DEFAULT 'pdv', created_by_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, payment_method TEXT)",
     "CREATE TABLE IF NOT EXISTS order_items (id TEXT PRIMARY KEY, order_id TEXT, product_id TEXT, quantity INTEGER NOT NULL, price_at_time REAL NOT NULL, selected_modifiers TEXT, notes TEXT)",
     "CREATE TABLE IF NOT EXISTS production_tickets (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, station TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -448,6 +448,7 @@ const ensureDatabase = async () => {
     "ALTER TABLE product_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
     "ALTER TABLE category_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
     "ALTER TABLE service_requests ADD COLUMN message TEXT",
+    "ALTER TABLE tables ADD COLUMN current_seller_id TEXT",
     "ALTER TABLE closed_bills ADD COLUMN table_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN closed_bill_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN order_id TEXT",
@@ -1329,6 +1330,7 @@ const getTables = async () => {
     orders: ordersByTable[row.id] || [],
     cart: [],
     lastActivity: row.last_activity || new Date().toISOString(),
+    currentSellerId: row.current_seller_id || '',
   })).sort((a, b) => a.number - b.number);
 };
 
@@ -1963,9 +1965,16 @@ const notifyCloseBillSyncFailure = async ({ tableNumber, integrationId, error })
   });
 };
 
-const deleteOrderItem = async ({ itemId, cancelContext }) => {
-  const itemRes = await db.execute({ sql: "SELECT order_id FROM order_items WHERE id = ? LIMIT 1", args: [itemId] });
+const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
+  const itemRes = await db.execute({
+    sql: "SELECT oi.order_id, o.table_id FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1",
+    args: [itemId],
+  });
   const orderId = itemRes.rows[0]?.order_id;
+  const tableId = itemRes.rows[0]?.table_id;
+  if (tableId) {
+    await ensureTableAccess(tableId, session);
+  }
 
   await db.execute({ sql: "DELETE FROM order_items WHERE id = ?", args: [itemId] });
 
@@ -2009,17 +2018,21 @@ const deleteOrderItem = async ({ itemId, cancelContext }) => {
   return { orderId: orderId || null };
 };
 
-const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items }) => {
+const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items }, session = null) => {
   requireString(orderId, 'orderId');
   requireString(tableId, 'tableId');
   const safeOrigin = origin === 'tablet' || origin === 'qr' ? origin : 'pdv';
+  if (safeOrigin === 'pdv') {
+    await ensureTableAccess(tableId, session);
+  }
+  const effectiveSellerId = safeOrigin === 'pdv' ? (session?.id || sellerId || null) : (sellerId || null);
   const safeItems = Array.isArray(items) ? items : [];
   if (safeItems.length === 0) throw new Error('Pedido sem itens.');
 
   const batch = [
     {
       sql: "INSERT INTO orders (id, table_id, total, status, origin, created_by_id) VALUES (?, ?, ?, ?, ?, ?)",
-      args: [orderId, tableId, requireNumber(total, 'total'), 'pending', safeOrigin, sellerId || null],
+      args: [orderId, tableId, requireNumber(total, 'total'), 'pending', safeOrigin, effectiveSellerId],
     },
     ...safeItems.map((item) => ({
       sql: "INSERT INTO order_items (id, order_id, product_id, quantity, price_at_time, selected_modifiers, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -2034,8 +2047,8 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
       ],
     })),
     {
-      sql: "UPDATE tables SET status = ? WHERE id = ?",
-      args: ['ordering', tableId],
+      sql: "UPDATE tables SET status = ?, current_seller_id = COALESCE(current_seller_id, ?) WHERE id = ?",
+      args: ['ordering', effectiveSellerId, tableId],
     },
   ];
 
@@ -2434,16 +2447,37 @@ const requestBill = async ({ tableId }) => {
   return { status: 'bill_requested' };
 };
 
-const updateTableStatus = async ({ tableId, status }) => {
+const ensureTableAccess = async (tableId, session) => {
+  requireString(tableId, 'tableId');
+  requireSession(session);
+  const tableRes = await db.execute({
+    sql: "SELECT current_seller_id FROM tables WHERE id = ? LIMIT 1",
+    args: [tableId],
+  });
+  const ownerId = tableRes.rows[0]?.current_seller_id || '';
+  if (!ownerId || ownerId === session.id) return;
+  if (canSessionWithSettings(session, 'viewOtherOperatorTables', await getSettings())) return;
+  const error = new Error('Mesa vinculada a outro operador.');
+  error.statusCode = 403;
+  throw error;
+};
+
+const updateTableStatus = async ({ tableId, status }, session) => {
   requireString(tableId, 'tableId');
   const allowed = new Set(['available', 'ordering', 'waiting', 'paid', 'bill_requested']);
   if (!allowed.has(status)) throw new Error('Status de mesa inválido.');
-  await db.execute({ sql: "UPDATE tables SET status = ? WHERE id = ?", args: [status, tableId] });
+  await ensureTableAccess(tableId, session);
+  const clearsOwner = status === 'available' || status === 'paid';
+  await db.execute({
+    sql: `UPDATE tables SET status = ?, current_seller_id = ${clearsOwner ? 'NULL' : 'current_seller_id'} WHERE id = ?`,
+    args: [status, tableId],
+  });
   return { status };
 };
 
-const openTable = async ({ tableId, wasAvailable }) => {
+const openTable = async ({ tableId, wasAvailable }, session) => {
   requireString(tableId, 'tableId');
+  await ensureTableAccess(tableId, session);
   const batch = [];
   if (wasAvailable) {
     batch.push(
@@ -2451,32 +2485,48 @@ const openTable = async ({ tableId, wasAvailable }) => {
       { sql: "UPDATE service_requests SET status = 'resolved' WHERE table_id = ? AND status != 'resolved'", args: [tableId] },
     );
   }
-  batch.push({ sql: "UPDATE tables SET status = 'ordering', last_activity = CURRENT_TIMESTAMP WHERE id = ?", args: [tableId] });
+  batch.push({
+    sql: "UPDATE tables SET status = 'ordering', last_activity = CURRENT_TIMESTAMP, current_seller_id = COALESCE(current_seller_id, ?) WHERE id = ?",
+    args: [session?.id || null, tableId],
+  });
   await db.batch(batch, 'write');
   return { status: 'ordering' };
 };
 
-const transferTable = async ({ fromTableId, toTableId }) => {
+const transferTable = async ({ fromTableId, toTableId }, session) => {
   requireString(fromTableId, 'fromTableId');
   requireString(toTableId, 'toTableId');
+  await ensureTableAccess(fromTableId, session);
+  await ensureTableAccess(toTableId, session);
+  const ownerRes = await db.execute({ sql: "SELECT current_seller_id FROM tables WHERE id = ? LIMIT 1", args: [fromTableId] });
+  const ownerId = ownerRes.rows[0]?.current_seller_id || session?.id || null;
   await db.batch([
     { sql: "UPDATE orders SET table_id = ? WHERE table_id = ? AND status != 'closed'", args: [toTableId, fromTableId] },
     { sql: "UPDATE service_requests SET table_id = ? WHERE table_id = ? AND status != 'resolved'", args: [toTableId, fromTableId] },
-    { sql: "UPDATE tables SET status = 'available' WHERE id = ?", args: [fromTableId] },
-    { sql: "UPDATE tables SET status = 'ordering' WHERE id = ?", args: [toTableId] },
+    { sql: "UPDATE tables SET status = 'available', current_seller_id = NULL WHERE id = ?", args: [fromTableId] },
+    { sql: "UPDATE tables SET status = 'ordering', current_seller_id = ? WHERE id = ?", args: [ownerId, toTableId] },
   ], 'write');
   return { moved: true };
 };
 
-const joinTables = async ({ tableIds, targetTableId }) => {
+const joinTables = async ({ tableIds, targetTableId }, session) => {
   if (!Array.isArray(tableIds) || tableIds.length === 0) throw new Error('tableIds inválido.');
   requireString(targetTableId, 'targetTableId');
+  for (const id of tableIds) {
+    await ensureTableAccess(id, session);
+  }
+  await ensureTableAccess(targetTableId, session);
   const sourceIds = tableIds.filter((id) => id !== targetTableId);
+  const ownerRes = await db.execute({
+    sql: `SELECT current_seller_id FROM tables WHERE id IN (${tableIds.map(() => '?').join(',')}) AND current_seller_id IS NOT NULL LIMIT 1`,
+    args: tableIds,
+  });
+  const ownerId = ownerRes.rows[0]?.current_seller_id || session?.id || null;
   const batch = [
     ...sourceIds.map((id) => ({ sql: "UPDATE orders SET table_id = ? WHERE table_id = ? AND status != 'closed'", args: [targetTableId, id] })),
     ...sourceIds.map((id) => ({ sql: "UPDATE service_requests SET table_id = ? WHERE table_id = ? AND status != 'resolved'", args: [targetTableId, id] })),
-    ...sourceIds.map((id) => ({ sql: "UPDATE tables SET status = 'available' WHERE id = ?", args: [id] })),
-    { sql: "UPDATE tables SET status = 'ordering' WHERE id = ?", args: [targetTableId] },
+    ...sourceIds.map((id) => ({ sql: "UPDATE tables SET status = 'available', current_seller_id = NULL WHERE id = ?", args: [id] })),
+    { sql: "UPDATE tables SET status = 'ordering', current_seller_id = COALESCE(current_seller_id, ?) WHERE id = ?", args: [ownerId, targetTableId] },
   ];
   await db.batch(batch, 'write');
   return { joined: true };
@@ -2825,6 +2875,7 @@ const syncOpenOrdersInventory = async () => {
 const closeBillWithInventorySync = async (data, session = null) => {
   const tableId = requireString(data.tableId, 'tableId');
   const settings = await getSettings();
+  await ensureTableAccess(tableId, session);
   const subtotalCents = moneyToCents(data.subtotal || 0, 'subtotal');
   const serviceFeeCents = moneyToCents(data.serviceFee || 0, 'serviceFee');
   const discountCents = moneyToCents(data.discount || 0, 'discount');
@@ -3396,9 +3447,9 @@ const handlers = {
       action: String(body.action || ''),
     })
   }),
-  'POST /api/orders/send-to-kitchen': async (body) => sendToKitchen(body),
+  'POST /api/orders/send-to-kitchen': async (body, context) => sendToKitchen(body, context.session),
   'POST /api/orders/status': async (body) => updateOrderStatus(body),
-  'POST /api/order-items/delete': async (body) => deleteOrderItem(body),
+  'POST /api/order-items/delete': async (body, context) => deleteOrderItem(body, context.session),
   'POST /api/bills/close': async (body, context) => closeBillWithInventorySync(body, context.session),
   'POST /api/catalog/category': async (body) => upsertCategory(body),
   'POST /api/catalog/category/delete': async (body) => deleteCategory(body),
@@ -3415,10 +3466,10 @@ const handlers = {
   'POST /api/service-requests/resolve': async (body) => resolveServiceRequest(body),
   'POST /api/service-requests/clear': async (body) => clearServiceRequest(body),
   'POST /api/tables/request-bill': async (body) => requestBill(body),
-  'POST /api/tables/status': async (body) => updateTableStatus(body),
-  'POST /api/tables/open': async (body) => openTable(body),
-  'POST /api/tables/transfer': async (body) => transferTable(body),
-  'POST /api/tables/join': async (body) => joinTables(body),
+  'POST /api/tables/status': async (body, context) => updateTableStatus(body, context.session),
+  'POST /api/tables/open': async (body, context) => openTable(body, context.session),
+  'POST /api/tables/transfer': async (body, context) => transferTable(body, context.session),
+  'POST /api/tables/join': async (body, context) => joinTables(body, context.session),
   'GET /api/cash/status': async () => ({ cashState: await getCashState() }),
   'POST /api/cash/open': async (body, context) => openCash(body, context.session),
   'POST /api/cash/close': async (body, context) => closeCash(body, context.session),
