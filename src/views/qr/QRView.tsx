@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { ShoppingBag, LayoutDashboard, Bell, FileText } from 'lucide-react';
+import { ShoppingBag, LayoutDashboard, Bell, FileText, Send } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
 import { ProductModal } from '../../components/modals/ProductModal';
@@ -67,6 +67,8 @@ export function QRView() {
     const itemPrice = o.price + (o.selectedModifiers?.reduce((mAcc, m) => mAcc + m.price, 0) || 0);
     return acc + (itemPrice * o.quantity);
   }, 0) || 0;
+  const cartCount = currentTable?.cart.length || 0;
+  const hasCartItems = cartCount > 0;
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
@@ -109,23 +111,27 @@ export function QRView() {
         <MenuCatalog onProductSelect={setSelectedProduct} viewMode="grid" />
       </div>
 
-      {/* Floating Action Button para ver a conta */}
+      {/* CTA principal do celular: revisar/enviar pedido quando houver carrinho */}
       <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50">
         <button 
-          onClick={() => setIsAccountOpen(true)}
+          onClick={() => hasCartItems ? setIsOrderOpen(true) : setIsAccountOpen(true)}
           className="w-full sm:w-auto glass-card px-5 sm:px-8 py-4 flex items-center justify-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 sm:scale-110 active:scale-95 transition-all"
         >
-          <FileText size={20} className="text-accent" />
+          {hasCartItems ? <Send size={20} className="text-accent" /> : <FileText size={20} className="text-accent" />}
           <div className="text-left">
-            <p className="text-[8px] font-black uppercase text-gray-500">Total do Pedido</p>
-            <p className="text-lg font-black text-white leading-none">R$ {cartTotal.toFixed(2)}</p>
+            <p className="text-[8px] font-black uppercase text-gray-500">
+              {hasCartItems ? `${cartCount} item${cartCount > 1 ? 's' : ''} no pedido` : 'Total do Pedido'}
+            </p>
+            <p className="text-lg font-black text-white leading-none">
+              {hasCartItems ? `Enviar meu pedido - R$ ${cartTotal.toFixed(2)}` : `R$ ${cartTotal.toFixed(2)}`}
+            </p>
           </div>
         </button>
       </div>
 
       <AnimatePresence>
         {selectedProduct && (
-          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} tabletLandscape />
+          <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} tabletLandscape qrMobileFlow />
         )}
       </AnimatePresence>
 

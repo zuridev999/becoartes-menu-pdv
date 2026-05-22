@@ -8,12 +8,14 @@ export function ProductModal({
   product,
   onClose,
   tabletLandscape = false,
+  qrMobileFlow = false,
   canChangeItemQuantity = true,
   canEditItemNotes = true,
 }: {
   product: Product;
   onClose: () => void;
   tabletLandscape?: boolean;
+  qrMobileFlow?: boolean;
   canChangeItemQuantity?: boolean;
   canEditItemNotes?: boolean;
 }) {
@@ -85,7 +87,7 @@ export function ProductModal({
 
                   return (
                     <div key={group.id} className="space-y-5">
-                      <div className="flex justify-between items-start sticky top-0 bg-[#0a0a0c]/95 py-3 z-10 backdrop-blur-md">
+                      <div className={`flex justify-between items-start py-3 z-10 ${qrMobileFlow ? '' : 'sticky top-0 bg-[#0a0a0c]/95 backdrop-blur-md'}`}>
                         <div>
                           <h4 className="text-lg font-black uppercase tracking-[0.12em] text-white leading-tight pr-4">{group.name}</h4>
                           <p className="mt-2 flex items-center gap-2 text-[10px] text-gray-500 font-black uppercase tracking-[0.16em]">
