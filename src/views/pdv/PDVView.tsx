@@ -55,7 +55,7 @@ export function PDVView() {
   const [logAction, setLogAction] = useState('');
   const [logDetails, setLogDetails] = useState('');
   const [logTable, setLogTable] = useState('');
-  const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableNumber: number } | null>(null);
+  const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableId: string; tableNumber: number } | null>(null);
   
   const [selectedRequestForDetails, setSelectedRequestForDetails] = useState<any>(null);
   const [isPanicDismissed, setIsPanicDismissed] = useState(false);
@@ -250,6 +250,7 @@ export function PDVView() {
   const canUpdateTableStatus = can(currentSeller, 'updateTableStatus', permissionOverrides);
   const canAddItems = can(currentSeller, 'addOrderItem', permissionOverrides) && can(currentSeller, 'sendOrderToProduction', permissionOverrides);
   const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides);
+  const isAdminProfile = currentSeller.permission === 'admin';
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
 
   const parseMoneyValue = (value: string) => {
@@ -386,7 +387,7 @@ export function PDVView() {
           >
             <Soup size={24} />
           </button>
-          {canViewSalesTotals && (
+          {isAdminProfile && canViewSalesTotals && (
             <button 
               onClick={() => useStore.getState().setActiveView('admin', 'finance', 'settings')} 
               className="glass-card p-4 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all border-white/5"
@@ -710,7 +711,7 @@ export function PDVView() {
                         <p className="font-black italic text-zinc-300">R$ {getOrderItemTotal(o).toFixed(2)}</p>
                         {canCancelTableItem && (
                           <button
-                            onClick={() => setCancelItemDialog({ item: o, tableNumber: selectedTable.number })}
+                            onClick={() => setCancelItemDialog({ item: o, tableId: managedTable?.id || selectedTable.id, tableNumber: selectedTable.number })}
                             className="p-3 glass rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all"
                             title="Cancelar item da mesa"
                           >
@@ -1052,18 +1053,23 @@ export function PDVView() {
             onClose={() => setCancelItemDialog(null)}
             onConfirm={async () => {
               await removeOrderItem(cancelItemDialog.item.id, {
+                tableId: cancelItemDialog.tableId,
                 tableNumber: cancelItemDialog.tableNumber,
                 itemName: cancelItemDialog.item.name,
                 quantity: cancelItemDialog.item.quantity,
                 sellerName: currentSeller?.name,
                 sellerPermission: currentSeller?.permission
               });
-              await addAuditLog({
-                action: 'item_cancelled',
-                details: { product_name: cancelItemDialog.item.name, quantity: cancelItemDialog.item.quantity },
-                table_number: cancelItemDialog.tableNumber.toString(),
-                origin: 'pdv'
-              });
+              try {
+                await addAuditLog({
+                  action: 'item_cancelled',
+                  details: { product_name: cancelItemDialog.item.name, quantity: cancelItemDialog.item.quantity },
+                  table_number: cancelItemDialog.tableNumber.toString(),
+                  origin: 'pdv'
+                });
+              } catch (error) {
+                console.warn('Item removido, mas auditoria falhou:', error);
+              }
             }}
           />
         )}

@@ -18,8 +18,11 @@ export function ProductModal({
   const [selectedModifiers, setSelectedModifiers] = useState<Modifier[]>([]);
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
 
   const handleAdd = () => {
+    if (isAdding) return;
+
     // Validação de grupos obrigatórios
     const missingGroups = product.modifierGroups?.filter(group => {
       const selectedInGroup = selectedModifiers.filter(m => group.modifiers.some(gm => gm.id === m.id));
@@ -31,6 +34,7 @@ export function ProductModal({
       return;
     }
 
+    setIsAdding(true);
     addToCart(product, quantity, selectedModifiers, notes);
     onClose();
   };
@@ -171,9 +175,10 @@ export function ProductModal({
 
                 <button 
                 onClick={handleAdd}
-                className={`${tabletLandscape ? 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-8 text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4`}
+                disabled={isAdding}
+                className={`${tabletLandscape ? 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-8 text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4 disabled:opacity-50 disabled:pointer-events-none`}
               >
-                ADICIONAR AO PEDIDO
+                {isAdding ? 'ADICIONANDO...' : 'ADICIONAR AO PEDIDO'}
               </button>
              </div>
           </div>

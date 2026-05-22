@@ -26,14 +26,14 @@ export function NotificationDisplay() {
   };
 
   return (
-    <div className="fixed bottom-8 right-8 z-[1000] flex flex-col-reverse gap-4 w-80 pointer-events-none font-['Outfit']">
+    <div className="fixed top-5 right-5 sm:top-8 sm:right-8 z-[1000] flex flex-col gap-4 w-[min(20rem,calc(100vw-2.5rem))] pointer-events-none font-['Outfit']">
       <AnimatePresence>
         {notifications.map((notif) => (
           <motion.div
             key={notif.id}
-            initial={{ opacity: 0, x: 50, scale: 0.9 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: 20, scale: 0.95 }}
+            initial={{ opacity: 0, y: -18, x: 24, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -12, x: 16, scale: 0.96 }}
             className={`pointer-events-auto p-5 rounded-2xl border backdrop-blur-xl shadow-2xl flex items-start gap-4 ${getBorder(notif.type)}`}
           >
             <div className="mt-1">

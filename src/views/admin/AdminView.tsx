@@ -298,6 +298,7 @@ export function AdminView() {
   }
 
   const permissionOverrides = settings.pdvPermissions;
+  const isAdminProfile = currentSeller.permission === 'admin';
   const isSuperAdmin = currentSeller.permission === 'admin' && ['admin-bootstrap', 'admin-bypass', 'master'].includes(currentSeller.id);
   const canManageSettings = can(currentSeller, 'manageSettings', permissionOverrides);
   const canManageTeam = can(currentSeller, 'manageTeam', permissionOverrides);
@@ -317,9 +318,9 @@ export function AdminView() {
     ...(canAccessProducts ? ['products'] : []),
     ...(canAddProduct ? ['categories'] : []),
     ...(canManageOptionals ? ['optionals'] : []),
-    ...(canManageSettings ? ['config'] : []),
-    ...(canManageTeam ? ['sellers'] : []),
-    ...(canViewSalesTotals ? ['finance', 'movements'] : []),
+    ...(isAdminProfile && canManageSettings ? ['config'] : []),
+    ...(isAdminProfile && canManageTeam ? ['sellers'] : []),
+    ...(isAdminProfile && canViewSalesTotals ? ['finance', 'movements'] : []),
   ]);
   const isActiveTabAllowed = allowedTabIds.has(activeTab);
 

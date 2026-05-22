@@ -131,7 +131,7 @@ export interface AppState {
   syncBeveragesFromInventory: () => Promise<void>;
 
   addToCart: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
-  removeOrderItem: (itemId: string, context?: { tableNumber: number; itemName: string; quantity: number; sellerName?: string; sellerPermission?: Seller['permission'] }) => Promise<void>;
+  removeOrderItem: (itemId: string, context?: { tableId?: string; tableNumber: number; itemName: string; quantity: number; sellerName?: string; sellerPermission?: Seller['permission'] }) => Promise<void>;
   removeFromCart: (itemId: string) => void;
   sendToKitchen: (tableId: string, origin?: 'tablet' | 'pdv' | 'qr', sellerId?: string) => Promise<void>;
   requestBill: (tableId: string) => void;
@@ -684,25 +684,32 @@ export const useStore = create<AppState>((set, get) => ({
 
   removeOrderItem: async (itemId, context) => {
     const { currentTableId } = get();
-    if (!currentTableId) return;
+    const targetTableId = context?.tableId || currentTableId;
+    if (!targetTableId) return;
 
-    await OperationalApi.deleteOrderItem({
-      itemId,
-      cancelContext: context ? {
-        tableNumber: context.tableNumber,
-        itemName: context.itemName,
-        quantity: context.quantity,
-        sellerName: context.sellerName || get().currentSeller?.name || 'Sistema',
-        sellerPermission: context.sellerPermission || get().currentSeller?.permission || 'standard'
-      } : undefined
-    });
+    try {
+      await OperationalApi.deleteOrderItem({
+        itemId,
+        cancelContext: context ? {
+          tableNumber: context.tableNumber,
+          itemName: context.itemName,
+          quantity: context.quantity,
+          sellerName: context.sellerName || get().currentSeller?.name || 'Sistema',
+          sellerPermission: context.sellerPermission || get().currentSeller?.permission || 'standard'
+        } : undefined
+      });
 
-    set((state) => ({
-      tables: state.tables.map(t => t.id === currentTableId ? { ...t, orders: t.orders.filter(o => o.id !== itemId) } : t),
-      kitchenOrders: state.kitchenOrders
-        .map(order => ({ ...order, items: order.items.filter(item => item.id !== itemId) }))
-        .filter(order => order.items.length > 0)
-    }));
+      set((state) => ({
+        tables: state.tables.map(t => t.id === targetTableId ? { ...t, orders: t.orders.filter(o => o.id !== itemId) } : t),
+        kitchenOrders: state.kitchenOrders
+          .map(order => ({ ...order, items: order.items.filter(item => item.id !== itemId) }))
+          .filter(order => order.items.length > 0)
+      }));
+    } catch (error) {
+      const message = getErrorMessage(error);
+      get().addNotification(message ? `Erro ao cancelar item: ${message}` : 'Erro ao cancelar item. Tente novamente.', 'error');
+      throw error;
+    }
   },
 
   requestService: async (tableId, type, message = '') => {
@@ -1059,10 +1066,9 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({
       notifications: [...state.notifications, { id, message, type, tableId }]
     }));
-    // Auto-remover após 30 segundos
     setTimeout(() => {
       get().clearNotification(id);
-    }, 30000);
+    }, 4000);
   },
 
   clearNotification: (id) => set((state) => ({
