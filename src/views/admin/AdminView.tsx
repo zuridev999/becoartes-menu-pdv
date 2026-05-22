@@ -352,6 +352,8 @@ export function AdminView() {
   const [newSellerPermission, setNewSellerPermission] = useState<'admin' | 'manager' | 'operator'>('operator');
   const [newSellerPin, setNewSellerPin] = useState('1234');
   const [showPermissionConfig, setShowPermissionConfig] = useState(false);
+  const [activePermissionProfile, setActivePermissionProfile] = useState<PermissionProfile>('operator');
+  const [permissionSearch, setPermissionSearch] = useState('');
 
   const [movements, setMovements] = useState<AuditMovement[]>([]);
   const [auditStartDate, setAuditStartDate] = useState('');
@@ -564,14 +566,42 @@ export function AdminView() {
     manager: 'Gerente',
     operator: 'Operador',
   };
+  const profileDescriptions: Record<PermissionProfile, string> = {
+    admin: 'Acesso total, financeiro, auditoria e configuração sensível.',
+    manager: 'Gestão operacional do salão, cardápio e caixa com limites.',
+    operator: 'Operação diária: mesas, pedidos e pagamentos autorizados.',
+  };
+  const permissionProfiles: PermissionProfile[] = ['admin', 'manager', 'operator'];
+  const criticalPermissionKeys: PermissionKey[] = [
+    'manageSettings',
+    'managePDVPermissions',
+    'accessSensitiveData',
+    'applyDiscount',
+    'editServiceFee',
+    'closeCash',
+    'refundPayment',
+    'adjustStock',
+    'editProductPrice',
+  ];
 
   const getPermissionValue = (profile: PermissionProfile, key: PermissionKey) => {
     return getEffectivePermissions(profile, settings.pdvPermissions as any)[key];
   };
 
+  const isCoreAdminPermission = (profile: PermissionProfile, key: PermissionKey) => (
+    profile === 'admin' && ['accessPDV', 'manageSettings', 'managePDVPermissions'].includes(key)
+  );
+
+  const getPermissionStats = (profile: PermissionProfile) => {
+    const effective = getEffectivePermissions(profile, settings.pdvPermissions as any);
+    const keys = Object.keys(defaultPermissionsByProfile[profile]) as PermissionKey[];
+    const active = keys.filter((key) => effective[key]).length;
+    const changed = keys.filter((key) => effective[key] !== defaultPermissionsByProfile[profile][key]).length;
+    return { active, total: keys.length, changed };
+  };
+
   const setPermissionValue = (profile: PermissionProfile, key: PermissionKey, value: boolean) => {
-    const coreAdminPermission = profile === 'admin' && ['accessPDV', 'manageSettings', 'managePDVPermissions'].includes(key);
-    if (coreAdminPermission) return;
+    if (isCoreAdminPermission(profile, key)) return;
 
     updateSettings({
       pdvPermissions: {
@@ -584,11 +614,40 @@ export function AdminView() {
     });
   };
 
+  const setPermissionGroupValue = (profile: PermissionProfile, keys: PermissionKey[], value: boolean) => {
+    const nextProfilePermissions = { ...(settings.pdvPermissions?.[profile] || {}) };
+    for (const key of keys) {
+      if (isCoreAdminPermission(profile, key)) continue;
+      nextProfilePermissions[key] = value;
+    }
+
+    updateSettings({
+      pdvPermissions: {
+        ...(settings.pdvPermissions || {}),
+        [profile]: nextProfilePermissions,
+      },
+    });
+  };
+
   const resetPermissionProfile = (profile: PermissionProfile) => {
     const nextPermissions = { ...(settings.pdvPermissions || {}) };
     delete nextPermissions[profile];
     updateSettings({ pdvPermissions: nextPermissions });
   };
+
+  const normalizedPermissionSearch = permissionSearch.trim().toLowerCase();
+  const visiblePermissionGroups = permissionGroups
+    .map((group) => ({
+      ...group,
+      keys: normalizedPermissionSearch
+        ? group.keys.filter((key) => (
+          permissionLabels[key].toLowerCase().includes(normalizedPermissionSearch)
+          || group.title.toLowerCase().includes(normalizedPermissionSearch)
+          || key.toLowerCase().includes(normalizedPermissionSearch)
+        ))
+        : group.keys,
+    }))
+    .filter((group) => group.keys.length > 0);
 
   const isGroupLinkedToCategory = (categoryId: string, groupId: string) => {
     return Boolean(categoryModifierMapping[categoryId]?.includes(groupId));
@@ -1612,56 +1671,138 @@ export function AdminView() {
               </div>
 
               <div className="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-8">
-                {(['admin', 'manager', 'operator'] as PermissionProfile[]).map((profile) => (
-                  <div key={profile} className="glass border-white/10 rounded-[2rem] overflow-hidden">
-                    <div className="p-6 border-b border-white/10 flex items-center justify-between gap-4">
-                      <div>
-                        <h3 className="text-2xl font-black tracking-tighter">{profileLabels[profile]}</h3>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {permissionProfiles.map((profile) => {
+                    const stats = getPermissionStats(profile);
+                    const isActive = activePermissionProfile === profile;
+                    return (
+                      <button
+                        key={profile}
+                        onClick={() => setActivePermissionProfile(profile)}
+                        className={`p-5 rounded-2xl border text-left transition-all ${
+                          isActive
+                            ? 'bg-primary/15 border-primary/40 shadow-2xl shadow-primary/10'
+                            : 'bg-white/[0.03] border-white/5 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4 mb-4">
+                          <div>
+                            <p className="text-2xl font-black tracking-tighter">{profileLabels[profile]}</p>
+                            <p className="text-xs font-bold text-zinc-500 leading-relaxed mt-1">{profileDescriptions[profile]}</p>
+                          </div>
+                          {stats.changed > 0 && (
+                            <span className="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-300 text-[9px] font-black uppercase tracking-widest">
+                              {stats.changed} ajuste(s)
+                            </span>
+                          )}
+                        </div>
+                        <div className="h-2 rounded-full bg-white/5 overflow-hidden mb-3">
+                          <div
+                            className="h-full bg-primary rounded-full transition-all"
+                            style={{ width: `${Math.round((stats.active / stats.total) * 100)}%` }}
+                          />
+                        </div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                          Base padrão: {Object.values(defaultPermissionsByProfile[profile]).filter(Boolean).length} permissões ativas
+                          {stats.active} de {stats.total} permissões ativas
                         </p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="glass border-white/10 rounded-[2rem] overflow-hidden">
+                  <div className="p-6 border-b border-white/10 flex flex-col xl:flex-row xl:items-center justify-between gap-5">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Editando perfil</p>
+                      <h3 className="text-3xl font-black tracking-tighter">{profileLabels[activePermissionProfile]}</h3>
+                      <p className="text-sm font-bold text-zinc-500 mt-1">{profileDescriptions[activePermissionProfile]}</p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="relative">
+                        <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
+                        <input
+                          value={permissionSearch}
+                          onChange={(event) => setPermissionSearch(event.target.value)}
+                          placeholder="Buscar permissão..."
+                          className="glass pl-11 pr-5 py-4 rounded-2xl text-xs font-bold border-white/10 outline-none min-w-[240px] focus:border-primary/40"
+                        />
                       </div>
                       <button
-                        onClick={() => resetPermissionProfile(profile)}
-                        className="px-5 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest text-zinc-400"
+                        onClick={() => resetPermissionProfile(activePermissionProfile)}
+                        className="px-5 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest text-zinc-400"
                       >
                         Restaurar padrão
                       </button>
                     </div>
+                  </div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 p-6">
-                      {permissionGroups.map((group) => (
-                        <div key={`${profile}-${group.title}`} className="bg-black/20 rounded-2xl p-5 border border-white/5">
-                          <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-4">{group.title}</h4>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 p-6">
+                    {visiblePermissionGroups.map((group) => {
+                      const groupActiveCount = group.keys.filter((key) => getPermissionValue(activePermissionProfile, key)).length;
+                      const allGroupActive = groupActiveCount === group.keys.length;
+                      return (
+                        <div key={`${activePermissionProfile}-${group.title}`} className="bg-black/20 rounded-2xl p-5 border border-white/5">
+                          <div className="flex items-start justify-between gap-4 mb-4">
+                            <div>
+                              <h4 className="text-sm font-black uppercase tracking-widest text-primary">{group.title}</h4>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-1">
+                                {groupActiveCount} de {group.keys.length} ativas
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => setPermissionGroupValue(activePermissionProfile, group.keys, !allGroupActive)}
+                              className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                                allGroupActive
+                                  ? 'bg-rose-500/10 text-rose-300 hover:bg-rose-500/15'
+                                  : 'bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15'
+                              }`}
+                            >
+                              {allGroupActive ? 'Desativar grupo' : 'Ativar grupo'}
+                            </button>
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {group.keys.map((key) => {
-                              const active = getPermissionValue(profile, key);
-                              const locked = profile === 'admin' && ['accessPDV', 'manageSettings', 'managePDVPermissions'].includes(key);
+                              const active = getPermissionValue(activePermissionProfile, key);
+                              const locked = isCoreAdminPermission(activePermissionProfile, key);
+                              const critical = criticalPermissionKeys.includes(key);
                               return (
                                 <button
-                                  key={`${profile}-${key}`}
-                                  onClick={() => setPermissionValue(profile, key, !active)}
+                                  key={`${activePermissionProfile}-${key}`}
+                                  onClick={() => setPermissionValue(activePermissionProfile, key, !active)}
                                   disabled={locked}
-                                  className={`min-h-[58px] rounded-xl border px-4 py-3 text-left transition-all flex items-center gap-3 ${
+                                  className={`min-h-[68px] rounded-xl border px-4 py-3 text-left transition-all flex items-start gap-3 ${
                                     active
                                       ? 'bg-primary/15 border-primary/30 text-white'
                                       : 'bg-white/[0.03] border-white/5 text-zinc-500'
                                   } ${locked ? 'opacity-70 cursor-not-allowed' : 'hover:border-white/20'}`}
                                   title={locked ? 'Permissão essencial do super admin' : undefined}
                                 >
-                                  <span className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${active ? 'bg-primary border-primary' : 'border-white/20'}`}>
+                                  <span className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${active ? 'bg-primary border-primary' : 'border-white/20'}`}>
                                     {active && <Check size={13} strokeWidth={4} />}
                                   </span>
-                                  <span className="text-xs font-black uppercase tracking-wide leading-snug">{permissionLabels[key]}</span>
+                                  <span className="min-w-0">
+                                    <span className="text-xs font-black uppercase tracking-wide leading-snug block">{permissionLabels[key]}</span>
+                                    {critical && (
+                                      <span className="inline-flex mt-2 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 text-[8px] font-black uppercase tracking-widest">
+                                        Sensível
+                                      </span>
+                                    )}
+                                  </span>
                                 </button>
                               );
                             })}
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
-                ))}
+
+                  {visiblePermissionGroups.length === 0 && (
+                    <div className="p-12 text-center text-zinc-500 font-bold">
+                      Nenhuma permissão encontrada para “{permissionSearch}”.
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.div>
           </motion.div>

@@ -2441,7 +2441,14 @@ const linkModifierGroup = async ({ scope, targetId, groupId, linked }) => {
   return { catalogVersion: await bumpCatalogVersion() };
 };
 
-const saveSettings = async ({ settings }) => {
+const saveSettings = async ({ settings }, session = null) => {
+  const currentSettings = await getSettings();
+  const nextPermissions = JSON.stringify(settings?.pdvPermissions || {});
+  const currentPermissions = JSON.stringify(currentSettings?.pdvPermissions || {});
+  if (nextPermissions !== currentPermissions) {
+    requirePermission(session, 'managePDVPermissions', currentSettings);
+  }
+
   await db.execute({
     sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('settings', ?, CURRENT_TIMESTAMP)",
     args: [JSON.stringify(settings || {})],
@@ -3536,7 +3543,7 @@ const handlers = {
   'POST /api/catalog/modifier-group': async (body) => saveModifierGroup(body),
   'POST /api/catalog/modifier-group/delete': async (body) => deleteModifierGroup(body),
   'POST /api/catalog/modifier-group/link': async (body) => linkModifierGroup(body),
-  'POST /api/settings': async (body) => saveSettings(body),
+  'POST /api/settings': async (body, context) => saveSettings(body, context.session),
   'POST /api/audit-logs': async (body) => addAuditLog(body),
   'POST /api/service-requests': async (body) => createServiceRequest(body),
   'POST /api/service-requests/resolve': async (body) => resolveServiceRequest(body),
