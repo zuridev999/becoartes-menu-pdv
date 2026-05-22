@@ -177,10 +177,13 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
               <div className="min-w-0 flex-1">
                 <span className="font-black text-lg tracking-tighter truncate leading-none block">{item.name}</span>
                 {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                  <div className="mt-2 space-y-1.5">
+                    <span className="inline-flex px-2 py-1 rounded-md bg-black text-white text-[9px] font-black uppercase tracking-widest leading-none">
+                      Adicionais
+                    </span>
                     {item.selectedModifiers.slice(0, 3).map((modifier: any, modifierIdx: number) => (
-                      <span key={modifierIdx} className="px-2 py-1 rounded-lg bg-black text-white text-[10px] font-black uppercase tracking-widest leading-none">
-                        + {modifier.name}
+                      <span key={modifierIdx} className="block text-sm font-black leading-tight text-black normal-case">
+                        {item.quantity}x {modifier.name}
                       </span>
                     ))}
                     {item.selectedModifiers.length > 3 && (
@@ -260,12 +263,17 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
                       </div>
 
                       {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                        <div className="mt-6 flex flex-wrap gap-3 ml-28">
-                           {item.selectedModifiers.map((m: any, mIdx: number) => (
-                             <span key={mIdx} className="px-5 py-2 bg-black text-white rounded-xl text-xl font-black uppercase tracking-widest">
-                               + {m.name}
-                             </span>
-                           ))}
+                        <div className="mt-6 ml-28 space-y-3">
+                          <span className="inline-flex px-4 py-2 bg-black text-white rounded-xl text-lg font-black uppercase tracking-widest leading-none">
+                            Adicionais:
+                          </span>
+                          <div className="space-y-2">
+                            {item.selectedModifiers.map((m: any, mIdx: number) => (
+                              <p key={mIdx} className="text-4xl font-medium tracking-tighter text-black leading-tight normal-case">
+                                {item.quantity}x {m.name}
+                              </p>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
