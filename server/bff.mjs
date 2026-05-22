@@ -865,10 +865,19 @@ const mapCashRow = (row) => row ? ({
   updatedAt: row.updated_at || null,
 }) : null;
 
+const getOpenCashRow = async () => {
+  const res = await db.execute({
+    sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND status = 'Aberto' ORDER BY created_at DESC LIMIT 1`,
+    args: [OS_EMPRESA_ID],
+  });
+  return res.rows[0] || null;
+};
+
 const getCashState = async () => {
   await ensureDatabaseReady();
   const businessDate = getBusinessDate();
-  const [todayRes, lastClosedRes] = await Promise.all([
+  const [openCashRow, todayRes, lastClosedRes] = await Promise.all([
+    getOpenCashRow(),
     db.execute({
       sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? LIMIT 1`,
       args: [OS_EMPRESA_ID, businessDate],
@@ -878,11 +887,11 @@ const getCashState = async () => {
       args: [OS_EMPRESA_ID, businessDate],
     }),
   ]);
-  const current = mapCashRow(todayRes.rows[0]);
+  const current = mapCashRow(openCashRow || todayRes.rows[0]);
   const lastClosed = mapCashRow(lastClosedRes.rows[0]);
 
   return {
-    businessDate,
+    businessDate: current?.businessDate || businessDate,
     isOpen: current?.status === 'Aberto',
     current,
     lastClosingBalance: lastClosed?.closingBalance || 0,
@@ -2279,6 +2288,11 @@ const joinTables = async ({ tableIds, targetTableId }) => {
 const openCash = async ({ openingBalance, notes }, session) => {
   requireSession(session);
   const businessDate = getBusinessDate();
+  const openCashRow = await getOpenCashRow();
+  if (openCashRow) {
+    throw new Error(`Já existe caixa aberto desde ${openCashRow.data}. Feche o caixa aberto antes de iniciar outro.`);
+  }
+
   const existing = await db.execute({
     sql: `SELECT id, status, observacoes FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? LIMIT 1`,
     args: [OS_EMPRESA_ID, businessDate],
@@ -2384,12 +2398,7 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }, session) =>
     throw error;
   }
 
-  const businessDate = getBusinessDate();
-  const current = await db.execute({
-    sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? AND status = 'Aberto' LIMIT 1`,
-    args: [OS_EMPRESA_ID, businessDate],
-  });
-  const cash = current.rows[0];
+  const cash = await getOpenCashRow();
   if (!cash) throw new Error('Não existe caixa aberto para hoje.');
 
   const closingCents = moneyToCents(closingBalance, 'closingBalance');
