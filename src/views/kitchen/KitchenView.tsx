@@ -178,12 +178,12 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
                 <span className="font-black text-lg tracking-tighter truncate leading-none block">{item.name}</span>
                 {item.selectedModifiers && item.selectedModifiers.length > 0 && (
                   <div className="mt-2 space-y-1.5">
-                    <span className="inline-flex px-2 py-1 rounded-md bg-black text-white text-[9px] font-black uppercase tracking-widest leading-none">
-                      Adicionais
+                    <span className="inline-flex px-3 py-1.5 rounded-lg bg-black text-white text-xs font-black uppercase tracking-widest leading-none">
+                      ADICIONAIS
                     </span>
                     {item.selectedModifiers.slice(0, 3).map((modifier: any, modifierIdx: number) => (
-                      <span key={modifierIdx} className="block text-sm font-black leading-tight text-black normal-case">
-                        {item.quantity}x {modifier.name}
+                      <span key={modifierIdx} className="block text-lg font-black leading-tight text-black uppercase tracking-tighter">
+                        {item.quantity}X {modifier.name}
                       </span>
                     ))}
                     {item.selectedModifiers.length > 3 && (
@@ -264,13 +264,13 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
 
                       {item.selectedModifiers && item.selectedModifiers.length > 0 && (
                         <div className="mt-6 ml-28 space-y-3">
-                          <span className="inline-flex px-4 py-2 bg-black text-white rounded-xl text-lg font-black uppercase tracking-widest leading-none">
-                            Adicionais:
+                          <span className="inline-flex px-5 py-2.5 bg-black text-white rounded-xl text-xl font-black uppercase tracking-widest leading-none">
+                            ADICIONAIS:
                           </span>
                           <div className="space-y-2">
                             {item.selectedModifiers.map((m: any, mIdx: number) => (
-                              <p key={mIdx} className="text-4xl font-medium tracking-tighter text-black leading-tight normal-case">
-                                {item.quantity}x {m.name}
+                              <p key={mIdx} className="text-5xl font-black tracking-tighter text-black leading-tight uppercase">
+                                {item.quantity}X {m.name}
                               </p>
                             ))}
                           </div>
