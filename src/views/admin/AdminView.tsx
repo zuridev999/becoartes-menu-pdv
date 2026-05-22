@@ -278,14 +278,14 @@ export function AdminView() {
   }, [activeTab]);
 
   const SectionCard = ({ title, icon: Icon, children }: { title: string, icon: any, children: React.ReactNode }) => (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-10 border-white/5 h-full">
-      <div className="flex items-center gap-4 mb-10 border-b border-white/5 pb-6">
-        <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-inner">
-          <Icon size={24} />
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6 sm:p-10 border-white/5 h-full">
+      <div className="flex items-center gap-4 mb-8 sm:mb-10 border-b border-white/5 pb-5 sm:pb-6">
+        <div className="w-11 h-11 sm:w-12 sm:h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-inner shrink-0">
+          <Icon size={22} />
         </div>
-        <h3 className="text-2xl font-black tracking-tighter">{title}</h3>
+        <h3 className="text-2xl font-black tracking-tighter leading-tight">{title}</h3>
       </div>
-      <div className="space-y-8">
+      <div className="space-y-6 sm:space-y-8">
         {children}
       </div>
     </motion.div>
@@ -486,26 +486,27 @@ export function AdminView() {
   };
 
   return (
-    <div className="p-16 bg-[#0a0a0c] min-h-screen text-white font-['Outfit'] pb-48 overflow-y-auto custom-scrollbar h-screen">
-      <div className="flex justify-between items-end mb-16">
-        <div className="flex items-center gap-8">
+    <div className="p-4 sm:p-8 xl:p-16 bg-[#0a0a0c] min-h-screen text-white font-['Outfit'] pb-32 sm:pb-48 overflow-x-hidden overflow-y-auto custom-scrollbar h-screen">
+      <div className="flex flex-col gap-6 sm:gap-8 mb-10 sm:mb-16">
+        <div className="flex items-center gap-4 sm:gap-8 min-w-0">
           <button 
             onClick={() => useStore.getState().setActiveView('pdv')}
-            className="w-16 h-16 glass rounded-2xl flex items-center justify-center text-zinc-500 hover:text-white transition-all border-white/5"
+            className="w-14 h-14 sm:w-16 sm:h-16 glass rounded-2xl flex items-center justify-center text-zinc-500 hover:text-white transition-all border-white/5 shrink-0"
           >
-            <ArrowLeft size={32} />
+            <ArrowLeft size={28} />
           </button>
-          <div>
-            <h1 className="text-7xl font-black tracking-tighter">Beco <span className="text-primary">Control</span></h1>
-            <p className="text-gray-500 font-bold uppercase tracking-[0.4em] text-[10px] mt-3 ml-2 italic">
+          <div className="min-w-0">
+            <h1 className="text-5xl sm:text-7xl font-black tracking-tighter leading-none">Beco <span className="text-primary">Control</span></h1>
+            <p className="text-gray-500 font-bold uppercase tracking-[0.28em] sm:tracking-[0.4em] text-[9px] sm:text-[10px] mt-3 sm:ml-2 italic break-words">
               {currentSeller.name} • {getPermissionLabel(currentSeller)}
             </p>
-            <p className="text-zinc-700 font-black uppercase tracking-[0.25em] text-[9px] mt-2 ml-2">
+            <p className="text-zinc-700 font-black uppercase tracking-[0.2em] sm:tracking-[0.25em] text-[9px] mt-2 sm:ml-2 break-words">
               {getAppLabel()} {APP_BUILD_LABEL}
             </p>
           </div>
         </div>
-        <div className="flex glass p-2 rounded-[2rem] border-white/5">
+        <div className="w-full max-w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-2">
+        <div className="flex w-max min-w-full glass p-2 rounded-[2rem] border-white/5">
           {[
             { id: 'config', name: 'Geral', icon: Settings },
             { id: 'categories', name: 'Categorias', icon: LayoutDashboard },
@@ -519,10 +520,11 @@ export function AdminView() {
             return allowedTabIds.has(tab.id);
           })
           .map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-8 py-4 rounded-[1.5rem] flex items-center gap-3 font-black text-xs uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-gray-500 hover:text-white'}`}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-4 sm:px-8 py-4 rounded-[1.5rem] flex items-center gap-3 font-black text-[11px] sm:text-xs uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-gray-500 hover:text-white'}`}>
               <tab.icon size={18}/> {tab.name}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
@@ -635,19 +637,19 @@ export function AdminView() {
       )}
 
       {activeTab === 'products' && canAccessProducts && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16">
           <div className="space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 px-4">
-              <div className="flex items-center gap-4">
+            <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center mb-8 gap-4 px-0 sm:px-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4 min-w-0">
                 <h3 className="text-3xl font-black flex items-center gap-4"><Package size={28}/> Catálogo</h3>
-                <div className="relative">
+                <div className="relative w-full sm:w-auto">
                   <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
                   <input 
                     type="text" 
                     placeholder="Buscar produto..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="glass pl-12 pr-6 py-3 rounded-2xl text-xs font-bold border-white/10 outline-none w-64 focus:border-primary transition-all"
+                    className="glass pl-12 pr-6 py-3 rounded-2xl text-xs font-bold border-white/10 outline-none w-full sm:w-64 focus:border-primary transition-all"
                   />
                 </div>
               </div>
@@ -655,7 +657,7 @@ export function AdminView() {
                 <button onClick={() => setEditingProduct({ id: createId(), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
               )}
             </div>
-            <div className="glass rounded-[3rem] border-white/5 overflow-hidden max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <div className="glass rounded-[2rem] sm:rounded-[3rem] border-white/5 overflow-hidden max-h-[60vh] overflow-y-auto custom-scrollbar">
               {categories.map((cat) => {
                 const items = menu.filter(p => p.categoryId === cat.id);
                 const filteredItems = items.filter((p: any) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -663,30 +665,30 @@ export function AdminView() {
                 if (items.length === 0) return null;
                 return (
                   <div key={cat.id}>
-                    <div className="bg-white/5 px-8 py-4 border-y border-white/5 flex justify-between items-center">
+                    <div className="bg-white/5 px-5 sm:px-8 py-4 border-y border-white/5 flex justify-between items-center">
                       <h4 className="text-xs font-black uppercase tracking-widest text-primary">{cat.name}</h4>
                       {!cat.visible && <span className="text-[9px] font-black uppercase text-gray-500 bg-white/5 px-2 py-0.5 rounded">Invisível</span>}
                     </div>
                     {filteredItems.map((p: any) => (
-                      <div key={p.id} className={`flex items-center justify-between p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group ${!p.visible ? 'opacity-40 grayscale' : ''}`}>
-                        <div className="flex items-center gap-6">
+                      <div key={p.id} className={`flex items-center justify-between gap-3 p-4 sm:p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group ${!p.visible ? 'opacity-40 grayscale' : ''}`}>
+                        <div className="flex items-center gap-4 sm:gap-6 min-w-0">
                           <div className="relative">
-                            <img src={getImageSrc(p.image)} className="w-20 h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
+                            <img src={getImageSrc(p.image)} className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
                             {!p.visible && <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center"><EyeOff size={20} className="text-white/40" /></div>}
                           </div>
-                          <div>
-                            <p className="font-black text-xl tracking-tight">{p.name}</p>
-                            <div className="flex items-center gap-3 mt-1">
+                          <div className="min-w-0">
+                            <p className="font-black text-base sm:text-xl tracking-tight leading-tight break-words">{p.name}</p>
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1">
                               <span className="text-xs font-black text-gray-400">R$ {typeof p.price === 'number' ? p.price.toFixed(2) : p.price}</span>
                               {p.cost > 0 && <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 rounded text-[9px] font-black uppercase">Lucro R$ {(p.price - p.cost).toFixed(2)}</span>}
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all">
+                        <div className="flex items-center gap-2 sm:gap-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
                           {canToggleVisibility && (
                             <button 
                               onClick={() => toggleProductVisibility(p.id)}
-                              className={`p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
+                              className={`p-3 sm:p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
                               title={p.visible ? 'Ocultar do Cardápio' : 'Mostrar no Cardápio'}
                             >
                               {p.visible ? <Eye size={20}/> : <EyeOff size={20}/>}
@@ -694,8 +696,8 @@ export function AdminView() {
                           )}
                           {canEditProductPrice && (
                             <>
-                              <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
-                              <button onClick={() => setEditingProduct(p)} className="p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
+                              <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-3 sm:p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
+                              <button onClick={() => setEditingProduct(p)} className="p-3 sm:p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
                             </>
                           )}
                         </div>
