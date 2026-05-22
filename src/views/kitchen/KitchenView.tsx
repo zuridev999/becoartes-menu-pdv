@@ -226,8 +226,23 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
   );
 }
 
-function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, onClose: () => void, onComplete: () => void }) {
+function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, onClose: () => void, onComplete: () => Promise<void> | void }) {
   const [showConfirm, setShowConfirm] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState('');
+
+  const confirmComplete = async () => {
+    if (isCompleting) return;
+    setIsCompleting(true);
+    setCompleteError('');
+    try {
+      await onComplete();
+    } catch (error) {
+      setCompleteError(error instanceof Error ? error.message : 'Erro ao finalizar pedido.');
+    } finally {
+      setIsCompleting(false);
+    }
+  };
 
   return (
     <motion.div 
@@ -310,12 +325,18 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
                     <AlertCircle size={60} />
                  </div>
                  <h3 className="text-5xl font-black mb-12 leading-tight text-black">Confirmar finalização de todos os itens?</h3>
+                 {completeError && (
+                   <p className="mb-6 rounded-2xl bg-rose-50 border-2 border-rose-100 px-5 py-4 text-sm font-black text-rose-600 uppercase tracking-widest">
+                     {completeError}
+                   </p>
+                 )}
                  <div className="grid grid-cols-2 gap-6">
                     <button 
-                      onClick={onComplete}
-                      className="py-8 bg-black text-white rounded-[2rem] text-xl font-black uppercase tracking-widest shadow-lg"
+                      onClick={confirmComplete}
+                      disabled={isCompleting}
+                      className="py-8 bg-black text-white rounded-[2rem] text-xl font-black uppercase tracking-widest shadow-lg disabled:opacity-50"
                     >
-                      Sim, finalizar
+                      {isCompleting ? 'Finalizando...' : 'Sim, finalizar'}
                     </button>
                     <button 
                       onClick={() => setShowConfirm(false)}
@@ -573,8 +594,9 @@ export function KitchenView() {
           <KitchenOrderDetailModal 
             order={selectedOrder} 
             onClose={() => setSelectedOrder(null)}
-            onComplete={() => {
-              updateKitchenOrderStatus(selectedOrder.id, 'ready');
+            onComplete={async () => {
+              await updateKitchenOrderStatus(selectedOrder.id, 'ready');
+              await syncData();
               setSelectedOrder(null);
             }}
           />

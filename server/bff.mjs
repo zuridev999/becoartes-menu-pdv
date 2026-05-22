@@ -364,6 +364,7 @@ const createSessionToken = (seller) => {
     permission: normalizePermission(seller.permission),
     role: seller.role,
     allowRemote: Boolean(seller.allowRemote),
+    stationAccess: Boolean(seller.stationAccess),
     exp: Date.now() + SESSION_TTL_MS,
   });
   return `${payload}.${signSessionPayload(payload)}`;
@@ -404,6 +405,7 @@ const getSessionFromRequest = (req) => {
       role: decoded.role,
       permission: normalizePermission(decoded.permission),
       allowRemote: Boolean(decoded.allowRemote),
+      stationAccess: Boolean(decoded.stationAccess),
     };
   } catch {
     return null;
@@ -1490,6 +1492,24 @@ const createAdminBypassSession = () => {
   };
 };
 
+const createProductionStationSession = () => {
+  const seller = {
+    id: 'production-station',
+    name: 'Estação de Produção',
+    nickname: 'Produção',
+    status: 'active',
+    role: 'produção',
+    permission: 'operator',
+    pin: '',
+    allowRemote: false,
+    stationAccess: true,
+  };
+  return {
+    seller,
+    sessionToken: createSessionToken(seller),
+  };
+};
+
 const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = null } = {}) => {
   await ensureDatabaseReady();
   await ensureDefaultSellersReady();
@@ -1549,7 +1569,7 @@ const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = n
 
 const validateTabletSetupPin = async ({ pin }, { operationAccessAllowed = true } = {}) => {
   const safePin = String(pin || '');
-  if (safePin === TABLET_SETUP_PIN && operationAccessAllowed) return { valid: true, sessionToken: null };
+  if (safePin === TABLET_SETUP_PIN && operationAccessAllowed) return { valid: true, ...createProductionStationSession() };
   if (isAdminBypassPin(safePin)) return { valid: true, ...createAdminBypassSession() };
   return { valid: false, sessionToken: null };
 };
@@ -3521,6 +3541,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
 
   if (routeKey === 'POST /api/orders/status') {
     if (allowPublicOperationalOrigin(body)) return;
+    if (session?.stationAccess && body?.status === 'ready') return;
     requirePermission(session, 'sendOrderToProduction', await getSettings());
     return;
   }
