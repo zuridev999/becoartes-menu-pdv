@@ -8,10 +8,14 @@ export function ProductModal({
   product,
   onClose,
   tabletLandscape = false,
+  canChangeItemQuantity = true,
+  canEditItemNotes = true,
 }: {
   product: Product;
   onClose: () => void;
   tabletLandscape?: boolean;
+  canChangeItemQuantity?: boolean;
+  canEditItemNotes?: boolean;
 }) {
   const { addToCart } = useStore();
   const [quantity, setQuantity] = useState(1);
@@ -147,9 +151,10 @@ export function ProductModal({
                    <h4 className="text-sm font-black uppercase tracking-widest text-white">Observações Especiais</h4>
                    <textarea 
                     value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Ex: sem cebola, ponto menos, gelo e limão..."
-                    className="w-full glass p-6 rounded-3xl border-white/10 outline-none focus:border-primary transition-all text-sm font-medium min-h-[120px] resize-none"
+                    onChange={(e) => canEditItemNotes && setNotes(e.target.value)}
+                    disabled={!canEditItemNotes}
+                    placeholder={canEditItemNotes ? 'Ex: sem cebola, ponto menos, gelo e limão...' : 'Observações bloqueadas para este perfil'}
+                    className="w-full glass p-6 rounded-3xl border-white/10 outline-none focus:border-primary transition-all text-sm font-medium min-h-[120px] resize-none disabled:opacity-40 disabled:cursor-not-allowed"
                    />
                 </div>
              </div>
@@ -163,9 +168,9 @@ export function ProductModal({
              <div className={`${tabletLandscape ? 'mt-4 pt-4 space-y-3 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-8 pt-8 space-y-6'} border-t border-white/10 shrink-0`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 glass p-2 rounded-2xl border-white/5">
-                     <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-10 flex items-center justify-center font-black text-xl hover:text-primary transition-all">-</button>
+                     <button disabled={!canChangeItemQuantity} onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-10 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">-</button>
                      <span className="text-xl font-black w-8 text-center">{quantity}</span>
-                     <button onClick={() => setQuantity(quantity + 1)} className="w-10 h-10 flex items-center justify-center font-black text-xl hover:text-primary transition-all">+</button>
+                     <button disabled={!canChangeItemQuantity} onClick={() => setQuantity(quantity + 1)} className="w-10 h-10 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">+</button>
                   </div>
                   <div className="text-right">
                      <p className="text-[10px] font-black uppercase text-gray-500 mb-1">Total do Item</p>

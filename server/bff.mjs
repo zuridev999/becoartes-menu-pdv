@@ -3302,7 +3302,16 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
 
   if (routeKey === 'POST /api/orders/send-to-kitchen') {
     if (allowPublicOperationalOrigin(body)) return;
-    requirePermission(session, 'sendOrderToProduction', await getSettings());
+    const settings = await getSettings();
+    requirePermission(session, 'addOrderItem', settings);
+    requirePermission(session, 'sendOrderToProduction', settings);
+    const items = Array.isArray(body?.items) ? body.items : [];
+    if (items.some((item) => Number(item?.quantity || 0) !== 1)) {
+      requirePermission(session, 'changeItemQuantity', settings);
+    }
+    if (items.some((item) => String(item?.notes || '').trim())) {
+      requirePermission(session, 'editItemNotes', settings);
+    }
     return;
   }
 
@@ -3311,6 +3320,8 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
   }
 
   if (routeKey === 'POST /api/orders/status') {
+    if (allowPublicOperationalOrigin(body)) return;
+    requirePermission(session, 'sendOrderToProduction', await getSettings());
     return;
   }
 

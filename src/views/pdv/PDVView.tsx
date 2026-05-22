@@ -248,7 +248,9 @@ export function PDVView() {
   const canUseCashAction = isCashOpen ? canCloseCash : canOpenCash;
   const canOpenTable = can(currentSeller, 'openTable', permissionOverrides);
   const canUpdateTableStatus = can(currentSeller, 'updateTableStatus', permissionOverrides);
-  const canAddItems = can(currentSeller, 'addOrderItem', permissionOverrides) && can(currentSeller, 'sendOrderToProduction', permissionOverrides);
+  const canAddOrderItem = can(currentSeller, 'addOrderItem', permissionOverrides);
+  const canSendOrderToProduction = can(currentSeller, 'sendOrderToProduction', permissionOverrides);
+  const canAddItems = canAddOrderItem && canSendOrderToProduction;
   const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides);
   const isAdminProfile = currentSeller.permission === 'admin';
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
@@ -839,6 +841,7 @@ export function PDVView() {
                         key={product.id}
                         whileHover={{ x: 6 }}
                         onClick={() => {
+                          if (!canAddOrderItem) return;
                           if (product.modifierGroups?.length) {
                             setSelectedProduct(product);
                             return;
@@ -852,7 +855,12 @@ export function PDVView() {
                             origin: 'pdv'
                           });
                         }}
-                        className="bg-[#121214] border border-white/10 rounded-3xl p-4 sm:p-6 flex justify-between items-center gap-3 group relative overflow-hidden text-left transition-all hover:bg-[#1a1a1e] shadow-lg"
+                        disabled={!canAddOrderItem}
+                        className={`bg-[#121214] border border-white/10 rounded-3xl p-4 sm:p-6 flex justify-between items-center gap-3 group relative overflow-hidden text-left transition-all shadow-lg ${
+                          canAddOrderItem
+                            ? 'hover:bg-[#1a1a1e]'
+                            : 'opacity-40 grayscale cursor-not-allowed'
+                        }`}
                       >
                          <div className="flex items-center gap-4 min-w-0">
                            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-black transition-all shrink-0">
@@ -901,7 +909,7 @@ export function PDVView() {
                   CANCELAR
                 </button>
                 <button 
-                  disabled={isSendingOrder || cart.length === 0}
+                  disabled={isSendingOrder || cart.length === 0 || !canSendOrderToProduction}
                   onClick={async () => {
                     if (cart.length > 0) {
                       setIsSendingOrder(true);
@@ -927,6 +935,11 @@ export function PDVView() {
                 >
                   {isSendingOrder ? 'ENVIANDO...' : 'CONFIRMAR E ENVIAR'}
                 </button>
+                {!canSendOrderToProduction && (
+                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-400 text-center sm:text-right">
+                    Seu perfil não pode enviar pedido para produção/bar.
+                  </p>
+                )}
               </div>
             </div>
           </motion.div>
@@ -939,6 +952,8 @@ export function PDVView() {
           <ProductModal
             product={selectedProduct}
             onClose={() => setSelectedProduct(null)}
+            canChangeItemQuantity={can(currentSeller, 'changeItemQuantity', permissionOverrides)}
+            canEditItemNotes={can(currentSeller, 'editItemNotes', permissionOverrides)}
           />
         )}
       </AnimatePresence>
