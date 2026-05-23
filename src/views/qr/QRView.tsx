@@ -108,7 +108,7 @@ export function QRView() {
       </div>
 
       <div className="h-full pt-16 sm:pt-20 pb-[6.5rem] sm:pb-28">
-        <MenuCatalog onProductSelect={setSelectedProduct} viewMode="grid" />
+        <MenuCatalog onProductSelect={setSelectedProduct} viewMode="grid" scrollSpyCategories />
       </div>
 
       {/* CTA principal do celular: revisar/enviar pedido quando houver carrinho */}

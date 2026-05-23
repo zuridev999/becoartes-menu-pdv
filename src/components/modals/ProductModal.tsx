@@ -76,9 +76,11 @@ export function ProductModal({
           </div>
           <div className={`${contentPanelClass} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
              <button onClick={onClose} className={`${tabletLandscape ? 'top-5 right-5 p-3' : 'top-8 right-8 p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
-             <div className="flex justify-between items-center mb-8 lg:hidden">
-                <h2 className="text-4xl font-black italic">{product.name}</h2>
-             </div>
+             {!qrMobileFlow && (
+               <div className="flex justify-between items-center mb-8 lg:hidden">
+                  <h2 className="text-4xl font-black italic">{product.name}</h2>
+               </div>
+             )}
 
              <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-3 min-[900px]:pr-4 ${tabletLandscape ? 'space-y-4 min-[900px]:space-y-6' : 'space-y-10'}`}>
                 {product.modifierGroups?.map(group => {
