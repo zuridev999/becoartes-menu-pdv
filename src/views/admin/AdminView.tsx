@@ -6,7 +6,7 @@ import {
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
   GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy,
-  QrCode, Download, Archive, RefreshCcw, ExternalLink
+  QrCode, Download, Archive, ExternalLink
 } from 'lucide-react';
 import {
   DndContext,
@@ -41,7 +41,7 @@ import {
 import { createId } from '../../lib/id';
 import { getImageSrc } from '../../lib/image';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
-import { AdminApi, AppApi } from '../../lib/api';
+import { AppApi } from '../../lib/api';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ScheduleConfig } from '../../types';
@@ -605,20 +605,6 @@ export function AdminView() {
       setIsQrDownloading(false);
     }
   };
-  const requestQrRegeneration = (tableNumber: number) => {
-    setAdminDialog({
-      title: `Gerar novo QR da Mesa ${tableNumber}?`,
-      description: 'Use apenas se o impresso atual precisar ser substituído. A rota da mesa continua permanente, mas a imagem baixada terá uma nova versão.',
-      confirmLabel: 'Gerar novo QR',
-      input: { label: 'PIN admin', placeholder: 'Digite o PIN admin', type: 'password', inputMode: 'numeric' },
-      onConfirm: async (pin) => {
-        const result = await AdminApi.regenerateTableQr(tableNumber, pin || '');
-        updateSettings({ qrCodes: result.qrCodes });
-        addNotification(`QR Code da mesa ${tableNumber} renovado. Baixe a nova imagem.`, 'info');
-      }
-    });
-  };
-
   const allowedTabIds = new Set([
     ...(canAccessProducts ? ['products'] : []),
     ...(canManageCategories ? ['categories'] : []),
@@ -1032,7 +1018,7 @@ export function AdminView() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
                       onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
                       className="glass py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-300 hover:text-white transition-all flex items-center justify-center gap-2"
@@ -1053,12 +1039,6 @@ export function AdminView() {
                       className="glass py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-300 hover:text-white transition-all flex items-center justify-center gap-2"
                     >
                       <Download size={15} /> JPG
-                    </button>
-                    <button
-                      onClick={() => requestQrRegeneration(table.number)}
-                      className="glass py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-amber-300 hover:text-amber-200 transition-all flex items-center justify-center gap-2 border-amber-500/20"
-                    >
-                      <RefreshCcw size={15} /> Novo
                     </button>
                   </div>
                 </div>

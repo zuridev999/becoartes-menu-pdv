@@ -8,6 +8,7 @@ export function NotificationDisplay() {
   const getIcon = (type: string) => {
     switch (type) {
       case 'info': return <Info size={18} className="text-emerald-400" />;
+      case 'warning': return <AlertCircle size={18} className="text-amber-500" />;
       case 'error': return <AlertCircle size={18} className="text-rose-500" />;
       case 'order': return <ShoppingBag size={18} className="text-primary" />;
       case 'service': return <Bell size={18} className="text-amber-500" />;
@@ -18,6 +19,7 @@ export function NotificationDisplay() {
   const getBorder = (type: string) => {
     switch (type) {
       case 'info': return 'border-emerald-500/20 bg-emerald-500/5';
+      case 'warning': return 'border-amber-500/20 bg-amber-500/5';
       case 'error': return 'border-rose-500/20 bg-rose-500/5';
       case 'order': return 'border-primary/20 bg-primary/5';
       case 'service': return 'border-amber-500/20 bg-amber-500/5';

@@ -459,6 +459,10 @@ const ensureDatabase = async () => {
     "ALTER TABLE estoque_movimentacoes ADD COLUMN integration_event_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN source_item_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN source_item_kind TEXT",
+    "ALTER TABLE fichas_tecnicas ADD COLUMN pdv_product_id TEXT",
+    "ALTER TABLE fichas_tecnicas ADD COLUMN pdv_product_name TEXT",
+    "ALTER TABLE ficha_ingredientes ADD COLUMN estoque_produto_id TEXT",
+    "ALTER TABLE ficha_ingredientes ADD COLUMN estoque_produto_nome TEXT",
   ];
 
   for (const sql of migrations) {
@@ -480,6 +484,7 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_product_modifiers_group ON product_modifier_groups(group_id)",
     "CREATE INDEX IF NOT EXISTS idx_integration_events_type_status ON integration_events(type, status)",
     "CREATE INDEX IF NOT EXISTS idx_stock_mov_integration_event ON estoque_movimentacoes(integration_event_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fichas_pdv_product ON fichas_tecnicas(pdv_product_id)",
     "CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_service_requests_status_created ON service_requests(status, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_closed_bills_closed_at ON closed_bills(closed_at)",
@@ -1801,8 +1806,83 @@ const hasPdvStockMovement = async ({ orderItemId, sourceItemKind, sourceItemId }
   return Boolean(res.rows[0]?.id);
 };
 
+const hasAnyPdvStockMovementForOrderItem = async (orderItemId) => {
+  if (!orderItemId) return false;
+  const res = await db.execute({
+    sql: `
+      SELECT id
+      FROM estoque_movimentacoes
+      WHERE origem = 'pdv'
+        AND order_item_id = ?
+      LIMIT 1
+    `,
+    args: [orderItemId],
+  });
+  return Boolean(res.rows[0]?.id);
+};
+
+const findRecipeForOrderItem = async (empresaId, item) => {
+  if (!empresaId || !item?.name) return { hasRecipe: false, ingredients: [], linkedIngredients: [] };
+
+  try {
+    const recipeRes = await db.execute({
+      sql: `
+        SELECT
+          ft.id,
+          ft.nome_prato,
+          ft.pdv_product_id
+        FROM fichas_tecnicas ft
+        WHERE ft.empresa_id = ?
+          AND (
+            ft.pdv_product_id = ?
+            OR (
+              (ft.pdv_product_id IS NULL OR trim(ft.pdv_product_id) = '')
+              AND lower(trim(ft.nome_prato)) = lower(trim(?))
+            )
+          )
+        ORDER BY CASE WHEN ft.pdv_product_id = ? THEN 0 ELSE 1 END, ft.created_at DESC
+        LIMIT 1
+      `,
+      args: [empresaId, item.productId || '', item.name, item.productId || ''],
+    });
+    const recipe = recipeRes.rows[0];
+    if (!recipe?.id) return { hasRecipe: false, ingredients: [], linkedIngredients: [] };
+
+    const ingredientsRes = await db.execute({
+      sql: `
+        SELECT
+          fi.id,
+          fi.nome_ingrediente,
+          fi.estoque_produto_id,
+          fi.estoque_produto_nome,
+          fi.quantidade_usada,
+          fi.unidade_medida
+        FROM ficha_ingredientes fi
+        WHERE fi.ficha_tecnica_id = ?
+        ORDER BY fi.nome_ingrediente ASC
+      `,
+      args: [recipe.id],
+    });
+
+    const ingredients = ingredientsRes.rows || [];
+    const linkedIngredients = ingredients.filter((ingredient) => (
+      ingredient.estoque_produto_id && String(ingredient.estoque_produto_id).trim()
+    ));
+
+    return {
+      hasRecipe: true,
+      recipeId: recipe.id,
+      recipeName: recipe.nome_prato,
+      ingredients,
+      linkedIngredients,
+    };
+  } catch (error) {
+    console.warn('Ficha técnica indisponível para baixa de estoque por receita:', error instanceof Error ? error.message : error);
+    return { hasRecipe: false, ingredients: [], linkedIngredients: [] };
+  }
+};
 const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber, reason, closedBillId = null }) => {
-  const result = { movementCount: 0, unmatched: [], insufficient: [], critical: [], catalogVersion: null };
+  const result = { movementCount: 0, unmatched: [], missingRecipes: [], unlinkedRecipes: [], insufficient: [], critical: [], catalogVersion: null };
   const safeItems = Array.isArray(items) ? items : [];
   if (safeItems.length === 0) return result;
 
@@ -1815,44 +1895,151 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
     const requestedQuantity = toStockAmount(item.quantity);
     if (requestedQuantity <= 0) continue;
 
-    const productSourceId = item.productId;
-    const alreadyMovedProduct = await hasPdvStockMovement({
-      orderItemId: item.id,
-      sourceItemKind: 'product',
-      sourceItemId: productSourceId,
-    });
+    const recipe = await findRecipeForOrderItem(empresaId, item);
+    const recipeIngredients = recipe.linkedIngredients || [];
 
-    if (!alreadyMovedProduct) {
-      const productStock = await findStockProduct(empresaId, {
-        id: item.remoteStockId || item.productId,
-        name: item.name,
-      });
+    if (recipeIngredients.length > 0) {
+      for (const ingredient of recipeIngredients) {
+        const recipeSourceId = ingredient.id;
+        const alreadyMovedRecipe = await hasPdvStockMovement({
+          orderItemId: item.id,
+          sourceItemKind: 'recipe',
+          sourceItemId: recipeSourceId,
+        });
+        if (alreadyMovedRecipe) continue;
 
-      if (!productStock) {
-        result.unmatched.push(`${item.quantity}x ${item.name}`);
-      } else {
-        const currentQuantity = Number(productStock.quantidade_atual || 0);
-        const nextQuantity = currentQuantity - requestedQuantity;
-        if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
-        if (nextQuantity <= Number(productStock.estoque_minimo || 0)) result.critical.push(item.name);
+        const ingredientQuantity = Number(ingredient.quantidade_usada || 0);
+        const requestedIngredientQuantity = Number((ingredientQuantity * requestedQuantity).toFixed(4));
+        if (requestedIngredientQuantity <= 0) continue;
+
+        const ingredientStock = await findStockProduct(empresaId, {
+          id: ingredient.estoque_produto_id,
+          name: ingredient.estoque_produto_nome || ingredient.nome_ingrediente,
+        });
+
+        if (!ingredientStock) {
+          result.unmatched.push(`${item.quantity}x ${item.name} | ${ingredient.nome_ingrediente}`);
+          continue;
+        }
+
+        const currentQuantity = Number(ingredientStock.quantidade_atual || 0);
+        const nextQuantity = currentQuantity - requestedIngredientQuantity;
+        if (requestedIngredientQuantity > currentQuantity) result.insufficient.push(`${ingredientStock.nome || ingredient.nome_ingrediente} (estoque insuficiente)`);
+        if (nextQuantity <= Number(ingredientStock.estoque_minimo || 0)) result.critical.push(ingredientStock.nome || ingredient.nome_ingrediente);
         movementPlans.push({
           movementId: createId(),
-          stockId: productStock.id,
-          stockName: productStock.nome || item.name,
+          stockId: ingredientStock.id,
+          stockName: ingredientStock.nome || ingredient.nome_ingrediente,
           orderId: item.orderId,
           orderItemId: item.id,
-          sourceItemId: productSourceId,
-          sourceItemKind: 'product',
-          requestedQuantity,
+          sourceItemId: recipeSourceId,
+          sourceItemKind: 'recipe',
+          requestedQuantity: requestedIngredientQuantity,
           previousQuantity: currentQuantity,
           nextQuantity,
-          reason,
+          reason: `${reason} | Receita ${item.name} | ${ingredient.nome_ingrediente}`,
         });
+      }
+    } else {
+      if (recipe.hasRecipe && (recipe.ingredients || []).length > 0) {
+        result.unlinkedRecipes.push(`${item.quantity}x ${item.name}`);
+      } else if (!recipe.hasRecipe && !item.remoteStockId) {
+        result.missingRecipes.push(`${item.quantity}x ${item.name}`);
+      }
+
+      const productSourceId = item.productId;
+      const alreadyMovedProduct = await hasPdvStockMovement({
+        orderItemId: item.id,
+        sourceItemKind: 'product',
+        sourceItemId: productSourceId,
+      });
+
+      if (!alreadyMovedProduct) {
+        const productStock = await findStockProduct(empresaId, {
+          id: item.remoteStockId || item.productId,
+          name: item.name,
+        });
+
+        if (!productStock) {
+          result.unmatched.push(`${item.quantity}x ${item.name}`);
+        } else {
+          const currentQuantity = Number(productStock.quantidade_atual || 0);
+          const nextQuantity = currentQuantity - requestedQuantity;
+          if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
+          if (nextQuantity <= Number(productStock.estoque_minimo || 0)) result.critical.push(item.name);
+          movementPlans.push({
+            movementId: createId(),
+            stockId: productStock.id,
+            stockName: productStock.nome || item.name,
+            orderId: item.orderId,
+            orderItemId: item.id,
+            sourceItemId: productSourceId,
+            sourceItemKind: 'product',
+            requestedQuantity,
+            previousQuantity: currentQuantity,
+            nextQuantity,
+            reason,
+          });
+        }
       }
     }
 
     for (const modifier of item.selectedModifiers || []) {
       const modifierSourceId = modifier.id;
+      const modifierRecipe = await findRecipeForOrderItem(empresaId, {
+        id: `${item.id}:${modifierSourceId || normalizeProductionText(modifier.name || 'modifier')}`,
+        productId: modifierSourceId,
+        name: modifier.name,
+        orderId: item.orderId,
+      });
+      const modifierRecipeIngredients = modifierRecipe.linkedIngredients || [];
+
+      if (modifierRecipeIngredients.length > 0) {
+        for (const ingredient of modifierRecipeIngredients) {
+          const alreadyMovedModifierRecipe = await hasPdvStockMovement({
+            orderItemId: item.id,
+            sourceItemKind: 'recipe',
+            sourceItemId: ingredient.id,
+          });
+          if (alreadyMovedModifierRecipe) continue;
+
+          const requestedIngredientQuantity = Number((Number(ingredient.quantidade_usada || 0) * requestedQuantity).toFixed(4));
+          if (requestedIngredientQuantity <= 0) continue;
+
+          const ingredientStock = await findStockProduct(empresaId, {
+            id: ingredient.estoque_produto_id,
+            name: ingredient.estoque_produto_nome || ingredient.nome_ingrediente,
+          });
+          if (!ingredientStock) {
+            result.unmatched.push(`${item.quantity}x ${modifier.name} | ${ingredient.nome_ingrediente}`);
+            continue;
+          }
+
+          const currentQuantity = Number(ingredientStock.quantidade_atual || 0);
+          const nextQuantity = currentQuantity - requestedIngredientQuantity;
+          if (requestedIngredientQuantity > currentQuantity) result.insufficient.push(`${ingredientStock.nome || ingredient.nome_ingrediente} (estoque insuficiente)`);
+          if (nextQuantity <= Number(ingredientStock.estoque_minimo || 0)) result.critical.push(ingredientStock.nome || ingredient.nome_ingrediente);
+          movementPlans.push({
+            movementId: createId(),
+            stockId: ingredientStock.id,
+            stockName: ingredientStock.nome || ingredient.nome_ingrediente,
+            orderId: item.orderId,
+            orderItemId: item.id,
+            sourceItemId: ingredient.id,
+            sourceItemKind: 'recipe',
+            requestedQuantity: requestedIngredientQuantity,
+            previousQuantity: currentQuantity,
+            nextQuantity,
+            reason: `${reason} | Receita opcional ${modifier.name} | ${ingredient.nome_ingrediente}`,
+          });
+        }
+        continue;
+      }
+
+      if (modifierRecipe.hasRecipe && (modifierRecipe.ingredients || []).length > 0) {
+        result.unlinkedRecipes.push(`${item.quantity}x ${modifier.name}`);
+      }
+
       const alreadyMovedModifier = await hasPdvStockMovement({
         orderItemId: item.id,
         sourceItemKind: 'modifier',
@@ -1935,6 +2122,24 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
   result.movementCount = movementPlans.length;
 
   const notificationTasks = [];
+  if (result.missingRecipes.length > 0) {
+    notificationTasks.push(safeCreateOSNotification({
+      context: osContext,
+      title: 'Produtos vendidos sem CMV vinculado',
+      message: `Mesa ${tableNumber}: ${result.missingRecipes.slice(0, 8).join(', ')}`,
+      type: 'warning',
+      link: `/${slug}/fichas-tecnicas`,
+    }));
+  }
+  if (result.unlinkedRecipes.length > 0) {
+    notificationTasks.push(safeCreateOSNotification({
+      context: osContext,
+      title: 'Fichas técnicas sem vínculo de estoque',
+      message: `Mesa ${tableNumber}: ${result.unlinkedRecipes.slice(0, 8).join(', ')}`,
+      type: 'warning',
+      link: `/${slug}/fichas-tecnicas`,
+    }));
+  }
   if (result.unmatched.length > 0) {
     notificationTasks.push(safeCreateOSNotification({
       context: osContext,
@@ -3175,44 +3380,145 @@ const closeBillWithInventorySync = async (data, session = null) => {
       try {
         for (const item of activeOrderItems) {
           const requestedQuantity = toStockAmount(item.quantity);
-          const alreadyMovedProduct = await hasPdvStockMovement({
-            orderItemId: item.id,
-            sourceItemKind: 'product',
-            sourceItemId: item.productId,
-          });
+          const alreadyMovedOrderItem = await hasAnyPdvStockMovementForOrderItem(item.id);
 
-          if (!alreadyMovedProduct) {
-            const productStock = await findStockProduct(empresaId, {
-              id: item.remoteStockId || item.productId,
-              name: item.name,
-            });
+          if (!alreadyMovedOrderItem) {
+            const recipe = await findRecipeForOrderItem(empresaId, item);
+            const recipeIngredients = recipe.linkedIngredients || [];
 
-            if (!productStock) {
-              result.unmatched.push(`${item.quantity}x ${item.name}`);
-            } else {
-              const currentQuantity = Number(productStock.quantidade_atual || 0);
-              const nextQuantity = currentQuantity - requestedQuantity;
-              if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
-              if (nextQuantity <= Number(productStock.estoque_minimo || 0)) result.critical.push(item.name);
-              if (requestedQuantity > 0) {
+            if (recipeIngredients.length > 0) {
+              for (const ingredient of recipeIngredients) {
+                const requestedIngredientQuantity = Number((Number(ingredient.quantidade_usada || 0) * requestedQuantity).toFixed(4));
+                if (requestedIngredientQuantity <= 0) continue;
+
+                const ingredientStock = await findStockProduct(empresaId, {
+                  id: ingredient.estoque_produto_id,
+                  name: ingredient.estoque_produto_nome || ingredient.nome_ingrediente,
+                });
+
+                if (!ingredientStock) {
+                  result.unmatched.push(`${item.quantity}x ${item.name} | ${ingredient.nome_ingrediente}`);
+                  continue;
+                }
+
+                const currentQuantity = Number(ingredientStock.quantidade_atual || 0);
+                const nextQuantity = currentQuantity - requestedIngredientQuantity;
+                if (requestedIngredientQuantity > currentQuantity) result.insufficient.push(`${ingredientStock.nome || ingredient.nome_ingrediente} (estoque insuficiente)`);
+                if (nextQuantity <= Number(ingredientStock.estoque_minimo || 0)) result.critical.push(ingredientStock.nome || ingredient.nome_ingrediente);
                 movementPlans.push({
                   movementId: createId(),
-                  stockId: productStock.id,
-                  stockName: productStock.nome || item.name,
+                  stockId: ingredientStock.id,
+                  stockName: ingredientStock.nome || ingredient.nome_ingrediente,
                   orderId: item.orderId,
                   orderItemId: item.id,
-                  sourceItemId: item.productId,
-                  sourceItemKind: 'product',
-                  requestedQuantity,
+                  sourceItemId: ingredient.id,
+                  sourceItemKind: 'recipe',
+                  requestedQuantity: requestedIngredientQuantity,
                   previousQuantity: currentQuantity,
                   nextQuantity,
-                  reason: baseReason,
+                  reason: `${baseReason} | Receita ${item.name} | ${ingredient.nome_ingrediente}`,
                 });
+              }
+            } else {
+              if (recipe.hasRecipe && (recipe.ingredients || []).length > 0) {
+                result.unmatched.push(`${item.quantity}x ${item.name} | ficha técnica sem vínculo de estoque`);
+              }
+
+              const alreadyMovedProduct = await hasPdvStockMovement({
+                orderItemId: item.id,
+                sourceItemKind: 'product',
+                sourceItemId: item.productId,
+              });
+
+              if (!alreadyMovedProduct) {
+                const productStock = await findStockProduct(empresaId, {
+                  id: item.remoteStockId || item.productId,
+                  name: item.name,
+                });
+
+                if (!productStock) {
+                  result.unmatched.push(`${item.quantity}x ${item.name}`);
+                } else {
+                  const currentQuantity = Number(productStock.quantidade_atual || 0);
+                  const nextQuantity = currentQuantity - requestedQuantity;
+                  if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
+                  if (nextQuantity <= Number(productStock.estoque_minimo || 0)) result.critical.push(item.name);
+                  if (requestedQuantity > 0) {
+                    movementPlans.push({
+                      movementId: createId(),
+                      stockId: productStock.id,
+                      stockName: productStock.nome || item.name,
+                      orderId: item.orderId,
+                      orderItemId: item.id,
+                      sourceItemId: item.productId,
+                      sourceItemKind: 'product',
+                      requestedQuantity,
+                      previousQuantity: currentQuantity,
+                      nextQuantity,
+                      reason: baseReason,
+                    });
+                  }
+                }
               }
             }
           }
 
           for (const modifier of item.selectedModifiers || []) {
+            const modifierRecipe = await findRecipeForOrderItem(empresaId, {
+              id: `${item.id}:${modifier.id || normalizeProductionText(modifier.name || 'modifier')}`,
+              productId: modifier.id,
+              name: modifier.name,
+              orderId: item.orderId,
+            });
+            const modifierRecipeIngredients = modifierRecipe.linkedIngredients || [];
+
+            if (modifierRecipeIngredients.length > 0) {
+              for (const ingredient of modifierRecipeIngredients) {
+                const alreadyMovedModifierRecipe = await hasPdvStockMovement({
+                  orderItemId: item.id,
+                  sourceItemKind: 'recipe',
+                  sourceItemId: ingredient.id,
+                });
+                if (alreadyMovedModifierRecipe) continue;
+
+                const requestedIngredientQuantity = Number((Number(ingredient.quantidade_usada || 0) * requestedQuantity).toFixed(4));
+                if (requestedIngredientQuantity <= 0) continue;
+
+                const ingredientStock = await findStockProduct(empresaId, {
+                  id: ingredient.estoque_produto_id,
+                  name: ingredient.estoque_produto_nome || ingredient.nome_ingrediente,
+                });
+
+                if (!ingredientStock) {
+                  result.unmatched.push(`${item.quantity}x ${modifier.name} | ${ingredient.nome_ingrediente}`);
+                  continue;
+                }
+
+                const currentQuantity = Number(ingredientStock.quantidade_atual || 0);
+                const nextQuantity = currentQuantity - requestedIngredientQuantity;
+                if (requestedIngredientQuantity > currentQuantity) result.insufficient.push(`${ingredientStock.nome || ingredient.nome_ingrediente} (estoque insuficiente)`);
+                if (nextQuantity <= Number(ingredientStock.estoque_minimo || 0)) result.critical.push(ingredientStock.nome || ingredient.nome_ingrediente);
+                movementPlans.push({
+                  movementId: createId(),
+                  stockId: ingredientStock.id,
+                  stockName: ingredientStock.nome || ingredient.nome_ingrediente,
+                  orderId: item.orderId,
+                  orderItemId: item.id,
+                  sourceItemId: ingredient.id,
+                  sourceItemKind: 'recipe',
+                  requestedQuantity: requestedIngredientQuantity,
+                  previousQuantity: currentQuantity,
+                  nextQuantity,
+                  reason: `${baseReason} | Receita opcional ${modifier.name} | ${ingredient.nome_ingrediente}`,
+                });
+              }
+              continue;
+            }
+
+            if (modifierRecipe.hasRecipe && (modifierRecipe.ingredients || []).length > 0) {
+              result.unmatched.push(`${item.quantity}x ${modifier.name} | ficha técnica opcional sem vínculo de estoque`);
+            }
+
             const alreadyMovedModifier = await hasPdvStockMovement({
               orderItemId: item.id,
               sourceItemKind: 'modifier',

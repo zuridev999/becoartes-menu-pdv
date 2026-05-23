@@ -86,7 +86,7 @@ export interface AppState {
   categoryModifierMapping: Record<string, string[]>;
   banners: string[];
   sellers: Seller[];
-  notifications: { id: string; message: string; tableId: string; type: 'order' | 'bill' | 'service' | 'info' | 'error' }[];
+  notifications: { id: string; message: string; tableId: string; type: 'order' | 'bill' | 'service' | 'info' | 'warning' | 'error' }[];
   closedBills: ClosedBill[];
   auditLogs: { id: string; action: string; details: string; table_number: string; origin: string; author_name: string; timestamp: string }[];
   fetchAuditLogs: () => Promise<void>;
@@ -143,7 +143,7 @@ export interface AppState {
   closeBill: (data: Omit<ClosedBill, 'id' | 'closedAt'>) => Promise<boolean>;
   updateTableStatus: (tableId: string, status: Table['status']) => void;
   updateKitchenOrderStatus: (orderId: string, status: KitchenOrder['status']) => void;
-  addNotification: (message: string, type?: 'info' | 'error' | 'order' | 'service', tableId?: string) => void;
+  addNotification: (message: string, type?: 'info' | 'warning' | 'error' | 'order' | 'service', tableId?: string) => void;
   clearNotification: (id: string) => void;
 
   // Logística de Mesas
@@ -906,6 +906,12 @@ export const useStore = create<AppState>((set, get) => ({
     get().addNotification(`Novo pedido da Mesa ${table.number}!`, 'order', tableId);
     if (sendResult.inventorySyncError) {
       get().addNotification("Pedido lançado, mas a baixa de estoque falhou. Confira o estoque.", "error", tableId);
+    }
+    if ((sendResult.inventorySync?.missingRecipes?.length || 0) > 0) {
+      get().addNotification("Pedido lançado, mas há produto sem ficha técnica vinculada ao PDV.", "warning", tableId);
+    }
+    if ((sendResult.inventorySync?.unlinkedRecipes?.length || 0) > 0) {
+      get().addNotification("Pedido lançado, mas há ficha técnica sem vínculo completo com estoque.", "warning", tableId);
     }
 
     postOSMessage('table_alert', {

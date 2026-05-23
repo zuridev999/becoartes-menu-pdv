@@ -28,6 +28,8 @@ type SendToKitchenResult = {
   inventorySync?: {
     movementCount: number;
     unmatched: string[];
+    missingRecipes?: string[];
+    unlinkedRecipes?: string[];
     insufficient: string[];
     critical: string[];
     catalogVersion?: string | null;
