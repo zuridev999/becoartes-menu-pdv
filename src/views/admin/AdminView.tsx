@@ -72,17 +72,21 @@ type AuditMovement = {
 };
 
 const QR_PUBLIC_BASE_URL = 'https://qr.becoartes.com';
-const QR_MENU_TEMPLATE_URL = '/qr/menu-qr-template.jpg';
-const QR_TEMPLATE_WIDTH = 3875;
-const QR_TEMPLATE_HEIGHT = 5463;
-const QR_REPLACE_BOX = {
-  left: 893,
-  top: 2185,
-  width: 1997,
-  height: 2115,
+const QR_OFFICIAL_LOGO_URL = '/qr/logo-oficial.png';
+const QR_TEMPLATE_WIDTH = 1181;
+const QR_TEMPLATE_HEIGHT = 1772;
+const QR_SIZE = 680;
+const QR_CARD = {
+  left: 219,
+  top: 694,
+  width: 744,
+  height: 790,
 };
-const QR_SIZE = 1860;
-const QR_TOP_OFFSET = 26;
+const QR_IMAGE = {
+  left: 251,
+  top: 724,
+  size: QR_SIZE,
+};
 
 const normalizeQrRangeValue = (value: string, fallback: number) => {
   const parsed = Math.trunc(Number(value));
@@ -113,18 +117,95 @@ const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, rejec
   image.src = src;
 });
 
+const drawRoundedBlob = (
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  phase = 0,
+  sx = 1,
+  sy = 1,
+  rotation = 0
+) => {
+  const points: Array<[number, number]> = [];
+  const steps = 18;
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+
+  for (let i = 0; i < steps; i += 1) {
+    const t = (Math.PI * 2 * i) / steps;
+    const wobble = 1
+      + 0.14 * Math.sin(3 * t + phase)
+      + 0.09 * Math.cos(5 * t - phase * 0.8)
+      + 0.05 * Math.sin(2 * t + phase * 1.7);
+    const x = Math.cos(t) * r * wobble * sx;
+    const y = Math.sin(t) * r * wobble * sy;
+    points.push([cx + x * cosR - y * sinR, cy + x * sinR + y * cosR]);
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 0; i < points.length; i += 1) {
+    const current = points[i];
+    const next = points[(i + 1) % points.length];
+    ctx.quadraticCurveTo(current[0], current[1], (current[0] + next[0]) / 2, (current[1] + next[1]) / 2);
+  }
+  ctx.closePath();
+  ctx.fill();
+};
+
+const drawCenteredText = (
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  font: string,
+  color: string
+) => {
+  ctx.save();
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(47, 11, 97, 0.55)';
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetY = 4;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+};
+
+const drawLeftText = (
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  font: string,
+  color: string
+) => {
+  ctx.save();
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(47, 11, 97, 0.55)';
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetY = 4;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+};
+
 const buildPrintableQrBlob = async (tableNumber: number, qrUrl: string) => {
   const qrDataUrl = await QRCode.toDataURL(qrUrl, {
     errorCorrectionLevel: 'H',
     margin: 1,
-    width: QR_SIZE,
+    width: QR_IMAGE.size,
     color: {
       dark: '#000000',
       light: '#ffffff',
     },
   });
-  const [templateImage, qrImage] = await Promise.all([
-    loadImage(QR_MENU_TEMPLATE_URL),
+  const [logoImage, qrImage] = await Promise.all([
+    loadImage(QR_OFFICIAL_LOGO_URL),
     loadImage(qrDataUrl),
   ]);
   const canvas = document.createElement('canvas');
@@ -133,26 +214,103 @@ const buildPrintableQrBlob = async (tableNumber: number, qrUrl: string) => {
   const ctx = canvas.getContext('2d');
   if (!ctx) return dataUrlToBlob(qrDataUrl);
 
-  ctx.drawImage(templateImage, 0, 0, canvas.width, canvas.height);
+  const background = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  background.addColorStop(0, '#7f33c8');
+  background.addColorStop(0.42, '#6324aa');
+  background.addColorStop(1, '#42147e');
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  const light = ctx.createRadialGradient(450, 320, 40, 450, 320, 1250);
+  light.addColorStop(0, 'rgba(154, 76, 255, 0.44)');
+  light.addColorStop(0.48, 'rgba(109, 44, 197, 0.24)');
+  light.addColorStop(1, 'rgba(53, 16, 107, 0.12)');
+  ctx.fillStyle = light;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = '#ffd51f';
+  drawRoundedBlob(ctx, -46, 242, 132, 0.3, 0.78, 1.12, -0.18);
+  drawRoundedBlob(ctx, 1228, 488, 142, 1.6, 0.78, 1.16, 0.12);
+  drawRoundedBlob(ctx, 75, 1115, 116, 2.2, 1.1, 0.88, -0.42);
+  drawRoundedBlob(ctx, 1112, 1190, 110, 0.8, 1.02, 1.18, 0.4);
+  drawRoundedBlob(ctx, 1118, 1726, 118, 2.8, 1.18, 0.72, -0.35);
+  drawRoundedBlob(ctx, -38, 1688, 86, 1.2, 1.05, 0.78, 0.2);
+  drawRoundedBlob(ctx, 590, 1815, 235, 2.4, 1.45, 0.42, 0.02);
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(47, 11, 97, 0.55)';
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetY = 4;
+  ctx.strokeStyle = '#ffd51f';
+  ctx.lineWidth = 18;
+  ctx.beginPath();
+  ctx.roundRect(76, 78, 232, 328, 42);
+  ctx.stroke();
+  ctx.fillStyle = '#ffd51f';
+  ctx.beginPath();
+  ctx.moveTo(154, 78);
+  ctx.lineTo(230, 78);
+  ctx.quadraticCurveTo(230, 104, 204, 104);
+  ctx.lineTo(180, 104);
+  ctx.quadraticCurveTo(154, 104, 154, 78);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(23, 7, 37, 0.30)';
+  ctx.shadowBlur = 13;
+  ctx.shadowOffsetY = 10;
+  ctx.fillStyle = '#ffd51f';
+  ctx.beginPath();
+  ctx.arc(948, 188, 137, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.strokeStyle = '#5f22a8';
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.arc(948, 188, 147, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.drawImage(logoImage, 826, 66, 244, 244);
+
+  drawLeftText(ctx, 'ACESSE O', 365, 176, '900 72px Arial Black, Impact, sans-serif', '#ffd51f');
+  drawLeftText(ctx, 'MENU', 365, 258, '900 72px Arial Black, Impact, sans-serif', '#ffd51f');
+  drawLeftText(ctx, 'COMPLETO', 365, 340, '900 72px Arial Black, Impact, sans-serif', '#ffd51f');
+
+  drawCenteredText(ctx, 'É rápido, intuitivo e vai direto pra cozinha.', 590, 500, '900 41px Arial, Helvetica, sans-serif', '#ffe76b');
+  drawCenteredText(ctx, 'Funciona igual ao tablet da mesa,', 590, 560, '900 41px Arial, Helvetica, sans-serif', '#ffe76b');
+  drawCenteredText(ctx, 'só que no seu celular.', 590, 620, '900 41px Arial, Helvetica, sans-serif', '#ffe76b');
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(23, 7, 37, 0.30)';
+  ctx.shadowBlur = 13;
+  ctx.shadowOffsetY = 10;
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(QR_REPLACE_BOX.left, QR_REPLACE_BOX.top, QR_REPLACE_BOX.width, QR_REPLACE_BOX.height);
-
-  const qrLeft = QR_REPLACE_BOX.left + Math.round((QR_REPLACE_BOX.width - QR_SIZE) / 2);
-  const qrTop = QR_REPLACE_BOX.top + QR_TOP_OFFSET;
-  ctx.drawImage(qrImage, qrLeft, qrTop, QR_SIZE, QR_SIZE);
+  ctx.fillRect(QR_CARD.left, QR_CARD.top, QR_CARD.width, QR_CARD.height);
+  ctx.restore();
+  ctx.drawImage(qrImage, QR_IMAGE.left, QR_IMAGE.top, QR_IMAGE.size, QR_IMAGE.size);
 
   ctx.fillStyle = '#000000';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = '900 126px Arial, Helvetica, sans-serif';
-  const labelCenterX = QR_REPLACE_BOX.left + Math.round(QR_REPLACE_BOX.width / 2);
-  const labelTop = qrTop + QR_SIZE - 4;
-  const labelHeight = QR_REPLACE_BOX.top + QR_REPLACE_BOX.height - labelTop;
-  ctx.fillText(`Mesa ${tableNumber}`, labelCenterX, labelTop + Math.round(labelHeight * 0.42));
+  ctx.font = '900 52px Arial, Helvetica, sans-serif';
+  ctx.fillText(`Mesa ${tableNumber}`, 591, 1450);
+
+  drawCenteredText(ctx, 'ESCANEIE O QR CODE', 590, 1588, '900 68px Arial Black, Impact, sans-serif', '#ffd51f');
+  drawCenteredText(ctx, 'E FAÇA SEU PEDIDO.', 590, 1666, '900 68px Arial Black, Impact, sans-serif', '#ffd51f');
+
+  ctx.globalAlpha = 0.14;
+  ctx.strokeStyle = '#ffd51f';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(36, 36, 1109, 1700, 42);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
 
   return new Promise<Blob>((resolve) => {
-    canvas.toBlob((blob) => resolve(blob || new Blob()), 'image/jpeg', 0.94);
+    canvas.toBlob((blob) => resolve(blob || new Blob()), 'image/png');
   });
 };
 
@@ -569,7 +727,7 @@ export function AdminView() {
   const downloadTableQr = async (tableNumber: number) => {
     try {
       const blob = await buildPrintableQrBlob(tableNumber, getQrUrl(tableNumber));
-      downloadBlob(blob, `becoartes-mesa-${String(tableNumber).padStart(2, '0')}.jpg`);
+      downloadBlob(blob, `becoartes-mesa-${String(tableNumber).padStart(2, '0')}.png`);
       addNotification(`QR Code da mesa ${tableNumber} baixado.`, 'info');
     } catch (error) {
       console.error('Erro ao gerar QR Code:', error);
@@ -593,7 +751,7 @@ export function AdminView() {
       const zip = new JSZip();
       for (const tableNumber of selectedNumbers) {
         const blob = await buildPrintableQrBlob(tableNumber, getQrUrl(tableNumber));
-        zip.file(`mesa-${String(tableNumber).padStart(2, '0')}.jpg`, blob);
+        zip.file(`mesa-${String(tableNumber).padStart(2, '0')}.png`, blob);
       }
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       downloadBlob(zipBlob, `becoartes-qrcodes-mesas-${start}-${end}.zip`);
@@ -1038,7 +1196,7 @@ export function AdminView() {
                       onClick={() => downloadTableQr(table.number)}
                       className="glass py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-300 hover:text-white transition-all flex items-center justify-center gap-2"
                     >
-                      <Download size={15} /> JPG
+                      <Download size={15} /> PNG
                     </button>
                   </div>
                 </div>
