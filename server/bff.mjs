@@ -432,6 +432,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS integration_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, table_id TEXT, ref_id TEXT, payload TEXT, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     "CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, status TEXT NOT NULL, opening_balance REAL NOT NULL, closing_balance REAL, total_sales REAL DEFAULT 0, opened_at DATETIME DEFAULT CURRENT_TIMESTAMP, closed_at DATETIME, sort_order INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS pdv_cash_sandbox (id TEXT PRIMARY KEY, empresa_id TEXT NOT NULL, data TEXT NOT NULL, saldo_inicial REAL NOT NULL DEFAULT 0, entradas_dinheiro REAL NOT NULL DEFAULT 0, saidas_dinheiro REAL NOT NULL DEFAULT 0, valor_caixa_final REAL NOT NULL DEFAULT 0, valor_envelopes REAL NOT NULL DEFAULT 0, total_na_casa REAL NOT NULL DEFAULT 0, responsavel_id TEXT NOT NULL, observacoes TEXT, status TEXT NOT NULL DEFAULT 'Aberto', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS estoque_produto_variacoes (id TEXT PRIMARY KEY, empresa_id TEXT NOT NULL, produto_id TEXT NOT NULL, nome_variacao TEXT NOT NULL, marca TEXT, fornecedor TEXT, codigo_barras TEXT, unidade_compra TEXT, quantidade_base REAL, unidade_base TEXT, fator_conversao REAL, observacoes TEXT, ativo INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
   ], 'write');
 
   const migrations = [
@@ -463,6 +464,11 @@ const ensureDatabase = async () => {
     "ALTER TABLE fichas_tecnicas ADD COLUMN pdv_product_name TEXT",
     "ALTER TABLE ficha_ingredientes ADD COLUMN estoque_produto_id TEXT",
     "ALTER TABLE ficha_ingredientes ADD COLUMN estoque_produto_nome TEXT",
+    "ALTER TABLE ficha_ingredientes ADD COLUMN nome_exibicao TEXT",
+    "ALTER TABLE ficha_ingredientes ADD COLUMN tipo_preparo TEXT DEFAULT 'direto'",
+    "ALTER TABLE ficha_ingredientes ADD COLUMN quantidade_estoque_baixa REAL",
+    "ALTER TABLE ficha_ingredientes ADD COLUMN unidade_estoque_baixa TEXT",
+    "ALTER TABLE ficha_ingredientes ADD COLUMN fator_conversao REAL",
   ];
 
   for (const sql of migrations) {
@@ -475,6 +481,8 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)",
     "CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id)",
     "CREATE INDEX IF NOT EXISTS idx_stock_empresa_nome ON estoque_produtos(empresa_id, ativo, nome)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_variacoes_empresa_nome ON estoque_produto_variacoes(empresa_id, lower(trim(nome_variacao)))",
+    "CREATE INDEX IF NOT EXISTS idx_stock_variacoes_produto ON estoque_produto_variacoes(produto_id, ativo)",
     "CREATE INDEX IF NOT EXISTS idx_stock_mov_empresa_created ON estoque_movimentacoes(empresa_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_notif_empresa_created ON notificacoes(empresa_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_category_modifiers_category ON category_modifier_groups(category_id)",
@@ -1856,7 +1864,11 @@ const findRecipeForOrderItem = async (empresaId, item) => {
           fi.estoque_produto_id,
           fi.estoque_produto_nome,
           fi.quantidade_usada,
-          fi.unidade_medida
+          fi.unidade_medida,
+          fi.nome_exibicao,
+          fi.tipo_preparo,
+          fi.quantidade_estoque_baixa,
+          fi.unidade_estoque_baixa
         FROM ficha_ingredientes fi
         WHERE fi.ficha_tecnica_id = ?
         ORDER BY fi.nome_ingrediente ASC
@@ -1881,6 +1893,18 @@ const findRecipeForOrderItem = async (empresaId, item) => {
     return { hasRecipe: false, ingredients: [], linkedIngredients: [] };
   }
 };
+
+const getRecipeIngredientStockQuantity = (ingredient) => {
+  const converted = Number(ingredient?.quantidade_estoque_baixa || 0);
+  if (Number.isFinite(converted) && converted > 0) return converted;
+  const direct = Number(ingredient?.quantidade_usada || 0);
+  return Number.isFinite(direct) && direct > 0 ? direct : 0;
+};
+
+const getRecipeIngredientDisplayName = (ingredient) => (
+  ingredient?.nome_exibicao || ingredient?.estoque_produto_nome || ingredient?.nome_ingrediente || 'Ingrediente'
+);
+
 const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber, reason, closedBillId = null }) => {
   const result = { movementCount: 0, unmatched: [], missingRecipes: [], unlinkedRecipes: [], insufficient: [], critical: [], catalogVersion: null };
   const safeItems = Array.isArray(items) ? items : [];
@@ -1908,7 +1932,7 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
         });
         if (alreadyMovedRecipe) continue;
 
-        const ingredientQuantity = Number(ingredient.quantidade_usada || 0);
+        const ingredientQuantity = getRecipeIngredientStockQuantity(ingredient);
         const requestedIngredientQuantity = Number((ingredientQuantity * requestedQuantity).toFixed(4));
         if (requestedIngredientQuantity <= 0) continue;
 
@@ -1918,7 +1942,7 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
         });
 
         if (!ingredientStock) {
-          result.unmatched.push(`${item.quantity}x ${item.name} | ${ingredient.nome_ingrediente}`);
+          result.unmatched.push(`${item.quantity}x ${item.name} | ${getRecipeIngredientDisplayName(ingredient)}`);
           continue;
         }
 
@@ -1937,7 +1961,7 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
           requestedQuantity: requestedIngredientQuantity,
           previousQuantity: currentQuantity,
           nextQuantity,
-          reason: `${reason} | Receita ${item.name} | ${ingredient.nome_ingrediente}`,
+          reason: `${reason} | Receita ${item.name} | ${getRecipeIngredientDisplayName(ingredient)}`,
         });
       }
     } else {
@@ -2003,7 +2027,7 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
           });
           if (alreadyMovedModifierRecipe) continue;
 
-          const requestedIngredientQuantity = Number((Number(ingredient.quantidade_usada || 0) * requestedQuantity).toFixed(4));
+          const requestedIngredientQuantity = Number((getRecipeIngredientStockQuantity(ingredient) * requestedQuantity).toFixed(4));
           if (requestedIngredientQuantity <= 0) continue;
 
           const ingredientStock = await findStockProduct(empresaId, {
@@ -2011,7 +2035,7 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
             name: ingredient.estoque_produto_nome || ingredient.nome_ingrediente,
           });
           if (!ingredientStock) {
-            result.unmatched.push(`${item.quantity}x ${modifier.name} | ${ingredient.nome_ingrediente}`);
+            result.unmatched.push(`${item.quantity}x ${modifier.name} | ${getRecipeIngredientDisplayName(ingredient)}`);
             continue;
           }
 
@@ -2030,7 +2054,7 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
             requestedQuantity: requestedIngredientQuantity,
             previousQuantity: currentQuantity,
             nextQuantity,
-            reason: `${reason} | Receita opcional ${modifier.name} | ${ingredient.nome_ingrediente}`,
+            reason: `${reason} | Receita opcional ${modifier.name} | ${getRecipeIngredientDisplayName(ingredient)}`,
           });
         }
         continue;
@@ -3388,7 +3412,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
 
             if (recipeIngredients.length > 0) {
               for (const ingredient of recipeIngredients) {
-                const requestedIngredientQuantity = Number((Number(ingredient.quantidade_usada || 0) * requestedQuantity).toFixed(4));
+                const requestedIngredientQuantity = Number((getRecipeIngredientStockQuantity(ingredient) * requestedQuantity).toFixed(4));
                 if (requestedIngredientQuantity <= 0) continue;
 
                 const ingredientStock = await findStockProduct(empresaId, {
@@ -3397,7 +3421,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
                 });
 
                 if (!ingredientStock) {
-                  result.unmatched.push(`${item.quantity}x ${item.name} | ${ingredient.nome_ingrediente}`);
+                  result.unmatched.push(`${item.quantity}x ${item.name} | ${getRecipeIngredientDisplayName(ingredient)}`);
                   continue;
                 }
 
@@ -3416,7 +3440,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
                   requestedQuantity: requestedIngredientQuantity,
                   previousQuantity: currentQuantity,
                   nextQuantity,
-                  reason: `${baseReason} | Receita ${item.name} | ${ingredient.nome_ingrediente}`,
+                  reason: `${baseReason} | Receita ${item.name} | ${getRecipeIngredientDisplayName(ingredient)}`,
                 });
               }
             } else {
@@ -3481,7 +3505,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
                 });
                 if (alreadyMovedModifierRecipe) continue;
 
-                const requestedIngredientQuantity = Number((Number(ingredient.quantidade_usada || 0) * requestedQuantity).toFixed(4));
+                const requestedIngredientQuantity = Number((getRecipeIngredientStockQuantity(ingredient) * requestedQuantity).toFixed(4));
                 if (requestedIngredientQuantity <= 0) continue;
 
                 const ingredientStock = await findStockProduct(empresaId, {
@@ -3490,7 +3514,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
                 });
 
                 if (!ingredientStock) {
-                  result.unmatched.push(`${item.quantity}x ${modifier.name} | ${ingredient.nome_ingrediente}`);
+                  result.unmatched.push(`${item.quantity}x ${modifier.name} | ${getRecipeIngredientDisplayName(ingredient)}`);
                   continue;
                 }
 
@@ -3509,7 +3533,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
                   requestedQuantity: requestedIngredientQuantity,
                   previousQuantity: currentQuantity,
                   nextQuantity,
-                  reason: `${baseReason} | Receita opcional ${modifier.name} | ${ingredient.nome_ingrediente}`,
+                  reason: `${baseReason} | Receita opcional ${modifier.name} | ${getRecipeIngredientDisplayName(ingredient)}`,
                 });
               }
               continue;
