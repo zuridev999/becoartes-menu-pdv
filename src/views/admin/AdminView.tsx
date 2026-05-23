@@ -39,7 +39,7 @@ import {
   type PermissionProfile
 } from '../../lib/permissions';
 import { createId } from '../../lib/id';
-import { getImageSrc } from '../../lib/image';
+import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
 import { AppApi } from '../../lib/api';
 
@@ -550,7 +550,7 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
                 categoryProducts.map((p: any) => (
                   <div key={p.id} className="flex items-center justify-between p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all">
                     <div className="flex items-center gap-4">
-                      <img src={getImageSrc(p.image)} className="w-10 h-10 rounded-lg object-cover" />
+                      <img src={getImageSrc(p.image)} alt={p.name} onError={(event) => applyImageFallback(event.currentTarget)} className="w-10 h-10 rounded-lg object-cover" />
                       <p className="font-bold text-sm">{p.name}</p>
                     </div>
                     <div className="flex items-center gap-4">
@@ -1299,7 +1299,7 @@ export function AdminView() {
                       <div key={p.id} className={`flex items-center justify-between gap-3 p-4 sm:p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group ${!p.visible ? 'opacity-40 grayscale' : ''}`}>
                         <div className="flex items-center gap-4 sm:gap-6 min-w-0">
                           <div className="relative">
-                            <img src={getImageSrc(p.image)} className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
+                            <img src={getImageSrc(p.image)} alt={p.name} onError={(event) => applyImageFallback(event.currentTarget)} className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
                             {!p.visible && <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center"><EyeOff size={20} className="text-white/40" /></div>}
                           </div>
                           <div className="min-w-0">
@@ -1470,7 +1470,7 @@ export function AdminView() {
                     >
                       {editingProduct.image ? (
                         <>
-                          <img src={getImageSrc(editingProduct.image)} className="absolute inset-0 w-full h-full object-cover opacity-40" />
+                          <img src={getImageSrc(editingProduct.image)} alt={editingProduct.name || 'Produto'} onError={(event) => applyImageFallback(event.currentTarget)} className="absolute inset-0 w-full h-full object-cover opacity-40" />
                           <div className="relative z-10 flex flex-col items-center gap-2">
                              <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md group-hover:scale-110 transition-all">
                                <Plus size={24} />
