@@ -576,6 +576,16 @@ const isOperationIpRestricted = () => ALLOWED_OPERATION_IPS.length > 0;
 const isOperationIpAllowed = (req) => (
   !isOperationIpRestricted() || ALLOWED_OPERATION_IPS.includes(getClientIp(req))
 );
+const getRequestHost = (req) => String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '')
+  .split(',')[0]
+  .trim()
+  .toLowerCase()
+  .replace(/:\d+$/, '');
+const isQrPublicRequest = (req, body = null) => {
+  if (body?.origin === 'qr') return true;
+  const host = getRequestHost(req);
+  return host === 'qr.becoartes.com' || host === 'qrcode.becoartes.com';
+};
 
 const isAdminSession = (session) => normalizePermission(session?.permission) === 'admin';
 const isAdminBypassPin = (pin) => ADMIN_BYPASS_PIN && String(pin || '') === ADMIN_BYPASS_PIN;
@@ -4014,7 +4024,7 @@ const handleApi = async (req, res, url) => {
     const isLoginRoute = routeKey === 'POST /api/auth/login' || routeKey === 'POST /api/tablet/setup-login';
     // Login por PIN nunca deve herdar permissão de uma sessão antiga. Isso evita
     // que um token admin salvo no navegador libere PIN de colaborador fora da rede.
-    const operationAccessAllowed = isOperationIpAllowed(req) || (!isLoginRoute && isAdminSession(session));
+    const operationAccessAllowed = isQrPublicRequest(req, body) || isOperationIpAllowed(req) || (!isLoginRoute && isAdminSession(session));
     await enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
     const data = await handler(body, { req, url, session, operationAccessAllowed });
     sendJson(res, 200, { ok: true, data });
