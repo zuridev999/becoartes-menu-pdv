@@ -2821,8 +2821,13 @@ const getExpectedClosingCents = async (cash) => {
 };
 
 const closeCash = async ({ closingBalance, notes, confirmationPin }, session) => {
-  requireSession(session);
-  const pinValidation = await validateCashClosingPin(session, confirmationPin);
+  const adminOverride = isAdminBypassPin(confirmationPin);
+  const effectiveSession = session || (adminOverride ? createAdminBypassSession().seller : null);
+  requireSession(effectiveSession);
+
+  const pinValidation = adminOverride
+    ? { valid: true, override: true }
+    : await validateCashClosingPin(effectiveSession, confirmationPin);
   if (!pinValidation.valid) {
     const error = new Error('PIN do usuário logado não confere. Use o PIN da sessão ou o PIN super admin autorizado.');
     error.statusCode = 403;
@@ -2852,13 +2857,13 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }, session) =>
         sandbox: CASH_SANDBOX_MODE,
       }),
       origin: 'pdv',
-      authorName: session.name,
+      authorName: effectiveSession.name,
       timestamp: new Date().toISOString(),
     });
 
     await safeCreateOSNotification({
       title: 'Bloqueio: falta de dinheiro no caixa',
-      message: `${session.name || 'Usuário'} tentou fechar o caixa com ${formatMoneyBRL(centsToMoney(missingCents))} abaixo do esperado.`,
+      message: `${effectiveSession.name || 'Usuário'} tentou fechar o caixa com ${formatMoneyBRL(centsToMoney(missingCents))} abaixo do esperado.`,
       type: 'alert',
       link: `/${OS_TENANT_SLUG}/controle-dinheiro`,
     });
@@ -2898,7 +2903,7 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }, session) =>
       sandbox: CASH_SANDBOX_MODE,
     }),
     origin: 'pdv',
-    authorName: session.name,
+    authorName: effectiveSession.name,
     timestamp: new Date().toISOString(),
   });
 
@@ -3564,6 +3569,10 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
   if (routeKey === 'POST /api/audit-logs') {
     if (body?.origin === 'tablet' || body?.origin === 'qr') return;
     requireSession(session);
+    return;
+  }
+
+  if (routeKey === 'POST /api/cash/close' && isAdminBypassPin(body?.confirmationPin)) {
     return;
   }
 
