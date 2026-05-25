@@ -281,6 +281,10 @@ export const AdminApi = {
     return postJson<{ saved: boolean }>('/api/sellers', { seller });
   },
 
+  updateSeller(id: string, seller: unknown) {
+    return postJson<{ updated: boolean }>('/api/sellers/update', { id, seller });
+  },
+
   updateSellerPin(id: string, pin: string) {
     return postJson<{ updated: boolean }>('/api/sellers/pin', { id, pin });
   },

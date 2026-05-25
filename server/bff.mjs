@@ -2997,6 +2997,79 @@ const updateSellerPin = async ({ id, pin }) => {
   return { updated: true };
 };
 
+const updateSeller = async ({ id, seller }) => {
+  const safeId = requireString(id, 'id');
+  const safeSeller = seller || {};
+  const fields = [];
+  const args = [];
+
+  if (safeSeller.name !== undefined) {
+    const name = requireString(safeSeller.name, 'seller.name').trim();
+    if (!name) {
+      const error = new Error('Nome do usuário é obrigatório.');
+      error.statusCode = 400;
+      throw error;
+    }
+    fields.push('name = ?');
+    args.push(name);
+  }
+
+  if (safeSeller.nickname !== undefined) {
+    fields.push('nickname = ?');
+    args.push(String(safeSeller.nickname || '').trim());
+  }
+
+  if (safeSeller.role !== undefined) {
+    const role = ['garçom', 'atendente', 'gerente', 'outro'].includes(safeSeller.role)
+      ? safeSeller.role
+      : 'atendente';
+    fields.push('role = ?');
+    args.push(role);
+  }
+
+  if (safeSeller.permission !== undefined) {
+    const permission = ['admin', 'manager', 'operator', 'standard', 'restricted'].includes(safeSeller.permission)
+      ? safeSeller.permission
+      : 'operator';
+    fields.push('permission = ?');
+    args.push(permission);
+  }
+
+  if (safeSeller.status !== undefined) {
+    fields.push('status = ?');
+    args.push(safeSeller.status === 'inactive' ? 'inactive' : 'active');
+  }
+
+  if (safeSeller.pin !== undefined && String(safeSeller.pin).trim()) {
+    const pin = requireString(safeSeller.pin, 'seller.pin').trim();
+    if (!/^\d{4}$/.test(pin) && !/^[a-f0-9]{64}$/i.test(pin)) {
+      const error = new Error('PIN deve ter 4 dígitos.');
+      error.statusCode = 400;
+      throw error;
+    }
+    fields.push('pin = ?');
+    args.push(isLegacyPlainPin(pin) ? hashPin(pin) : pin);
+  }
+
+  if (fields.length === 0) {
+    return { updated: true };
+  }
+
+  args.push(safeId);
+  const result = await db.execute({
+    sql: `UPDATE sellers SET ${fields.join(', ')} WHERE id = ?`,
+    args,
+  });
+
+  if (result.rowsAffected === 0) {
+    const error = new Error('Usuário próprio do PDV não encontrado.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return { updated: true };
+};
+
 const deleteSeller = async ({ id }) => {
   requireString(id, 'id');
   const hasBills = await db.execute({ sql: "SELECT id FROM closed_bills WHERE seller_id = ? LIMIT 1", args: [id] });
@@ -3634,6 +3707,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/service-requests/clear': 'manageSettings',
     'POST /api/audit-logs/list': 'viewSalesTotals',
     'POST /api/sellers': 'managePDVUsers',
+    'POST /api/sellers/update': 'managePDVUsers',
     'POST /api/sellers/pin': 'managePDVUsers',
     'POST /api/sellers/delete': 'managePDVUsers',
     'POST /api/sellers/status': 'managePDVUsers',
@@ -3712,6 +3786,7 @@ const handlers = {
   'POST /api/shifts/open': async (body) => openShift(body),
   'POST /api/shifts/close': async (body) => closeShift(body),
   'POST /api/sellers': async (body) => addSeller(body),
+  'POST /api/sellers/update': async (body) => updateSeller(body),
   'POST /api/sellers/pin': async (body) => updateSellerPin(body),
   'POST /api/sellers/delete': async (body) => deleteSeller(body),
   'POST /api/sellers/status': async (body) => updateSellerStatus(body),

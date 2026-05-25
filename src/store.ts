@@ -1069,7 +1069,24 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   updateSeller: async (id, data) => {
-    console.log("Update seller not fully implemented", id, data);
+    const previousSellers = get().sellers;
+    const visibleData = { ...data };
+    delete (visibleData as Partial<Seller>).pin;
+
+    set((state) => ({
+      sellers: state.sellers.map((seller) => (
+        seller.id === id ? { ...seller, ...visibleData } : seller
+      )),
+    }));
+
+    try {
+      await AdminApi.updateSeller(id, data);
+      get().addNotification("Usuário do PDV atualizado.", "info");
+    } catch (error: any) {
+      set({ sellers: previousSellers });
+      get().addNotification(error.message || "Não foi possível atualizar o usuário.", "error");
+      throw error;
+    }
   },
 
   deleteSeller: async (id) => {

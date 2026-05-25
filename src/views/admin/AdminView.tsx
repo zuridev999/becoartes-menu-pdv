@@ -47,7 +47,7 @@ import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
 import { AdminApi, AppApi } from '../../lib/api';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
-import type { ScheduleConfig } from '../../types';
+import type { ScheduleConfig, Seller } from '../../types';
 
 type AdminDialog = {
   title: string;
@@ -426,7 +426,7 @@ export function AdminView() {
   const {
     menu, updateProduct, addProduct, deleteProduct,
     settings, updateSettings,
-    tables, sellers, addSeller, toggleSellerStatus, deleteSeller,
+    tables, sellers, addSeller, updateSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
     adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, toggleCategoryVisibility,
     linkGroupToCategory, linkGroupToProduct, currentSeller, closedBills, addNotification,
@@ -450,6 +450,17 @@ export function AdminView() {
   const [permissionSearch, setPermissionSearch] = useState('');
   const [showAddSellerModal, setShowAddSellerModal] = useState(false);
   const [selectedSeller, setSelectedSeller] = useState<any | null>(null);
+  const [sellerDraft, setSellerDraft] = useState<{
+    name: string;
+    role: Seller['role'];
+    permission: PermissionProfile;
+    pin: string;
+  }>({
+    name: '',
+    role: 'garçom',
+    permission: 'operator',
+    pin: '',
+  });
 
   const [movements, setMovements] = useState<AuditMovement[]>([]);
   const [auditStartDate, setAuditStartDate] = useState('');
@@ -785,6 +796,60 @@ export function AdminView() {
       candidate.id !== seller.id
       && normalizeSellerName(candidate.name || '') === normalizedName
     ));
+  };
+
+  const sellerDuplicateGroups = Object.values(
+    sellers.reduce((groups: Record<string, any[]>, seller: any) => {
+      const normalizedName = normalizeSellerName(seller?.name || '');
+      if (!normalizedName) return groups;
+      groups[normalizedName] = [...(groups[normalizedName] || []), seller];
+      return groups;
+    }, {})
+  ).filter((group: any[]) => group.length > 1) as any[][];
+
+  const openSellerEditor = (seller: any) => {
+    setSelectedSeller(seller);
+    setSellerDraft({
+      name: seller?.name || '',
+      role: seller?.role || 'garçom',
+      permission: getPermissionProfile(seller),
+      pin: '',
+    });
+  };
+
+  const handleUpdateSelectedSeller = async () => {
+    if (!selectedSeller || selectedSeller.source === 'os') return;
+
+    const name = sellerDraft.name.trim();
+    const pin = sellerDraft.pin.trim();
+
+    if (!name) {
+      addNotification('Nome do usuário é obrigatório.', 'error');
+      return;
+    }
+
+    if (pin && !/^\d{4}$/.test(pin)) {
+      addNotification('PIN deve ter 4 dígitos.', 'error');
+      return;
+    }
+
+    const payload: Partial<Seller> = {
+      name,
+      role: sellerDraft.role,
+      permission: sellerDraft.permission,
+    };
+
+    if (pin) {
+      payload.pin = pin;
+    }
+
+    try {
+      await updateSeller(selectedSeller.id, payload);
+      setSelectedSeller((prev: any) => prev ? { ...prev, ...payload, pin: '' } : prev);
+      setSellerDraft((prev) => ({ ...prev, pin: '' }));
+    } catch {
+      // A store já restaura a lista e exibe a notificação de erro.
+    }
   };
 
   const getSellerPermissionValue = (seller: any, key: PermissionKey) => {
@@ -1754,6 +1819,25 @@ export function AdminView() {
             </div>
           )}
 
+          {sellerDuplicateGroups.length > 0 && (
+            <div className="rounded-[2rem] border border-amber-500/20 bg-amber-500/5 p-5 sm:p-6 flex flex-col lg:flex-row lg:items-start gap-4">
+              <AlertTriangle className="text-amber-300 shrink-0" size={22} />
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-300 mb-2">Possíveis duplicidades na equipe</p>
+                <p className="text-sm font-bold text-zinc-400 leading-relaxed mb-3">
+                  Não removi ninguém automaticamente. Abra cada pessoa para decidir se é usuário próprio do PDV ou espelhado do OS.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {sellerDuplicateGroups.map((group) => (
+                    <span key={normalizeSellerName(group[0]?.name || '')} className="px-3 py-2 rounded-xl bg-black/20 border border-white/5 text-[10px] font-black uppercase tracking-widest text-zinc-300">
+                      {group[0]?.name}: {group.map((seller: any) => seller.source === 'os' ? 'OS' : 'PDV').join(' + ')}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6 sm:p-10 border-white/5">
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-8 border-b border-white/5 pb-6">
               <div className="flex items-center gap-4">
@@ -1784,7 +1868,7 @@ export function AdminView() {
                 return (
                   <button
                     key={s.id}
-                    onClick={() => setSelectedSeller(s)}
+                    onClick={() => openSellerEditor(s)}
                     className="w-full flex items-center justify-between gap-5 p-5 sm:p-6 glass rounded-2xl border-white/5 hover:border-primary/40 hover:bg-primary/5 text-left transition-all"
                   >
                     <div className="flex items-center gap-5 min-w-0">
@@ -2155,6 +2239,75 @@ export function AdminView() {
                               Não removi nada automaticamente para não apagar acesso válido.
                             </p>
                           </div>
+                        </div>
+                      )}
+
+                      {selectedSeller.source === 'pdv' ? (
+                        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
+                            <div>
+                              <p className="text-xs font-black uppercase tracking-widest text-primary mb-1">Dados do usuário próprio PDV</p>
+                              <p className="text-sm font-bold text-zinc-400">Edite nome, cargo, perfil e PIN sem depender do cadastro do OS.</p>
+                            </div>
+                            <button
+                              onClick={handleUpdateSelectedSeller}
+                              className="btn-beco btn-beco-purple px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-xs"
+                            >
+                              Salvar usuário
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                            <label className="space-y-2">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Nome</span>
+                              <input
+                                value={sellerDraft.name}
+                                onChange={(event) => setSellerDraft((prev) => ({ ...prev, name: event.target.value }))}
+                                className="w-full bg-black/25 border border-white/10 rounded-2xl px-4 py-4 font-black outline-none focus:border-primary"
+                              />
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Cargo</span>
+                              <select
+                                value={sellerDraft.role}
+                                onChange={(event) => setSellerDraft((prev) => ({ ...prev, role: event.target.value as Seller['role'] }))}
+                                className="w-full bg-black/25 border border-white/10 rounded-2xl px-4 py-4 font-black outline-none focus:border-primary"
+                              >
+                                <option value="garçom">Garçom</option>
+                                <option value="atendente">Atendente</option>
+                                <option value="gerente">Gerente</option>
+                                <option value="outro">Outro</option>
+                              </select>
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Perfil base</span>
+                              <select
+                                value={sellerDraft.permission}
+                                onChange={(event) => setSellerDraft((prev) => ({ ...prev, permission: event.target.value as PermissionProfile }))}
+                                className="w-full bg-black/25 border border-white/10 rounded-2xl px-4 py-4 font-black outline-none focus:border-primary"
+                              >
+                                {permissionProfiles.map((profileOption) => (
+                                  <option key={profileOption} value={profileOption}>{profileLabels[profileOption]}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Novo PIN</span>
+                              <input
+                                value={sellerDraft.pin}
+                                onChange={(event) => setSellerDraft((prev) => ({ ...prev, pin: event.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                                inputMode="numeric"
+                                placeholder="Manter atual"
+                                className="w-full bg-black/25 border border-white/10 rounded-2xl px-4 py-4 font-black outline-none focus:border-primary"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+                          <p className="text-xs font-black uppercase tracking-widest text-emerald-300 mb-2">Usuário espelhado do Becoartes OS</p>
+                          <p className="text-sm font-bold text-zinc-400 leading-relaxed">
+                            Nome, cargo e PIN vêm do OS. Aqui no PDV você controla somente o acesso e as exceções de permissão dessa pessoa.
+                          </p>
                         </div>
                       )}
 
