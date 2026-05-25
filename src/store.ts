@@ -197,6 +197,7 @@ export const useStore = create<AppState>((set, get) => ({
       lastRotatedAt: {}
     },
     pdvPermissions: {},
+    pdvUserPermissions: {},
     theme: 'dark-becoartes',
     tablet: {
       inactivityTimeout: 60,
@@ -233,6 +234,8 @@ export const useStore = create<AppState>((set, get) => ({
       ...newSettings,
       tablet: newSettings.tablet ? { ...currentSettings.tablet, ...newSettings.tablet } : currentSettings.tablet,
       kitchen: newSettings.kitchen ? { ...currentSettings.kitchen, ...newSettings.kitchen } : currentSettings.kitchen,
+      pdvPermissions: newSettings.pdvPermissions || currentSettings.pdvPermissions,
+      pdvUserPermissions: newSettings.pdvUserPermissions || currentSettings.pdvUserPermissions,
       qrCodes: newSettings.qrCodes ? {
         ...currentSettings.qrCodes,
         ...newSettings.qrCodes,

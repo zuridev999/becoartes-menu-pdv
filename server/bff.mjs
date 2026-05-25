@@ -340,6 +340,7 @@ const getEffectiveSessionPermissions = (session, settings = null) => {
   return {
     ...(permissionsByProfile[profile] || permissionsByProfile.operator),
     ...(settings?.pdvPermissions?.[profile] || {}),
+    ...(session?.id ? (settings?.pdvUserPermissions?.[session.id] || {}) : {}),
     ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true } : {}),
   };
 };
@@ -2504,7 +2505,9 @@ const saveSettings = async ({ settings }, session = null) => {
   const currentSettings = await getSettings();
   const nextPermissions = JSON.stringify(settings?.pdvPermissions || {});
   const currentPermissions = JSON.stringify(currentSettings?.pdvPermissions || {});
-  if (nextPermissions !== currentPermissions) {
+  const nextUserPermissions = JSON.stringify(settings?.pdvUserPermissions || {});
+  const currentUserPermissions = JSON.stringify(currentSettings?.pdvUserPermissions || {});
+  if (nextPermissions !== currentPermissions || nextUserPermissions !== currentUserPermissions) {
     requirePermission(session, 'managePDVPermissions', currentSettings);
   }
 

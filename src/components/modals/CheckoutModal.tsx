@@ -23,13 +23,13 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const sellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
-  const canApplyDiscount = can(currentSeller, 'applyDiscount', settings.pdvPermissions);
-  const canEditServiceFee = can(currentSeller, 'editServiceFee', settings.pdvPermissions);
-  const canLaunchPayment = can(currentSeller, 'launchPayment', settings.pdvPermissions);
-  const canSplitPayment = can(currentSeller, 'splitPayment', settings.pdvPermissions);
-  const canChangePaymentMethod = can(currentSeller, 'changePaymentMethod', settings.pdvPermissions);
-  const canCancelPayment = can(currentSeller, 'cancelPayment', settings.pdvPermissions);
-  const canCloseBill = can(currentSeller, 'closeBill', settings.pdvPermissions);
+  const canApplyDiscount = can(currentSeller, 'applyDiscount', settings.pdvPermissions, settings.pdvUserPermissions);
+  const canEditServiceFee = can(currentSeller, 'editServiceFee', settings.pdvPermissions, settings.pdvUserPermissions);
+  const canLaunchPayment = can(currentSeller, 'launchPayment', settings.pdvPermissions, settings.pdvUserPermissions);
+  const canSplitPayment = can(currentSeller, 'splitPayment', settings.pdvPermissions, settings.pdvUserPermissions);
+  const canChangePaymentMethod = can(currentSeller, 'changePaymentMethod', settings.pdvPermissions, settings.pdvUserPermissions);
+  const canCancelPayment = can(currentSeller, 'cancelPayment', settings.pdvPermissions, settings.pdvUserPermissions);
+  const canCloseBill = can(currentSeller, 'closeBill', settings.pdvPermissions, settings.pdvUserPermissions);
   
   const subtotal = roundMoney(table.orders.reduce((acc: number, o: any) => {
     const itemPrice = o.price + (o.selectedModifiers || []).reduce((mAcc: number, m: any) => mAcc + m.price, 0);

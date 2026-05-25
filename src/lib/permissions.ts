@@ -67,6 +67,7 @@ export type PermissionKey =
 
 export type PermissionProfile = 'admin' | 'manager' | 'operator';
 export type PermissionMatrix = Partial<Record<PermissionProfile, Partial<Record<PermissionKey, boolean>>>>;
+export type UserPermissionMatrix = Record<string, Partial<Record<PermissionKey, boolean>>>;
 
 const legacyPermissionMap: Record<string, PermissionProfile> = {
   admin: 'admin',
@@ -361,8 +362,26 @@ export const getPermissionProfile = (seller?: Seller | null): PermissionProfile 
   return legacyPermissionMap[seller?.permission || 'operator'] || 'operator';
 };
 
-export const can = (seller: Seller | null | undefined, permission: PermissionKey, overrides?: PermissionMatrix) => {
-  return getEffectivePermissions(getPermissionProfile(seller), overrides)[permission];
+export const getEffectiveUserPermissions = (
+  seller: Seller | null | undefined,
+  overrides?: PermissionMatrix,
+  userOverrides?: UserPermissionMatrix
+) => {
+  const profile = getPermissionProfile(seller);
+  return {
+    ...getEffectivePermissions(profile, overrides),
+    ...(seller?.id ? (userOverrides?.[seller.id] || {}) : {}),
+    ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true } : {}),
+  };
+};
+
+export const can = (
+  seller: Seller | null | undefined,
+  permission: PermissionKey,
+  overrides?: PermissionMatrix,
+  userOverrides?: UserPermissionMatrix
+) => {
+  return getEffectiveUserPermissions(seller, overrides, userOverrides)[permission];
 };
 
 export const getPermissionLabel = (seller?: Seller | null) => {

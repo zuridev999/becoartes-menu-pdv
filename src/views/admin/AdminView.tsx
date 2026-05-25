@@ -6,7 +6,7 @@ import {
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
   GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy,
-  QrCode, Download, Archive, RefreshCcw, ExternalLink
+  QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle
 } from 'lucide-react';
 import {
   DndContext,
@@ -32,12 +32,14 @@ import {
   can,
   defaultPermissionsByProfile,
   getEffectivePermissions,
+  getEffectiveUserPermissions,
   getPermissionLabel,
   getPermissionProfile,
   permissionGroups,
   permissionLabels,
   type PermissionKey,
-  type PermissionProfile
+  type PermissionProfile,
+  type UserPermissionMatrix
 } from '../../lib/permissions';
 import { createId } from '../../lib/id';
 import { getImageSrc } from '../../lib/image';
@@ -538,18 +540,19 @@ export function AdminView() {
   }
 
   const permissionOverrides = settings.pdvPermissions;
+  const userPermissionOverrides = settings.pdvUserPermissions as UserPermissionMatrix | undefined;
   const isAdminProfile = currentSeller.permission === 'admin';
   const isSuperAdmin = currentSeller.permission === 'admin' && ['admin-bootstrap', 'admin-bypass', 'master'].includes(currentSeller.id);
-  const canManageSettings = can(currentSeller, 'manageSettings', permissionOverrides);
-  const canManageTeam = can(currentSeller, 'manageTeam', permissionOverrides);
-  const canManageOptionals = can(currentSeller, 'manageOptionals', permissionOverrides);
-  const canAddProduct = can(currentSeller, 'addProduct', permissionOverrides);
-  const canEditProduct = can(currentSeller, 'editProduct', permissionOverrides);
-  const canEditProductPrice = can(currentSeller, 'editProductPrice', permissionOverrides);
-  const canDeleteProduct = can(currentSeller, 'deleteProduct', permissionOverrides);
-  const canToggleVisibility = can(currentSeller, 'toggleProductVisibility', permissionOverrides);
-  const canManageCategories = can(currentSeller, 'manageCategories', permissionOverrides);
-  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides);
+  const canManageSettings = can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides);
+  const canManageTeam = can(currentSeller, 'manageTeam', permissionOverrides, userPermissionOverrides);
+  const canManageOptionals = can(currentSeller, 'manageOptionals', permissionOverrides, userPermissionOverrides);
+  const canAddProduct = can(currentSeller, 'addProduct', permissionOverrides, userPermissionOverrides);
+  const canEditProduct = can(currentSeller, 'editProduct', permissionOverrides, userPermissionOverrides);
+  const canEditProductPrice = can(currentSeller, 'editProductPrice', permissionOverrides, userPermissionOverrides);
+  const canDeleteProduct = can(currentSeller, 'deleteProduct', permissionOverrides, userPermissionOverrides);
+  const canToggleVisibility = can(currentSeller, 'toggleProductVisibility', permissionOverrides, userPermissionOverrides);
+  const canManageCategories = can(currentSeller, 'manageCategories', permissionOverrides, userPermissionOverrides);
+  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides, userPermissionOverrides);
   const canAccessProducts =
     (adminMode === 'menu' && canToggleVisibility)
     || canAddProduct
@@ -760,7 +763,73 @@ export function AdminView() {
   };
 
   const getSellerPermissionStats = (seller: any) => {
-    return getPermissionStats(getPermissionProfile(seller));
+    const profile = getPermissionProfile(seller);
+    const effective = getEffectiveUserPermissions(seller, settings.pdvPermissions as any, userPermissionOverrides);
+    const keys = Object.keys(defaultPermissionsByProfile[profile]) as PermissionKey[];
+    const active = keys.filter((key) => effective[key]).length;
+    const overridden = seller?.id ? Object.keys(userPermissionOverrides?.[seller.id] || {}).length : 0;
+    return { active, total: keys.length, changed: getPermissionStats(profile).changed, overridden };
+  };
+
+  const normalizeSellerName = (name: string) => name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const getSellerDuplicates = (seller: any) => {
+    const normalizedName = normalizeSellerName(seller?.name || '');
+    if (!normalizedName) return [];
+    return sellers.filter((candidate: any) => (
+      candidate.id !== seller.id
+      && normalizeSellerName(candidate.name || '') === normalizedName
+    ));
+  };
+
+  const getSellerPermissionValue = (seller: any, key: PermissionKey) => {
+    return getEffectiveUserPermissions(seller, settings.pdvPermissions as any, userPermissionOverrides)[key];
+  };
+
+  const isSellerPermissionOverridden = (seller: any, key: PermissionKey) => {
+    return Boolean(seller?.id && userPermissionOverrides?.[seller.id]?.[key] !== undefined);
+  };
+
+  const setSellerPermissionValue = (seller: any, key: PermissionKey, value: boolean) => {
+    if (!seller?.id) return;
+    if (isCoreAdminPermission(getPermissionProfile(seller), key)) return;
+
+    updateSettings({
+      pdvUserPermissions: {
+        ...(settings.pdvUserPermissions || {}),
+        [seller.id]: {
+          ...(settings.pdvUserPermissions?.[seller.id] || {}),
+          [key]: value,
+        },
+      },
+    });
+  };
+
+  const resetSellerPermissionValue = (seller: any, key: PermissionKey) => {
+    if (!seller?.id) return;
+    const nextUserPermissions = { ...(settings.pdvUserPermissions || {}) };
+    const nextSellerPermissions = { ...(nextUserPermissions[seller.id] || {}) };
+    delete nextSellerPermissions[key];
+
+    if (Object.keys(nextSellerPermissions).length === 0) {
+      delete nextUserPermissions[seller.id];
+    } else {
+      nextUserPermissions[seller.id] = nextSellerPermissions;
+    }
+
+    updateSettings({ pdvUserPermissions: nextUserPermissions });
+  };
+
+  const resetSellerPermissions = (seller: any) => {
+    if (!seller?.id) return;
+    const nextUserPermissions = { ...(settings.pdvUserPermissions || {}) };
+    delete nextUserPermissions[seller.id];
+    updateSettings({ pdvUserPermissions: nextUserPermissions });
   };
 
   const handleCreateSeller = async () => {
@@ -1711,6 +1780,7 @@ export function AdminView() {
               {sellers.map((s: any) => {
                 const profile = getPermissionProfile(s);
                 const stats = getSellerPermissionStats(s);
+                const duplicates = getSellerDuplicates(s);
                 return (
                   <button
                     key={s.id}
@@ -1729,6 +1799,16 @@ export function AdminView() {
                           <span className="inline-flex px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest bg-white/5 text-zinc-400">
                             {stats.active}/{stats.total} permissões
                           </span>
+                          {stats.overridden > 0 && (
+                            <span className="inline-flex px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-300">
+                              {stats.overridden} exceções
+                            </span>
+                          )}
+                          {duplicates.length > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest bg-rose-500/10 text-rose-300">
+                              <AlertTriangle size={11} /> Possível duplicidade
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2017,7 +2097,8 @@ export function AdminView() {
             >
               {(() => {
                 const profile = getPermissionProfile(selectedSeller);
-                const stats = getPermissionStats(profile);
+                const stats = getSellerPermissionStats(selectedSeller);
+                const duplicates = getSellerDuplicates(selectedSeller);
                 return (
                   <>
                     <div className="p-7 border-b border-white/10 flex items-start justify-between gap-5">
@@ -2034,6 +2115,11 @@ export function AdminView() {
                           <span className={`inline-flex mt-3 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${selectedSeller.source === 'os' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-primary/10 text-primary'}`}>
                             {selectedSeller.source === 'os' ? 'Espelhado do OS' : 'Usuário próprio PDV'}
                           </span>
+                          {stats.overridden > 0 && (
+                            <span className="inline-flex mt-3 ml-2 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-300">
+                              {stats.overridden} exceções individuais
+                            </span>
+                          )}
                         </div>
                       </div>
                       <button onClick={() => setSelectedSeller(null)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all">
@@ -2059,17 +2145,30 @@ export function AdminView() {
                         </div>
                       </div>
 
+                      {duplicates.length > 0 && (
+                        <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-5 flex items-start gap-4">
+                          <AlertTriangle className="text-rose-300 shrink-0 mt-0.5" size={20} />
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-widest text-rose-300 mb-2">Possível duplicidade</p>
+                            <p className="text-sm font-bold text-zinc-400 leading-relaxed">
+                              Encontramos outro cadastro com o mesmo nome: {duplicates.map((seller: any) => `${seller.name} (${seller.source === 'os' ? 'OS' : 'PDV'})`).join(', ')}.
+                              Não removi nada automaticamente para não apagar acesso válido.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-                        <p className="text-xs font-black uppercase tracking-widest text-amber-300 mb-2">Nesta fase</p>
+                        <p className="text-xs font-black uppercase tracking-widest text-amber-300 mb-2">Permissão por pessoa</p>
                         <p className="text-sm font-bold text-zinc-400 leading-relaxed">
-                          Os checkboxes abaixo editam o perfil base <span className="text-white">{profileLabels[profile]}</span>.
-                          Isso evita duplicar regras soltas por usuário enquanto organizamos a equipe. Na próxima fase, entram exceções individuais por pessoa.
+                          Os checkboxes abaixo valem só para <span className="text-white">{selectedSeller.name}</span>.
+                          O perfil <span className="text-white">{profileLabels[profile]}</span> continua sendo o padrão quando não houver exceção marcada.
                         </p>
                       </div>
 
                       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
                         {permissionGroups.map((group) => {
-                          const groupActiveCount = group.keys.filter((key) => getPermissionValue(profile, key)).length;
+                          const groupActiveCount = group.keys.filter((key) => getSellerPermissionValue(selectedSeller, key)).length;
                           return (
                             <div key={`${selectedSeller.id}-${group.title}`} className="bg-black/20 rounded-2xl p-5 border border-white/5">
                               <div className="mb-4">
@@ -2080,12 +2179,13 @@ export function AdminView() {
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {group.keys.map((key) => {
-                                  const active = getPermissionValue(profile, key);
+                                  const active = getSellerPermissionValue(selectedSeller, key);
                                   const locked = isCoreAdminPermission(profile, key);
+                                  const overridden = isSellerPermissionOverridden(selectedSeller, key);
                                   return (
                                     <button
                                       key={`${selectedSeller.id}-${key}`}
-                                      onClick={() => setPermissionValue(profile, key, !active)}
+                                      onClick={() => setSellerPermissionValue(selectedSeller, key, !active)}
                                       disabled={locked}
                                       className={`min-h-[60px] rounded-xl border px-4 py-3 text-left transition-all flex items-start gap-3 ${
                                         active
@@ -2096,7 +2196,20 @@ export function AdminView() {
                                       <span className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${active ? 'bg-primary border-primary' : 'border-white/20'}`}>
                                         {active && <Check size={13} strokeWidth={4} />}
                                       </span>
-                                      <span className="text-xs font-black uppercase tracking-wide leading-snug block">{permissionLabels[key]}</span>
+                                      <span className="min-w-0 flex-1">
+                                        <span className="text-xs font-black uppercase tracking-wide leading-snug block">{permissionLabels[key]}</span>
+                                        {overridden && (
+                                          <span
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              resetSellerPermissionValue(selectedSeller, key);
+                                            }}
+                                            className="inline-flex mt-2 text-[9px] font-black uppercase tracking-widest text-amber-300 hover:text-amber-100"
+                                          >
+                                            Exceção • usar padrão
+                                          </span>
+                                        )}
+                                      </span>
                                     </button>
                                   );
                                 })}
@@ -2107,6 +2220,13 @@ export function AdminView() {
                       </div>
 
                       <div className="flex flex-col sm:flex-row justify-between gap-3 pt-2">
+                        <button
+                          onClick={() => resetSellerPermissions(selectedSeller)}
+                          disabled={stats.overridden === 0}
+                          className="px-6 py-4 rounded-2xl glass font-black uppercase tracking-widest text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Restaurar padrão do perfil
+                        </button>
                         <button
                           onClick={async () => {
                             if (selectedSeller.source === 'os') return;

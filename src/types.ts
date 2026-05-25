@@ -151,6 +151,7 @@ export interface AppSettings {
     manager?: Record<string, boolean>;
     operator?: Record<string, boolean>;
   };
+  pdvUserPermissions?: Record<string, Record<string, boolean>>;
   tablet: {
     bannerUrls: string[];
     bannerText: string;

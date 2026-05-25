@@ -77,7 +77,8 @@ export function PDVView() {
     return diffHours < 2;
   });
   const permissionOverrides = settings.pdvPermissions;
-  const canClearResolvedRequests = can(currentSeller, 'manageSettings', permissionOverrides);
+  const userPermissionOverrides = settings.pdvUserPermissions;
+  const canClearResolvedRequests = can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides);
 
   // Referência para o container de scroll da lista de solicitações
   const listRef = useRef<HTMLDivElement>(null);
@@ -240,21 +241,21 @@ export function PDVView() {
   const totalToday = todayBills
     .reduce((acc, bill) => acc + bill.total, 0);
   const isCashOpen = Boolean(cashState?.isOpen);
-  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides);
-  const canCancelTableItem = can(currentSeller, 'cancelTableItem', permissionOverrides);
-  const canCloseBill = can(currentSeller, 'closeBill', permissionOverrides);
-  const canOpenCash = can(currentSeller, 'openCash', permissionOverrides);
-  const canCloseCash = can(currentSeller, 'closeCash', permissionOverrides);
+  const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides, userPermissionOverrides);
+  const canCancelTableItem = can(currentSeller, 'cancelTableItem', permissionOverrides, userPermissionOverrides);
+  const canCloseBill = can(currentSeller, 'closeBill', permissionOverrides, userPermissionOverrides);
+  const canOpenCash = can(currentSeller, 'openCash', permissionOverrides, userPermissionOverrides);
+  const canCloseCash = can(currentSeller, 'closeCash', permissionOverrides, userPermissionOverrides);
   const canUseCashAction = isCashOpen ? canCloseCash : canOpenCash;
-  const canOpenTable = can(currentSeller, 'openTable', permissionOverrides);
-  const canUpdateTableStatus = can(currentSeller, 'updateTableStatus', permissionOverrides);
-  const canViewOtherOperatorTables = can(currentSeller, 'viewOtherOperatorTables', permissionOverrides);
-  const canAddOrderItem = can(currentSeller, 'addOrderItem', permissionOverrides);
-  const canSendOrderToProduction = can(currentSeller, 'sendOrderToProduction', permissionOverrides);
-  const canSellUnavailableProduct = can(currentSeller, 'sellUnavailableProduct', permissionOverrides);
-  const canViewZeroStockProducts = can(currentSeller, 'viewZeroStockProducts', permissionOverrides);
+  const canOpenTable = can(currentSeller, 'openTable', permissionOverrides, userPermissionOverrides);
+  const canUpdateTableStatus = can(currentSeller, 'updateTableStatus', permissionOverrides, userPermissionOverrides);
+  const canViewOtherOperatorTables = can(currentSeller, 'viewOtherOperatorTables', permissionOverrides, userPermissionOverrides);
+  const canAddOrderItem = can(currentSeller, 'addOrderItem', permissionOverrides, userPermissionOverrides);
+  const canSendOrderToProduction = can(currentSeller, 'sendOrderToProduction', permissionOverrides, userPermissionOverrides);
+  const canSellUnavailableProduct = can(currentSeller, 'sellUnavailableProduct', permissionOverrides, userPermissionOverrides);
+  const canViewZeroStockProducts = can(currentSeller, 'viewZeroStockProducts', permissionOverrides, userPermissionOverrides);
   const canAddItems = canAddOrderItem && canSendOrderToProduction;
-  const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides);
+  const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides, userPermissionOverrides);
   const isAdminProfile = currentSeller.permission === 'admin';
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
   const canAccessTable = (table: TableType) => (
@@ -423,7 +424,7 @@ export function PDVView() {
             <Wallet size={22} />
             <span className="text-[10px] font-black uppercase tracking-[0.18em]">{cashActionLabel}</span>
           </button>
-          {can(currentSeller, 'manageSettings', permissionOverrides) && (
+          {can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides) && (
             <button 
               onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')} 
               className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"
@@ -964,8 +965,8 @@ export function PDVView() {
           <ProductModal
             product={selectedProduct}
             onClose={() => setSelectedProduct(null)}
-            canChangeItemQuantity={can(currentSeller, 'changeItemQuantity', permissionOverrides)}
-            canEditItemNotes={can(currentSeller, 'editItemNotes', permissionOverrides)}
+            canChangeItemQuantity={can(currentSeller, 'changeItemQuantity', permissionOverrides, userPermissionOverrides)}
+            canEditItemNotes={can(currentSeller, 'editItemNotes', permissionOverrides, userPermissionOverrides)}
           />
         )}
       </AnimatePresence>
