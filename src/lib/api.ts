@@ -172,8 +172,8 @@ export const OperationalApi = {
     return getJson<{ cashState: CashState }>('/api/cash/status');
   },
 
-  openCash(openingBalance: number, notes = '') {
-    return postJson<{ cashState: CashState }>('/api/cash/open', { openingBalance, notes });
+  openCash(openingBalance: number, notes = '', confirmationPin = '') {
+    return postJson<{ cashState: CashState }>('/api/cash/open', { openingBalance, notes, confirmationPin });
   },
 
   closeCash(closingBalance: number, notes = '', confirmationPin = '') {

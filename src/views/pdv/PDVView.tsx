@@ -280,13 +280,13 @@ export function PDVView() {
   const submitCashDialog = async () => {
     const value = parseMoneyValue(cashValue);
     setCashError('');
-    if (cashDialog === 'close' && !/^\d{4}$/.test(cashConfirmationPin)) {
-      setCashError('Digite o PIN de 4 dígitos do usuário logado para fechar o caixa.');
+    if ((cashDialog === 'open' || cashDialog === 'close') && !/^\d{4}$/.test(cashConfirmationPin)) {
+      setCashError('Digite o PIN de 4 dígitos de quem está fazendo esta ação no caixa.');
       return;
     }
     setIsCashSubmitting(true);
     try {
-      if (cashDialog === 'open') await openCash(value, cashNotes);
+      if (cashDialog === 'open') await openCash(value, cashNotes, cashConfirmationPin);
       if (cashDialog === 'close') await closeCash(value, cashNotes, cashConfirmationPin);
       setCashDialog(null);
       setCashValue('');
@@ -1026,10 +1026,10 @@ export function PDVView() {
                   </div>
                 )}
 
-                {cashDialog === 'close' && (
+                {(cashDialog === 'open' || cashDialog === 'close') && (
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                      PIN do usuário logado
+                      PIN de confirmação
                     </label>
                     <input
                       value={cashConfirmationPin}
@@ -1041,7 +1041,7 @@ export function PDVView() {
                       className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-6 py-5 outline-none text-3xl font-black tracking-[0.5em] text-white focus:border-primary/60"
                     />
                     <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-zinc-600">
-                      Use o PIN do usuário logado. Em emergência operacional, apenas o PIN super admin autorizado pode fechar.
+                      O caixa será registrado no nome do dono deste PIN. Em emergência operacional, use apenas o PIN super admin autorizado.
                     </p>
                   </div>
                 )}

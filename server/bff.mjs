@@ -1617,6 +1617,45 @@ const validateCashClosingPin = async (session, pin) => {
   return { valid: await validateSessionPin(session, safePin), override: false };
 };
 
+const resolveCashActorByPin = async (pin, requiredPermission) => {
+  const safePin = String(pin || '');
+  if (!/^\d{4}$/.test(safePin)) {
+    const error = new Error('Digite o PIN de 4 dígitos para confirmar a ação do caixa.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (isAdminBypassPin(safePin)) {
+    return { seller: createAdminBypassSession().seller, override: true };
+  }
+
+  const activeSellers = (await getAuthSellers({ includePins: true }))
+    .filter((seller) => seller.status === 'active');
+
+  for (const seller of activeSellers) {
+    const storedPin = seller.pin || '';
+    const isMatch = isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
+    if (!isMatch) continue;
+
+    if (isLegacyPlainPin(storedPin)) {
+      await updateSellerPin({ id: seller.id, pin: hashPin(safePin) });
+    }
+
+    const safeSeller = toSessionSeller(seller);
+    if (!canSessionWithSettings(safeSeller, requiredPermission, await getSettings())) {
+      const error = new Error('PIN reconhecido, mas sem permissão para esta ação do caixa.');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    return { seller: safeSeller, override: false };
+  }
+
+  const error = new Error('PIN não encontrado ou usuário inativo.');
+  error.statusCode = 403;
+  throw error;
+};
+
 const resolveCashResponsibleId = async (session) => {
   const sessionId = session?.id || '';
   if (sessionId) {
@@ -2701,8 +2740,9 @@ const joinTables = async ({ tableIds, targetTableId }, session) => {
   return { joined: true };
 };
 
-const openCash = async ({ openingBalance, notes }, session) => {
-  requireSession(session);
+const openCash = async ({ openingBalance, notes, confirmationPin }, session) => {
+  const cashActor = await resolveCashActorByPin(confirmationPin, 'openCash');
+  const effectiveSession = cashActor.seller;
   const businessDate = getBusinessDate();
   const openCashRow = await getOpenCashRow();
   if (openCashRow) {
@@ -2720,7 +2760,7 @@ const openCash = async ({ openingBalance, notes }, session) => {
 
   const now = osTimestamp();
   const normalizedOpeningBalance = requireNumber(openingBalance, 'openingBalance');
-  const responsibleId = await resolveCashResponsibleId(session);
+  const responsibleId = await resolveCashResponsibleId(effectiveSession);
 
   if (existingCash) {
     await db.execute({
@@ -2775,9 +2815,15 @@ const openCash = async ({ openingBalance, notes }, session) => {
   await addAuditLog({
     id: createId(),
     action: 'cash_opened',
-    details: JSON.stringify({ openingBalance: normalizedOpeningBalance, reopened: Boolean(existingCash), sandbox: CASH_SANDBOX_MODE }),
+    details: JSON.stringify({
+      openingBalance: normalizedOpeningBalance,
+      reopened: Boolean(existingCash),
+      adminOverride: cashActor.override,
+      sandbox: CASH_SANDBOX_MODE,
+    }),
     origin: 'pdv',
-    authorName: session.name,
+    authorId: effectiveSession.id,
+    authorName: effectiveSession.name,
     timestamp: new Date().toISOString(),
   });
 
@@ -2821,18 +2867,8 @@ const getExpectedClosingCents = async (cash) => {
 };
 
 const closeCash = async ({ closingBalance, notes, confirmationPin }, session) => {
-  const adminOverride = isAdminBypassPin(confirmationPin);
-  const effectiveSession = session || (adminOverride ? createAdminBypassSession().seller : null);
-  requireSession(effectiveSession);
-
-  const pinValidation = adminOverride
-    ? { valid: true, override: true }
-    : await validateCashClosingPin(effectiveSession, confirmationPin);
-  if (!pinValidation.valid) {
-    const error = new Error('PIN do usuário logado não confere. Use o PIN da sessão ou o PIN super admin autorizado.');
-    error.statusCode = 403;
-    throw error;
-  }
+  const cashActor = await resolveCashActorByPin(confirmationPin, 'closeCash');
+  const effectiveSession = cashActor.seller;
 
   const cash = await getOpenCashRow();
   if (!cash) throw new Error('Não existe caixa aberto.');
@@ -2853,10 +2889,11 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }, session) =>
         cashSales: centsToMoney(closeSummary.cashSalesCents),
         manualIn: centsToMoney(closeSummary.manualInCents),
         manualOut: centsToMoney(closeSummary.manualOutCents),
-        adminOverride: pinValidation.override,
+        adminOverride: cashActor.override,
         sandbox: CASH_SANDBOX_MODE,
       }),
       origin: 'pdv',
+      authorId: effectiveSession.id,
       authorName: effectiveSession.name,
       timestamp: new Date().toISOString(),
     });
@@ -2899,10 +2936,11 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }, session) =>
       cashSales: centsToMoney(closeSummary.cashSalesCents),
       manualIn: centsToMoney(closeSummary.manualInCents),
       manualOut: centsToMoney(closeSummary.manualOutCents),
-      adminOverride: pinValidation.override,
+      adminOverride: cashActor.override,
       sandbox: CASH_SANDBOX_MODE,
     }),
     origin: 'pdv',
+    authorId: effectiveSession.id,
     authorName: effectiveSession.name,
     timestamp: new Date().toISOString(),
   });
@@ -3572,7 +3610,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     return;
   }
 
-  if (routeKey === 'POST /api/cash/close' && isAdminBypassPin(body?.confirmationPin)) {
+  if (routeKey === 'POST /api/cash/open' || routeKey === 'POST /api/cash/close') {
     return;
   }
 
