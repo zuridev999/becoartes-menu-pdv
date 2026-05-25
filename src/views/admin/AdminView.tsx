@@ -33,6 +33,7 @@ import {
   defaultPermissionsByProfile,
   getEffectivePermissions,
   getPermissionLabel,
+  getPermissionProfile,
   permissionGroups,
   permissionLabels,
   type PermissionKey,
@@ -445,6 +446,8 @@ export function AdminView() {
   const [showPermissionConfig, setShowPermissionConfig] = useState(false);
   const [activePermissionProfile, setActivePermissionProfile] = useState<PermissionProfile>('operator');
   const [permissionSearch, setPermissionSearch] = useState('');
+  const [showAddSellerModal, setShowAddSellerModal] = useState(false);
+  const [selectedSeller, setSelectedSeller] = useState<any | null>(null);
 
   const [movements, setMovements] = useState<AuditMovement[]>([]);
   const [auditStartDate, setAuditStartDate] = useState('');
@@ -754,6 +757,26 @@ export function AdminView() {
     const active = keys.filter((key) => effective[key]).length;
     const changed = keys.filter((key) => effective[key] !== defaultPermissionsByProfile[profile][key]).length;
     return { active, total: keys.length, changed };
+  };
+
+  const getSellerPermissionStats = (seller: any) => {
+    return getPermissionStats(getPermissionProfile(seller));
+  };
+
+  const handleCreateSeller = async () => {
+    await addSeller({
+      id: createId(),
+      name: newSellerName,
+      role: newSellerRole,
+      permission: newSellerPermission,
+      pin: newSellerPin,
+      status: 'active'
+    });
+    setNewSellerName('');
+    setNewSellerPin('1234');
+    setNewSellerRole('garçom');
+    setNewSellerPermission('operator');
+    setShowAddSellerModal(false);
   };
 
   const setPermissionValue = (profile: PermissionProfile, key: PermissionKey, value: boolean) => {
@@ -1662,68 +1685,65 @@ export function AdminView() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
-          <SectionCard title="Adicionar Novo Operador" icon={Plus}>
-            <div className="grid grid-cols-2 gap-6">
-               <ConfigInput label="Nome Completo" value={newSellerName} onChange={setNewSellerName} />
-               <ConfigInput label="PIN (4 dígitos)" value={newSellerPin} onChange={setNewSellerPin} />
-               <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Cargo</label>
-                  <select value={newSellerRole} onChange={(e) => setNewSellerRole(e.target.value as any)} className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent">
-                     <option value="garçom" className="bg-[#0a0a0c]">Garçom</option>
-                     <option value="atendente" className="bg-[#0a0a0c]">Atendente</option>
-                     <option value="gerente" className="bg-[#0a0a0c]">Gerente</option>
-                  </select>
-               </div>
-               <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Permissão</label>
-                  <select value={newSellerPermission} onChange={(e) => setNewSellerPermission(e.target.value as any)} className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent">
-                     <option value="admin" className="bg-[#0a0a0c]">Admin full access</option>
-                     <option value="manager" className="bg-[#0a0a0c]">Gerente</option>
-                     <option value="operator" className="bg-[#0a0a0c]">Operador</option>
-                  </select>
-               </div>
-            </div>
-            <button onClick={async () => { await addSeller({ id: createId(), name: newSellerName, role: newSellerRole, permission: newSellerPermission, pin: newSellerPin, status: 'active' }); setNewSellerName(''); setNewSellerPin('1234'); }} className="w-full btn-beco btn-beco-purple py-6 font-black mt-4">Registrar Vendedor</button>
-          </SectionCard>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6 sm:p-10 border-white/5">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-8 border-b border-white/5 pb-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-inner shrink-0">
+                  <User size={22} />
+                </div>
+                <div>
+                  <h3 className="text-3xl font-black tracking-tighter leading-tight">Equipe Ativa</h3>
+                  <p className="text-sm font-bold text-zinc-500 mt-1">
+                    Clique em uma pessoa para revisar o perfil e as permissões do PDV.
+                  </p>
+                </div>
+              </div>
 
-          <SectionCard title="Equipe Ativa" icon={User}>
-            <div className="space-y-4">
-               {sellers.map((s: any) => (
-                 <div key={s.id} className="flex items-center justify-between p-6 glass rounded-2xl border-white/5">
-                    <div className="flex items-center gap-6">
-                       <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center font-black">{s.name.charAt(0)}</div>
-                       <div>
-                         <p className="font-black text-lg">{s.name}</p>
-                         <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{s.role} • {s.permission}</p>
-                         <span className={`inline-flex mt-2 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${s.source === 'os' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-primary/10 text-primary'}`}>
-                           {s.source === 'os' ? 'Espelhado do OS' : 'Usuário próprio PDV'}
-                         </span>
-                       </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                       <button
-                         onClick={() => s.source !== 'os' && toggleSellerStatus(s.id)}
-                         disabled={s.source === 'os'}
-                         className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed ${s.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}
-                         title={s.source === 'os' ? 'Usuário vem do Becoartes OS. Ative/desative no OS.' : undefined}
-                       >
-                         {s.status === 'active' ? 'Ativo' : 'Inativo'}
-                       </button>
-                       <button
-                         onClick={() => s.source !== 'os' && deleteSeller(s.id)}
-                         disabled={s.source === 'os'}
-                         className="p-3 glass rounded-xl text-rose-500 disabled:opacity-30 disabled:cursor-not-allowed"
-                         title={s.source === 'os' ? 'Usuário espelhado do OS não é apagado pelo PDV.' : 'Excluir usuário próprio do PDV'}
-                       >
-                         <Trash2 size={18}/>
-                       </button>
-                    </div>
-                 </div>
-              ))}
+              <button
+                onClick={() => setShowAddSellerModal(true)}
+                className="btn-beco btn-beco-purple px-6 py-4 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3"
+              >
+                <Plus size={18} /> Novo operador
+              </button>
             </div>
-          </SectionCard>
-          </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {sellers.map((s: any) => {
+                const profile = getPermissionProfile(s);
+                const stats = getSellerPermissionStats(s);
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setSelectedSeller(s)}
+                    className="w-full flex items-center justify-between gap-5 p-5 sm:p-6 glass rounded-2xl border-white/5 hover:border-primary/40 hover:bg-primary/5 text-left transition-all"
+                  >
+                    <div className="flex items-center gap-5 min-w-0">
+                      <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center font-black shrink-0">{s.name.charAt(0)}</div>
+                      <div className="min-w-0">
+                        <p className="font-black text-lg truncate">{s.name}</p>
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{s.role} • {profileLabels[profile]}</p>
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          <span className={`inline-flex px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${s.source === 'os' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-primary/10 text-primary'}`}>
+                            {s.source === 'os' ? 'Espelhado do OS' : 'Usuário próprio PDV'}
+                          </span>
+                          <span className="inline-flex px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest bg-white/5 text-zinc-400">
+                            {stats.active}/{stats.total} permissões
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className={`hidden sm:inline-flex px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest ${s.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                        {s.status === 'active' ? 'Ativo' : 'Inativo'}
+                      </span>
+                      <ChevronRight className="text-zinc-600" size={20} />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
         </div>
       )}
 
@@ -1922,6 +1942,202 @@ export function AdminView() {
       )}
 
       <AnimatePresence>
+        {showAddSellerModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[900] bg-black/80 backdrop-blur-xl p-6 flex items-center justify-center"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 24 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 24 }}
+              className="w-full max-w-2xl glass-card border-primary/20 overflow-hidden"
+            >
+              <div className="p-7 border-b border-white/10 flex items-center justify-between gap-5">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Equipe PDV</p>
+                  <h2 className="text-3xl font-black tracking-tighter">Novo Operador</h2>
+                  <p className="text-sm font-bold text-zinc-500 mt-1">Cadastro próprio do PDV para uso independente do OS.</p>
+                </div>
+                <button onClick={() => setShowAddSellerModal(false)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="p-7 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <ConfigInput label="Nome Completo" value={newSellerName} onChange={setNewSellerName} />
+                  <ConfigInput label="PIN (4 dígitos)" value={newSellerPin} onChange={setNewSellerPin} />
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Cargo</label>
+                    <select value={newSellerRole} onChange={(e) => setNewSellerRole(e.target.value as any)} className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent">
+                      <option value="garçom" className="bg-[#0a0a0c]">Garçom</option>
+                      <option value="atendente" className="bg-[#0a0a0c]">Atendente</option>
+                      <option value="gerente" className="bg-[#0a0a0c]">Gerente</option>
+                      <option value="outro" className="bg-[#0a0a0c]">Outro</option>
+                    </select>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Perfil de Permissão</label>
+                    <select value={newSellerPermission} onChange={(e) => setNewSellerPermission(e.target.value as any)} className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent">
+                      <option value="admin" className="bg-[#0a0a0c]">Admin full access</option>
+                      <option value="manager" className="bg-[#0a0a0c]">Gerente</option>
+                      <option value="operator" className="bg-[#0a0a0c]">Operador</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
+                  <button onClick={() => setShowAddSellerModal(false)} className="px-6 py-4 rounded-2xl glass font-black uppercase tracking-widest text-xs">
+                    Cancelar
+                  </button>
+                  <button onClick={handleCreateSeller} className="btn-beco btn-beco-purple px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs">
+                    Registrar operador
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {selectedSeller && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[900] bg-black/80 backdrop-blur-xl p-6 flex items-center justify-center"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 24 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 24 }}
+              className="w-full max-w-6xl max-h-[90vh] glass-card border-primary/20 overflow-hidden flex flex-col"
+            >
+              {(() => {
+                const profile = getPermissionProfile(selectedSeller);
+                const stats = getPermissionStats(profile);
+                return (
+                  <>
+                    <div className="p-7 border-b border-white/10 flex items-start justify-between gap-5">
+                      <div className="flex items-center gap-5 min-w-0">
+                        <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center font-black text-xl shrink-0">
+                          {selectedSeller.name.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Permissões do usuário</p>
+                          <h2 className="text-3xl font-black tracking-tighter truncate">{selectedSeller.name}</h2>
+                          <p className="text-sm font-bold text-zinc-500 mt-1 uppercase tracking-widest">
+                            {selectedSeller.role} • {profileLabels[profile]} • {stats.active}/{stats.total} permissões
+                          </p>
+                          <span className={`inline-flex mt-3 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${selectedSeller.source === 'os' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-primary/10 text-primary'}`}>
+                            {selectedSeller.source === 'os' ? 'Espelhado do OS' : 'Usuário próprio PDV'}
+                          </span>
+                        </div>
+                      </div>
+                      <button onClick={() => setSelectedSeller(null)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all">
+                        <X size={24} />
+                      </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-7 space-y-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Status</p>
+                          <p className={`text-xl font-black ${selectedSeller.status === 'active' ? 'text-emerald-300' : 'text-rose-300'}`}>
+                            {selectedSeller.status === 'active' ? 'Ativo' : 'Inativo'}
+                          </p>
+                        </div>
+                        <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Origem</p>
+                          <p className="text-xl font-black">{selectedSeller.source === 'os' ? 'Becoartes OS' : 'PDV'}</p>
+                        </div>
+                        <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Perfil base</p>
+                          <p className="text-xl font-black">{profileLabels[profile]}</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+                        <p className="text-xs font-black uppercase tracking-widest text-amber-300 mb-2">Nesta fase</p>
+                        <p className="text-sm font-bold text-zinc-400 leading-relaxed">
+                          Os checkboxes abaixo editam o perfil base <span className="text-white">{profileLabels[profile]}</span>.
+                          Isso evita duplicar regras soltas por usuário enquanto organizamos a equipe. Na próxima fase, entram exceções individuais por pessoa.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                        {permissionGroups.map((group) => {
+                          const groupActiveCount = group.keys.filter((key) => getPermissionValue(profile, key)).length;
+                          return (
+                            <div key={`${selectedSeller.id}-${group.title}`} className="bg-black/20 rounded-2xl p-5 border border-white/5">
+                              <div className="mb-4">
+                                <h4 className="text-sm font-black uppercase tracking-widest text-primary">{group.title}</h4>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-1">
+                                  {groupActiveCount} de {group.keys.length} ativas
+                                </p>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {group.keys.map((key) => {
+                                  const active = getPermissionValue(profile, key);
+                                  const locked = isCoreAdminPermission(profile, key);
+                                  return (
+                                    <button
+                                      key={`${selectedSeller.id}-${key}`}
+                                      onClick={() => setPermissionValue(profile, key, !active)}
+                                      disabled={locked}
+                                      className={`min-h-[60px] rounded-xl border px-4 py-3 text-left transition-all flex items-start gap-3 ${
+                                        active
+                                          ? 'bg-primary/15 border-primary/30 text-white'
+                                          : 'bg-white/[0.03] border-white/5 text-zinc-500'
+                                      } ${locked ? 'opacity-70 cursor-not-allowed' : 'hover:border-white/20'}`}
+                                    >
+                                      <span className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${active ? 'bg-primary border-primary' : 'border-white/20'}`}>
+                                        {active && <Check size={13} strokeWidth={4} />}
+                                      </span>
+                                      <span className="text-xs font-black uppercase tracking-wide leading-snug block">{permissionLabels[key]}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row justify-between gap-3 pt-2">
+                        <button
+                          onClick={async () => {
+                            if (selectedSeller.source === 'os') return;
+                            await toggleSellerStatus(selectedSeller.id);
+                            setSelectedSeller((prev: any) => prev ? { ...prev, status: prev.status === 'active' ? 'inactive' : 'active' } : prev);
+                          }}
+                          disabled={selectedSeller.source === 'os'}
+                          className="px-6 py-4 rounded-2xl glass font-black uppercase tracking-widest text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {selectedSeller.status === 'active' ? 'Desativar acesso' : 'Ativar acesso'}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (selectedSeller.source === 'os') return;
+                            await deleteSeller(selectedSeller.id);
+                            setSelectedSeller(null);
+                          }}
+                          disabled={selectedSeller.source === 'os'}
+                          className="px-6 py-4 rounded-2xl bg-rose-500/10 text-rose-300 font-black uppercase tracking-widest text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Excluir usuário próprio
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </motion.div>
+          </motion.div>
+        )}
+
         {showPermissionConfig && isSuperAdmin && (
           <motion.div
             initial={{ opacity: 0 }}
