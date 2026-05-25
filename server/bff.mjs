@@ -2726,13 +2726,28 @@ const openCash = async ({ openingBalance, notes }, session) => {
     await db.execute({
       sql: `
         UPDATE ${CASH_TABLE}
-        SET saldo_inicial = ?, valor_caixa_final = 0, responsavel_id = ?, observacoes = ?, status = 'Aberto', updated_at = ?
+        SET saldo_inicial = ?,
+            entradas_dinheiro = 0,
+            saidas_dinheiro = 0,
+            valor_caixa_final = 0,
+            valor_envelopes = 0,
+            total_na_casa = 0,
+            vendas_dinheiro_goomer = 0,
+            vendas_credito_goomer = 0,
+            vendas_debito_goomer = 0,
+            vendas_pix_goomer = 0,
+            responsavel_id = ?,
+            observacoes = ?,
+            status = 'Aberto',
+            created_at = ?,
+            updated_at = ?
         WHERE id = ?
       `,
       args: [
         normalizedOpeningBalance,
         responsibleId,
         notes || existingCash.observacoes || '',
+        now,
         now,
         existingCash.id,
       ],
