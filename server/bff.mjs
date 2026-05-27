@@ -108,6 +108,45 @@ const hashPin = (pin) => createHash('sha256').update(`${pin}becoartes_salt_2024`
 const isLegacyPlainPin = (storedPin) => /^\d{4}$/.test(String(storedPin || ''));
 const toSessionSeller = (seller) => ({ ...seller, pin: '' });
 const normalizeText = (value) => String(value || '').trim().replace(/\s+/g, ' ');
+const normalizeSellerIdentity = (value) => normalizeText(value)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase();
+const PDV_SYSTEM_SELLER_IDS = new Set(['admin-bootstrap', 'manager-default', 'operator-default']);
+const isPdvSystemSeller = (seller) => PDV_SYSTEM_SELLER_IDS.has(String(seller?.id || ''));
+const getSellerPriority = (seller) => {
+  if (isPdvSystemSeller(seller)) return 0;
+  if (seller?.source === 'os') return 1;
+  return 2;
+};
+const dedupeSellersByIdentity = (sellers = []) => {
+  const sorted = [...sellers].sort((a, b) => {
+    const statusPriority = Number(b.status === 'active') - Number(a.status === 'active');
+    if (statusPriority) return statusPriority;
+    return getSellerPriority(a) - getSellerPriority(b);
+  });
+  const seen = new Set();
+  const selectedIds = new Set();
+
+  for (const seller of sorted) {
+    const key = normalizeSellerIdentity(seller?.name || '');
+    if (!key) {
+      selectedIds.add(seller.id);
+      continue;
+    }
+
+    if (isPdvSystemSeller(seller)) {
+      selectedIds.add(seller.id);
+      continue;
+    }
+
+    if (seen.has(key)) continue;
+    seen.add(key);
+    selectedIds.add(seller.id);
+  }
+
+  return sellers.filter((seller) => selectedIds.has(seller.id));
+};
 const normalizePermission = (permission) => {
   if (permission === 'admin') return 'admin';
   if (permission === 'manager' || permission === 'standard') return 'manager';
@@ -637,6 +676,50 @@ const formatMoneyBRL = (value) => (
   centsToMoney(moneyToCents(value)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 );
 
+const normalizePaymentsFingerprint = (payments = []) => JSON.stringify(
+  (Array.isArray(payments) ? payments : [])
+    .map((payment) => ({
+      method: String(payment?.method || ''),
+      amount: moneyToCents(payment?.amount || 0, 'payment.amount'),
+    }))
+    .sort((a, b) => a.method.localeCompare(b.method) || a.amount - b.amount),
+);
+
+const findRecentDuplicateClosedBill = async (data, windowSeconds = 30) => {
+  const tableId = String(data.tableId || '');
+  const tableNumber = Number(data.tableNumber || 0);
+  if (!tableId || !tableNumber) return null;
+
+  const duplicateWindowStart = Math.floor(Date.now() / 1000) - windowSeconds;
+  const targetPayments = normalizePaymentsFingerprint(data.payments);
+  const res = await db.execute({
+    sql: `
+      SELECT id, payments, closed_at
+      FROM closed_bills
+      WHERE table_id = ?
+        AND table_number = ?
+        AND ABS(subtotal - ?) < 0.005
+        AND ABS(service_fee - ?) < 0.005
+        AND ABS(discount - ?) < 0.005
+        AND ABS(total - ?) < 0.005
+        AND CAST(strftime('%s', closed_at) AS INTEGER) >= ?
+      ORDER BY closed_at DESC
+      LIMIT 10
+    `,
+    args: [
+      tableId,
+      tableNumber,
+      Number(data.subtotal || 0),
+      Number(data.serviceFee || 0),
+      Number(data.discount || 0),
+      Number(data.total || 0),
+      duplicateWindowStart,
+    ],
+  });
+
+  return res.rows.find((row) => normalizePaymentsFingerprint(parseJsonArray(row.payments)) === targetPayments) || null;
+};
+
 const MAX_SERVICE_FEE_PERCENT = 13;
 const clampServiceFeePercent = (value) => {
   if (!Number.isFinite(Number(value))) return MAX_SERVICE_FEE_PERCENT;
@@ -943,11 +1026,12 @@ const getAuthSellers = async ({ includePins = false } = {}) => {
     getSellers({ includePins }),
   ]);
   const seenIds = new Set();
-  return [...operationalUsers, ...pdvUsers].filter((seller) => {
+  const uniqueById = [...operationalUsers, ...pdvUsers].filter((seller) => {
     if (seenIds.has(seller.id)) return false;
     seenIds.add(seller.id);
     return true;
   });
+  return dedupeSellersByIdentity(uniqueById);
 };
 
 const PRODUCTION_STATIONS = new Set(['kitchen', 'bar']);
@@ -3264,6 +3348,16 @@ const closeBillWithInventorySync = async (data, session = null) => {
     method: payment.method,
     amount: centsToMoney(moneyToCents(payment.amount || 0, 'payment.amount')),
   }));
+
+  const recentDuplicate = await findRecentDuplicateClosedBill(data, 30);
+  if (recentDuplicate) {
+    return {
+      skipped: true,
+      integrationId: String(recentDuplicate.id),
+      closedBill: null,
+      inventorySync: null,
+    };
+  }
 
   const activeOrderItems = await getActiveOrderItemsForTable(tableId);
   const orderIds = Array.from(new Set(activeOrderItems.map((item) => item.orderId))).sort();

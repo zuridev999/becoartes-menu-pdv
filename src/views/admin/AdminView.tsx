@@ -788,6 +788,8 @@ export function AdminView() {
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
+  const pdvSystemSellerIds = new Set(['admin-bootstrap', 'manager-default', 'operator-default']);
+  const isPdvSystemSeller = (seller: any) => pdvSystemSellerIds.has(String(seller?.id || ''));
 
   const getSellerDuplicates = (seller: any) => {
     const normalizedName = normalizeSellerName(seller?.name || '');
@@ -806,6 +808,30 @@ export function AdminView() {
       return groups;
     }, {})
   ).filter((group: any[]) => group.length > 1) as any[][];
+  const visibleSellerIds = new Set<string>();
+  const seenSellerNames = new Set<string>();
+  const sellersByPriority = [...sellers].sort((a: any, b: any) => {
+    const activePriority = Number(b.status === 'active') - Number(a.status === 'active');
+    if (activePriority) return activePriority;
+    const priority = (seller: any) => {
+      if (isPdvSystemSeller(seller)) return 0;
+      if (seller.source === 'os') return 1;
+      return 2;
+    };
+    return priority(a) - priority(b);
+  });
+  for (const seller of sellersByPriority) {
+    const normalizedName = normalizeSellerName(seller?.name || '');
+    if (!normalizedName || isPdvSystemSeller(seller)) {
+      visibleSellerIds.add(seller.id);
+      continue;
+    }
+    if (seenSellerNames.has(normalizedName)) continue;
+    seenSellerNames.add(normalizedName);
+    visibleSellerIds.add(seller.id);
+  }
+  const visibleSellers = sellers.filter((seller: any) => visibleSellerIds.has(seller.id));
+  const hiddenDuplicateCount = sellers.length - visibleSellers.length;
 
   const openSellerEditor = (seller: any) => {
     setSelectedSeller(seller);
@@ -1823,9 +1849,9 @@ export function AdminView() {
             <div className="rounded-[2rem] border border-amber-500/20 bg-amber-500/5 p-5 sm:p-6 flex flex-col lg:flex-row lg:items-start gap-4">
               <AlertTriangle className="text-amber-300 shrink-0" size={22} />
               <div className="min-w-0">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-300 mb-2">Possíveis duplicidades na equipe</p>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-300 mb-2">Duplicidades consolidadas</p>
                 <p className="text-sm font-bold text-zinc-400 leading-relaxed mb-3">
-                  Não removi ninguém automaticamente. Abra cada pessoa para decidir se é usuário próprio do PDV ou espelhado do OS.
+                  A lista abaixo mostra o cadastro principal de cada pessoa. {hiddenDuplicateCount > 0 ? `${hiddenDuplicateCount} cadastro(s) duplicado(s) foram ocultados sem apagar dados.` : 'Nenhum duplicado precisou ser ocultado agora.'}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {sellerDuplicateGroups.map((group) => (
@@ -1861,7 +1887,7 @@ export function AdminView() {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              {sellers.map((s: any) => {
+              {visibleSellers.map((s: any) => {
                 const profile = getPermissionProfile(s);
                 const stats = getSellerPermissionStats(s);
                 const duplicates = getSellerDuplicates(s);
@@ -1890,7 +1916,7 @@ export function AdminView() {
                           )}
                           {duplicates.length > 0 && (
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest bg-rose-500/10 text-rose-300">
-                              <AlertTriangle size={11} /> Possível duplicidade
+                              <AlertTriangle size={11} /> Duplicado oculto
                             </span>
                           )}
                         </div>
