@@ -97,7 +97,7 @@ const postJson = async <T>(path: string, body: unknown): Promise<T> => {
     body: JSON.stringify(body),
   });
 
-  const payload = (await response.json()) as ApiEnvelope<T>;
+  const payload = await readApiEnvelope<T>(response);
 
   if (!response.ok || !payload.ok) {
     throw new Error(payload.error || `Falha na API (${response.status})`);
@@ -108,13 +108,32 @@ const postJson = async <T>(path: string, body: unknown): Promise<T> => {
 
 const getJson = async <T>(path: string): Promise<T> => {
   const response = await fetch(path, { method: 'GET', headers: getAuthHeaders() });
-  const payload = (await response.json()) as ApiEnvelope<T>;
+  const payload = await readApiEnvelope<T>(response);
 
   if (!response.ok || !payload.ok) {
     throw new Error(payload.error || `Falha na API (${response.status})`);
   }
 
   return payload.data as T;
+};
+
+const readApiEnvelope = async <T>(response: Response): Promise<ApiEnvelope<T>> => {
+  const contentType = response.headers.get('content-type') || '';
+  const text = await response.text();
+  if (contentType.includes('application/json')) {
+    return JSON.parse(text) as ApiEnvelope<T>;
+  }
+
+  const lowerText = text.toLowerCase();
+  if (response.status === 413 || lowerText.includes('request entity too large')) {
+    return { ok: false, error: 'Arquivo ou imagem grande demais para salvar. Reduza a imagem e tente novamente.' };
+  }
+
+  if (response.status === 502 || response.status === 503 || response.status === 504) {
+    return { ok: false, error: 'Servidor do PDV indisponível no momento. Aguarde alguns segundos e tente novamente.' };
+  }
+
+  return { ok: false, error: `Resposta inesperada do servidor (${response.status}). Tente novamente.` };
 };
 
 const hydrateServiceRequest = (request: UpdateOrderStatusResult['request']) => {
