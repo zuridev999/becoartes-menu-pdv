@@ -120,7 +120,7 @@ export interface ClosedBill {
   discountReason?: string;
   couponCode?: string;
   couponAmount?: number;
-  couponBenefit?: 'discount_20' | 'free_drink' | '';
+  couponBenefit?: string;
   total: number;
   payments: Array<{
     id?: string;
@@ -154,7 +154,15 @@ export interface Coupon {
   campaignName?: string;
   validUntil?: string;
   minOrderValue?: number;
-  selectedBenefit?: 'discount_20' | 'free_drink' | '';
+  selectedBenefit?: string;
+  benefitType?: string;
+  discountType?: string;
+  targetCategory?: string;
+  targetProductId?: string;
+  targetProductName?: string;
+  freeItemName?: string;
+  benefitLabel?: string;
+  ruleJson?: string;
   usedByEmployee?: string;
   tableNumber?: number | null;
   orderId?: string;

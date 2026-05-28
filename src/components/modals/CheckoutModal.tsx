@@ -22,10 +22,10 @@ type ValidatedCoupon = {
   campaignName?: string;
   validUntil?: string;
   minOrderValue?: number;
-  selectedBenefit?: 'discount_20' | 'free_drink' | '';
+  selectedBenefit?: string;
   benefitLabel?: string;
   requiresBenefitChoice?: boolean;
-  benefitOptions?: Array<'discount_20' | 'free_drink'>;
+  benefitOptions?: Array<{ id: string; label: string }>;
 };
 
 export function CheckoutModal({ table, onClose }: { table: TableType, onClose: () => void }) {
@@ -136,7 +136,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     setPayments(payments.filter((_, i) => i !== idx));
   };
 
-  const handleApplyCoupon = async (selectedBenefit?: 'discount_20' | 'free_drink') => {
+  const handleApplyCoupon = async (selectedBenefit?: string) => {
     const cleanCode = couponInput.trim();
     if (!cleanCode) return;
     setIsApplyingCoupon(true);
@@ -154,8 +154,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       setCouponInput(result.coupon.code);
       if (result.coupon.requiresBenefitChoice) {
         setCouponMessage(`Cupom ${result.coupon.code} encontrado. Escolha o benefício do cliente.`);
-      } else if (result.coupon.selectedBenefit === 'free_drink') {
-        setCouponMessage(`Cupom ${result.coupon.code} aplicado: 1 drink cortesia.`);
+      } else if (result.coupon.appliedAmount <= 0 && result.coupon.benefitLabel) {
+        setCouponMessage(`Cupom ${result.coupon.code} aplicado: ${result.coupon.benefitLabel}.`);
       } else {
         setCouponMessage(`Cupom ${result.coupon.code} aplicado: R$ ${result.coupon.appliedAmount.toFixed(2)}`);
       }
@@ -274,7 +274,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                  </div>
                  <div className="flex justify-between text-rose-400 font-bold"><span>Desconto</span><span>- R$ {discountAmountValue.toFixed(2)}</span></div>
                  <div className="flex justify-between text-amber-300 font-bold">
-                   <span>Cupom{coupon?.selectedBenefit === 'free_drink' ? ' (drink)' : ''}</span>
+                   <span>Cupom{coupon?.appliedAmount === 0 && coupon?.benefitLabel ? ` (${coupon.benefitLabel})` : ''}</span>
                    <span>- R$ {couponAmountValue.toFixed(2)}</span>
                  </div>
                  <div className="flex justify-between text-3xl font-black text-accent pt-3 border-t border-white/5 italic tracking-tighter"><span>Total</span><span>R$ {totalFinal.toFixed(2)}</span></div>
@@ -364,20 +364,16 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                 )}
                 {coupon?.requiresBenefitChoice && (
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <button
-                      onClick={() => handleApplyCoupon('discount_20')}
-                      disabled={isApplyingCoupon}
-                      className="rounded-lg bg-emerald-400 text-black py-2.5 px-3 font-black uppercase tracking-widest text-[10px] disabled:opacity-40"
-                    >
-                      R$20 OFF
-                    </button>
-                    <button
-                      onClick={() => handleApplyCoupon('free_drink')}
-                      disabled={isApplyingCoupon}
-                      className="rounded-lg bg-white/10 text-amber-200 py-2.5 px-3 font-black uppercase tracking-widest text-[10px] border border-amber-300/20 disabled:opacity-40"
-                    >
-                      1 Drink Cortesia
-                    </button>
+                    {(coupon.benefitOptions || []).map((option, index) => (
+                      <button
+                        key={option.id}
+                        onClick={() => handleApplyCoupon(option.id)}
+                        disabled={isApplyingCoupon}
+                        className={`rounded-lg py-2.5 px-3 font-black uppercase tracking-widest text-[10px] disabled:opacity-40 ${index === 0 ? 'bg-emerald-400 text-black' : 'bg-white/10 text-amber-200 border border-amber-300/20'}`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
                   </div>
                 )}
                 {coupon && !coupon.requiresBenefitChoice && (

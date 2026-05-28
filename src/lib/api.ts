@@ -193,7 +193,7 @@ export const OperationalApi = {
     subtotal: number;
     serviceFee: number;
     discount: number;
-    selectedBenefit?: 'discount_20' | 'free_drink' | '';
+    selectedBenefit?: string;
   }) {
     return postJson<{
       coupon: {
@@ -205,10 +205,10 @@ export const OperationalApi = {
         campaignName?: string;
         validUntil?: string;
         minOrderValue?: number;
-        selectedBenefit?: 'discount_20' | 'free_drink' | '';
+        selectedBenefit?: string;
         benefitLabel?: string;
         requiresBenefitChoice?: boolean;
-        benefitOptions?: Array<'discount_20' | 'free_drink'>;
+        benefitOptions?: Array<{ id: string; label: string }>;
       }
     }>('/api/coupons/validate', input);
   },

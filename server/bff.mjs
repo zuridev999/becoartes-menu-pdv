@@ -467,7 +467,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, details TEXT, table_number TEXT, origin TEXT, author_id TEXT, author_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS closed_bills (id TEXT PRIMARY KEY, table_id TEXT, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, subtotal REAL NOT NULL, service_fee REAL DEFAULT 0, discount REAL DEFAULT 0, discount_reason TEXT, coupon_code TEXT, coupon_amount REAL DEFAULT 0, coupon_benefit TEXT, total REAL NOT NULL, payments TEXT, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS table_payments (id TEXT PRIMARY KEY, table_id TEXT NOT NULL, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, method TEXT NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, cancelled_at DATETIME, applied_closed_bill_id TEXT)",
-    "CREATE TABLE IF NOT EXISTS pdv_coupons (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', note TEXT, created_by_id TEXT, created_by_name TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, redeemed_at DATETIME, redeemed_table_id TEXT, redeemed_closed_bill_id TEXT, customer_id TEXT, customer_name TEXT, phone TEXT, campaign_name TEXT, valid_until DATETIME, min_order_value REAL DEFAULT 0, selected_benefit TEXT, used_by_employee_id TEXT, used_by_employee TEXT, table_number INTEGER, order_id TEXT, whatsapp_message TEXT, sent_at DATETIME)",
+    "CREATE TABLE IF NOT EXISTS pdv_coupons (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', note TEXT, created_by_id TEXT, created_by_name TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, redeemed_at DATETIME, redeemed_table_id TEXT, redeemed_closed_bill_id TEXT, customer_id TEXT, customer_name TEXT, phone TEXT, campaign_name TEXT, valid_until DATETIME, min_order_value REAL DEFAULT 0, selected_benefit TEXT, used_by_employee_id TEXT, used_by_employee TEXT, table_number INTEGER, order_id TEXT, whatsapp_message TEXT, sent_at DATETIME, benefit_type TEXT, discount_type TEXT, target_category TEXT, target_product_id TEXT, target_product_name TEXT, free_item_name TEXT, benefit_label TEXT, rule_json TEXT)",
     "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS integration_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, table_id TEXT, ref_id TEXT, payload TEXT, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     "CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, status TEXT NOT NULL, opening_balance REAL NOT NULL, closing_balance REAL, total_sales REAL DEFAULT 0, opened_at DATETIME DEFAULT CURRENT_TIMESTAMP, closed_at DATETIME, sort_order INTEGER DEFAULT 0)",
@@ -508,6 +508,14 @@ const ensureDatabase = async () => {
     "ALTER TABLE pdv_coupons ADD COLUMN order_id TEXT",
     "ALTER TABLE pdv_coupons ADD COLUMN whatsapp_message TEXT",
     "ALTER TABLE pdv_coupons ADD COLUMN sent_at DATETIME",
+    "ALTER TABLE pdv_coupons ADD COLUMN benefit_type TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN discount_type TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN target_category TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN target_product_id TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN target_product_name TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN free_item_name TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN benefit_label TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN rule_json TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN closed_bill_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN order_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN order_item_id TEXT",
@@ -1829,12 +1837,16 @@ const getActiveOrderItemsForTable = async (tableId) => {
         oi.order_id as orderId,
         oi.product_id as productId,
         COALESCE(m.name, '') as name,
+        COALESCE(c.name, '') as categoryName,
+        COALESCE(m.category_id, '') as categoryId,
         COALESCE(m.remote_stock_id, '') as remoteStockId,
+        oi.price_at_time as price,
         oi.quantity,
         oi.selected_modifiers as selectedModifiers
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       LEFT JOIN menu m ON oi.product_id = m.id
+      LEFT JOIN categories c ON m.category_id = c.id
       WHERE o.table_id = ? AND o.status != 'closed'
     `,
     args: [tableId],
@@ -1845,7 +1857,10 @@ const getActiveOrderItemsForTable = async (tableId) => {
     orderId: row.orderId,
     productId: row.productId,
     name: row.name || '',
+    categoryId: row.categoryId || '',
+    categoryName: row.categoryName || '',
     remoteStockId: row.remoteStockId || '',
+    price: Number(row.price || 0),
     quantity: Number(row.quantity || 0),
     selectedModifiers: parseJsonArray(row.selectedModifiers),
   }));
@@ -2900,7 +2915,7 @@ const normalizeCouponCode = (code = '') => String(code)
   .slice(0, 24);
 
 const COUPON_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const COUPON_BENEFITS = new Set(['discount_20', 'free_drink']);
+const COUPON_BENEFITS = new Set(['discount_20', 'free_drink', 'discount_value', 'free_item', 'order_value', 'order_percent', 'category_discount', 'item_discount']);
 
 const generateCouponCode = () => Array.from({ length: 6 }, () => (
   COUPON_ALPHABET[Math.floor(Math.random() * COUPON_ALPHABET.length)]
@@ -2918,8 +2933,133 @@ const isCouponExpired = (validUntil) => {
 };
 
 const formatCouponBenefit = (benefit) => (
-  benefit === 'free_drink' ? '1 drink cortesia' : 'R$20 OFF'
+  benefit === 'free_drink' || benefit === 'free_item' ? '1 drink cortesia' : 'R$20 OFF'
 );
+
+const normalizeCouponText = (value = '') => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim()
+  .toLowerCase();
+
+const parseCouponRule = (coupon = {}) => {
+  if (coupon.rule_json) {
+    try {
+      const parsed = JSON.parse(String(coupon.rule_json));
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {}
+  }
+  const benefitType = String(coupon.benefit_type || '').trim();
+  if (benefitType) {
+    return {
+      type: benefitType,
+      discountType: coupon.discount_type || 'value',
+      amount: Number(coupon.amount || 0),
+      percent: Number(coupon.percent || 0),
+      targetCategory: coupon.target_category || '',
+      targetProductId: coupon.target_product_id || '',
+      targetProductName: coupon.target_product_name || '',
+      itemName: coupon.free_item_name || '',
+      label: coupon.benefit_label || '',
+    };
+  }
+  if (coupon.campaign_name) {
+    return {
+      type: 'choice',
+      options: [
+        { id: 'discount_20', type: 'order_value', amount: Number(coupon.amount || 20), label: `R$${Number(coupon.amount || 20).toFixed(2)} OFF` },
+        { id: 'free_drink', type: 'free_item', itemName: '1 drink cortesia', label: '1 drink cortesia' },
+      ],
+    };
+  }
+  return { type: 'order_value', amount: Number(coupon.amount || 0), label: coupon.benefit_label || '' };
+};
+
+const getOrderItemLineTotal = (item) => {
+  const modifiersTotal = (item.selectedModifiers || []).reduce((sum, modifier) => sum + Number(modifier.price || 0), 0);
+  return (Number(item.price || 0) + modifiersTotal) * Number(item.quantity || 0);
+};
+
+const getEligibleSubtotalForRule = (rule, activeItems = []) => {
+  const normalizedCategory = normalizeCouponText(rule.targetCategory);
+  const normalizedProductName = normalizeCouponText(rule.targetProductName);
+  const targetProductId = String(rule.targetProductId || '');
+  return activeItems.reduce((sum, item) => {
+    const categoryMatches = normalizedCategory && normalizeCouponText(item.categoryName).includes(normalizedCategory);
+    const productMatches = (targetProductId && String(item.productId || '') === targetProductId)
+      || (normalizedProductName && normalizeCouponText(item.name).includes(normalizedProductName));
+    if (rule.type === 'category_discount' && categoryMatches) return sum + getOrderItemLineTotal(item);
+    if (rule.type === 'item_discount' && productMatches) return sum + getOrderItemLineTotal(item);
+    return sum;
+  }, 0);
+};
+
+const computeCouponApplication = ({ coupon, subtotalCents, serviceFeeCents, discountCents, selectedBenefit, activeItems = [] }) => {
+  const rule = parseCouponRule(coupon);
+  const selected = normalizeCouponBenefit(selectedBenefit || coupon.selected_benefit || '');
+  const baseCents = Math.max(0, subtotalCents + serviceFeeCents - discountCents);
+  let effectiveRule = rule;
+  let effectiveBenefit = selected;
+  let requiresBenefitChoice = false;
+  let benefitOptions = [];
+
+  if (rule.type === 'choice') {
+    benefitOptions = (rule.options || []).map((option) => ({
+      id: String(option.id || option.type || ''),
+      label: String(option.label || formatCouponBenefit(option.id || option.type || '')),
+    })).filter((option) => option.id);
+    if (!selected) {
+      requiresBenefitChoice = true;
+      effectiveRule = null;
+    } else {
+      effectiveRule = (rule.options || []).find((option) => normalizeCouponBenefit(option.id || option.type) === selected) || null;
+      effectiveBenefit = selected;
+    }
+  }
+
+  if (requiresBenefitChoice || !effectiveRule) {
+    return {
+      appliedCents: 0,
+      selectedBenefit: effectiveBenefit,
+      benefitLabel: '',
+      requiresBenefitChoice,
+      benefitOptions,
+    };
+  }
+
+  const type = effectiveRule.type || 'order_value';
+  let appliedCents = 0;
+  const label = effectiveRule.label || coupon.benefit_label || '';
+
+  if (type === 'free_item') {
+    appliedCents = 0;
+    effectiveBenefit = effectiveBenefit || 'free_item';
+  } else if (type === 'order_percent') {
+    appliedCents = Math.round(baseCents * (Math.max(0, Number(effectiveRule.percent || 0)) / 100));
+    effectiveBenefit = effectiveBenefit || 'order_percent';
+  } else if (type === 'category_discount' || type === 'item_discount') {
+    const eligibleCents = moneyToCents(getEligibleSubtotalForRule(effectiveRule, activeItems), 'coupon.eligibleSubtotal');
+    if (eligibleCents <= 0) {
+      throw new Error(type === 'category_discount' ? 'Este cupom não encontrou item dessa categoria na mesa.' : 'Este cupom não encontrou o item específico na mesa.');
+    }
+    appliedCents = effectiveRule.discountType === 'percent'
+      ? Math.round(eligibleCents * (Math.max(0, Number(effectiveRule.percent || 0)) / 100))
+      : moneyToCents(effectiveRule.amount || coupon.amount || 0, 'coupon.amount');
+    appliedCents = Math.min(appliedCents, eligibleCents, baseCents);
+    effectiveBenefit = effectiveBenefit || type;
+  } else {
+    appliedCents = Math.min(moneyToCents(effectiveRule.amount || coupon.amount || 0, 'coupon.amount'), baseCents);
+    effectiveBenefit = effectiveBenefit || 'discount_20';
+  }
+
+  return {
+    appliedCents: Math.min(appliedCents, baseCents),
+    selectedBenefit: effectiveBenefit,
+    benefitLabel: label || formatCouponBenefit(effectiveBenefit),
+    requiresBenefitChoice: false,
+    benefitOptions,
+  };
+};
 
 const formatTablePayment = (row) => ({
   id: row.id,
@@ -3011,6 +3151,8 @@ const listCoupons = async () => {
     SELECT id, code, amount, status, note, created_by_name,
            customer_id, customer_name, phone, campaign_name, valid_until, min_order_value,
            selected_benefit, used_by_employee, table_number, order_id, whatsapp_message, sent_at,
+           benefit_type, discount_type, target_category, target_product_id, target_product_name,
+           free_item_name, benefit_label, rule_json,
            strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at,
            strftime('%Y-%m-%dT%H:%M:%SZ', redeemed_at) as redeemed_at, redeemed_table_id, redeemed_closed_bill_id
     FROM pdv_coupons
@@ -3036,6 +3178,14 @@ const listCoupons = async () => {
       tableNumber: row.table_number ? Number(row.table_number) : null,
       orderId: row.order_id || '',
       whatsappMessage: row.whatsapp_message || '',
+      benefitType: row.benefit_type || '',
+      discountType: row.discount_type || '',
+      targetCategory: row.target_category || '',
+      targetProductId: row.target_product_id || '',
+      targetProductName: row.target_product_name || '',
+      freeItemName: row.free_item_name || '',
+      benefitLabel: row.benefit_label || '',
+      ruleJson: row.rule_json || '',
       sentAt: row.sent_at || null,
       createdAt: row.created_at || new Date().toISOString(),
       redeemedAt: row.redeemed_at || null,
@@ -3058,8 +3208,10 @@ const createCoupon = async (data, session) => {
     sql: `
       INSERT INTO pdv_coupons (
         id, code, amount, status, note, created_by_id, created_by_name, created_at,
-        customer_id, customer_name, phone, campaign_name, valid_until, min_order_value, whatsapp_message
-      ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        customer_id, customer_name, phone, campaign_name, valid_until, min_order_value, whatsapp_message,
+        benefit_type, discount_type, target_category, target_product_id, target_product_name,
+        free_item_name, benefit_label, rule_json
+      ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     args: [
       id,
@@ -3076,6 +3228,14 @@ const createCoupon = async (data, session) => {
       data.validUntil ? String(data.validUntil) : null,
       data.minOrderValue ? centsToMoney(moneyToCents(data.minOrderValue, 'minOrderValue')) : 0,
       data.whatsappMessage ? String(data.whatsappMessage) : null,
+      data.benefitType ? String(data.benefitType) : null,
+      data.discountType ? String(data.discountType) : null,
+      data.targetCategory ? String(data.targetCategory) : null,
+      data.targetProductId ? String(data.targetProductId) : null,
+      data.targetProductName ? String(data.targetProductName) : null,
+      data.freeItemName ? String(data.freeItemName) : null,
+      data.benefitLabel ? String(data.benefitLabel) : null,
+      data.ruleJson ? String(data.ruleJson) : null,
     ],
   });
   return { coupon: (await listCoupons()).coupons.find((coupon) => coupon.id === id) };
@@ -3090,7 +3250,9 @@ const validateCoupon = async (data, session) => {
 
   const res = await db.execute({
     sql: `
-      SELECT id, code, amount, status, customer_name, campaign_name, valid_until, min_order_value, selected_benefit
+      SELECT id, code, amount, status, customer_name, campaign_name, valid_until, min_order_value, selected_benefit,
+             benefit_type, discount_type, target_category, target_product_id, target_product_name,
+             free_item_name, benefit_label, rule_json
       FROM pdv_coupons
       WHERE code = ?
       LIMIT 1
@@ -3110,27 +3272,32 @@ const validateCoupon = async (data, session) => {
     throw new Error(`Pedido mínimo de ${formatMoneyBRL(centsToMoney(minOrderCents))} para usar este cupom.`);
   }
 
-  const requestedBenefit = normalizeCouponBenefit(data.selectedBenefit || coupon.selected_benefit || '');
-  const isCampaignCoupon = Boolean(coupon.campaign_name);
-  const requiresBenefitChoice = isCampaignCoupon && !requestedBenefit;
-  const baseCents = Math.max(0, subtotalCents + serviceFeeCents - discountCents);
-  const couponCents = requiresBenefitChoice || requestedBenefit === 'free_drink'
-    ? 0
-    : Math.min(moneyToCents(coupon.amount || 0, 'coupon.amount'), baseCents);
+  const activeItems = tableId ? await getActiveOrderItemsForTable(tableId) : [];
+  const couponApplication = computeCouponApplication({
+    coupon,
+    subtotalCents,
+    serviceFeeCents,
+    discountCents,
+    selectedBenefit: data.selectedBenefit,
+    activeItems,
+  });
+
   return {
     coupon: {
       id: coupon.id,
       code: coupon.code,
       amount: centsToMoney(moneyToCents(coupon.amount || 0, 'coupon.amount')),
-      appliedAmount: centsToMoney(couponCents),
+      appliedAmount: centsToMoney(couponApplication.appliedCents),
       customerName: coupon.customer_name || '',
       campaignName: coupon.campaign_name || '',
       validUntil: coupon.valid_until || '',
       minOrderValue: centsToMoney(minOrderCents),
-      selectedBenefit: requestedBenefit,
-      benefitLabel: requestedBenefit ? formatCouponBenefit(requestedBenefit) : '',
-      requiresBenefitChoice,
-      benefitOptions: isCampaignCoupon ? ['discount_20', 'free_drink'] : ['discount_20'],
+      selectedBenefit: couponApplication.selectedBenefit,
+      benefitLabel: couponApplication.benefitLabel,
+      requiresBenefitChoice: couponApplication.requiresBenefitChoice,
+      benefitOptions: couponApplication.benefitOptions.length
+        ? couponApplication.benefitOptions
+        : [{ id: couponApplication.selectedBenefit || 'discount_20', label: couponApplication.benefitLabel || 'Cupom' }],
     },
   };
 };
@@ -3742,11 +3909,19 @@ const closeBillWithInventorySync = async (data, session = null) => {
     requirePermission(session, 'applyDiscount', settings);
   }
 
+  const activeOrderItems = await getActiveOrderItemsForTable(tableId);
   let couponRow = null;
   if (couponCode || couponCents > 0) {
     if (!couponCode) throw new Error('Informe o código do cupom.');
     const couponRes = await db.execute({
-      sql: "SELECT id, code, amount, status, campaign_name, valid_until, min_order_value, selected_benefit FROM pdv_coupons WHERE code = ? LIMIT 1",
+      sql: `
+        SELECT id, code, amount, status, campaign_name, valid_until, min_order_value, selected_benefit,
+               benefit_type, discount_type, target_category, target_product_id, target_product_name,
+               free_item_name, benefit_label, rule_json
+        FROM pdv_coupons
+        WHERE code = ?
+        LIMIT 1
+      `,
       args: [couponCode],
     });
     couponRow = couponRes.rows[0];
@@ -3757,14 +3932,19 @@ const closeBillWithInventorySync = async (data, session = null) => {
     if (minOrderCents > 0 && subtotalCents < minOrderCents) {
       throw new Error(`Pedido mínimo de ${formatMoneyBRL(centsToMoney(minOrderCents))} para usar este cupom.`);
     }
-    const effectiveBenefit = normalizeCouponBenefit(couponBenefit || couponRow.selected_benefit || '');
-    if (couponRow.campaign_name && !effectiveBenefit) {
+    const couponApplication = computeCouponApplication({
+      coupon: couponRow,
+      subtotalCents,
+      serviceFeeCents,
+      discountCents,
+      selectedBenefit: couponBenefit,
+      activeItems: activeOrderItems,
+    });
+    if (couponApplication.requiresBenefitChoice) {
       throw new Error('Escolha o benefício do cupom antes de fechar a conta.');
     }
-    const maxCouponCents = Math.max(0, subtotalCents + serviceFeeCents - discountCents);
-    const registeredCouponCents = moneyToCents(couponRow.amount || 0, 'coupon.amount');
-    couponCents = effectiveBenefit === 'free_drink' ? 0 : Math.min(registeredCouponCents, maxCouponCents);
-    data.couponBenefit = effectiveBenefit || 'discount_20';
+    couponCents = couponApplication.appliedCents;
+    data.couponBenefit = couponApplication.selectedBenefit || 'discount_20';
   }
 
   if (payments.length === 0 && totalCents > 0) {
@@ -3840,7 +4020,6 @@ const closeBillWithInventorySync = async (data, session = null) => {
     };
   }
 
-  const activeOrderItems = await getActiveOrderItemsForTable(tableId);
   const orderIds = Array.from(new Set(activeOrderItems.map((item) => item.orderId))).sort();
   const integrationId = `pdv_close_${tableId}_${orderIds.join('_') || 'no_orders'}`;
 
