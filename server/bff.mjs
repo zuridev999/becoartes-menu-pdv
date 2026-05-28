@@ -2933,7 +2933,7 @@ const isCouponExpired = (validUntil) => {
 };
 
 const formatCouponBenefit = (benefit) => (
-  benefit === 'free_drink' || benefit === 'free_item' ? '1 drink cortesia' : 'R$20 OFF'
+  benefit === 'free_drink' || benefit === 'free_item' ? '1 drink cortesia' : 'R$30 OFF'
 );
 
 const normalizeCouponText = (value = '') => String(value || '')
@@ -2967,7 +2967,7 @@ const parseCouponRule = (coupon = {}) => {
     return {
       type: 'choice',
       options: [
-        { id: 'discount_20', type: 'order_value', amount: Number(coupon.amount || 20), label: `R$${Number(coupon.amount || 20).toFixed(2)} OFF` },
+        { id: 'discount_20', type: 'order_value', amount: Number(coupon.amount || 30), label: `R$${Number(coupon.amount || 30).toFixed(2)} OFF` },
         { id: 'free_drink', type: 'free_item', itemName: '1 drink cortesia', label: '1 drink cortesia' },
       ],
     };
@@ -4062,78 +4062,34 @@ const closeBillWithInventorySync = async (data, session = null) => {
       const { empresaId } = osContext;
       try {
         for (const item of activeOrderItems) {
-          const requestedQuantity = toStockAmount(item.quantity);
-          const alreadyMovedProduct = await hasPdvStockMovement({
+          await appendInventoryPlansForSoldItem({
+            empresaId,
+            movementPlans,
+            result,
+            orderId: item.orderId,
             orderItemId: item.id,
-            sourceItemKind: 'product',
-            sourceItemId: item.productId,
+            productId: item.productId,
+            remoteStockId: item.remoteStockId,
+            name: item.name,
+            quantity: item.quantity,
+            reason: baseReason,
+            sourceKind: 'product',
           });
 
-          if (!alreadyMovedProduct) {
-            const productStock = await findStockProduct(empresaId, {
-              id: item.remoteStockId || item.productId,
-              name: item.name,
-            });
-
-            if (!productStock) {
-              result.unmatched.push(`${item.quantity}x ${item.name}`);
-            } else {
-              const currentQuantity = Number(productStock.quantidade_atual || 0);
-              const nextQuantity = currentQuantity - requestedQuantity;
-              if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
-              if (nextQuantity <= Number(productStock.estoque_minimo || 0)) result.critical.push(item.name);
-              if (requestedQuantity > 0) {
-                movementPlans.push({
-                  movementId: createId(),
-                  stockId: productStock.id,
-                  stockName: productStock.nome || item.name,
-                  orderId: item.orderId,
-                  orderItemId: item.id,
-                  sourceItemId: item.productId,
-                  sourceItemKind: 'product',
-                  requestedQuantity,
-                  previousQuantity: currentQuantity,
-                  nextQuantity,
-                  reason: baseReason,
-                });
-              }
-            }
-          }
-
           for (const modifier of item.selectedModifiers || []) {
-            const alreadyMovedModifier = await hasPdvStockMovement({
+            await appendInventoryPlansForSoldItem({
+              empresaId,
+              movementPlans,
+              result,
+              orderId: item.orderId,
               orderItemId: item.id,
-              sourceItemKind: 'modifier',
-              sourceItemId: modifier.id,
-            });
-            if (alreadyMovedModifier) continue;
-
-            const modifierStock = await findStockProduct(empresaId, {
-              id: modifier.id,
+              productId: modifier.id,
               name: modifier.name,
+              quantity: item.quantity,
+              reason: baseReason,
+              sourceKind: 'modifier',
+              reportUnmatched: Number(modifier.price || 0) > 0,
             });
-
-            if (!modifierStock) continue;
-
-            const currentQuantity = Number(modifierStock.quantidade_atual || 0);
-            const nextQuantity = currentQuantity - requestedQuantity;
-            if (requestedQuantity > currentQuantity) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
-            if (nextQuantity <= Number(modifierStock.estoque_minimo || 0)) result.critical.push(modifier.name);
-            if (requestedQuantity > 0) {
-              movementPlans.push({
-                movementId: createId(),
-                stockId: modifierStock.id,
-                stockName: modifierStock.nome || modifier.name,
-                orderId: item.orderId,
-                orderItemId: item.id,
-                sourceItemId: modifier.id,
-                sourceItemKind: 'modifier',
-                requestedQuantity,
-                previousQuantity: currentQuantity,
-                nextQuantity,
-                reason: `${baseReason} | Opcional ${modifier.name}`,
-              });
-            }
           }
         }
       } catch (error) {

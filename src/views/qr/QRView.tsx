@@ -43,7 +43,7 @@ export function QRView() {
           <p className="text-[10px] font-black uppercase tracking-[0.35em] text-primary mb-3">Regulamento</p>
           <h1 className="text-4xl sm:text-5xl font-black italic tracking-tighter mb-6">Campanha WhatsApp</h1>
           <div className="space-y-4 text-sm sm:text-base font-bold text-gray-300 leading-relaxed">
-            <p>O cliente poderá escolher entre R$20 de desconto ou 1 drink cortesia.</p>
+            <p>O cliente poderá escolher entre R$30 de desconto ou 1 drink cortesia.</p>
             <p>Válido para pedidos acima de R$50.</p>
             <p>Uso único por cliente e não cumulativo com outras promoções.</p>
             <p>O drink cortesia é válido apenas para maiores de 18 anos.</p>
