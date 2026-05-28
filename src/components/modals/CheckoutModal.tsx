@@ -233,16 +233,13 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
               <div className="mt-4 lg:mt-6 space-y-3 pt-4 lg:pt-6 border-t border-white/10 text-sm">
                  <div className="flex justify-between text-gray-400 font-bold"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>
                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
-                    <div className="flex justify-between text-gray-300 font-black items-center">
-                       <span>Taxa de serviço ({formatPercent(serviceFeePercent)}%)</span>
-                       <span>R$ {feeValue.toFixed(2)}</span>
+                    <div className="flex justify-between text-gray-200 font-black items-center gap-4">
+                       <span className="text-base sm:text-lg">Taxa de serviço ({formatPercent(serviceFeePercent)}%)</span>
+                       <span className="text-xl sm:text-2xl text-white">R$ {feeValue.toFixed(2)}</span>
                     </div>
                     {canEditServiceFee ? (
                       <>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-amber-200/80">
-                          Controle separado do desconto. A taxa pode ir de 0% a 13%.
-                        </p>
-                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {[0, 1, 5, 10, 13].map((percent) => (
                             <button
                               key={percent}
@@ -327,22 +324,24 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                  </div>
               </div>
 
-              <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 mb-6">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-200 mb-3">Cupom do cliente</h4>
-                <div className="flex flex-col sm:flex-row gap-3">
+              <div className="rounded-xl border border-amber-400/15 bg-amber-400/[0.03] p-3 mb-4">
+                <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+                  <div className="flex-1">
+                    <h4 className="text-[9px] font-black uppercase tracking-widest text-amber-200/80 mb-2">Cupom</h4>
                   <input
                     value={couponInput}
                     onChange={(event) => {
                       setCouponInput(event.target.value.toUpperCase());
                       if (coupon) setCoupon(null);
                     }}
-                    className="flex-1 glass p-4 rounded-xl border-white/10 outline-none font-black uppercase tracking-widest"
-                    placeholder="DIGITE O CUPOM"
+                    className="w-full glass px-3 py-3 rounded-lg border-white/10 outline-none font-black uppercase tracking-widest text-sm"
+                    placeholder="Código"
                   />
+                  </div>
                   <button
                     onClick={() => handleApplyCoupon()}
                     disabled={isApplyingCoupon || !couponInput.trim()}
-                    className="px-6 py-4 rounded-xl bg-amber-300 text-black font-black uppercase tracking-widest text-xs disabled:opacity-40"
+                    className="px-5 py-3 rounded-lg bg-amber-300 text-black font-black uppercase tracking-widest text-[10px] disabled:opacity-40"
                   >
                     {isApplyingCoupon ? 'Validando...' : 'Aplicar'}
                   </button>
@@ -352,37 +351,37 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                         setCoupon(null);
                         setCouponMessage('Cupom removido desta conta.');
                       }}
-                      className="px-4 py-4 rounded-xl border border-white/10 text-rose-300 font-black uppercase tracking-widest text-[10px]"
+                      className="px-3 py-3 rounded-lg border border-white/10 text-rose-300 font-black uppercase tracking-widest text-[10px]"
                     >
                       Remover
                     </button>
                   )}
                 </div>
                 {couponMessage && (
-                  <p className={`mt-3 text-[10px] font-black uppercase tracking-widest ${coupon ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  <p className={`mt-2 text-[9px] font-black uppercase tracking-widest ${coupon ? 'text-emerald-300' : 'text-rose-300'}`}>
                     {couponMessage}
                   </p>
                 )}
                 {coupon?.requiresBenefitChoice && (
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <button
                       onClick={() => handleApplyCoupon('discount_20')}
                       disabled={isApplyingCoupon}
-                      className="rounded-xl bg-emerald-400 text-black py-3 px-4 font-black uppercase tracking-widest text-[10px] disabled:opacity-40"
+                      className="rounded-lg bg-emerald-400 text-black py-2.5 px-3 font-black uppercase tracking-widest text-[10px] disabled:opacity-40"
                     >
                       R$20 OFF
                     </button>
                     <button
                       onClick={() => handleApplyCoupon('free_drink')}
                       disabled={isApplyingCoupon}
-                      className="rounded-xl bg-white/10 text-amber-200 py-3 px-4 font-black uppercase tracking-widest text-[10px] border border-amber-300/20 disabled:opacity-40"
+                      className="rounded-lg bg-white/10 text-amber-200 py-2.5 px-3 font-black uppercase tracking-widest text-[10px] border border-amber-300/20 disabled:opacity-40"
                     >
                       1 Drink Cortesia
                     </button>
                   </div>
                 )}
                 {coupon && !coupon.requiresBenefitChoice && (
-                  <div className="mt-3 rounded-xl bg-white/[0.04] border border-white/10 p-3 text-[10px] font-bold uppercase tracking-widest text-gray-300">
+                  <div className="mt-2 rounded-lg bg-white/[0.04] border border-white/10 p-2 text-[9px] font-bold uppercase tracking-widest text-gray-300">
                     {coupon.customerName && <p>Cliente: {coupon.customerName}</p>}
                     {coupon.minOrderValue ? <p>Mínimo: R$ {coupon.minOrderValue.toFixed(2)}</p> : null}
                     {coupon.benefitLabel && <p>Benefício: {coupon.benefitLabel}</p>}
