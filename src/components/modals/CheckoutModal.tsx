@@ -4,11 +4,29 @@ import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight } f
 import { useStore, type Table as TableType } from '../../store';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
 import { can } from '../../lib/permissions';
+import { OperationalApi } from '../../lib/api';
 
 interface Payment {
+  id?: string;
   method: 'credit' | 'debit' | 'cash' | 'pix';
   amount: number;
+  sellerName?: string;
+  createdAt?: Date;
 }
+
+type ValidatedCoupon = {
+  code: string;
+  amount: number;
+  appliedAmount: number;
+  customerName?: string;
+  campaignName?: string;
+  validUntil?: string;
+  minOrderValue?: number;
+  selectedBenefit?: 'discount_20' | 'free_drink' | '';
+  benefitLabel?: string;
+  requiresBenefitChoice?: boolean;
+  benefitOptions?: Array<'discount_20' | 'free_drink'>;
+};
 
 export function CheckoutModal({ table, onClose }: { table: TableType, onClose: () => void }) {
   const { closeBill, settings, sellers, currentSeller } = useStore();
@@ -18,8 +36,13 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const [discountValue, setDiscountValue] = useState(0);
   const [discountType, setDiscountType] = useState<'fixed' | 'percent'>('fixed');
   const [discountReason] = useState('');
-  const [payments, setPayments] = useState<Payment[]>([]);
+  const [payments, setPayments] = useState<Payment[]>(() => table.payments || []);
   const [currentMethod, setCurrentMethod] = useState<Payment['method']>('credit');
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
+  const [couponInput, setCouponInput] = useState('');
+  const [coupon, setCoupon] = useState<ValidatedCoupon | null>(null);
+  const [couponMessage, setCouponMessage] = useState('');
+  const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
   const sellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
@@ -41,13 +64,16 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     ? discountValue
     : subtotal * (Math.min(100, Math.max(0, discountValue)) / 100);
   const discountAmountValue = canApplyDiscount ? roundMoney(Math.min(subtotal + feeValue, Math.max(0, rawDiscountAmount))) : 0;
-  const totalFinal = calculateBillTotal({ subtotal, serviceFee: feeValue, discount: discountAmountValue });
+  const totalBeforeCoupon = calculateBillTotal({ subtotal, serviceFee: feeValue, discount: discountAmountValue });
+  const couponAmountValue = roundMoney(Math.min(coupon?.appliedAmount || 0, totalBeforeCoupon));
+  const totalFinal = roundMoney(Math.max(0, totalBeforeCoupon - couponAmountValue));
   const paidTotal = roundMoney(payments.reduce((acc: number, p: any) => acc + p.amount, 0));
   const diff = Number((totalFinal - paidTotal).toFixed(2));
   const remaining = Math.max(0, diff);
   const change = Math.max(0, -diff);
   const hasCashPayment = payments.some((payment) => payment.method === 'cash');
   const hasInvalidOverpayment = paidTotal > totalFinal && !hasCashPayment;
+  const hasPendingCouponChoice = Boolean(coupon?.requiresBenefitChoice);
 
   const [amountDigits, setAmountDigits] = useState<string>(() => {
     return Math.round(remaining * 100).toString();
@@ -60,6 +86,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   useEffect(() => {
     setServiceFeePercent(defaultServiceFeePercent);
   }, [defaultServiceFeePercent]);
+
+  useEffect(() => {
+    setPayments(table.payments || []);
+  }, [table.id, table.payments]);
 
   const currentPaymentAmount = Number(amountDigits) / 100;
   const currentPaymentCreatesInvalidChange = roundMoney(paidTotal + currentPaymentAmount) > totalFinal
@@ -75,18 +105,70 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     setAmountDigits(finalDigits);
   };
 
-  const handleAddPayment = () => {
+  const handleAddPayment = async () => {
     if (!canLaunchPayment) return;
     if (payments.length >= 1 && !canSplitPayment) return;
     const val = currentPaymentAmount;
     if (val <= 0) return;
     const nextPaidTotal = roundMoney(paidTotal + val);
     if (nextPaidTotal > totalFinal && currentMethod !== 'cash' && !hasCashPayment) return;
-    setPayments([...payments, { method: currentMethod, amount: val }]);
+    setIsSavingPayment(true);
+    try {
+      const result = await OperationalApi.createTablePayment({
+        tableId: table.id,
+        tableNumber: table.number,
+        method: currentMethod,
+        amount: val,
+        sellerId: selectedSellerId || currentSeller?.id,
+        sellerName: sellerOptions.find(s => s.id === selectedSellerId)?.name || currentSeller?.name || 'Sistema',
+      });
+      setPayments([...payments, result.payment]);
+    } finally {
+      setIsSavingPayment(false);
+    }
+  };
+
+  const handleRemovePayment = async (payment: Payment, idx: number) => {
+    if (!canCancelPayment) return;
+    if (payment.id) {
+      await OperationalApi.cancelTablePayment(payment.id);
+    }
+    setPayments(payments.filter((_, i) => i !== idx));
+  };
+
+  const handleApplyCoupon = async (selectedBenefit?: 'discount_20' | 'free_drink') => {
+    const cleanCode = couponInput.trim();
+    if (!cleanCode) return;
+    setIsApplyingCoupon(true);
+    setCouponMessage('');
+    try {
+      const result = await OperationalApi.validateCoupon({
+        code: cleanCode,
+        tableId: table.id,
+        subtotal,
+        serviceFee: feeValue,
+        discount: discountAmountValue,
+        selectedBenefit,
+      });
+      setCoupon(result.coupon);
+      setCouponInput(result.coupon.code);
+      if (result.coupon.requiresBenefitChoice) {
+        setCouponMessage(`Cupom ${result.coupon.code} encontrado. Escolha o benefício do cliente.`);
+      } else if (result.coupon.selectedBenefit === 'free_drink') {
+        setCouponMessage(`Cupom ${result.coupon.code} aplicado: 1 drink cortesia.`);
+      } else {
+        setCouponMessage(`Cupom ${result.coupon.code} aplicado: R$ ${result.coupon.appliedAmount.toFixed(2)}`);
+      }
+    } catch (error) {
+      setCoupon(null);
+      setCouponMessage(error instanceof Error ? error.message : 'Cupom inválido.');
+    } finally {
+      setIsApplyingCoupon(false);
+    }
   };
 
   const handleFinish = async () => {
-    if (hasInvalidOverpayment || remaining > 0 || !selectedSellerId || !canLaunchPayment || !canCloseBill) return;
+    if (hasInvalidOverpayment || hasPendingCouponChoice || remaining > 0 || !selectedSellerId || !canLaunchPayment || !canCloseBill) return;
     const seller = sellerOptions.find(s => s.id === selectedSellerId);
     const success = await closeBill({
       tableId: table.id,
@@ -97,6 +179,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       serviceFee: feeValue,
       discount: discountAmountValue,
       discountReason,
+      couponCode: coupon?.code || '',
+      couponAmount: couponAmountValue,
+      couponBenefit: coupon?.selectedBenefit || '',
       total: totalFinal,
       payments
     });
@@ -109,23 +194,23 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/90 backdrop-blur-3xl z-[400]" />
-      <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }} className="fixed inset-0 z-[450] flex items-center justify-center p-6 pointer-events-none font-['Outfit']">
-        <div className="glass-card w-full max-w-7xl h-[85vh] flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl">
+      <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }} className="fixed inset-0 z-[450] flex items-center justify-center p-2 sm:p-6 pointer-events-none font-['Outfit']">
+        <div className="glass-card w-full max-w-7xl h-[calc(100dvh-1rem)] sm:h-[90dvh] lg:h-[85vh] flex flex-col lg:flex-row overflow-hidden pointer-events-auto border-white/10 shadow-2xl">
            {/* Esquerda: Resumo */}
-           <div className="w-1/3 p-8 bg-white/5 flex flex-col border-r border-white/5">
-              <div className="flex justify-between items-center mb-6">
-                 <h2 className="text-3xl font-black italic tracking-tighter">Resumo <span className="text-primary">Mesa {table.number}</span></h2>
+           <div className="w-full lg:w-1/3 max-h-[38dvh] lg:max-h-none p-4 sm:p-6 lg:p-8 bg-white/5 flex flex-col border-b lg:border-b-0 lg:border-r border-white/5">
+              <div className="flex justify-between items-center mb-4 lg:mb-6">
+                 <h2 className="text-2xl sm:text-3xl font-black italic tracking-tighter">Resumo <span className="text-primary">Mesa {table.number}</span></h2>
                  <button onClick={onClose} className="p-2.5 glass rounded-xl hover:text-rose-500"><X size={20}/></button>
               </div>
 
-              <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+              <div className="flex-1 overflow-y-auto space-y-3 lg:space-y-4 pr-2 custom-scrollbar">
                  {table.orders.map((o: any, idx: number) => {
                    const modifiersTotal = o.selectedModifiers?.reduce((mAcc: number, m: any) => mAcc + m.price, 0) || 0;
                    return (
                     <div key={idx} className="space-y-1 pb-3 border-b border-white/5">
                        <div className="flex justify-between items-start">
                           <div>
-                             <p className="font-bold text-base">{o.quantity}x {o.name}</p>
+                             <p className="font-bold text-sm sm:text-base">{o.quantity}x {o.name}</p>
                              <p className="text-[9px] text-gray-500 uppercase font-black">{o.categoryName || o.category}</p>
                           </div>
                           <p className="font-black text-white/70 text-sm">R$ {((o.price + modifiersTotal) * o.quantity).toFixed(2)}</p>
@@ -145,7 +230,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                  })}
               </div>
 
-              <div className="mt-6 space-y-3 pt-6 border-t border-white/10 text-sm">
+              <div className="mt-4 lg:mt-6 space-y-3 pt-4 lg:pt-6 border-t border-white/10 text-sm">
                  <div className="flex justify-between text-gray-400 font-bold"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>
                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
                     <div className="flex justify-between text-gray-300 font-black items-center">
@@ -157,7 +242,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                         <p className="text-[9px] font-black uppercase tracking-widest text-amber-200/80">
                           Controle separado do desconto. A taxa pode ir de 0% a 13%.
                         </p>
-                        <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                           {[0, 1, 5, 10, 13].map((percent) => (
                             <button
                               key={percent}
@@ -174,7 +259,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                             step={0.01}
                             value={serviceFeePercent}
                             onChange={(e) => setServiceFeePercent(clampServiceFeePercent(Number(e.target.value)))}
-                            className="ml-auto w-20 glass px-3 py-2 rounded-xl border-white/10 outline-none text-right font-black text-primary"
+                            className="w-20 glass px-3 py-2 rounded-xl border-white/10 outline-none text-right font-black text-primary"
                           />
                         </div>
                         {serviceFeePercent > 0 && (
@@ -191,13 +276,17 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                     )}
                  </div>
                  <div className="flex justify-between text-rose-400 font-bold"><span>Desconto</span><span>- R$ {discountAmountValue.toFixed(2)}</span></div>
+                 <div className="flex justify-between text-amber-300 font-bold">
+                   <span>Cupom{coupon?.selectedBenefit === 'free_drink' ? ' (drink)' : ''}</span>
+                   <span>- R$ {couponAmountValue.toFixed(2)}</span>
+                 </div>
                  <div className="flex justify-between text-3xl font-black text-accent pt-3 border-t border-white/5 italic tracking-tighter"><span>Total</span><span>R$ {totalFinal.toFixed(2)}</span></div>
               </div>
            </div>
 
            {/* Direita: Pagamento */}
-           <div className="flex-1 p-10 flex flex-col bg-[#0d0d0f] overflow-y-auto custom-scrollbar">
-              <div className="grid grid-cols-2 gap-8 mb-8">
+           <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-10 flex flex-col bg-[#0d0d0f] overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 lg:gap-8 mb-6 lg:mb-8">
                  <div>
                     <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-3">Operador Responsável</h4>
                     <select 
@@ -238,10 +327,73 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                  </div>
               </div>
 
+              <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 mb-6">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-200 mb-3">Cupom do cliente</h4>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    value={couponInput}
+                    onChange={(event) => {
+                      setCouponInput(event.target.value.toUpperCase());
+                      if (coupon) setCoupon(null);
+                    }}
+                    className="flex-1 glass p-4 rounded-xl border-white/10 outline-none font-black uppercase tracking-widest"
+                    placeholder="DIGITE O CUPOM"
+                  />
+                  <button
+                    onClick={() => handleApplyCoupon()}
+                    disabled={isApplyingCoupon || !couponInput.trim()}
+                    className="px-6 py-4 rounded-xl bg-amber-300 text-black font-black uppercase tracking-widest text-xs disabled:opacity-40"
+                  >
+                    {isApplyingCoupon ? 'Validando...' : 'Aplicar'}
+                  </button>
+                  {coupon && (
+                    <button
+                      onClick={() => {
+                        setCoupon(null);
+                        setCouponMessage('Cupom removido desta conta.');
+                      }}
+                      className="px-4 py-4 rounded-xl border border-white/10 text-rose-300 font-black uppercase tracking-widest text-[10px]"
+                    >
+                      Remover
+                    </button>
+                  )}
+                </div>
+                {couponMessage && (
+                  <p className={`mt-3 text-[10px] font-black uppercase tracking-widest ${coupon ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {couponMessage}
+                  </p>
+                )}
+                {coupon?.requiresBenefitChoice && (
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      onClick={() => handleApplyCoupon('discount_20')}
+                      disabled={isApplyingCoupon}
+                      className="rounded-xl bg-emerald-400 text-black py-3 px-4 font-black uppercase tracking-widest text-[10px] disabled:opacity-40"
+                    >
+                      R$20 OFF
+                    </button>
+                    <button
+                      onClick={() => handleApplyCoupon('free_drink')}
+                      disabled={isApplyingCoupon}
+                      className="rounded-xl bg-white/10 text-amber-200 py-3 px-4 font-black uppercase tracking-widest text-[10px] border border-amber-300/20 disabled:opacity-40"
+                    >
+                      1 Drink Cortesia
+                    </button>
+                  </div>
+                )}
+                {coupon && !coupon.requiresBenefitChoice && (
+                  <div className="mt-3 rounded-xl bg-white/[0.04] border border-white/10 p-3 text-[10px] font-bold uppercase tracking-widest text-gray-300">
+                    {coupon.customerName && <p>Cliente: {coupon.customerName}</p>}
+                    {coupon.minOrderValue ? <p>Mínimo: R$ {coupon.minOrderValue.toFixed(2)}</p> : null}
+                    {coupon.benefitLabel && <p>Benefício: {coupon.benefitLabel}</p>}
+                  </div>
+                )}
+              </div>
+
               <div className="flex-1 flex flex-col">
                  <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-4">Fluxo de Caixa</h4>
                  
-                 <div className="grid grid-cols-4 gap-4 mb-6">
+                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-5 sm:mb-6">
                     {[
                       { id: 'credit', name: 'Crédito', icon: CreditCard },
                       { id: 'debit', name: 'Débito', icon: CreditCard },
@@ -252,7 +404,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                         key={m.id}
                         onClick={() => canChangePaymentMethod && setCurrentMethod(m.id as any)}
                         disabled={!canChangePaymentMethod}
-                        className={`p-6 rounded-2xl border transition-all flex flex-col items-center gap-3 ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-105' : 'glass border-white/5 opacity-50 hover:opacity-100'} ${!canChangePaymentMethod ? 'cursor-not-allowed grayscale' : ''}`}
+                        className={`p-4 sm:p-6 rounded-2xl border transition-all flex flex-col items-center gap-3 ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-105' : 'glass border-white/5 opacity-50 hover:opacity-100'} ${!canChangePaymentMethod ? 'cursor-not-allowed grayscale' : ''}`}
                       >
                         <m.icon size={26} />
                         <span className="font-black uppercase text-[9px] tracking-widest">{m.name}</span>
@@ -265,7 +417,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                    </p>
                  )}
 
-                 <div className="flex gap-4 items-center mb-6">
+                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-center mb-5 sm:mb-6">
                     <div className="flex-1 relative">
                        <span className="absolute left-5 top-1/2 -translate-y-1/2 font-black text-xl text-gray-500">R$</span>
                        <input 
@@ -273,17 +425,22 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                          inputMode="numeric"
                          value={currentAmountFormatted}
                          onChange={handleAmountChange}
-                         className="w-full glass py-4 pl-12 pr-6 rounded-2xl text-4xl font-black text-accent outline-none border-white/10"
+                         className="w-full glass py-4 pl-12 pr-6 rounded-2xl text-3xl sm:text-4xl font-black text-accent outline-none border-white/10"
                        />
                     </div>
                     <button 
                        onClick={handleAddPayment}
-                       disabled={!canLaunchPayment || (payments.length >= 1 && !canSplitPayment) || currentPaymentCreatesInvalidChange}
-                       className="py-4 px-8 btn-beco btn-beco-purple text-base font-black rounded-2xl disabled:opacity-30 disabled:grayscale"
+                       disabled={isSavingPayment || !canLaunchPayment || (payments.length >= 1 && !canSplitPayment) || currentPaymentCreatesInvalidChange}
+                       className="w-full sm:w-auto py-4 px-8 btn-beco btn-beco-purple text-base font-black rounded-2xl disabled:opacity-30 disabled:grayscale"
                     >
-                       Lançar Valor
+                       {isSavingPayment ? 'Salvando...' : 'Lançar Valor'}
                     </button>
                  </div>
+                 {payments.length > 0 && (
+                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-emerald-300">
+                     Pagamentos lançados ficam salvos na mesa mesmo se ela continuar aberta.
+                   </p>
+                 )}
                  {!canLaunchPayment && (
                    <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-rose-400">
                      Seu perfil não pode lançar pagamentos.
@@ -313,7 +470,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                          <div className="flex items-center gap-6">
                             <p className="text-xl font-black text-white">R$ {p.amount.toFixed(2)}</p>
                             <button
-                              onClick={() => canCancelPayment && setPayments(payments.filter((_, i) => i !== idx))}
+                              onClick={() => handleRemovePayment(p, idx)}
                               disabled={!canCancelPayment}
                               className="text-rose-500 p-1.5 hover:bg-rose-500/10 rounded-lg disabled:opacity-20 disabled:cursor-not-allowed"
                               title={canCancelPayment ? 'Remover pagamento' : 'Sem permissão para cancelar pagamento'}
@@ -326,27 +483,27 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                  </div>
               </div>
 
-              <div className="mt-6 pt-6 border-t border-white/10 flex items-center justify-between">
+              <div className="mt-5 sm:mt-6 pt-5 sm:pt-6 border-t border-white/10 flex items-center justify-between gap-4">
                  <div className="flex flex-col">
                     <span className="text-[9px] font-black uppercase text-gray-500 mb-1">Troco a Devolver</span>
-                    <span className="text-4xl font-black text-emerald-400">R$ {change.toFixed(2)}</span>
+                    <span className="text-2xl sm:text-4xl font-black text-emerald-400">R$ {change.toFixed(2)}</span>
                  </div>
                  <div className="flex flex-col items-end">
                     <span className="text-[9px] font-black uppercase text-gray-500 mb-1">Restante</span>
-                    <span className={`text-4xl font-black ${remaining > 0 ? 'text-rose-500 animate-pulse' : 'text-emerald-400'}`}>R$ {remaining.toFixed(2)}</span>
+                    <span className={`text-2xl sm:text-4xl font-black ${remaining > 0 ? 'text-rose-500 animate-pulse' : 'text-emerald-400'}`}>R$ {remaining.toFixed(2)}</span>
                  </div>
               </div>
 
               <button 
-                 disabled={remaining > 0 || hasInvalidOverpayment || !selectedSellerId || !canLaunchPayment || !canCloseBill}
+                 disabled={remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSellerId || !canLaunchPayment || !canCloseBill}
                  onClick={handleFinish}
-                 className="w-full btn-beco btn-beco-purple py-5 text-2xl font-black mt-6 shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-4 group rounded-2xl"
+                 className="w-full btn-beco btn-beco-purple py-4 sm:py-5 text-base sm:text-2xl font-black mt-5 sm:mt-6 shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-4 group rounded-2xl"
               >
                  FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={26}/>
               </button>
-              {(remaining > 0 || hasInvalidOverpayment || !selectedSellerId || !canLaunchPayment || !canCloseBill) && (
+              {(remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSellerId || !canLaunchPayment || !canCloseBill) && (
                 <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-rose-500 mt-3 animate-pulse">
-                  {!canCloseBill ? 'Sem permissão para fechar conta' : !canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSellerId ? 'Selecione o Operador para liberar' : hasInvalidOverpayment ? 'Troco só pode existir em pagamento em dinheiro' : `Falta receber R$ ${remaining.toFixed(2)}`}
+                  {!canCloseBill ? 'Sem permissão para fechar conta' : !canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSellerId ? 'Selecione o Operador para liberar' : hasPendingCouponChoice ? 'Escolha o benefício do cupom' : hasInvalidOverpayment ? 'Troco só pode existir em pagamento em dinheiro' : `Falta receber R$ ${remaining.toFixed(2)}`}
                 </p>
               )}
            </div>

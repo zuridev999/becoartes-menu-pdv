@@ -1,4 +1,4 @@
-import type { Category, ClosedBill, ModifierGroup, OrderItem, Product, ServiceRequest } from '../types';
+import type { Category, ClosedBill, Coupon, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
 
@@ -168,6 +168,51 @@ export const OperationalApi = {
       }));
   },
 
+  createTablePayment(input: {
+    id?: string;
+    tableId: string;
+    tableNumber: number;
+    method: TablePayment['method'];
+    amount: number;
+    sellerId?: string;
+    sellerName?: string;
+  }) {
+    return postJson<{ payment: Omit<TablePayment, 'createdAt'> & { createdAt: string } }>('/api/table-payments', input)
+      .then(result => ({
+        payment: { ...result.payment, createdAt: new Date(result.payment.createdAt) } as TablePayment,
+      }));
+  },
+
+  cancelTablePayment(id: string) {
+    return postJson<{ cancelled: boolean }>('/api/table-payments/cancel', { id });
+  },
+
+  validateCoupon(input: {
+    code: string;
+    tableId: string;
+    subtotal: number;
+    serviceFee: number;
+    discount: number;
+    selectedBenefit?: 'discount_20' | 'free_drink' | '';
+  }) {
+    return postJson<{
+      coupon: {
+        id: string;
+        code: string;
+        amount: number;
+        appliedAmount: number;
+        customerName?: string;
+        campaignName?: string;
+        validUntil?: string;
+        minOrderValue?: number;
+        selectedBenefit?: 'discount_20' | 'free_drink' | '';
+        benefitLabel?: string;
+        requiresBenefitChoice?: boolean;
+        benefitOptions?: Array<'discount_20' | 'free_drink'>;
+      }
+    }>('/api/coupons/validate', input);
+  },
+
   getCashStatus() {
     return getJson<{ cashState: CashState }>('/api/cash/status');
   },
@@ -203,6 +248,10 @@ const hydrateSnapshot = (snapshot: any) => ({
   })),
   tables: (snapshot.tables || []).map((table: any) => ({
     ...table,
+    payments: (table.payments || []).map((payment: any) => ({
+      ...payment,
+      createdAt: payment.createdAt ? new Date(payment.createdAt) : new Date(),
+    })),
     lastActivity: table.lastActivity ? new Date(table.lastActivity) : new Date(),
   })),
 });
@@ -310,6 +359,39 @@ export const AdminApi = {
 
   syncBeveragesFromInventory() {
     return postJson<{ catalogVersion: string; count: number }>('/api/inventory/sync-beverages', {});
+  },
+
+  listCoupons() {
+    return getJson<{ coupons: (Omit<Coupon, 'createdAt' | 'redeemedAt'> & { createdAt: string; redeemedAt?: string | null })[] }>('/api/coupons/list')
+      .then(result => ({
+        coupons: result.coupons.map((coupon) => ({
+          ...coupon,
+          createdAt: new Date(coupon.createdAt),
+          redeemedAt: coupon.redeemedAt ? new Date(coupon.redeemedAt) : null,
+        })) as Coupon[],
+      }));
+  },
+
+  createCoupon(input: {
+    amount: number;
+    code?: string;
+    note?: string;
+    customerId?: string;
+    customerName?: string;
+    phone?: string;
+    campaignName?: string;
+    validUntil?: string;
+    minOrderValue?: number;
+    whatsappMessage?: string;
+  }) {
+    return postJson<{ coupon: Omit<Coupon, 'createdAt' | 'redeemedAt'> & { createdAt: string; redeemedAt?: string | null } }>('/api/coupons/create', input)
+      .then(result => ({
+        coupon: {
+          ...result.coupon,
+          createdAt: new Date(result.coupon.createdAt),
+          redeemedAt: result.coupon.redeemedAt ? new Date(result.coupon.redeemedAt) : null,
+        } as Coupon,
+      }));
   },
 };
 

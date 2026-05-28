@@ -81,7 +81,7 @@ const mimeTypes = {
 
 const createId = () => randomUUID();
 const osTimestamp = () => Math.floor(Date.now() / 1000);
-const toStockAmount = (value) => Math.max(0, Math.trunc(Number(value || 0)));
+const toStockAmount = (value) => Number(Math.max(0, Number(value || 0)).toFixed(4));
 const getBusinessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 
 const parseJsonArray = (value) => {
@@ -181,6 +181,7 @@ const permissionsByProfile = {
     manageTeam: true,
     managePDVUsers: true,
     managePDVPermissions: true,
+    manageCoupons: true,
     manageRoles: true,
     manageOptionals: true,
     addProduct: true,
@@ -246,6 +247,7 @@ const permissionsByProfile = {
     manageTeam: false,
     managePDVUsers: false,
     managePDVPermissions: false,
+    manageCoupons: false,
     manageRoles: false,
     manageOptionals: true,
     addProduct: true,
@@ -311,6 +313,7 @@ const permissionsByProfile = {
     manageTeam: false,
     managePDVUsers: false,
     managePDVPermissions: false,
+    manageCoupons: false,
     manageRoles: false,
     manageOptionals: true,
     addProduct: true,
@@ -369,18 +372,13 @@ const permissionsByProfile = {
   },
 };
 
-const canSession = (session, permission) => {
-  if (!session) return false;
-  return Boolean(permissionsByProfile[normalizePermission(session.permission)]?.[permission]);
-};
-
 const getEffectiveSessionPermissions = (session, settings = null) => {
   const profile = normalizePermission(session?.permission);
   return {
     ...(permissionsByProfile[profile] || permissionsByProfile.operator),
     ...(settings?.pdvPermissions?.[profile] || {}),
     ...(session?.id ? (settings?.pdvUserPermissions?.[session.id] || {}) : {}),
-    ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true } : {}),
+    ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true, manageCoupons: true } : {}),
   };
 };
 
@@ -467,7 +465,9 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS service_requests (id TEXT PRIMARY KEY, table_id TEXT, type TEXT NOT NULL, status TEXT NOT NULL, message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS sellers (id TEXT PRIMARY KEY, name TEXT NOT NULL, nickname TEXT, status TEXT NOT NULL, role TEXT NOT NULL, permission TEXT DEFAULT 'standard', pin TEXT DEFAULT '1234', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, details TEXT, table_number TEXT, origin TEXT, author_id TEXT, author_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
-    "CREATE TABLE IF NOT EXISTS closed_bills (id TEXT PRIMARY KEY, table_id TEXT, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, subtotal REAL NOT NULL, service_fee REAL DEFAULT 0, discount REAL DEFAULT 0, discount_reason TEXT, total REAL NOT NULL, payments TEXT, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS closed_bills (id TEXT PRIMARY KEY, table_id TEXT, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, subtotal REAL NOT NULL, service_fee REAL DEFAULT 0, discount REAL DEFAULT 0, discount_reason TEXT, coupon_code TEXT, coupon_amount REAL DEFAULT 0, coupon_benefit TEXT, total REAL NOT NULL, payments TEXT, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS table_payments (id TEXT PRIMARY KEY, table_id TEXT NOT NULL, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, method TEXT NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, cancelled_at DATETIME, applied_closed_bill_id TEXT)",
+    "CREATE TABLE IF NOT EXISTS pdv_coupons (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', note TEXT, created_by_id TEXT, created_by_name TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, redeemed_at DATETIME, redeemed_table_id TEXT, redeemed_closed_bill_id TEXT, customer_id TEXT, customer_name TEXT, phone TEXT, campaign_name TEXT, valid_until DATETIME, min_order_value REAL DEFAULT 0, selected_benefit TEXT, used_by_employee_id TEXT, used_by_employee TEXT, table_number INTEGER, order_id TEXT, whatsapp_message TEXT, sent_at DATETIME)",
     "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS integration_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, table_id TEXT, ref_id TEXT, payload TEXT, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     "CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, status TEXT NOT NULL, opening_balance REAL NOT NULL, closing_balance REAL, total_sales REAL DEFAULT 0, opened_at DATETIME DEFAULT CURRENT_TIMESTAMP, closed_at DATETIME, sort_order INTEGER DEFAULT 0)",
@@ -492,6 +492,22 @@ const ensureDatabase = async () => {
     "ALTER TABLE service_requests ADD COLUMN message TEXT",
     "ALTER TABLE tables ADD COLUMN current_seller_id TEXT",
     "ALTER TABLE closed_bills ADD COLUMN table_id TEXT",
+    "ALTER TABLE closed_bills ADD COLUMN coupon_code TEXT",
+    "ALTER TABLE closed_bills ADD COLUMN coupon_amount REAL DEFAULT 0",
+    "ALTER TABLE closed_bills ADD COLUMN coupon_benefit TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN customer_id TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN customer_name TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN phone TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN campaign_name TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN valid_until DATETIME",
+    "ALTER TABLE pdv_coupons ADD COLUMN min_order_value REAL DEFAULT 0",
+    "ALTER TABLE pdv_coupons ADD COLUMN selected_benefit TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN used_by_employee_id TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN used_by_employee TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN table_number INTEGER",
+    "ALTER TABLE pdv_coupons ADD COLUMN order_id TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN whatsapp_message TEXT",
+    "ALTER TABLE pdv_coupons ADD COLUMN sent_at DATETIME",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN closed_bill_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN order_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN order_item_id TEXT",
@@ -523,6 +539,10 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_service_requests_status_created ON service_requests(status, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_closed_bills_closed_at ON closed_bills(closed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_table_payments_table_status ON table_payments(table_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_pdv_coupons_code_status ON pdv_coupons(code, status)",
+    "CREATE INDEX IF NOT EXISTS idx_pdv_coupons_campaign_phone ON pdv_coupons(campaign_name, phone)",
+    "CREATE INDEX IF NOT EXISTS idx_pdv_coupons_status_valid_until ON pdv_coupons(status, valid_until)",
     "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_mov_pdv_once ON estoque_movimentacoes(integration_event_id, order_item_id, produto_id, source_item_kind, source_item_id) WHERE origem = 'pdv' AND integration_event_id IS NOT NULL AND order_item_id IS NOT NULL",
   ];
@@ -1302,7 +1322,7 @@ const getServiceRequests = async () => {
 
 const getClosedBills = async (limit = 200) => {
   const res = await db.execute({
-    sql: "SELECT id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, strftime('%Y-%m-%dT%H:%M:%SZ', closed_at) as closed_at FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
+    sql: "SELECT id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, coupon_code, coupon_amount, coupon_benefit, total, payments, strftime('%Y-%m-%dT%H:%M:%SZ', closed_at) as closed_at FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
     args: [Math.min(Number(limit) || CLOSED_BILLS_LIMIT, CLOSED_BILLS_LIMIT)],
   });
   return res.rows.map((row) => ({
@@ -1315,6 +1335,9 @@ const getClosedBills = async (limit = 200) => {
     serviceFee: Number(row.service_fee || 0),
     discount: Number(row.discount || 0),
     discountReason: row.discount_reason || '',
+    couponCode: row.coupon_code || '',
+    couponAmount: Number(row.coupon_amount || 0),
+    couponBenefit: row.coupon_benefit || '',
     total: Number(row.total || 0),
     payments: parseJsonArray(row.payments),
     closedAt: row.closed_at || new Date().toISOString(),
@@ -1410,11 +1433,34 @@ const getTables = async () => {
   }
 
   const ordersByTable = await getActiveOrdersByTable();
+  const paymentsRes = await db.execute(`
+    SELECT id, table_id, table_number, seller_id, seller_name, method, amount, status, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at
+    FROM table_payments
+    WHERE status = 'active'
+    ORDER BY created_at ASC
+  `);
+  const paymentsByTable = {};
+  paymentsRes.rows.forEach((row) => {
+    if (!paymentsByTable[row.table_id]) paymentsByTable[row.table_id] = [];
+    paymentsByTable[row.table_id].push({
+      id: row.id,
+      tableId: row.table_id,
+      tableNumber: Number(row.table_number || 0),
+      sellerId: row.seller_id || '',
+      sellerName: row.seller_name || 'Sistema',
+      method: row.method,
+      amount: Number(row.amount || 0),
+      status: row.status,
+      createdAt: row.created_at || new Date().toISOString(),
+    });
+  });
+
   return tableRes.rows.map((row) => ({
     id: row.id,
     number: Number(row.number),
     status: row.status,
     orders: ordersByTable[row.id] || [],
+    payments: paymentsByTable[row.id] || [],
     cart: [],
     lastActivity: row.last_activity || new Date().toISOString(),
     currentSellerId: row.current_seller_id || '',
@@ -1695,13 +1741,6 @@ const validateSessionPin = async (session, pin) => {
   return isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
 };
 
-const validateCashClosingPin = async (session, pin) => {
-  const safePin = String(pin || '');
-  if (!/^\d{4}$/.test(safePin)) return { valid: false, override: false };
-  if (isAdminBypassPin(safePin)) return { valid: true, override: true };
-  return { valid: await validateSessionPin(session, safePin), override: false };
-};
-
 const resolveCashActorByPin = async (pin, requiredPermission) => {
   const safePin = String(pin || '');
   if (!/^\d{4}$/.test(safePin)) {
@@ -1908,6 +1947,123 @@ const findStockProduct = async (empresaId, candidates) => {
   return byName.rows[0] || null;
 };
 
+const normalizeRecipeLookupName = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/\b(pra|para)\s*(dois|2)\b/g, ' p2 ')
+  .replace(/\bp\s*\/?\s*2\b/g, ' p2 ')
+  .replace(/\b(pra|para)\s*(um|1)\b/g, ' p1 ')
+  .replace(/\bp\s*\/?\s*1\b/g, ' p1 ')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const stripRecipeServing = (value) => normalizeRecipeLookupName(value)
+  .replace(/\bp[12]\b/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const getRecipeServing = (value) => {
+  const normalized = normalizeRecipeLookupName(value);
+  if (/\bp2\b/.test(normalized)) return 'p2';
+  if (/\bp1\b/.test(normalized)) return 'p1';
+  return '';
+};
+
+const hasConflictingFlavorToken = (soldName, fichaName) => {
+  const soldTokens = new Set(normalizeRecipeLookupName(soldName).split(' ').filter(Boolean));
+  const fichaTokens = normalizeRecipeLookupName(fichaName).split(' ').filter(Boolean);
+  const flavorTokens = new Set(['zero', 'mango', 'loco', 'melancia', 'ipa', 'artesanal', 'premium', 'importado', 'nacional']);
+  return fichaTokens.some((token) => flavorTokens.has(token) && !soldTokens.has(token));
+};
+
+const isLooseRecipeNameMatch = (soldName, fichaName) => {
+  const soldBase = stripRecipeServing(soldName);
+  const fichaBase = stripRecipeServing(fichaName);
+  if (!soldBase || !fichaBase) return false;
+  if (soldBase === fichaBase) return true;
+  if (hasConflictingFlavorToken(soldName, fichaName)) return false;
+
+  const ignored = new Set(['lata', 'long', 'neck', 'garrafa', 'ml', 'un', 'und']);
+  const soldTokens = soldBase.split(' ').filter((token) => token && !ignored.has(token) && !/^\d+$/.test(token));
+  const fichaTokens = new Set(fichaBase.split(' ').filter((token) => token && !ignored.has(token) && !/^\d+$/.test(token)));
+  return soldTokens.length > 0 && soldTokens.every((token) => fichaTokens.has(token));
+};
+
+const findFichaTecnicaForSoldItem = async (empresaId, candidates) => {
+  const soldId = String(candidates.id || '').trim();
+  const soldName = String(candidates.name || '').trim();
+  if (!soldId && !soldName) return null;
+
+  const res = await db.execute({
+    sql: `
+      SELECT
+        ft.*,
+        COUNT(fi.id) AS ingredientes_count
+      FROM fichas_tecnicas ft
+      LEFT JOIN ficha_ingredientes fi ON fi.ficha_tecnica_id = ft.id
+      WHERE ft.empresa_id = ?
+      GROUP BY ft.id
+    `,
+    args: [empresaId],
+  });
+
+  const soldNorm = normalizeRecipeLookupName(soldName);
+  const soldServing = getRecipeServing(soldName);
+  const score = (row) => {
+    const pdvName = String(row.pdv_product_name || '');
+    const fichaName = String(row.nome_prato || '');
+    const names = [pdvName, fichaName].filter(Boolean);
+    const nameNorms = names.map(normalizeRecipeLookupName);
+    const serving = getRecipeServing(`${pdvName} ${fichaName}`);
+
+    if (soldNorm && nameNorms.includes(soldNorm)) return 0;
+    if (soldName && names.some((name) => isLooseRecipeNameMatch(soldName, name))) {
+      if (soldServing && serving && soldServing !== serving) return 999;
+      return 1;
+    }
+    if (soldId && row.pdv_product_id === soldId) {
+      if (soldServing && serving && soldServing !== serving) return 999;
+      if (!soldServing && serving === 'p2') return 30;
+      return 5;
+    }
+    return 999;
+  };
+
+  return res.rows
+    .map((row) => ({ row, score: score(row) }))
+    .filter((entry) => entry.score < 999)
+    .sort((a, b) => (
+      a.score - b.score
+      || Number(b.row.ingredientes_count || 0) - Number(a.row.ingredientes_count || 0)
+      || Number(b.row.custo_total || 0) - Number(a.row.custo_total || 0)
+      || Number(a.row.created_at || 0) - Number(b.row.created_at || 0)
+    ))[0]?.row || null;
+};
+
+const getFichaIngredientStockRows = async (fichaId) => {
+  const res = await db.execute({
+    sql: `
+      SELECT
+        fi.id AS ingrediente_id,
+        COALESCE(fi.nome_exibicao, fi.nome_ingrediente) AS ingrediente_nome,
+        fi.quantidade_usada,
+        fi.quantidade_estoque_baixa,
+        fi.unidade_medida,
+        fi.unidade_estoque_baixa,
+        ep.*
+      FROM ficha_ingredientes fi
+      JOIN estoque_produtos ep ON ep.id = fi.estoque_produto_id
+      WHERE fi.ficha_tecnica_id = ?
+        AND ep.ativo = 1
+    `,
+    args: [fichaId],
+  });
+
+  return res.rows || [];
+};
+
 const hasPdvStockMovement = async ({ orderItemId, sourceItemKind, sourceItemId }) => {
   if (!orderItemId || !sourceItemKind || !sourceItemId) return false;
   const res = await db.execute({
@@ -1925,6 +2081,98 @@ const hasPdvStockMovement = async ({ orderItemId, sourceItemKind, sourceItemId }
   return Boolean(res.rows[0]?.id);
 };
 
+const appendInventoryPlansForSoldItem = async ({
+  empresaId,
+  movementPlans,
+  result,
+  orderId,
+  orderItemId,
+  productId,
+  remoteStockId,
+  name,
+  quantity,
+  reason,
+  sourceKind,
+  reportUnmatched = true,
+}) => {
+  const requestedQuantity = toStockAmount(quantity);
+  if (requestedQuantity <= 0) return;
+
+  const directSourceId = productId || name;
+  if (await hasPdvStockMovement({ orderItemId, sourceItemKind: sourceKind, sourceItemId: directSourceId })) {
+    return;
+  }
+
+  const ficha = await findFichaTecnicaForSoldItem(empresaId, { id: productId, name });
+  if (ficha) {
+    const ingredientRows = await getFichaIngredientStockRows(String(ficha.id));
+    if (ingredientRows.length === 0) {
+      result.unmatched.push(`${quantity}x ${name} (CMV sem ingrediente vinculado ao estoque)`);
+    } else {
+      for (const row of ingredientRows) {
+        const ingredientSourceId = String(row.ingrediente_id);
+        if (await hasPdvStockMovement({ orderItemId, sourceItemKind: 'recipe', sourceItemId: ingredientSourceId })) {
+          continue;
+        }
+
+        const unitQuantity = toStockAmount(row.quantidade_estoque_baixa || row.quantidade_usada);
+        const recipeQuantity = toStockAmount(unitQuantity * requestedQuantity);
+        if (recipeQuantity <= 0) continue;
+
+        const currentQuantity = Number(row.quantidade_atual || 0);
+        const nextQuantity = Number((currentQuantity - recipeQuantity).toFixed(4));
+        const stockName = row.nome || row.ingrediente_nome || name;
+        if (recipeQuantity > currentQuantity) result.insufficient.push(`${stockName} (estoque insuficiente)`);
+        if (nextQuantity <= Number(row.estoque_minimo || 0)) result.critical.push(stockName);
+
+        movementPlans.push({
+          movementId: createId(),
+          stockId: row.id,
+          stockName,
+          orderId,
+          orderItemId,
+          sourceItemId: ingredientSourceId,
+          sourceItemKind: 'recipe',
+          requestedQuantity: recipeQuantity,
+          previousQuantity: currentQuantity,
+          nextQuantity,
+          reason: `${reason} | CMV ${ficha.nome_prato}${sourceKind === 'modifier' ? ` | Opcional ${name}` : ''}`,
+        });
+      }
+      return;
+    }
+  }
+
+  const directStock = await findStockProduct(empresaId, {
+    id: remoteStockId || productId,
+    name,
+  });
+
+  if (!directStock) {
+    if (reportUnmatched) result.unmatched.push(`${quantity}x ${name}`);
+    return;
+  }
+
+  const currentQuantity = Number(directStock.quantidade_atual || 0);
+  const nextQuantity = Number((currentQuantity - requestedQuantity).toFixed(4));
+  if (requestedQuantity > currentQuantity) result.insufficient.push(`${name} (estoque insuficiente)`);
+  if (nextQuantity <= Number(directStock.estoque_minimo || 0)) result.critical.push(name);
+
+  movementPlans.push({
+    movementId: createId(),
+    stockId: directStock.id,
+    stockName: directStock.nome || name,
+    orderId,
+    orderItemId,
+    sourceItemId: directSourceId,
+    sourceItemKind: sourceKind,
+    requestedQuantity,
+    previousQuantity: currentQuantity,
+    nextQuantity,
+    reason: sourceKind === 'modifier' ? `${reason} | Opcional ${name}` : reason,
+  });
+};
+
 const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber, reason, closedBillId = null }) => {
   const result = { movementCount: 0, unmatched: [], insufficient: [], critical: [], catalogVersion: null };
   const safeItems = Array.isArray(items) ? items : [];
@@ -1936,76 +2184,33 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
   const movementPlans = [];
 
   for (const item of safeItems) {
-    const requestedQuantity = toStockAmount(item.quantity);
-    if (requestedQuantity <= 0) continue;
-
-    const productSourceId = item.productId;
-    const alreadyMovedProduct = await hasPdvStockMovement({
+    await appendInventoryPlansForSoldItem({
+      empresaId,
+      movementPlans,
+      result,
+      orderId: item.orderId,
       orderItemId: item.id,
-      sourceItemKind: 'product',
-      sourceItemId: productSourceId,
+      productId: item.productId,
+      remoteStockId: item.remoteStockId,
+      name: item.name,
+      quantity: item.quantity,
+      reason,
+      sourceKind: 'product',
     });
 
-    if (!alreadyMovedProduct) {
-      const productStock = await findStockProduct(empresaId, {
-        id: item.remoteStockId || item.productId,
-        name: item.name,
-      });
-
-      if (!productStock) {
-        result.unmatched.push(`${item.quantity}x ${item.name}`);
-      } else {
-        const currentQuantity = Number(productStock.quantidade_atual || 0);
-        const nextQuantity = currentQuantity - requestedQuantity;
-        if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
-        if (nextQuantity <= Number(productStock.estoque_minimo || 0)) result.critical.push(item.name);
-        movementPlans.push({
-          movementId: createId(),
-          stockId: productStock.id,
-          stockName: productStock.nome || item.name,
-          orderId: item.orderId,
-          orderItemId: item.id,
-          sourceItemId: productSourceId,
-          sourceItemKind: 'product',
-          requestedQuantity,
-          previousQuantity: currentQuantity,
-          nextQuantity,
-          reason,
-        });
-      }
-    }
-
     for (const modifier of item.selectedModifiers || []) {
-      const modifierSourceId = modifier.id;
-      const alreadyMovedModifier = await hasPdvStockMovement({
-        orderItemId: item.id,
-        sourceItemKind: 'modifier',
-        sourceItemId: modifierSourceId,
-      });
-      if (alreadyMovedModifier) continue;
-
-      const modifierStock = await findStockProduct(empresaId, {
-        id: modifierSourceId,
-        name: modifier.name,
-      });
-      if (!modifierStock) continue;
-
-      const currentQuantity = Number(modifierStock.quantidade_atual || 0);
-      const nextQuantity = currentQuantity - requestedQuantity;
-      if (requestedQuantity > currentQuantity) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
-      if (nextQuantity <= Number(modifierStock.estoque_minimo || 0)) result.critical.push(modifier.name);
-      movementPlans.push({
-        movementId: createId(),
-        stockId: modifierStock.id,
-        stockName: modifierStock.nome || modifier.name,
+      await appendInventoryPlansForSoldItem({
+        empresaId,
+        movementPlans,
+        result,
         orderId: item.orderId,
         orderItemId: item.id,
-        sourceItemId: modifierSourceId,
-        sourceItemKind: 'modifier',
-        requestedQuantity,
-        previousQuantity: currentQuantity,
-        nextQuantity,
-        reason: `${reason} | Opcional ${modifier.name}`,
+        productId: modifier.id,
+        name: modifier.name,
+        quantity: item.quantity,
+        reason,
+        sourceKind: 'modifier',
+        reportUnmatched: Number(modifier.price || 0) > 0,
       });
     }
   }
@@ -2687,6 +2892,249 @@ const addAuditLog = async ({ id, action, details = '', tableNumber = null, origi
   };
 };
 
+const normalizeCouponCode = (code = '') => String(code)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^A-Z0-9]/gi, '')
+  .toUpperCase()
+  .slice(0, 24);
+
+const COUPON_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const COUPON_BENEFITS = new Set(['discount_20', 'free_drink']);
+
+const generateCouponCode = () => Array.from({ length: 6 }, () => (
+  COUPON_ALPHABET[Math.floor(Math.random() * COUPON_ALPHABET.length)]
+)).join('');
+
+const normalizeCouponBenefit = (benefit = '') => {
+  const normalized = String(benefit || '').trim();
+  return COUPON_BENEFITS.has(normalized) ? normalized : '';
+};
+
+const isCouponExpired = (validUntil) => {
+  if (!validUntil) return false;
+  const timestamp = Date.parse(String(validUntil));
+  return Number.isFinite(timestamp) && Date.now() > timestamp;
+};
+
+const formatCouponBenefit = (benefit) => (
+  benefit === 'free_drink' ? '1 drink cortesia' : 'R$20 OFF'
+);
+
+const formatTablePayment = (row) => ({
+  id: row.id,
+  tableId: row.table_id,
+  tableNumber: Number(row.table_number || 0),
+  sellerId: row.seller_id || '',
+  sellerName: row.seller_name || 'Sistema',
+  method: row.method,
+  amount: Number(row.amount || 0),
+  status: row.status,
+  createdAt: row.created_at || new Date().toISOString(),
+});
+
+const createTablePayment = async (data, session) => {
+  requirePermission(session, 'launchPayment', await getSettings());
+  const tableId = requireString(data.tableId, 'tableId');
+  await ensureTableAccess(tableId, session);
+  const method = requireString(data.method, 'method');
+  if (!['credit', 'debit', 'cash', 'pix'].includes(method)) throw new Error('Forma de pagamento inválida.');
+  const amountCents = moneyToCents(data.amount || 0, 'amount');
+  if (amountCents <= 0) throw new Error('Pagamento precisa ter valor maior que zero.');
+
+  const tableRes = await db.execute({ sql: "SELECT number, status FROM tables WHERE id = ? LIMIT 1", args: [tableId] });
+  const table = tableRes.rows[0];
+  if (!table) throw new Error('Mesa não encontrada.');
+  if (table.status === 'available') throw new Error('Abra a mesa antes de lançar pagamento.');
+
+  const id = data.id ? String(data.id) : createId();
+  const createdAt = new Date().toISOString();
+  const sellerId = session?.id || String(data.sellerId || '');
+  const sellerName = session?.name || String(data.sellerName || 'Sistema');
+
+  await db.batch([
+    {
+      sql: `
+        INSERT OR IGNORE INTO table_payments
+          (id, table_id, table_number, seller_id, seller_name, method, amount, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
+      `,
+      args: [id, tableId, Number(table.number || data.tableNumber || 0), sellerId, sellerName, method, centsToMoney(amountCents), createdAt],
+    },
+    {
+      sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, 'partial_payment_registered', ?, ?, 'pdv', ?, ?)",
+      args: [
+        createId(),
+        JSON.stringify({ paymentId: id, method, amount: centsToMoney(amountCents), tableId, sellerId }),
+        String(table.number || data.tableNumber || ''),
+        sellerName,
+        createdAt,
+      ],
+    },
+  ], 'write');
+
+  const rowRes = await db.execute({
+    sql: "SELECT id, table_id, table_number, seller_id, seller_name, method, amount, status, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at FROM table_payments WHERE id = ? LIMIT 1",
+    args: [id],
+  });
+  return { payment: formatTablePayment(rowRes.rows[0]) };
+};
+
+const cancelTablePayment = async (data, session) => {
+  requirePermission(session, 'cancelPayment', await getSettings());
+  const id = requireString(data.id, 'id');
+  const paymentRes = await db.execute({ sql: "SELECT * FROM table_payments WHERE id = ? LIMIT 1", args: [id] });
+  const payment = paymentRes.rows[0];
+  if (!payment) throw new Error('Pagamento não encontrado.');
+  if (payment.status !== 'active') throw new Error('Este pagamento já foi aplicado ou cancelado.');
+  await ensureTableAccess(payment.table_id, session);
+
+  const cancelledAt = new Date().toISOString();
+  await db.batch([
+    { sql: "UPDATE table_payments SET status = 'cancelled', cancelled_at = ? WHERE id = ?", args: [cancelledAt, id] },
+    {
+      sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, 'partial_payment_cancelled', ?, ?, 'pdv', ?, ?)",
+      args: [
+        createId(),
+        JSON.stringify({ paymentId: id, method: payment.method, amount: Number(payment.amount || 0), tableId: payment.table_id, sellerId: session?.id || '' }),
+        String(payment.table_number || ''),
+        session?.name || 'Sistema',
+        cancelledAt,
+      ],
+    },
+  ], 'write');
+  return { cancelled: true };
+};
+
+const listCoupons = async () => {
+  const res = await db.execute(`
+    SELECT id, code, amount, status, note, created_by_name,
+           customer_id, customer_name, phone, campaign_name, valid_until, min_order_value,
+           selected_benefit, used_by_employee, table_number, order_id, whatsapp_message, sent_at,
+           strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at,
+           strftime('%Y-%m-%dT%H:%M:%SZ', redeemed_at) as redeemed_at, redeemed_table_id, redeemed_closed_bill_id
+    FROM pdv_coupons
+    ORDER BY created_at DESC
+    LIMIT 200
+  `);
+  return {
+    coupons: res.rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      amount: Number(row.amount || 0),
+      status: row.status,
+      note: row.note || '',
+      createdByName: row.created_by_name || '',
+      customerId: row.customer_id || '',
+      customerName: row.customer_name || '',
+      phone: row.phone || '',
+      campaignName: row.campaign_name || '',
+      validUntil: row.valid_until || '',
+      minOrderValue: Number(row.min_order_value || 0),
+      selectedBenefit: row.selected_benefit || '',
+      usedByEmployee: row.used_by_employee || '',
+      tableNumber: row.table_number ? Number(row.table_number) : null,
+      orderId: row.order_id || '',
+      whatsappMessage: row.whatsapp_message || '',
+      sentAt: row.sent_at || null,
+      createdAt: row.created_at || new Date().toISOString(),
+      redeemedAt: row.redeemed_at || null,
+      redeemedTableId: row.redeemed_table_id || null,
+      redeemedClosedBillId: row.redeemed_closed_bill_id || null,
+    })),
+  };
+};
+
+const createCoupon = async (data, session) => {
+  requirePermission(session, 'manageCoupons', await getSettings());
+  const amountCents = moneyToCents(data.amount || 0, 'amount');
+  if (amountCents <= 0) throw new Error('Cupom precisa ter valor maior que zero.');
+
+  let code = normalizeCouponCode(data.code || '');
+  if (!code) code = generateCouponCode();
+  const id = createId();
+  const createdAt = new Date().toISOString();
+  await db.execute({
+    sql: `
+      INSERT INTO pdv_coupons (
+        id, code, amount, status, note, created_by_id, created_by_name, created_at,
+        customer_id, customer_name, phone, campaign_name, valid_until, min_order_value, whatsapp_message
+      ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    args: [
+      id,
+      code,
+      centsToMoney(amountCents),
+      String(data.note || ''),
+      session?.id || '',
+      session?.name || 'Sistema',
+      createdAt,
+      data.customerId ? String(data.customerId) : null,
+      data.customerName ? String(data.customerName) : null,
+      data.phone ? String(data.phone).replace(/\D/g, '') : null,
+      data.campaignName ? String(data.campaignName) : null,
+      data.validUntil ? String(data.validUntil) : null,
+      data.minOrderValue ? centsToMoney(moneyToCents(data.minOrderValue, 'minOrderValue')) : 0,
+      data.whatsappMessage ? String(data.whatsappMessage) : null,
+    ],
+  });
+  return { coupon: (await listCoupons()).coupons.find((coupon) => coupon.id === id) };
+};
+
+const validateCoupon = async (data, session) => {
+  requireSession(session);
+  const code = normalizeCouponCode(data.code || '');
+  if (!code) throw new Error('Informe o cupom.');
+  const tableId = data.tableId ? String(data.tableId) : '';
+  if (tableId) await ensureTableAccess(tableId, session);
+
+  const res = await db.execute({
+    sql: `
+      SELECT id, code, amount, status, customer_name, campaign_name, valid_until, min_order_value, selected_benefit
+      FROM pdv_coupons
+      WHERE code = ?
+      LIMIT 1
+    `,
+    args: [code],
+  });
+  const coupon = res.rows[0];
+  if (!coupon) throw new Error('Cupom não encontrado.');
+  if (coupon.status !== 'active') throw new Error('Cupom já usado ou inativo.');
+  if (isCouponExpired(coupon.valid_until)) throw new Error('Cupom expirado.');
+
+  const subtotalCents = moneyToCents(data.subtotal || 0, 'subtotal');
+  const serviceFeeCents = moneyToCents(data.serviceFee || 0, 'serviceFee');
+  const discountCents = moneyToCents(data.discount || 0, 'discount');
+  const minOrderCents = moneyToCents(coupon.min_order_value || 0, 'coupon.minOrderValue');
+  if (minOrderCents > 0 && subtotalCents < minOrderCents) {
+    throw new Error(`Pedido mínimo de ${formatMoneyBRL(centsToMoney(minOrderCents))} para usar este cupom.`);
+  }
+
+  const requestedBenefit = normalizeCouponBenefit(data.selectedBenefit || coupon.selected_benefit || '');
+  const isCampaignCoupon = Boolean(coupon.campaign_name);
+  const requiresBenefitChoice = isCampaignCoupon && !requestedBenefit;
+  const baseCents = Math.max(0, subtotalCents + serviceFeeCents - discountCents);
+  const couponCents = requiresBenefitChoice || requestedBenefit === 'free_drink'
+    ? 0
+    : Math.min(moneyToCents(coupon.amount || 0, 'coupon.amount'), baseCents);
+  return {
+    coupon: {
+      id: coupon.id,
+      code: coupon.code,
+      amount: centsToMoney(moneyToCents(coupon.amount || 0, 'coupon.amount')),
+      appliedAmount: centsToMoney(couponCents),
+      customerName: coupon.customer_name || '',
+      campaignName: coupon.campaign_name || '',
+      validUntil: coupon.valid_until || '',
+      minOrderValue: centsToMoney(minOrderCents),
+      selectedBenefit: requestedBenefit,
+      benefitLabel: requestedBenefit ? formatCouponBenefit(requestedBenefit) : '',
+      requiresBenefitChoice,
+      benefitOptions: isCampaignCoupon ? ['discount_20', 'free_drink'] : ['discount_20'],
+    },
+  };
+};
+
 const createServiceRequest = async ({ id, tableId, type, message = '' }) => {
   const requestId = id || createId();
   const tableRes = await db.execute({ sql: "SELECT number FROM tables WHERE id = ? LIMIT 1", args: [tableId] });
@@ -2827,7 +3275,7 @@ const joinTables = async ({ tableIds, targetTableId }, session) => {
   return { joined: true };
 };
 
-const openCash = async ({ openingBalance, notes, confirmationPin }, session) => {
+const openCash = async ({ openingBalance, notes, confirmationPin }) => {
   const cashActor = await resolveCashActorByPin(confirmationPin, 'openCash');
   const effectiveSession = cashActor.seller;
   const businessDate = getBusinessDate();
@@ -2953,7 +3401,7 @@ const getExpectedClosingCents = async (cash) => {
   };
 };
 
-const closeCash = async ({ closingBalance, notes, confirmationPin }, session) => {
+const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
   const cashActor = await resolveCashActorByPin(confirmationPin, 'closeCash');
   const effectiveSession = cashActor.seller;
 
@@ -3266,12 +3714,16 @@ const closeBillWithInventorySync = async (data, session = null) => {
   const subtotalCents = moneyToCents(data.subtotal || 0, 'subtotal');
   const serviceFeeCents = moneyToCents(data.serviceFee || 0, 'serviceFee');
   const discountCents = moneyToCents(data.discount || 0, 'discount');
+  const couponCode = normalizeCouponCode(data.couponCode || '');
+  const couponBenefit = normalizeCouponBenefit(data.couponBenefit || '');
+  let couponCents = moneyToCents(data.couponAmount || 0, 'couponAmount');
   const totalCents = moneyToCents(data.total || 0, 'total');
   const payments = Array.isArray(data.payments) ? data.payments : [];
 
   if (subtotalCents < 0) throw new Error('Subtotal inválido.');
   if (serviceFeeCents < 0) throw new Error('Taxa de serviço não pode ser negativa.');
   if (discountCents < 0) throw new Error('Desconto não pode ser negativo.');
+  if (couponCents < 0) throw new Error('Cupom não pode ser negativo.');
   if (totalCents < 0) throw new Error('Total da conta não pode ser negativo.');
 
   const defaultServiceFeePercent = clampServiceFeePercent(settings?.serviceTax ?? MAX_SERVICE_FEE_PERCENT);
@@ -3288,6 +3740,31 @@ const closeBillWithInventorySync = async (data, session = null) => {
 
   if (discountCents > 0) {
     requirePermission(session, 'applyDiscount', settings);
+  }
+
+  let couponRow = null;
+  if (couponCode || couponCents > 0) {
+    if (!couponCode) throw new Error('Informe o código do cupom.');
+    const couponRes = await db.execute({
+      sql: "SELECT id, code, amount, status, campaign_name, valid_until, min_order_value, selected_benefit FROM pdv_coupons WHERE code = ? LIMIT 1",
+      args: [couponCode],
+    });
+    couponRow = couponRes.rows[0];
+    if (!couponRow) throw new Error('Cupom não encontrado.');
+    if (couponRow.status !== 'active') throw new Error('Cupom já usado ou inativo.');
+    if (isCouponExpired(couponRow.valid_until)) throw new Error('Cupom expirado.');
+    const minOrderCents = moneyToCents(couponRow.min_order_value || 0, 'coupon.minOrderValue');
+    if (minOrderCents > 0 && subtotalCents < minOrderCents) {
+      throw new Error(`Pedido mínimo de ${formatMoneyBRL(centsToMoney(minOrderCents))} para usar este cupom.`);
+    }
+    const effectiveBenefit = normalizeCouponBenefit(couponBenefit || couponRow.selected_benefit || '');
+    if (couponRow.campaign_name && !effectiveBenefit) {
+      throw new Error('Escolha o benefício do cupom antes de fechar a conta.');
+    }
+    const maxCouponCents = Math.max(0, subtotalCents + serviceFeeCents - discountCents);
+    const registeredCouponCents = moneyToCents(couponRow.amount || 0, 'coupon.amount');
+    couponCents = effectiveBenefit === 'free_drink' ? 0 : Math.min(registeredCouponCents, maxCouponCents);
+    data.couponBenefit = effectiveBenefit || 'discount_20';
   }
 
   if (payments.length === 0 && totalCents > 0) {
@@ -3323,9 +3800,9 @@ const closeBillWithInventorySync = async (data, session = null) => {
     requirePermission(session, 'changePaymentMethod', settings);
   }
 
-  const expectedTotalCents = subtotalCents + serviceFeeCents - discountCents;
+  const expectedTotalCents = subtotalCents + serviceFeeCents - discountCents - couponCents;
   if (expectedTotalCents < 0) {
-    throw new Error('Desconto não pode ser maior que subtotal mais taxa de serviço.');
+    throw new Error('Desconto/cupom não pode ser maior que subtotal mais taxa de serviço.');
   }
 
   if (totalCents !== expectedTotalCents) {
@@ -3343,8 +3820,12 @@ const closeBillWithInventorySync = async (data, session = null) => {
   data.subtotal = centsToMoney(subtotalCents);
   data.serviceFee = centsToMoney(serviceFeeCents);
   data.discount = centsToMoney(discountCents);
+  data.couponCode = couponCode;
+  data.couponAmount = centsToMoney(couponCents);
+  data.couponBenefit = data.couponBenefit || '';
   data.total = centsToMoney(totalCents);
   data.payments = payments.map((payment) => ({
+    id: payment.id ? String(payment.id) : undefined,
     method: payment.method,
     amount: centsToMoney(moneyToCents(payment.amount || 0, 'payment.amount')),
   }));
@@ -3491,7 +3972,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
     const slug = osContext?.slug || OS_TENANT_SLUG;
     const batch = [
       {
-        sql: "INSERT OR REPLACE INTO closed_bills (id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        sql: "INSERT OR REPLACE INTO closed_bills (id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, coupon_code, coupon_amount, coupon_benefit, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         args: [
           integrationId,
           tableId,
@@ -3502,6 +3983,9 @@ const closeBillWithInventorySync = async (data, session = null) => {
           data.serviceFee,
           data.discount,
           data.discountReason || null,
+          data.couponCode || null,
+          data.couponAmount || 0,
+          data.couponBenefit || null,
           data.total,
           JSON.stringify(data.payments),
           closedAt.toISOString(),
@@ -3560,6 +4044,8 @@ const closeBillWithInventorySync = async (data, session = null) => {
           serviceFee: data.serviceFee,
           serviceFeePercent,
           discount: data.discount,
+          couponCode: data.couponCode || '',
+          couponAmount: data.couponAmount || 0,
           total: data.total,
           paid: centsToMoney(paymentTotalCents),
           change: centsToMoney(Math.max(0, paymentTotalCents - totalCents)),
@@ -3592,6 +4078,19 @@ const closeBillWithInventorySync = async (data, session = null) => {
           discountReason: data.discountReason || 'Sem motivo informado',
           totalBeforeDiscount: centsToMoney(subtotalCents + serviceFeeCents),
           totalAfterDiscount: data.total,
+        },
+      });
+    }
+
+    if (couponRow && data.couponCode) {
+      auditEntries.push({
+        action: 'coupon_applied',
+        details: {
+          couponCode: data.couponCode,
+          couponAmount: data.couponAmount,
+          couponBenefit: data.couponBenefit || '',
+          couponBenefitLabel: data.couponBenefit ? formatCouponBenefit(data.couponBenefit) : '',
+          totalAfterCoupon: data.total,
         },
       });
     }
@@ -3631,7 +4130,28 @@ const closeBillWithInventorySync = async (data, session = null) => {
         sql: "UPDATE service_requests SET status = 'resolved' WHERE table_id = ? AND status != 'resolved'",
         args: [tableId],
       },
+      {
+        sql: "UPDATE table_payments SET status = 'applied', applied_closed_bill_id = ? WHERE table_id = ? AND status = 'active'",
+        args: [integrationId, tableId],
+      },
     );
+
+    if (couponRow && data.couponCode) {
+      batch.push({
+        sql: "UPDATE pdv_coupons SET status = 'redeemed', selected_benefit = ?, used_by_employee_id = ?, used_by_employee = ?, table_number = ?, order_id = ?, redeemed_at = ?, redeemed_table_id = ?, redeemed_closed_bill_id = ? WHERE code = ? AND status = 'active'",
+        args: [
+          data.couponBenefit || 'discount_20',
+          auditAuthorId,
+          auditAuthorName,
+          data.tableNumber,
+          orderIds.join(','),
+          closedAt.toISOString(),
+          tableId,
+          integrationId,
+          data.couponCode,
+        ],
+      });
+    }
 
     batch.push({
       sql: "UPDATE integration_events SET status = 'completed', payload = ?, error = NULL, updated_at = ? WHERE id = ?",
@@ -3813,6 +4333,10 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/tables/join': 'joinTables',
     'POST /api/cash/open': 'openCash',
     'POST /api/cash/close': 'closeCash',
+    'POST /api/table-payments': 'launchPayment',
+    'POST /api/table-payments/cancel': 'cancelPayment',
+    'POST /api/coupons/create': 'manageCoupons',
+    'GET /api/coupons/list': 'manageCoupons',
   };
 
   const requiredPermission = permissionByRoute[routeKey];
@@ -3853,6 +4377,11 @@ const handlers = {
   'POST /api/orders/send-to-kitchen': async (body, context) => sendToKitchen(body, context.session),
   'POST /api/orders/status': async (body) => updateOrderStatus(body),
   'POST /api/order-items/delete': async (body, context) => deleteOrderItem(body, context.session),
+  'POST /api/table-payments': async (body, context) => createTablePayment(body, context.session),
+  'POST /api/table-payments/cancel': async (body, context) => cancelTablePayment(body, context.session),
+  'GET /api/coupons/list': async () => listCoupons(),
+  'POST /api/coupons/create': async (body, context) => createCoupon(body, context.session),
+  'POST /api/coupons/validate': async (body, context) => validateCoupon(body, context.session),
   'POST /api/bills/close': async (body, context) => closeBillWithInventorySync(body, context.session),
   'POST /api/catalog/category': async (body) => upsertCategory(body),
   'POST /api/catalog/category/delete': async (body) => deleteCategory(body),

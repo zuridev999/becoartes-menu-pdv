@@ -15,6 +15,7 @@ export function QRView() {
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
   const [routeTableNumber, setRouteTableNumber] = useState<number | null>(null);
+  const isCouponRulesPage = window.location.pathname.includes('regulamento-cupom');
 
   useEffect(() => {
     const pathMatch = window.location.pathname.match(/(?:^|\/)mesa\/(\d+)(?:\/)?$/);
@@ -34,6 +35,25 @@ export function QRView() {
 
   const routeTable = routeTableNumber ? tables.find(t => t.number === routeTableNumber) : null;
   const currentTable = routeTableNumber ? routeTable : tables.find(t => t.id === currentTableId);
+
+  if (isCouponRulesPage) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-5">
+        <div className="glass-card w-full max-w-2xl p-7 sm:p-10 border-primary/30">
+          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-primary mb-3">Regulamento</p>
+          <h1 className="text-4xl sm:text-5xl font-black italic tracking-tighter mb-6">Campanha WhatsApp</h1>
+          <div className="space-y-4 text-sm sm:text-base font-bold text-gray-300 leading-relaxed">
+            <p>O cliente poderá escolher entre R$20 de desconto ou 1 drink cortesia.</p>
+            <p>Válido para pedidos acima de R$50.</p>
+            <p>Uso único por cliente e não cumulativo com outras promoções.</p>
+            <p>O drink cortesia é válido apenas para maiores de 18 anos.</p>
+            <p>O cupom deve ser apresentado antes do fechamento da conta.</p>
+            <p className="text-amber-300">Válido até 29/05/2026.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (routeTableNumber && tables.length === 0) {
     return (

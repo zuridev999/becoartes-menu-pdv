@@ -1005,7 +1005,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       set((state) => ({
         closedBills: [...state.closedBills, closeResult.closedBill],
-        tables: state.tables.map(t => t.id === data.tableId ? { ...t, status: 'available', orders: [] } : t),
+        tables: state.tables.map(t => t.id === data.tableId ? { ...t, status: 'available', orders: [], payments: [] } : t),
         serviceRequests: state.serviceRequests.map(r => r.tableId === data.tableId ? { ...r, status: 'resolved' } : r)
       }));
       postOSMessage('bill_closed', {

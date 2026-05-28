@@ -79,6 +79,7 @@ export interface Table {
   status: 'available' | 'ordering' | 'waiting' | 'paid' | 'bill_requested';
   orders: OrderItem[];
   cart: OrderItem[];
+  payments?: TablePayment[];
   capacity?: number;
   lastActivity?: Date;
   currentSellerId?: string;
@@ -117,12 +118,53 @@ export interface ClosedBill {
   serviceFee: number;
   discount: number;
   discountReason?: string;
+  couponCode?: string;
+  couponAmount?: number;
+  couponBenefit?: 'discount_20' | 'free_drink' | '';
   total: number;
   payments: Array<{
+    id?: string;
     method: 'credit' | 'debit' | 'cash' | 'pix';
     amount: number;
   }>;
   closedAt: Date;
+}
+
+export interface TablePayment {
+  id: string;
+  tableId: string;
+  tableNumber: number;
+  sellerId: string;
+  sellerName: string;
+  method: 'credit' | 'debit' | 'cash' | 'pix';
+  amount: number;
+  status: 'active' | 'applied' | 'cancelled';
+  createdAt: Date;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  amount: number;
+  status: 'active' | 'redeemed' | 'cancelled' | 'expired';
+  note?: string;
+  customerId?: string;
+  customerName?: string;
+  phone?: string;
+  campaignName?: string;
+  validUntil?: string;
+  minOrderValue?: number;
+  selectedBenefit?: 'discount_20' | 'free_drink' | '';
+  usedByEmployee?: string;
+  tableNumber?: number | null;
+  orderId?: string;
+  whatsappMessage?: string;
+  sentAt?: string | null;
+  createdByName?: string;
+  createdAt: Date;
+  redeemedAt?: Date | null;
+  redeemedTableId?: string | null;
+  redeemedClosedBillId?: string | null;
 }
 
 export interface Seller {

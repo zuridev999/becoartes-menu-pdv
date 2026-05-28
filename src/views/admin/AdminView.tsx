@@ -340,20 +340,20 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
       style={style}
       className="border-b border-white/5 hover:bg-white/[0.01] transition-all group relative"
     >
-      <div className="flex items-center justify-between p-8">
-        <div className="flex items-center gap-6 flex-1 cursor-pointer" onClick={() => onToggleExpand(cat.id)}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 sm:p-8">
+        <div className="flex items-center gap-4 sm:gap-6 flex-1 cursor-pointer min-w-0" onClick={() => onToggleExpand(cat.id)}>
           <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-2 hover:bg-white/5 rounded-lg transition-all text-gray-600 hover:text-primary" onClick={(e) => e.stopPropagation()}>
             <GripVertical size={20} />
           </div>
           <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center font-black text-primary">{cat.sortOrder}</div>
-          <div>
+          <div className="min-w-0">
             <p className="font-black text-lg">{cat.name}</p>
             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
               {categoryProducts.length} Produtos • {isExpanded ? 'Clique para recolher' : 'Clique para ver itens'}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
           {canManageCategories && (
             <>
               <button
@@ -388,17 +388,17 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden bg-black/20"
           >
-            <div className="p-8 pt-0 space-y-2">
+            <div className="p-5 sm:p-8 pt-0 space-y-2">
               {categoryProducts.length === 0 ? (
                 <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest p-4 text-center">Nenhum produto nesta categoria</p>
               ) : (
                 categoryProducts.map((p: any) => (
-                  <div key={p.id} className="flex items-center justify-between p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all">
-                    <div className="flex items-center gap-4">
+                  <div key={p.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all">
+                    <div className="flex items-center gap-4 min-w-0">
                       <img src={getImageSrc(p.image)} className="w-10 h-10 rounded-lg object-cover" />
-                      <p className="font-bold text-sm">{p.name}</p>
+                      <p className="font-bold text-sm truncate">{p.name}</p>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 sm:gap-4">
                       <label className="text-[9px] font-black uppercase text-zinc-500">Mover para:</label>
                       <select
                         value={cat.id}
@@ -1253,9 +1253,9 @@ export function AdminView() {
 
       {activeTab === 'categories' && canManageCategories && (
         <div className="max-w-6xl mx-auto space-y-6">
-          <div className="flex justify-between items-center mb-12 px-8">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-5 mb-8 sm:mb-12 px-0 sm:px-8">
             <div>
-              <h3 className="text-4xl font-black flex items-center gap-4"><LayoutDashboard size={36}/> Gestão de Categorias</h3>
+              <h3 className="text-3xl sm:text-4xl font-black flex items-center gap-4"><LayoutDashboard size={32}/> Gestão de Categorias</h3>
               <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] mt-2 italic">Arraste para reordenar a exibição no Tablet</p>
             </div>
             {canManageCategories && (
@@ -1269,7 +1269,7 @@ export function AdminView() {
                     if (name) upsertCategory({ id: createId(), name, sortOrder: categories.length, visible: true });
                   }
                 })}
-                className="px-8 py-4 bg-primary text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all flex items-center gap-3"
+                className="px-6 sm:px-8 py-4 bg-primary text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all flex items-center justify-center gap-3"
               >
                 <Plus size={20}/> Adicionar Categoria
               </button>
@@ -1384,14 +1384,14 @@ export function AdminView() {
 
           <AnimatePresence>
             {editingProduct && (
-              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-12 border-primary/20 sticky top-12 h-fit shadow-2xl shadow-primary/10 overflow-hidden">
-                <div className="flex justify-between items-start mb-10">
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-5 sm:p-8 lg:p-12 border-primary/20 lg:sticky lg:top-12 h-fit max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar shadow-2xl shadow-primary/10">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-5 mb-8 sm:mb-10">
                   <div className="flex flex-col gap-1">
                     <h3 className="text-3xl font-black">
                       {menu.some(p => p.id === editingProduct.id) ? 'Editar Produto' : 'Novo Produto'}
                     </h3>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
                     {canAddProduct && menu.some(p => p.id === editingProduct.id) && (
                       <button
                         onClick={async () => {
@@ -1451,7 +1451,7 @@ export function AdminView() {
                 </div>
                 <div className="space-y-8">
                   <ConfigInput label="Nome do Produto" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} placeholder="Ex: Suco de Laranja 400ml" disabled={!canEditProductFields} />
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 sm:gap-6">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">Categoria</label>
                       <div className="relative group">
@@ -1550,7 +1550,7 @@ export function AdminView() {
                     </div>
                   </div>
                   <ConfigInput label="Descrição" value={editingProduct.description || ''} onChange={(v) => setEditingProduct({...editingProduct, description: v})} disabled={!canEditProductFields} />
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <ConfigInput label="Código ERP" value={editingProduct.erpCode || ''} onChange={(v) => setEditingProduct({...editingProduct, erpCode: v})} placeholder="Ex: PRD-001" disabled={!canEditProductFields} />
                     <ConfigInput label="ID Estoque Remoto" value={editingProduct.remoteStockId || ''} onChange={(v) => setEditingProduct({...editingProduct, remoteStockId: v})} placeholder="Ex: stock_abc" disabled={!canEditProductFields} />
                   </div>
@@ -1979,8 +1979,9 @@ export function AdminView() {
             })}
           </div>
 
-          <div className="glass rounded-[3rem] border-white/5 overflow-hidden">
-            <table className="w-full text-left">
+          <div className="glass rounded-[2rem] sm:rounded-[3rem] border-white/5 overflow-hidden">
+            <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full min-w-[1120px] text-left">
               <thead className="bg-white/5">
                 <tr className="text-[10px] font-black uppercase tracking-widest text-gray-500">
                   <th className="p-8">Mesa</th>
@@ -2016,6 +2017,7 @@ export function AdminView() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -2137,15 +2139,15 @@ export function AdminView() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[900] bg-black/80 backdrop-blur-xl p-6 flex items-center justify-center"
+            className="fixed inset-0 z-[900] bg-black/80 backdrop-blur-xl p-3 sm:p-6 flex items-center justify-center"
           >
             <motion.div
               initial={{ scale: 0.96, y: 24 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.96, y: 24 }}
-              className="w-full max-w-2xl glass-card border-primary/20 overflow-hidden"
+              className="w-full max-w-2xl max-h-[calc(100dvh-1.5rem)] glass-card border-primary/20 overflow-hidden flex flex-col"
             >
-              <div className="p-7 border-b border-white/10 flex items-center justify-between gap-5">
+              <div className="p-5 sm:p-7 border-b border-white/10 flex items-center justify-between gap-5">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Equipe PDV</p>
                   <h2 className="text-3xl font-black tracking-tighter">Novo Operador</h2>
@@ -2156,7 +2158,7 @@ export function AdminView() {
                 </button>
               </div>
 
-              <div className="p-7 space-y-6">
+              <div className="p-5 sm:p-7 space-y-6 overflow-y-auto custom-scrollbar">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <ConfigInput label="Nome Completo" value={newSellerName} onChange={setNewSellerName} />
                   <ConfigInput label="PIN (4 dígitos)" value={newSellerPin} onChange={setNewSellerPin} />
@@ -2197,13 +2199,13 @@ export function AdminView() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[900] bg-black/80 backdrop-blur-xl p-6 flex items-center justify-center"
+            className="fixed inset-0 z-[900] bg-black/80 backdrop-blur-xl p-3 sm:p-6 flex items-center justify-center"
           >
             <motion.div
               initial={{ scale: 0.96, y: 24 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.96, y: 24 }}
-              className="w-full max-w-6xl max-h-[90vh] glass-card border-primary/20 overflow-hidden flex flex-col"
+              className="w-full max-w-6xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] glass-card border-primary/20 overflow-hidden flex flex-col"
             >
               {(() => {
                 const profile = getPermissionProfile(selectedSeller);
@@ -2211,7 +2213,7 @@ export function AdminView() {
                 const duplicates = getSellerDuplicates(selectedSeller);
                 return (
                   <>
-                    <div className="p-7 border-b border-white/10 flex items-start justify-between gap-5">
+                    <div className="p-5 sm:p-7 border-b border-white/10 flex items-start justify-between gap-5">
                       <div className="flex items-center gap-5 min-w-0">
                         <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center font-black text-xl shrink-0">
                           {selectedSeller.name.charAt(0)}
@@ -2237,7 +2239,7 @@ export function AdminView() {
                       </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-7 space-y-6">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-7 space-y-6">
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <div className="bg-black/20 rounded-2xl p-5 border border-white/5">
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Status</p>
@@ -2442,18 +2444,18 @@ export function AdminView() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[900] bg-black/80 backdrop-blur-xl p-8 flex items-center justify-center"
+            className="fixed inset-0 z-[900] bg-black/80 backdrop-blur-xl p-3 sm:p-8 flex items-center justify-center"
           >
             <motion.div
               initial={{ scale: 0.96, y: 24 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.96, y: 24 }}
-              className="w-full max-w-7xl max-h-[90vh] glass-card border-primary/20 overflow-hidden flex flex-col"
+              className="w-full max-w-7xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] glass-card border-primary/20 overflow-hidden flex flex-col"
             >
-              <div className="p-8 border-b border-white/10 flex items-center justify-between gap-6">
+              <div className="p-5 sm:p-8 border-b border-white/10 flex items-center justify-between gap-6">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Configuração do PDV</p>
-                  <h2 className="text-4xl font-black tracking-tighter">Permissões por Perfil</h2>
+                  <h2 className="text-3xl sm:text-4xl font-black tracking-tighter">Permissões por Perfil</h2>
                   <p className="text-sm font-bold text-zinc-500 mt-2">As mudanças salvam na configuração do sistema e também são validadas no BFF.</p>
                 </div>
                 <button onClick={() => setShowPermissionConfig(false)} className="p-5 glass rounded-2xl hover:text-rose-500 transition-all">
@@ -2461,7 +2463,7 @@ export function AdminView() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-8">
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-8 space-y-8">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   {permissionProfiles.map((profile) => {
                     const stats = getPermissionStats(profile);

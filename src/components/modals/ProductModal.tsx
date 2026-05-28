@@ -49,16 +49,16 @@ export function ProductModal({
   const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const modalShellClass = tabletLandscape
     ? 'p-3 sm:p-4'
-    : 'p-12';
+    : 'p-3 sm:p-6 lg:p-12';
   const modalCardClass = tabletLandscape
     ? 'w-[min(1120px,calc(100vw-24px))] max-h-[calc(100dvh-24px)] min-h-[min(560px,calc(100svh-24px))] flex-col min-[760px]:flex-row'
-    : 'w-full max-w-6xl h-[85vh]';
+    : 'w-full max-w-6xl h-[calc(100dvh-1.5rem)] sm:h-[88dvh] lg:h-[85vh] flex-col lg:flex-row';
   const mediaPanelClass = tabletLandscape
     ? 'block h-[34%] min-h-[170px] max-h-[260px] w-full min-[760px]:h-auto min-[760px]:max-h-none min-[760px]:w-[50%] min-[760px]:min-w-[50%]'
-    : 'w-1/2 hidden lg:block';
+    : 'block w-full h-[28dvh] min-h-[170px] max-h-[260px] lg:h-auto lg:max-h-none lg:w-1/2';
   const contentPanelClass = tabletLandscape
     ? 'flex-1 min-h-0 min-w-0 p-5 sm:p-6 min-[900px]:p-8'
-    : 'w-full lg:w-1/2 p-12';
+    : 'w-full flex-1 min-h-0 min-w-0 p-5 sm:p-7 lg:w-1/2 lg:p-12';
 
   return (
     <>
@@ -76,11 +76,11 @@ export function ProductModal({
           </div>
           <div className={`${contentPanelClass} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
              <button onClick={onClose} className={`${tabletLandscape ? 'top-5 right-5 p-3' : 'top-8 right-8 p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
-             <div className="flex justify-between items-center mb-8 lg:hidden">
-                <h2 className="text-4xl font-black italic">{product.name}</h2>
+             <div className="flex justify-between items-center mb-5 lg:hidden">
+                <h2 className="text-3xl sm:text-4xl font-black italic leading-none pr-14">{product.name}</h2>
              </div>
 
-             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-3 min-[900px]:pr-4 ${tabletLandscape ? 'space-y-4 min-[900px]:space-y-6' : 'space-y-10'}`}>
+             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${tabletLandscape ? 'space-y-4 min-[900px]:space-y-6' : 'space-y-6 lg:space-y-10'}`}>
                 {product.modifierGroups?.map(group => {
                   const selectedInGroup = selectedModifiers.filter(m => group.modifiers.some(gm => gm.id === m.id));
                   const isSingle = group.maxChoices === 1;
@@ -89,7 +89,7 @@ export function ProductModal({
                     <div key={group.id} className="space-y-5">
                       <div className={`flex justify-between items-start py-3 z-10 ${qrMobileFlow ? '' : 'sticky top-0 bg-[#0a0a0c]/95 backdrop-blur-md'}`}>
                         <div>
-                          <h4 className="text-lg font-black uppercase tracking-[0.12em] text-white leading-tight pr-4">{group.name}</h4>
+                          <h4 className="text-base sm:text-lg font-black uppercase tracking-[0.12em] text-white leading-tight pr-4">{group.name}</h4>
                           <p className="mt-2 flex items-center gap-2 text-[10px] text-gray-500 font-black uppercase tracking-[0.16em]">
                             <span className="w-2 h-2 rounded-full bg-accent shadow-[0_0_16px_rgba(255,210,30,0.8)]" />
                             {isSingle ? 'Escolha 1 adicional' : `Escolha de ${group.minChoices} a ${group.maxChoices}`}
@@ -123,24 +123,24 @@ export function ProductModal({
                                   }
                                 }
                               }}
-                              className={`w-full ${tabletLandscape ? 'min-h-[78px] grid-cols-[48px_1fr_auto] gap-4 p-4' : 'min-h-[88px] grid-cols-[54px_1fr_auto] gap-5 p-5'} grid items-center rounded-[1.7rem] border text-left transition-all ${
+                              className={`w-full ${tabletLandscape ? 'min-h-[78px] grid-cols-[48px_1fr_auto] gap-4 p-4' : 'min-h-[76px] sm:min-h-[88px] grid-cols-[48px_1fr_auto] sm:grid-cols-[54px_1fr_auto] gap-4 sm:gap-5 p-4 sm:p-5'} grid items-center rounded-[1.7rem] border text-left transition-all ${
                                 isSelected
                                   ? 'bg-gradient-to-br from-primary to-[#6f2dff] border-primary text-white shadow-2xl shadow-primary/30'
                                   : 'bg-gradient-to-br from-accent to-[#ffad1f] border-accent text-black shadow-xl shadow-accent/20 hover:scale-[1.015]'
                               }`}
                             >
-                              <div className={`${tabletLandscape ? 'w-12 h-12' : 'w-[54px] h-[54px]'} rounded-2xl flex items-center justify-center border text-xl font-black ${
+                              <div className={`${tabletLandscape ? 'w-12 h-12' : 'w-12 h-12 sm:w-[54px] sm:h-[54px]'} rounded-2xl flex items-center justify-center border text-xl font-black ${
                                 isSelected ? 'bg-white text-primary border-white' : 'bg-black/10 text-black border-black/10'
                               }`}>
                                 {isSelected ? <Check size={26} strokeWidth={5} /> : '+'}
                               </div>
                               <div className="min-w-0">
-                                <span className={`block font-black ${tabletLandscape ? 'text-lg' : 'text-xl'} tracking-tight leading-tight`}>{m.name}</span>
+                                <span className={`block font-black ${tabletLandscape ? 'text-lg' : 'text-base sm:text-xl'} tracking-tight leading-tight`}>{m.name}</span>
                                 <span className={`mt-1 block text-[10px] font-black uppercase tracking-[0.16em] ${isSelected ? 'text-white/65' : 'text-black/55'}`}>
                                   {isSelected ? 'Selecionado, toque para remover' : 'Toque para adicionar'}
                                 </span>
                               </div>
-                              {m.price > 0 && <span className={`${tabletLandscape ? 'text-lg' : 'text-xl'} font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-black'}`}>+ {formatCurrency(m.price)}</span>}
+                              {m.price > 0 && <span className={`${tabletLandscape ? 'text-lg' : 'text-sm sm:text-xl'} font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-black'}`}>+ {formatCurrency(m.price)}</span>}
                             </motion.button>
                           );
                         })}
@@ -156,7 +156,7 @@ export function ProductModal({
                     onChange={(e) => canEditItemNotes && setNotes(e.target.value)}
                     disabled={!canEditItemNotes}
                     placeholder={canEditItemNotes ? 'Ex: sem cebola, ponto menos, gelo e limão...' : 'Observações bloqueadas para este perfil'}
-                    className="w-full glass p-6 rounded-3xl border-white/10 outline-none focus:border-primary transition-all text-sm font-medium min-h-[120px] resize-none disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full glass p-4 sm:p-6 rounded-3xl border-white/10 outline-none focus:border-primary transition-all text-sm font-medium min-h-[96px] sm:min-h-[120px] resize-none disabled:opacity-40 disabled:cursor-not-allowed"
                    />
                 </div>
              </div>
@@ -167,7 +167,7 @@ export function ProductModal({
                </div>
              )}
 
-             <div className={`${tabletLandscape ? 'mt-4 pt-4 space-y-3 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-8 pt-8 space-y-6'} border-t border-white/10 shrink-0`}>
+             <div className={`${tabletLandscape ? 'mt-4 pt-4 space-y-3 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-4 sm:mt-8 pt-4 sm:pt-8 space-y-4 sm:space-y-6'} border-t border-white/10 shrink-0`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 glass p-2 rounded-2xl border-white/5">
                      <button disabled={!canChangeItemQuantity} onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-10 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">-</button>
@@ -176,14 +176,14 @@ export function ProductModal({
                   </div>
                   <div className="text-right">
                      <p className="text-[10px] font-black uppercase text-gray-500 mb-1">Total do Item</p>
-                     <p className={`${tabletLandscape ? 'text-3xl' : 'text-4xl'} font-black text-accent tracking-tighter`}>{formatCurrency(totalPrice)}</p>
+                     <p className={`${tabletLandscape ? 'text-3xl' : 'text-3xl sm:text-4xl'} font-black text-accent tracking-tighter`}>{formatCurrency(totalPrice)}</p>
                   </div>
                 </div>
 
                 <button 
                 onClick={handleAdd}
                 disabled={isAdding}
-                className={`${tabletLandscape ? 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-8 text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4 disabled:opacity-50 disabled:pointer-events-none`}
+                className={`${tabletLandscape ? 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-5 sm:py-8 text-sm sm:text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4 disabled:opacity-50 disabled:pointer-events-none`}
               >
                 {isAdding ? 'ADICIONANDO...' : 'ADICIONAR AO PEDIDO'}
               </button>

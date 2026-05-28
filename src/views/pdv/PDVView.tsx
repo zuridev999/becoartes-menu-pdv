@@ -338,7 +338,7 @@ export function PDVView() {
 
   return (
     <div 
-      className="min-h-screen bg-[#09090b] text-white font-['Outfit'] p-4 sm:p-6 xl:p-8 relative overflow-x-hidden overflow-y-auto"
+      className="h-[100dvh] min-h-screen bg-[#09090b] text-white font-['Outfit'] p-4 sm:p-6 xl:p-8 relative overflow-x-hidden overflow-y-auto custom-scrollbar"
       onClick={() => {
         if (hasPanicAlert) {
           setHasPanicAlert(false);
@@ -357,8 +357,8 @@ export function PDVView() {
           >
             <div className="animate-pulse flex flex-col items-center text-center p-12">
                <AlertTriangle size={120} className="text-white mb-8 animate-bounce" />
-               <h1 className="text-8xl font-black italic tracking-tighter text-white mb-4">ATENÇÃO CRÍTICA!</h1>
-               <p className="text-2xl font-black uppercase tracking-[0.3em] text-white/80">EXISTEM SOLICITAÇÕES PENDENTES HÁ MAIS DE 5 MINUTOS</p>
+               <h1 className="text-4xl sm:text-6xl xl:text-8xl font-black italic tracking-tighter text-white mb-4">ATENÇÃO CRÍTICA!</h1>
+               <p className="text-base sm:text-xl xl:text-2xl font-black uppercase tracking-[0.16em] sm:tracking-[0.3em] text-white/80">EXISTEM SOLICITAÇÕES PENDENTES HÁ MAIS DE 5 MINUTOS</p>
                <p className="mt-12 text-sm font-bold bg-white text-rose-600 px-8 py-4 rounded-full uppercase tracking-widest shadow-2xl">Clique em qualquer lugar para silenciar</p>
             </div>
           </motion.div>
@@ -458,7 +458,7 @@ export function PDVView() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="absolute inset-x-4 sm:inset-x-8 top-72 sm:top-64 bottom-8 z-30 flex items-center justify-center pointer-events-none"
+          className="fixed inset-x-4 sm:inset-x-8 top-48 sm:top-64 bottom-8 z-30 flex items-center justify-center pointer-events-none"
         >
           <div className="pointer-events-auto max-w-xl w-full glass-card border-amber-400/30 p-10 text-center shadow-2xl shadow-black/40">
             <div className="w-20 h-20 rounded-[2rem] bg-amber-400/10 text-amber-300 flex items-center justify-center mx-auto mb-6">
@@ -677,7 +677,7 @@ export function PDVView() {
             initial={{ x: 600 }}
             animate={{ x: 0 }}
             exit={{ x: 600 }}
-            className="fixed inset-y-0 right-0 w-full sm:w-[500px] bg-[#0d0d0f] border-l border-white/10 z-[300] shadow-2xl p-6 sm:p-12 flex flex-col"
+            className="fixed inset-y-0 right-0 w-full sm:w-[500px] bg-[#0d0d0f] border-l border-white/10 z-[300] shadow-2xl p-4 sm:p-8 lg:p-12 flex flex-col"
           >
             <div className="flex justify-between items-center mb-8 sm:mb-12">
               <h2 className="text-4xl sm:text-5xl font-black italic tracking-tighter">Mesa <span className="text-primary">{selectedTable.number}</span></h2>
@@ -708,8 +708,8 @@ export function PDVView() {
                 <div className="flex-1 overflow-y-auto space-y-6 pr-4 custom-scrollbar mb-12">
                   <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-4">Pedidos Ativos</h4>
                   {(managedTable?.orders || []).map((o, idx) => (
-                    <div key={idx} className="glass-card p-6 border-white/5 flex justify-between items-center gap-4">
-                      <div>
+                    <div key={idx} className="glass-card p-4 sm:p-6 border-white/5 flex justify-between items-center gap-4">
+                      <div className="min-w-0">
                         <p className="font-bold text-lg">{o.quantity}x {o.name}</p>
                         {(o.categoryName || o.categoryId) && (
                           <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mt-1">
@@ -977,13 +977,13 @@ export function PDVView() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-xl flex items-center justify-center p-6"
+            className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6"
           >
             <motion.div
               initial={{ scale: 0.96, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.96, y: 20 }}
-              className="glass-card w-full max-w-xl border-primary/30 p-8"
+              className="glass-card w-full max-w-xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto custom-scrollbar border-primary/30 p-5 sm:p-8"
             >
               <div className="flex items-start justify-between gap-6 mb-8">
                 <div>
@@ -1015,7 +1015,7 @@ export function PDVView() {
                     onChange={(event) => setCashValue(formatMoneyInput(event.target.value))}
                     placeholder="R$ 0,00"
                     inputMode="numeric"
-                    className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-6 py-6 outline-none text-4xl font-black text-accent focus:border-primary/60"
+                    className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-5 sm:px-6 py-5 sm:py-6 outline-none text-3xl sm:text-4xl font-black text-accent focus:border-primary/60"
                     autoFocus
                   />
                 </div>
@@ -1120,12 +1120,12 @@ export function PDVView() {
         {showManualLog && (
           <motion.div 
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[600] flex items-center justify-center p-12"
+            className="fixed inset-0 z-[600] flex items-center justify-center p-3 sm:p-8 lg:p-12"
           >
             <div className="absolute inset-0 bg-black/90 backdrop-blur-3xl" onClick={() => setShowManualLog(false)} />
-            <div className="glass-card w-full max-w-xl p-12 relative z-10 border-white/10 shadow-2xl">
-               <div className="flex justify-between items-center mb-12">
-                  <h2 className="text-3xl font-black italic tracking-tighter uppercase">Novo <span className="text-primary">Lançamento</span></h2>
+            <div className="glass-card w-full max-w-xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto custom-scrollbar p-5 sm:p-8 lg:p-12 relative z-10 border-white/10 shadow-2xl">
+               <div className="flex justify-between items-center mb-8 sm:mb-12">
+                  <h2 className="text-2xl sm:text-3xl font-black italic tracking-tighter uppercase">Novo <span className="text-primary">Lançamento</span></h2>
                   <button onClick={() => setShowManualLog(false)} className="p-4 glass rounded-2xl hover:text-rose-500"><X size={20}/></button>
                </div>
 
@@ -1169,7 +1169,7 @@ export function PDVView() {
                     setLogDetails('');
                     setLogTable('');
                   }}
-                  className="w-full btn-beco btn-beco-purple py-8 text-xl font-black rounded-3xl mt-12"
+                  className="w-full btn-beco btn-beco-purple py-5 sm:py-8 text-base sm:text-xl font-black rounded-3xl mt-8 sm:mt-12"
                >
                   REGISTRAR LANÇAMENTO
                </button>
@@ -1183,13 +1183,13 @@ export function PDVView() {
         {selectedRequestForDetails && (
           <motion.div 
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-md flex items-center justify-center p-8"
+            className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-8"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
-              className="w-full max-w-2xl bg-[#111115] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden"
+              className="w-full max-w-2xl max-h-[calc(100dvh-1.5rem)] bg-[#111115] rounded-[2rem] sm:rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col"
             >
-              <div className={`p-10 border-b border-white/5 flex justify-between items-center ${
+              <div className={`p-5 sm:p-10 border-b border-white/5 flex justify-between items-center ${
                 selectedRequestForDetails.status === 'resolved'
                   ? 'bg-emerald-600'
                   : selectedRequestForDetails.type === 'new_order'
@@ -1197,7 +1197,7 @@ export function PDVView() {
                     : 'bg-rose-600'
               }`}>
                 <div>
-                  <h2 className="text-4xl font-black italic tracking-tighter text-white">Mesa <span className="text-white/60">{selectedRequestForDetails.tableNumber}</span></h2>
+                  <h2 className="text-3xl sm:text-4xl font-black italic tracking-tighter text-white">Mesa <span className="text-white/60">{selectedRequestForDetails.tableNumber}</span></h2>
                   <p className="text-white/80 font-black uppercase tracking-widest text-[10px] mt-1 flex items-center gap-2">
                     <Clock size={12} /> {new Date(selectedRequestForDetails.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • {selectedRequestForDetails.status === 'resolved' ? 'Atendimento concluído' : 'Aguardando atendimento'}
                   </p>
@@ -1207,8 +1207,8 @@ export function PDVView() {
                 </button>
               </div>
 
-              <div className="p-10">
-                <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="p-5 sm:p-10 overflow-y-auto custom-scrollbar">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                   <div className="bg-white/5 rounded-3xl p-5 border border-white/5">
                     <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Movimento</p>
                     <p className="text-xl font-black text-white uppercase">
@@ -1237,7 +1237,7 @@ export function PDVView() {
                          ? 'Itens prontos para entrega'
                          : 'Mensagem da solicitação'}
                    </h3>
-                   <p className="text-3xl font-black text-white leading-relaxed italic">
+                   <p className="text-xl sm:text-3xl font-black text-white leading-relaxed italic">
                      {selectedRequestForDetails.message || 'Sem observação adicional.'}
                    </p>
                 </div>
@@ -1254,7 +1254,7 @@ export function PDVView() {
                       setSelectedRequestForDetails(null);
                     }}
                     disabled={selectedRequestForDetails.status !== 'resolved' && !canResolveServiceRequests}
-                    className={`w-full py-8 text-white rounded-[2rem] text-2xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-4 ${
+                    className={`w-full py-5 sm:py-8 text-white rounded-[2rem] text-lg sm:text-2xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-4 ${
                       selectedRequestForDetails.status === 'resolved'
                         ? 'bg-rose-500 shadow-rose-500/20'
                         : canResolveServiceRequests

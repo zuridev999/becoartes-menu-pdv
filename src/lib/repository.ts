@@ -34,7 +34,7 @@ type InventoryMovementPlan = {
   orderId: string;
   orderItemId: string;
   sourceItemId: string;
-  sourceItemKind: 'product' | 'modifier';
+  sourceItemKind: 'product' | 'modifier' | 'recipe';
   requestedQuantity: number;
   previousQuantity: number;
   nextQuantity: number;
@@ -51,8 +51,47 @@ const parseJsonArray = (value: unknown) => {
   }
 };
 
-const toStockAmount = (value: unknown) => Math.max(0, Math.trunc(Number(value || 0)));
+const toStockAmount = (value: unknown) => Number(Math.max(0, Number(value || 0)).toFixed(4));
 const osTimestamp = () => Math.floor(Date.now() / 1000);
+const normalizeRecipeLookupName = (value: unknown) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/\b(pra|para)\s*(dois|2)\b/g, ' p2 ')
+  .replace(/\bp\s*\/?\s*2\b/g, ' p2 ')
+  .replace(/\b(pra|para)\s*(um|1)\b/g, ' p1 ')
+  .replace(/\bp\s*\/?\s*1\b/g, ' p1 ')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+const stripRecipeServing = (value: unknown) => normalizeRecipeLookupName(value)
+  .replace(/\bp[12]\b/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+const getRecipeServing = (value: unknown) => {
+  const normalized = normalizeRecipeLookupName(value);
+  if (/\bp2\b/.test(normalized)) return 'p2';
+  if (/\bp1\b/.test(normalized)) return 'p1';
+  return '';
+};
+const hasConflictingFlavorToken = (soldName: unknown, fichaName: unknown) => {
+  const soldTokens = new Set(normalizeRecipeLookupName(soldName).split(' ').filter(Boolean));
+  const fichaTokens = normalizeRecipeLookupName(fichaName).split(' ').filter(Boolean);
+  const flavorTokens = new Set(['zero', 'mango', 'loco', 'melancia', 'ipa', 'artesanal', 'premium', 'importado', 'nacional']);
+  return fichaTokens.some((token) => flavorTokens.has(token) && !soldTokens.has(token));
+};
+const isLooseRecipeNameMatch = (soldName: unknown, fichaName: unknown) => {
+  const soldBase = stripRecipeServing(soldName);
+  const fichaBase = stripRecipeServing(fichaName);
+  if (!soldBase || !fichaBase) return false;
+  if (soldBase === fichaBase) return true;
+  if (hasConflictingFlavorToken(soldName, fichaName)) return false;
+
+  const ignored = new Set(['lata', 'long', 'neck', 'garrafa', 'ml', 'un', 'und']);
+  const soldTokens = soldBase.split(' ').filter((token) => token && !ignored.has(token) && !/^\d+$/.test(token));
+  const fichaTokens = new Set(fichaBase.split(' ').filter((token) => token && !ignored.has(token) && !/^\d+$/.test(token)));
+  return soldTokens.length > 0 && soldTokens.every((token) => fichaTokens.has(token));
+};
 
 export const Repository = {
   // --- MENU ---
@@ -632,6 +671,200 @@ export const Repository = {
     return byName.rows[0] as any || null;
   },
 
+  async findFichaTecnicaForSoldItem(empresaId: string, candidates: { id?: string; name: string }) {
+    const soldId = String(candidates.id || '').trim();
+    const soldName = String(candidates.name || '').trim();
+    if (!soldId && !soldName) return null;
+
+    const res = await db.execute({
+      sql: `
+        SELECT
+          ft.*,
+          COUNT(fi.id) AS ingredientes_count
+        FROM fichas_tecnicas ft
+        LEFT JOIN ficha_ingredientes fi ON fi.ficha_tecnica_id = ft.id
+        WHERE ft.empresa_id = ?
+        GROUP BY ft.id
+      `,
+      args: [empresaId]
+    });
+
+    const soldNorm = normalizeRecipeLookupName(soldName);
+    const soldServing = getRecipeServing(soldName);
+    const score = (row: any) => {
+      const pdvName = String(row.pdv_product_name || '');
+      const fichaName = String(row.nome_prato || '');
+      const names = [pdvName, fichaName].filter(Boolean);
+      const nameNorms = names.map(normalizeRecipeLookupName);
+      const serving = getRecipeServing(`${pdvName} ${fichaName}`);
+
+      if (soldNorm && nameNorms.includes(soldNorm)) return 0;
+      if (soldName && names.some((name) => isLooseRecipeNameMatch(soldName, name))) {
+        if (soldServing && serving && soldServing !== serving) return 999;
+        return 1;
+      }
+      if (soldId && row.pdv_product_id === soldId) {
+        if (soldServing && serving && soldServing !== serving) return 999;
+        if (!soldServing && serving === 'p2') return 30;
+        return 5;
+      }
+      return 999;
+    };
+
+    return (res.rows as any[])
+      .map((row) => ({ row, score: score(row) }))
+      .filter((entry) => entry.score < 999)
+      .sort((a, b) => (
+        a.score - b.score
+        || Number(b.row.ingredientes_count || 0) - Number(a.row.ingredientes_count || 0)
+        || Number(b.row.custo_total || 0) - Number(a.row.custo_total || 0)
+        || Number(a.row.created_at || 0) - Number(b.row.created_at || 0)
+      ))[0]?.row || null;
+  },
+
+  async getFichaIngredientStockRows(fichaId: string) {
+    const res = await db.execute({
+      sql: `
+        SELECT
+          fi.id AS ingrediente_id,
+          COALESCE(fi.nome_exibicao, fi.nome_ingrediente) AS ingrediente_nome,
+          fi.quantidade_usada,
+          fi.quantidade_estoque_baixa,
+          fi.unidade_medida,
+          fi.unidade_estoque_baixa,
+          ep.*
+        FROM ficha_ingredientes fi
+        JOIN estoque_produtos ep ON ep.id = fi.estoque_produto_id
+        WHERE fi.ficha_tecnica_id = ?
+          AND ep.ativo = 1
+      `,
+      args: [fichaId]
+    });
+
+    return res.rows as any[];
+  },
+
+  async hasPdvStockMovement(params: { orderItemId: string; sourceItemKind: 'product' | 'modifier' | 'recipe'; sourceItemId: string }) {
+    if (!params.orderItemId || !params.sourceItemKind || !params.sourceItemId) return false;
+    const res = await db.execute({
+      sql: `
+        SELECT id
+        FROM estoque_movimentacoes
+        WHERE origem = 'pdv'
+          AND order_item_id = ?
+          AND source_item_kind = ?
+          AND source_item_id = ?
+        LIMIT 1
+      `,
+      args: [params.orderItemId, params.sourceItemKind, params.sourceItemId]
+    });
+
+    return Boolean(res.rows[0]?.id);
+  },
+
+  async appendInventoryPlansForSoldItem(params: {
+    empresaId: string;
+    movementPlans: InventoryMovementPlan[];
+    result: InventorySyncResult;
+    orderId: string;
+    orderItemId: string;
+    productId?: string;
+    remoteStockId?: string;
+    name: string;
+    quantity: number;
+    baseReason: string;
+    sourceKind: 'product' | 'modifier';
+    reportUnmatched?: boolean;
+  }) {
+    const requestedQuantity = toStockAmount(params.quantity);
+    if (requestedQuantity <= 0) return;
+
+    const directSourceId = params.productId || params.name;
+    if (await this.hasPdvStockMovement({
+      orderItemId: params.orderItemId,
+      sourceItemKind: params.sourceKind,
+      sourceItemId: directSourceId
+    })) {
+      return;
+    }
+
+    const ficha = await this.findFichaTecnicaForSoldItem(params.empresaId, {
+      id: params.productId,
+      name: params.name
+    });
+
+    if (ficha) {
+      const ingredientRows = await this.getFichaIngredientStockRows(String(ficha.id));
+      if (ingredientRows.length === 0) {
+        params.result.unmatched.push(`${params.quantity}x ${params.name} (CMV sem ingrediente vinculado ao estoque)`);
+      } else {
+        for (const row of ingredientRows) {
+          const unitQuantity = toStockAmount(row.quantidade_estoque_baixa || row.quantidade_usada);
+          const recipeQuantity = toStockAmount(unitQuantity * requestedQuantity);
+          if (recipeQuantity <= 0) continue;
+
+          const ingredientSourceId = String(row.ingrediente_id);
+          if (await this.hasPdvStockMovement({
+            orderItemId: params.orderItemId,
+            sourceItemKind: 'recipe',
+            sourceItemId: ingredientSourceId
+          })) {
+            continue;
+          }
+
+          const currentQuantity = Number(row.quantidade_atual || 0);
+          const nextQuantity = Number((currentQuantity - recipeQuantity).toFixed(4));
+          if (recipeQuantity > currentQuantity) params.result.insufficient.push(`${row.nome || row.ingrediente_nome} (estoque insuficiente)`);
+          if (nextQuantity <= toStockAmount(row.estoque_minimo)) params.result.critical.push(row.nome || row.ingrediente_nome);
+          params.movementPlans.push({
+            movementId: createId(),
+            stockId: row.id as string,
+            stockName: (row.nome as string) || row.ingrediente_nome || params.name,
+            orderId: params.orderId,
+            orderItemId: params.orderItemId,
+            sourceItemId: ingredientSourceId,
+            sourceItemKind: 'recipe',
+            requestedQuantity: recipeQuantity,
+            previousQuantity: currentQuantity,
+            nextQuantity,
+            reason: `${params.baseReason} | CMV ${ficha.nome_prato}${params.sourceKind === 'modifier' ? ` | Opcional ${params.name}` : ''}`
+          });
+        }
+        return;
+      }
+    }
+
+    const directStock = await this.findStockProduct(params.empresaId, {
+      id: params.remoteStockId || params.productId,
+      name: params.name
+    });
+
+    if (!directStock) {
+      if (params.reportUnmatched !== false) {
+        params.result.unmatched.push(`${params.quantity}x ${params.name}`);
+      }
+      return;
+    }
+
+    const currentQuantity = Number(directStock.quantidade_atual || 0);
+    const nextQuantity = Number((currentQuantity - requestedQuantity).toFixed(4));
+    if (requestedQuantity > currentQuantity) params.result.insufficient.push(`${params.name} (estoque insuficiente)`);
+    if (nextQuantity <= toStockAmount(directStock.estoque_minimo)) params.result.critical.push(params.name);
+    params.movementPlans.push({
+      movementId: createId(),
+      stockId: directStock.id as string,
+      stockName: (directStock.nome as string) || params.name,
+      orderId: params.orderId,
+      orderItemId: params.orderItemId,
+      sourceItemId: directSourceId,
+      sourceItemKind: params.sourceKind,
+      requestedQuantity,
+      previousQuantity: currentQuantity,
+      nextQuantity,
+      reason: params.sourceKind === 'modifier' ? `${params.baseReason} | Opcional ${params.name}` : params.baseReason
+    });
+  },
+
   async decrementStock(params: {
     empresaId: string;
     userId: string;
@@ -711,73 +944,44 @@ export const Repository = {
       const result: InventorySyncResult = { movementCount: 0, unmatched: [], insufficient: [], critical: [] };
       const baseReason = `Venda PDV Mesa ${data.tableNumber} | Fechamento ${integrationId}`;
 
-    for (const item of activeOrderItems) {
-      const requestedQuantity = toStockAmount(item.quantity);
-      const productStock = await this.findStockProduct(empresaId, {
-        id: item.remoteStockId || item.productId,
-        name: item.name
-      });
-
-      if (!productStock) {
-        result.unmatched.push(`${item.quantity}x ${item.name}`);
-      } else {
-        const currentQuantity = toStockAmount(productStock.quantidade_atual);
-        const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
-        if (requestedQuantity > currentQuantity) result.insufficient.push(`${item.name} (estoque insuficiente)`);
-        if (nextQuantity <= toStockAmount(productStock.estoque_minimo)) result.critical.push(item.name);
-        if (currentQuantity > 0 && requestedQuantity > 0) {
-          movementPlans.push({
-            movementId: createId(),
-            stockId: productStock.id as string,
-            stockName: productStock.nome as string || item.name,
-            orderId: item.orderId,
-            orderItemId: item.id,
-            sourceItemId: item.productId,
-            sourceItemKind: 'product',
-            requestedQuantity,
-            previousQuantity: currentQuantity,
-            nextQuantity,
-            reason: baseReason
-          });
-        }
-      }
-
-      for (const modifier of item.selectedModifiers || []) {
-        const modifierStock = await this.findStockProduct(empresaId, {
-          id: modifier.id,
-          name: modifier.name
+      for (const item of activeOrderItems) {
+        await this.appendInventoryPlansForSoldItem({
+          empresaId,
+          movementPlans,
+          result,
+          orderId: item.orderId,
+          orderItemId: item.id,
+          productId: item.productId,
+          remoteStockId: item.remoteStockId,
+          name: item.name,
+          quantity: item.quantity,
+          baseReason,
+          sourceKind: 'product'
         });
 
-        if (!modifierStock) continue;
-
-        const currentQuantity = toStockAmount(modifierStock.quantidade_atual);
-        const nextQuantity = Math.max(0, currentQuantity - requestedQuantity);
-        if (requestedQuantity > currentQuantity) result.insufficient.push(`${modifier.name} (estoque insuficiente)`);
-        if (nextQuantity <= toStockAmount(modifierStock.estoque_minimo)) result.critical.push(modifier.name);
-        if (currentQuantity > 0 && requestedQuantity > 0) {
-          movementPlans.push({
-            movementId: createId(),
-            stockId: modifierStock.id as string,
-            stockName: modifierStock.nome as string || modifier.name,
+        for (const modifier of item.selectedModifiers || []) {
+          await this.appendInventoryPlansForSoldItem({
+            empresaId,
+            movementPlans,
+            result,
             orderId: item.orderId,
             orderItemId: item.id,
-            sourceItemId: modifier.id,
-            sourceItemKind: 'modifier',
-            requestedQuantity,
-            previousQuantity: currentQuantity,
-            nextQuantity,
-            reason: `${baseReason} | Opcional ${modifier.name}`
+            productId: modifier.id,
+            name: modifier.name,
+            quantity: item.quantity,
+            baseReason,
+            sourceKind: 'modifier',
+            reportUnmatched: Number(modifier.price || 0) > 0
           });
         }
       }
-    }
 
-    result.movementCount = movementPlans.length;
+      result.movementCount = movementPlans.length;
 
     const now = osTimestamp();
     const batch: Array<{ sql: string; args?: any[] }> = [
       {
-        sql: "INSERT OR REPLACE INTO closed_bills (id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        sql: "INSERT OR REPLACE INTO closed_bills (id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, coupon_code, coupon_amount, coupon_benefit, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         args: [
           integrationId,
           data.tableId,
@@ -788,6 +992,9 @@ export const Repository = {
           data.serviceFee,
           data.discount,
           data.discountReason || null,
+          data.couponCode || null,
+          data.couponAmount || 0,
+          data.couponBenefit || null,
           data.total,
           JSON.stringify(data.payments),
           closedAt.toISOString()
@@ -801,9 +1008,9 @@ export const Repository = {
           sql: `
             INSERT OR IGNORE INTO estoque_movimentacoes
               (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova, motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
-            SELECT ?, empresa_id, id, 'saida', MIN(quantidade_atual, ?), quantidade_atual, MAX(0, quantidade_atual - ?), ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
+            SELECT ?, empresa_id, id, 'saida', ?, quantidade_atual, quantidade_atual - ?, ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
             FROM estoque_produtos
-            WHERE id = ? AND empresa_id = ? AND ativo = 1 AND quantidade_atual > 0
+            WHERE id = ? AND empresa_id = ? AND ativo = 1
           `,
           args: [
             movement.movementId,
@@ -825,8 +1032,8 @@ export const Repository = {
         {
           sql: `
             UPDATE estoque_produtos
-            SET quantidade_atual = MAX(0, quantidade_atual - ?),
-                status = CASE WHEN MAX(0, quantidade_atual - ?) <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
+            SET quantidade_atual = quantidade_atual - ?,
+                status = CASE WHEN quantidade_atual - ? <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
                 updated_at = ?
             WHERE id = ? AND changes() > 0
           `,
@@ -1116,7 +1323,7 @@ export const Repository = {
 
   async getClosedBills(limit = 200) {
     const res = await db.execute({
-      sql: "SELECT id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, total, payments, strftime('%Y-%m-%dT%H:%M:%SZ', closed_at) as closed_at FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
+      sql: "SELECT id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, coupon_code, coupon_amount, coupon_benefit, total, payments, strftime('%Y-%m-%dT%H:%M:%SZ', closed_at) as closed_at FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
       args: [limit]
     });
 
@@ -1130,6 +1337,9 @@ export const Repository = {
       serviceFee: Number(row.service_fee || 0),
       discount: Number(row.discount || 0),
       discountReason: row.discount_reason as string || '',
+      couponCode: row.coupon_code as string || '',
+      couponAmount: Number(row.coupon_amount || 0),
+      couponBenefit: row.coupon_benefit as any || '',
       total: Number(row.total || 0),
       payments: parseJsonArray(row.payments),
       closedAt: row.closed_at ? new Date(row.closed_at as string) : new Date()

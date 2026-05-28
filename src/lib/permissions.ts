@@ -9,6 +9,7 @@ export type PermissionKey =
   | 'manageTeam'
   | 'managePDVUsers'
   | 'managePDVPermissions'
+  | 'manageCoupons'
   | 'manageRoles'
   | 'manageOptionals'
   | 'addProduct'
@@ -87,6 +88,7 @@ export const defaultPermissionsByProfile: Record<PermissionProfile, Record<Permi
     manageTeam: true,
     managePDVUsers: true,
     managePDVPermissions: true,
+    manageCoupons: true,
     manageRoles: true,
     manageOptionals: true,
     addProduct: true,
@@ -152,6 +154,7 @@ export const defaultPermissionsByProfile: Record<PermissionProfile, Record<Permi
     manageTeam: false,
     managePDVUsers: false,
     managePDVPermissions: false,
+    manageCoupons: false,
     manageRoles: false,
     manageOptionals: true,
     addProduct: true,
@@ -217,6 +220,7 @@ export const defaultPermissionsByProfile: Record<PermissionProfile, Record<Permi
     manageTeam: false,
     managePDVUsers: false,
     managePDVPermissions: false,
+    manageCoupons: false,
     manageRoles: false,
     manageOptionals: true,
     addProduct: true,
@@ -284,6 +288,7 @@ export const permissionLabels: Record<PermissionKey, string> = {
   manageTeam: 'Equipe geral',
   managePDVUsers: 'Usuários do PDV',
   managePDVPermissions: 'Editar permissões do PDV',
+  manageCoupons: 'Gerar cupons',
   manageRoles: 'Criar cargos/funções',
   manageOptionals: 'Opcionais/adicionais',
   addProduct: 'Cadastrar produtos/categorias',
@@ -342,7 +347,7 @@ export const permissionLabels: Record<PermissionKey, string> = {
 };
 
 export const permissionGroups: Array<{ title: string; keys: PermissionKey[] }> = [
-  { title: 'Acesso e administração', keys: ['accessPDV', 'manageSettings', 'managePDVUsers', 'managePDVPermissions', 'manageRoles', 'manageTeam', 'accessSensitiveData'] },
+  { title: 'Acesso e administração', keys: ['accessPDV', 'manageSettings', 'managePDVUsers', 'managePDVPermissions', 'manageCoupons', 'manageRoles', 'manageTeam', 'accessSensitiveData'] },
   { title: 'Mesas e comandas', keys: ['openTable', 'updateTableStatus', 'transferTable', 'joinTables', 'splitBill', 'reopenPaidBill', 'viewOtherOperatorTables'] },
   { title: 'Pedidos', keys: ['addOrderItem', 'removeCartItem', 'changeItemQuantity', 'editItemNotes', 'sendOrderToProduction', 'cancelTableItem', 'cancelOrder', 'cancelSale', 'resolveServiceRequest'] },
   { title: 'Pagamentos e taxa', keys: ['launchPayment', 'changePaymentMethod', 'splitPayment', 'cancelPayment', 'refundPayment', 'closeBill', 'applyDiscount', 'editServiceFee', 'reprintReceipt'] },
@@ -355,7 +360,7 @@ export const permissionGroups: Array<{ title: string; keys: PermissionKey[] }> =
 export const getEffectivePermissions = (profile: PermissionProfile, overrides?: PermissionMatrix) => ({
   ...defaultPermissionsByProfile[profile],
   ...(overrides?.[profile] || {}),
-  ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true } : {}),
+  ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true, manageCoupons: true } : {}),
 });
 
 export const getPermissionProfile = (seller?: Seller | null): PermissionProfile => {
@@ -371,7 +376,7 @@ export const getEffectiveUserPermissions = (
   return {
     ...getEffectivePermissions(profile, overrides),
     ...(seller?.id ? (userOverrides?.[seller.id] || {}) : {}),
-    ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true } : {}),
+    ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true, manageCoupons: true } : {}),
   };
 };
 
