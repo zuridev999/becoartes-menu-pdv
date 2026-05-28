@@ -928,6 +928,7 @@ export function PDVView() {
                       setIsSendingOrder(true);
                       try {
                         await sendToKitchen(selectedTable.id, 'pdv', currentSeller?.id || 'sistema');
+                        if (!useStore.getState().currentSeller) return;
                         addAuditLog({
                           action: 'item_added',
                           details: { items_count: cart.length },
@@ -937,6 +938,7 @@ export function PDVView() {
                         setShowProductMenu(false);
                       } catch (err) {
                         console.error("Erro ao enviar pedido para a cozinha:", err);
+                        addNotification("Não foi possível enviar o pedido. Confira o aviso na tela e tente novamente.", "error");
                       } finally {
                         setIsSendingOrder(false);
                       }

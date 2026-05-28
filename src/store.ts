@@ -849,84 +849,110 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   sendToKitchen: async (tableId, origin = 'pdv', sellerId) => {
+    if (origin === 'pdv' && !hasApiSessionToken()) {
+      clearSellerSession();
+      set({ currentSeller: null });
+      get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+      return;
+    }
+
     const table = get().tables.find(t => t.id === tableId);
     if (!table || table.cart.length === 0) return;
 
-    const orderId = createId();
-    const total = getOrderItemsTotal(table.cart);
-    const persistedItems: OrderItem[] = table.cart.map(item => ({
-      ...item,
-      id: createId(),
-      orderId
-    }));
-
-    const sendResult = await OperationalApi.sendToKitchen({
-      orderId,
-      tableId,
-      total,
-      origin,
-      sellerId: sellerId || null,
-      items: persistedItems
-    });
-
-    const newKitchenOrder: KitchenOrder = {
-      id: orderId,
-      tableId: tableId,
-      tableNumber: table.number,
-      items: persistedItems,
-      status: 'pending',
-      origin: origin as 'tablet' | 'pdv',
-      createdAt: new Date()
-    };
-
-    // Criar uma solicitação de serviço imediata para o PDV (para drinks/bebidas)
-    const requestId = 'new_order_' + orderId;
-    const itemsList = table.cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
-
-    const newRequest: ServiceRequest = {
-      id: requestId,
-      tableId,
-      tableNumber: table.number,
-      type: 'new_order',
-      message: itemsList,
-      status: 'pending',
-      createdAt: new Date()
-    };
-
-    set((state) => ({
-      kitchenOrders: [...state.kitchenOrders, newKitchenOrder],
-      serviceRequests: [newRequest, ...state.serviceRequests],
-      tables: state.tables.map(t => t.id === tableId ? {
-        ...t,
-        orders: [...t.orders, ...persistedItems],
-        cart: [],
-        status: 'ordering',
-        lastActivity: new Date(),
-        currentSellerId: sellerId || t.currentSellerId
-      } : t)
-    }));
-
-    get().addNotification(`Novo pedido da Mesa ${table.number}!`, 'order', tableId);
-    if (sendResult.inventorySyncError) {
-      get().addNotification("Pedido lançado, mas a baixa de estoque falhou. Confira o estoque.", "error", tableId);
-    }
-
-    postOSMessage('table_alert', {
-      tableId,
-      tableNumber: table.number,
-      alertType: 'new_order',
-      message: `Novo pedido realizado!`,
-      createdAt: new Date().toISOString()
-    });
-
     try {
-      await get().addAuditLog('order_sent', `Itens: ${table.cart.length} | Total: R$ ${total.toFixed(2)}`, table.number.toString(), origin);
-    } catch (error) {
-      console.warn('Pedido enviado, mas a auditoria falhou:', error);
-    }
+      const orderId = createId();
+      const total = getOrderItemsTotal(table.cart);
+      const persistedItems: OrderItem[] = table.cart.map(item => ({
+        ...item,
+        id: createId(),
+        orderId
+      }));
 
-    if (sendResult.inventorySync?.movementCount || sendResult.inventorySync?.catalogVersion) {
-      await get().syncData({ includeCatalog: true });
+      const sendResult = await OperationalApi.sendToKitchen({
+        orderId,
+        tableId,
+        total,
+        origin,
+        sellerId: sellerId || null,
+        items: persistedItems
+      });
+
+      const newKitchenOrder: KitchenOrder = {
+        id: orderId,
+        tableId: tableId,
+        tableNumber: table.number,
+        items: persistedItems,
+        status: 'pending',
+        origin: origin as 'tablet' | 'pdv',
+        createdAt: new Date()
+      };
+
+      // Criar uma solicitação de serviço imediata para o PDV (para drinks/bebidas)
+      const requestId = 'new_order_' + orderId;
+      const itemsList = table.cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
+
+      const newRequest: ServiceRequest = {
+        id: requestId,
+        tableId,
+        tableNumber: table.number,
+        type: 'new_order',
+        message: itemsList,
+        status: 'pending',
+        createdAt: new Date()
+      };
+
+      set((state) => ({
+        kitchenOrders: [...state.kitchenOrders, newKitchenOrder],
+        serviceRequests: [newRequest, ...state.serviceRequests],
+        tables: state.tables.map(t => t.id === tableId ? {
+          ...t,
+          orders: [...t.orders, ...persistedItems],
+          cart: [],
+          status: 'ordering',
+          lastActivity: new Date(),
+          currentSellerId: sellerId || t.currentSellerId
+        } : t)
+      }));
+
+      get().addNotification(`Novo pedido da Mesa ${table.number}!`, 'order', tableId);
+      if (sendResult.inventorySyncError) {
+        get().addNotification("Pedido lançado, mas a baixa de estoque falhou. Confira o estoque.", "error", tableId);
+      }
+
+      postOSMessage('table_alert', {
+        tableId,
+        tableNumber: table.number,
+        alertType: 'new_order',
+        message: `Novo pedido realizado!`,
+        createdAt: new Date().toISOString()
+      });
+
+      try {
+        await get().addAuditLog('order_sent', `Itens: ${table.cart.length} | Total: R$ ${total.toFixed(2)}`, table.number.toString(), origin);
+      } catch (error) {
+        console.warn('Pedido enviado, mas a auditoria falhou:', error);
+      }
+
+      if (sendResult.inventorySync?.movementCount || sendResult.inventorySync?.catalogVersion) {
+        await get().syncData({ includeCatalog: true });
+      }
+    } catch (error) {
+      console.error("Erro ao enviar pedido para a cozinha:", error);
+      if (isSessionExpiredError(error)) {
+        clearSellerSession();
+        set({ currentSeller: null });
+        get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+        return;
+      }
+
+      if (isNetworkError(error)) {
+        get().addNotification("Banco demorou para responder. Atualize a mesa e tente novamente.", "error", tableId);
+        return;
+      }
+
+      const message = getErrorMessage(error);
+      get().addNotification(message ? `Erro ao enviar pedido: ${message}` : "Erro ao enviar pedido. Tente novamente.", "error", tableId);
+      throw error;
     }
   },
 
