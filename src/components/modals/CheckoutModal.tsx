@@ -14,6 +14,15 @@ interface Payment {
   createdAt?: Date;
 }
 
+type PaymentMethod = Payment['method'];
+
+const paymentMethodLabels: Record<PaymentMethod, string> = {
+  credit: 'Crédito',
+  debit: 'Débito',
+  pix: 'PIX / QR Code',
+  cash: 'Dinheiro',
+};
+
 type ValidatedCoupon = {
   code: string;
   amount: number;
@@ -37,7 +46,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const [discountType, setDiscountType] = useState<'fixed' | 'percent'>('fixed');
   const [discountReason] = useState('');
   const [payments, setPayments] = useState<Payment[]>(() => table.payments || []);
-  const [currentMethod, setCurrentMethod] = useState<Payment['method']>('credit');
+  const [currentMethod, setCurrentMethod] = useState<PaymentMethod | null>(null);
+  const [pendingPayment, setPendingPayment] = useState<{ method: PaymentMethod; amount: number } | null>(null);
   const [isSavingPayment, setIsSavingPayment] = useState(false);
   const [couponInput, setCouponInput] = useState('');
   const [coupon, setCoupon] = useState<ValidatedCoupon | null>(null);
@@ -108,21 +118,29 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const handleAddPayment = async () => {
     if (!canLaunchPayment) return;
     if (payments.length >= 1 && !canSplitPayment) return;
+    if (!currentMethod) return;
     const val = currentPaymentAmount;
     if (val <= 0) return;
     const nextPaidTotal = roundMoney(paidTotal + val);
     if (nextPaidTotal > totalFinal && currentMethod !== 'cash' && !hasCashPayment) return;
+    setPendingPayment({ method: currentMethod, amount: val });
+  };
+
+  const handleConfirmPayment = async () => {
+    if (!pendingPayment || !canLaunchPayment) return;
     setIsSavingPayment(true);
     try {
       const result = await OperationalApi.createTablePayment({
         tableId: table.id,
         tableNumber: table.number,
-        method: currentMethod,
-        amount: val,
+        method: pendingPayment.method,
+        amount: pendingPayment.amount,
         sellerId: selectedSellerId || currentSeller?.id,
         sellerName: sellerOptions.find(s => s.id === selectedSellerId)?.name || currentSeller?.name || 'Sistema',
       });
       setPayments([...payments, result.payment]);
+      setPendingPayment(null);
+      setCurrentMethod(null);
     } finally {
       setIsSavingPayment(false);
     }
@@ -397,7 +415,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                     ].map(m => (
                       <button 
                         key={m.id}
-                        onClick={() => canChangePaymentMethod && setCurrentMethod(m.id as any)}
+                        onClick={() => canChangePaymentMethod && setCurrentMethod(m.id as PaymentMethod)}
                         disabled={!canChangePaymentMethod}
                         className={`p-4 sm:p-6 rounded-2xl border transition-all flex flex-col items-center gap-3 ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-105' : 'glass border-white/5 opacity-50 hover:opacity-100'} ${!canChangePaymentMethod ? 'cursor-not-allowed grayscale' : ''}`}
                       >
@@ -408,7 +426,12 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                  </div>
                  {!canChangePaymentMethod && (
                    <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
-                     Forma de pagamento fixa em crédito para este perfil.
+                     Seu perfil não pode alterar a forma de pagamento.
+                   </p>
+                 )}
+                 {canChangePaymentMethod && !currentMethod && (
+                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                     Selecione a forma exata conferida na maquininha antes de lançar.
                    </p>
                  )}
 
@@ -425,12 +448,41 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                     </div>
                     <button 
                        onClick={handleAddPayment}
-                       disabled={isSavingPayment || !canLaunchPayment || (payments.length >= 1 && !canSplitPayment) || currentPaymentCreatesInvalidChange}
+                       disabled={isSavingPayment || !canLaunchPayment || !currentMethod || (payments.length >= 1 && !canSplitPayment) || currentPaymentCreatesInvalidChange}
                        className="w-full sm:w-auto py-4 px-8 btn-beco btn-beco-purple text-base font-black rounded-2xl disabled:opacity-30 disabled:grayscale"
                     >
                        {isSavingPayment ? 'Salvando...' : 'Lançar Valor'}
                     </button>
                  </div>
+                 {pendingPayment && (
+                   <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 sm:p-5 shadow-2xl shadow-amber-900/10">
+                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-200 mb-2">
+                       Conferência obrigatória
+                     </p>
+                     <h4 className="text-xl sm:text-2xl font-black italic text-white mb-2">
+                       Tem certeza que foi em {paymentMethodLabels[pendingPayment.method]}?
+                     </h4>
+                     <p className="text-xs sm:text-sm font-bold text-gray-300 leading-relaxed">
+                       Valor: <span className="text-accent font-black">R$ {pendingPayment.amount.toFixed(2)}</span>. Confirme na maquininha antes de salvar. Todos os pagamentos precisam bater com o relatório da maquininha.
+                     </p>
+                     <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                       <button
+                         onClick={() => setPendingPayment(null)}
+                         disabled={isSavingPayment}
+                         className="py-3 rounded-xl bg-white/10 border border-white/10 font-black uppercase tracking-widest text-[10px] text-white disabled:opacity-40"
+                       >
+                         Voltar e corrigir
+                       </button>
+                       <button
+                         onClick={handleConfirmPayment}
+                         disabled={isSavingPayment}
+                         className="py-3 rounded-xl bg-emerald-400 text-black font-black uppercase tracking-widest text-[10px] disabled:opacity-40"
+                       >
+                         Sim, conciliei na maquininha
+                       </button>
+                     </div>
+                   </div>
+                 )}
                  {payments.length > 0 && (
                    <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-emerald-300">
                      Pagamentos lançados ficam salvos na mesa mesmo se ela continuar aberta.
@@ -458,7 +510,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                          <div className="flex items-center gap-3">
                             <CheckCircle2 className="text-emerald-500" size={20}/>
                             <div>
-                               <p className="font-black text-base uppercase tracking-wider">{p.method}</p>
+                               <p className="font-black text-base uppercase tracking-wider">{paymentMethodLabels[p.method]}</p>
                                <p className="text-[9px] text-gray-500 font-bold uppercase">Confirmado</p>
                             </div>
                          </div>
