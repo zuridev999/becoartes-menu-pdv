@@ -1577,12 +1577,14 @@ const getRestrictedSnapshot = (view = 'pdv') => ({
 });
 
 const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, view = 'pdv', session = null, operationAccessAllowed = true } = {}) => {
-  if (!operationAccessAllowed && !canAccessOutsideOperationIp(session)) {
-    return getRestrictedSnapshot(view);
+  const safeView = ['tablet', 'qr', 'kitchen', 'bar', 'pdv', 'admin'].includes(view) ? view : 'pdv';
+  const isPublicCustomerView = safeView === 'qr';
+
+  if (!isPublicCustomerView && !operationAccessAllowed && !canAccessOutsideOperationIp(session)) {
+    return getRestrictedSnapshot(safeView);
   }
 
   await ensureDatabaseReady();
-  const safeView = ['tablet', 'qr', 'kitchen', 'bar', 'pdv', 'admin'].includes(view) ? view : 'pdv';
   const needsOperationalPanel = safeView === 'pdv' || safeView === 'admin';
   const needsSellers = needsOperationalPanel;
   const needsSalesData = needsOperationalPanel;
