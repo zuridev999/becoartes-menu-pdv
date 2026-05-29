@@ -168,9 +168,9 @@ export const useStore = create<AppState>((set, get) => ({
   adminMode: 'settings',
   isLoading: true,
   banners: [
-    'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=1200&h=400&fit=crop',
-    'https://images.unsplash.com/photo-1551024506-0bccd828d307?w=1200&h=400&fit=crop',
-    'https://images.unsplash.com/photo-1470337458703-46ad1756a187?w=1200&h=400&fit=crop'
+    '/slideshow/beco-drinks.jpg',
+    '/slideshow/beco-food.jpg',
+    '/slideshow/beco-bar.jpg'
   ],
   sellers: [],
   auditLogs: [],
@@ -203,7 +203,7 @@ export const useStore = create<AppState>((set, get) => ({
       inactivityTimeout: 60,
       autoBanner: true,
       bannerText: 'Bem-vindo ao Becoartes!',
-      bannerUrls: ['https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200', 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=1200'],
+      bannerUrls: ['/slideshow/beco-drinks.jpg', '/slideshow/beco-food.jpg', '/slideshow/beco-bar.jpg'],
       fullscreen: false,
       viewMode: 'grid',
       sendToKitchenOnFinish: true

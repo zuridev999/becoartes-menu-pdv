@@ -4,9 +4,16 @@ import { Loader2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { fallbackImageSrc, getImageSrc } from '../../lib/image';
 
+const DEFAULT_SLIDESHOW_IMAGES = [
+  '/slideshow/beco-drinks.jpg',
+  '/slideshow/beco-food.jpg',
+  '/slideshow/beco-bar.jpg'
+];
+
 export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => void, isLoading: boolean }) {
   const { settings } = useStore();
-  const bannerImages = settings.tablet.bannerUrls.filter(url => url.trim() !== '');
+  const configuredImages = settings.tablet.bannerUrls.filter(url => url.trim() !== '');
+  const bannerImages = configuredImages.length > 0 ? configuredImages : DEFAULT_SLIDESHOW_IMAGES;
 
   useEffect(() => {
     const hasLoaded = sessionStorage.getItem('beco_loaded');
