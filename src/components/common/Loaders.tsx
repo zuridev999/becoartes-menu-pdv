@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { useStore } from '../../store';
+import { fallbackImageSrc, getImageSrc } from '../../lib/image';
 
 export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => void, isLoading: boolean }) {
   const { settings } = useStore();
@@ -67,23 +68,33 @@ export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => voi
 
 export function Slideshow({ images, interval = 10000 }: { images: string[], interval?: number }) {
   const [index, setIndex] = useState(0);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const normalizedImages = images.map(getImageSrc).filter(Boolean);
+  const availableImages = normalizedImages.filter((src) => !failedImages[src]);
 
   useEffect(() => {
-    if (!images || images.length === 0) return;
+    if (availableImages.length === 0) return;
     const timer = setInterval(() => {
-      setIndex((prev) => (prev + 1) % images.length);
+      setIndex((prev) => (prev + 1) % availableImages.length);
     }, interval);
     return () => clearInterval(timer);
-  }, [images.length, interval]);
+  }, [availableImages.length, interval]);
 
-  if (!images || images.length === 0) return null;
+  if (normalizedImages.length === 0) return null;
+
+  const currentSrc = availableImages[index % Math.max(availableImages.length, 1)] || fallbackImageSrc;
 
   return (
     <div className="absolute inset-0 overflow-hidden">
       <AnimatePresence mode="wait">
         <motion.img 
-          key={index}
-          src={images[index]} 
+          key={`${index}-${currentSrc}`}
+          src={currentSrc}
+          onError={() => {
+            if (currentSrc === fallbackImageSrc) return;
+            setFailedImages((prev) => ({ ...prev, [currentSrc]: true }));
+            setIndex(0);
+          }}
           initial={{ opacity: 0, scale: 1.05 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
