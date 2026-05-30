@@ -3581,7 +3581,7 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
   const closeSummary = await getExpectedClosingCents(cash);
   const missingCents = closeSummary.expectedCents - closingCents;
 
-  if (missingCents > 0) {
+  if (missingCents > 0 && !cashActor.override) {
     await addAuditLog({
       id: createId(),
       action: 'cash_close_blocked',
@@ -3609,7 +3609,7 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
       link: `/${OS_TENANT_SLUG}/controle-dinheiro`,
     });
 
-    const error = new Error('Dinheiro físico abaixo do esperado. Chame o responsável para conferir o caixa.');
+    const error = new Error('Dinheiro físico abaixo do esperado. Apenas o admin com PIN 0806 pode autorizar este fechamento.');
     error.statusCode = 409;
     throw error;
   }
