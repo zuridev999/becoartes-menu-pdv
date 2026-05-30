@@ -4391,6 +4391,15 @@ const requirePermission = (session, permission, settings = null) => {
 
 const allowPublicOperationalOrigin = (body) => body?.origin === 'tablet' || body?.origin === 'qr';
 
+const isPublicCustomerRoute = (routeKey, body) => {
+  if (routeKey === 'POST /api/service-requests' || routeKey === 'POST /api/tables/request-bill') return true;
+  if (routeKey === 'POST /api/orders/send-to-kitchen' || routeKey === 'POST /api/orders/status') {
+    return allowPublicOperationalOrigin(body);
+  }
+  if (routeKey === 'POST /api/audit-logs') return allowPublicOperationalOrigin(body);
+  return false;
+};
+
 const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllowed = true, req = null } = {}) => {
   if (
     routeKey === 'GET /api/app/init'
@@ -4398,6 +4407,10 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     || routeKey === 'POST /api/auth/login'
     || routeKey === 'POST /api/tablet/setup-login'
   ) {
+    return;
+  }
+
+  if (isPublicCustomerRoute(routeKey, body)) {
     return;
   }
 
@@ -4432,7 +4445,6 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
   }
 
   if (routeKey === 'POST /api/audit-logs') {
-    if (body?.origin === 'tablet' || body?.origin === 'qr') return;
     requireSession(session);
     return;
   }
