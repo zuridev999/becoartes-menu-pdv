@@ -1,7 +1,7 @@
 {
   "name": "becoartes-menu-pdv",
   "private": true,
-  "version": "1.4.29",
+  "version": "1.4.30",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -27,6 +27,7 @@
     "smoke:delivery:ifood": "node scripts/delivery_ifood_dry_run_smoke.mjs",
     "smoke:delivery:ifood-quoteid": "node scripts/delivery_ifood_quoteid_smoke.mjs",
     "smoke:delivery:orders-admin": "node scripts/delivery_orders_admin_smoke.mjs",
+    "smoke:delivery:notification-webhook": "node scripts/delivery_notification_webhook_smoke.mjs",
     "smoke:delivery:payment-methods": "node scripts/delivery_payment_methods_smoke.mjs",
     "smoke:delivery:pickup": "node scripts/delivery_pickup_smoke.mjs",
     "smoke:delivery:postal-code": "node scripts/delivery_postal_code_smoke.mjs",

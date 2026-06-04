@@ -77,6 +77,22 @@ const scenarios = [
     scripts: ['smoke:delivery:webhook:production'],
   },
   {
+    name: 'notification-webhook',
+    env: {
+      DELIVERY_PAYMENT_PROVIDER: 'mock',
+      DELIVERY_KITCHEN_DISPATCH_MODE: 'mock',
+      DELIVERY_LOGISTICS_PROVIDER: 'disabled',
+      DELIVERY_EMAIL_PROVIDER: 'webhook',
+      DELIVERY_SMS_PROVIDER: 'webhook',
+      DELIVERY_WHATSAPP_PROVIDER: 'webhook',
+      DELIVERY_EMAIL_WEBHOOK_URL: 'http://127.0.0.1:19090/email',
+      DELIVERY_SMS_WEBHOOK_URL: 'http://127.0.0.1:19090/sms',
+      DELIVERY_WHATSAPP_WEBHOOK_URL: 'http://127.0.0.1:19090/whatsapp',
+      DELIVERY_NOTIFICATION_WEBHOOK_SECRET: 'smoke_notification_secret',
+    },
+    scripts: ['smoke:delivery:notification-webhook'],
+  },
+  {
     name: 'ifood-dry-run',
     env: {
       DELIVERY_PAYMENT_PROVIDER: 'mock',

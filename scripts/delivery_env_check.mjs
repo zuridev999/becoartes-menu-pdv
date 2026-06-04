@@ -12,6 +12,7 @@ const allowedShippingModes = new Set(['dry_run', 'live']);
 const allowedGeocoderProviders = new Set(['mock', 'disabled', 'provider']);
 const allowedPostalProviders = new Set(['mock', 'viacep', 'disabled']);
 const allowedPublicStatuses = new Set(['building', 'open']);
+const allowedNotificationProviders = new Set(['mock', 'disabled', 'webhook']);
 
 const parseEnvFile = async (path) => {
   if (!path) return {};
@@ -48,6 +49,9 @@ const geocoderProvider = value('DELIVERY_GEOCODER_PROVIDER', 'mock');
 const postalProvider = value('DELIVERY_POSTAL_CODE_PROVIDER', 'mock');
 const clubCycleSize = Number(value('DELIVERY_CLUB_CYCLE_SIZE', '10'));
 const preparationSeconds = Number(value('IFOOD_PREPARATION_TIME_SECONDS', '900'));
+const emailProvider = value('DELIVERY_EMAIL_PROVIDER', 'mock');
+const smsProvider = value('DELIVERY_SMS_PROVIDER', 'mock');
+const whatsappProvider = value('DELIVERY_WHATSAPP_PROVIDER', 'mock');
 
 const checks = [];
 const add = (name, ok, severity, next = '') => checks.push({ name, ok, severity, next });
@@ -60,6 +64,12 @@ add('shipping mode valido', allowedShippingModes.has(shippingMode), 'error', 'Us
 add('geocoder provider valido', allowedGeocoderProviders.has(geocoderProvider), 'warn', 'Use DELIVERY_GEOCODER_PROVIDER=mock|disabled|provider.');
 add('postal provider valido', allowedPostalProviders.has(postalProvider), 'warn', 'Use DELIVERY_POSTAL_CODE_PROVIDER=mock|viacep|disabled.');
 add('public status valido', allowedPublicStatuses.has(publicStatus), 'error', 'Use DELIVERY_PUBLIC_STATUS=building|open.');
+add('email provider valido', allowedNotificationProviders.has(emailProvider), 'error', 'Use DELIVERY_EMAIL_PROVIDER=mock|disabled|webhook.');
+add('sms provider valido', allowedNotificationProviders.has(smsProvider), 'error', 'Use DELIVERY_SMS_PROVIDER=mock|disabled|webhook.');
+add('whatsapp provider valido', allowedNotificationProviders.has(whatsappProvider), 'error', 'Use DELIVERY_WHATSAPP_PROVIDER=mock|disabled|webhook.');
+if (emailProvider === 'webhook') add('email webhook url', isHttpsUrl('DELIVERY_EMAIL_WEBHOOK_URL'), 'error', 'Configure DELIVERY_EMAIL_WEBHOOK_URL=https://...');
+if (smsProvider === 'webhook') add('sms webhook url', isHttpsUrl('DELIVERY_SMS_WEBHOOK_URL'), 'error', 'Configure DELIVERY_SMS_WEBHOOK_URL=https://...');
+if (whatsappProvider === 'webhook') add('whatsapp webhook url', isHttpsUrl('DELIVERY_WHATSAPP_WEBHOOK_URL'), 'error', 'Configure DELIVERY_WHATSAPP_WEBHOOK_URL=https://...');
 add('club cycle valido', Number.isFinite(clubCycleSize) && clubCycleSize >= 1, 'error', 'Configure DELIVERY_CLUB_CYCLE_SIZE >= 1.');
 add('preparation time valido', Number.isFinite(preparationSeconds) && preparationSeconds >= 60, 'warn', 'Configure IFOOD_PREPARATION_TIME_SECONDS com pelo menos 60.');
 
@@ -120,6 +130,12 @@ const report = {
     ifoodTokenPresent: present('IFOOD_ACCESS_TOKEN'),
     ifoodMerchantPresent: present('IFOOD_MERCHANT_ID'),
     webhookSecretPresent: present('DELIVERY_WEBHOOK_SECRET'),
+    notifications: {
+      email: emailProvider,
+      sms: smsProvider,
+      whatsapp: whatsappProvider,
+      webhookSecretPresent: present('DELIVERY_NOTIFICATION_WEBHOOK_SECRET'),
+    },
   },
   checks,
   errors,

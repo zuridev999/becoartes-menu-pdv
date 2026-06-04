@@ -63,6 +63,10 @@ const DELIVERY_WEBHOOK_SECRET = process.env.DELIVERY_WEBHOOK_SECRET || '';
 const DELIVERY_EMAIL_PROVIDER = process.env.DELIVERY_EMAIL_PROVIDER || 'mock';
 const DELIVERY_SMS_PROVIDER = process.env.DELIVERY_SMS_PROVIDER || 'mock';
 const DELIVERY_WHATSAPP_PROVIDER = process.env.DELIVERY_WHATSAPP_PROVIDER || 'mock';
+const DELIVERY_EMAIL_WEBHOOK_URL = process.env.DELIVERY_EMAIL_WEBHOOK_URL || '';
+const DELIVERY_SMS_WEBHOOK_URL = process.env.DELIVERY_SMS_WEBHOOK_URL || '';
+const DELIVERY_WHATSAPP_WEBHOOK_URL = process.env.DELIVERY_WHATSAPP_WEBHOOK_URL || '';
+const DELIVERY_NOTIFICATION_WEBHOOK_SECRET = process.env.DELIVERY_NOTIFICATION_WEBHOOK_SECRET || '';
 const DELIVERY_VIRTUAL_TABLE_ID = 'delivery_virtual';
 const DELIVERY_CLUB_CYCLE_SIZE = Math.max(1, Number(process.env.DELIVERY_CLUB_CYCLE_SIZE || 10));
 const DELIVERY_CLUB_REWARD_LABEL = process.env.DELIVERY_CLUB_REWARD_LABEL || '1 prato gratuito';
@@ -3222,8 +3226,82 @@ const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel
     sms: DELIVERY_SMS_PROVIDER,
     whatsapp: DELIVERY_WHATSAPP_PROVIDER,
   };
+  const webhookUrlByChannel = {
+    email: DELIVERY_EMAIL_WEBHOOK_URL,
+    sms: DELIVERY_SMS_WEBHOOK_URL,
+    whatsapp: DELIVERY_WHATSAPP_WEBHOOK_URL,
+  };
   const destination = channel === 'email' ? customer.email : customer.phone;
   const provider = providerByChannel[channel] || 'disabled';
+  const notificationPayload = {
+    orderId,
+    customerId: customer.id || null,
+    channel,
+    type,
+    destination,
+    customer: {
+      name: customer.name || '',
+      email: customer.email || '',
+      phone: customer.phone || '',
+    },
+    message,
+    payload,
+    createdAt: new Date().toISOString(),
+  };
+  if (provider === 'webhook') {
+    const webhookUrl = webhookUrlByChannel[channel] || '';
+    if (!webhookUrl) {
+      await recordDeliveryNotification({
+        orderId,
+        customerId: customer.id || null,
+        channel,
+        type,
+        provider,
+        status: 'missing_webhook_url',
+        destination,
+        payload: notificationPayload,
+        error: `Configure DELIVERY_${channel.toUpperCase()}_WEBHOOK_URL.`,
+      });
+      return { channel, provider, status: 'missing_webhook_url' };
+    }
+    try {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(DELIVERY_NOTIFICATION_WEBHOOK_SECRET ? { 'x-beco-delivery-notification-secret': DELIVERY_NOTIFICATION_WEBHOOK_SECRET } : {}),
+        },
+        body: JSON.stringify(notificationPayload),
+        signal: AbortSignal.timeout(5000),
+      });
+      const status = response.ok ? 'sent' : 'failed';
+      await recordDeliveryNotification({
+        orderId,
+        customerId: customer.id || null,
+        channel,
+        type,
+        provider,
+        status,
+        destination,
+        payload: { ...notificationPayload, responseStatus: response.status },
+        error: response.ok ? null : `Webhook retornou ${response.status}`,
+      });
+      return { channel, provider, status };
+    } catch (error) {
+      await recordDeliveryNotification({
+        orderId,
+        customerId: customer.id || null,
+        channel,
+        type,
+        provider,
+        status: 'failed',
+        destination,
+        payload: notificationPayload,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { channel, provider, status: 'failed' };
+    }
+  }
   const status = provider === 'disabled' ? 'disabled' : provider === 'mock' ? 'mock_logged' : 'ready_for_provider';
   await recordDeliveryNotification({
     orderId,
@@ -3233,7 +3311,7 @@ const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel
     provider,
     status,
     destination,
-    payload: { ...payload, message },
+    payload: notificationPayload,
   });
   return { channel, provider, status };
 };
