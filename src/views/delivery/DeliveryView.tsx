@@ -161,6 +161,7 @@ export function DeliveryView() {
   const [authDraft, setAuthDraft] = useState({ identity: '', password: '', code: '', newPassword: '' });
   const [authMode, setAuthMode] = useState<'login' | 'forgot' | 'reset' | 'verify' | 'orders'>('login');
   const [authMessage, setAuthMessage] = useState('');
+  const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [isQuotingDelivery, setIsQuotingDelivery] = useState(false);
   const [isLookingUpPostalCode, setIsLookingUpPostalCode] = useState(false);
   const [completedOrder, setCompletedOrder] = useState<DeliveryEvent | null>(null);
@@ -406,39 +407,87 @@ export function DeliveryView() {
   const loadCustomerOrders = async () => {
     const token = localStorage.getItem(SESSION_KEY) || '';
     if (!token) return;
-    const result = await DeliveryApi.listCustomerOrders(token);
-    setCustomerOrders(result.orders);
+    try {
+      const result = await DeliveryApi.listCustomerOrders(token);
+      setCustomerOrders(result.orders);
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : 'Não foi possível carregar seus pedidos.');
+    }
   };
 
   const handleCustomerLogin = async () => {
-    const result = await DeliveryApi.loginCustomer({ identity: authDraft.identity, password: authDraft.password });
-    localStorage.setItem(SESSION_KEY, result.session.token);
-    setAccount(result.customer);
-    setAuthMessage('Login feito.');
-    setAuthMode('orders');
-    await loadCustomerOrders();
+    if (isAuthBusy) return;
+    setIsAuthBusy(true);
+    try {
+      const result = await DeliveryApi.loginCustomer({ identity: authDraft.identity, password: authDraft.password });
+      localStorage.setItem(SESSION_KEY, result.session.token);
+      setAccount(result.customer);
+      setAuthMessage('Login feito.');
+      setAuthMode('orders');
+      await loadCustomerOrders();
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : 'Não foi possível entrar agora.');
+    } finally {
+      setIsAuthBusy(false);
+    }
   };
 
   const handleForgotPassword = async () => {
-    const result = await DeliveryApi.forgotPassword(authDraft.identity);
-    setAuthMessage(result.code ? `Codigo de recuperacao: ${result.code}` : 'Se encontramos seu cadastro, enviamos um codigo.');
-    setAuthMode('reset');
+    if (isAuthBusy) return;
+    setIsAuthBusy(true);
+    try {
+      const result = await DeliveryApi.forgotPassword(authDraft.identity);
+      setAuthMessage(result.code ? `Codigo de recuperacao: ${result.code}` : 'Se encontramos seu cadastro, enviamos um codigo.');
+      setAuthMode('reset');
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : 'Não foi possível enviar o código agora.');
+    } finally {
+      setIsAuthBusy(false);
+    }
   };
 
   const handleResetPassword = async () => {
-    const result = await DeliveryApi.resetPassword({ identity: authDraft.identity, code: authDraft.code, password: authDraft.newPassword });
-    localStorage.setItem(SESSION_KEY, result.session.token);
-    setAccount(result.customer);
-    setAuthMessage('Senha atualizada.');
-    setAuthMode('orders');
-    await loadCustomerOrders();
+    if (isAuthBusy) return;
+    setIsAuthBusy(true);
+    try {
+      const result = await DeliveryApi.resetPassword({ identity: authDraft.identity, code: authDraft.code, password: authDraft.newPassword });
+      localStorage.setItem(SESSION_KEY, result.session.token);
+      setAccount(result.customer);
+      setAuthMessage('Senha atualizada.');
+      setAuthMode('orders');
+      await loadCustomerOrders();
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : 'Não foi possível trocar a senha agora.');
+    } finally {
+      setIsAuthBusy(false);
+    }
   };
 
   const handleVerifyCode = async () => {
-    const token = localStorage.getItem(SESSION_KEY) || '';
-    const result = await DeliveryApi.verifyCustomerCode({ token, code: authDraft.code });
-    setAccount(result.customer);
-    setAuthMessage('Cadastro confirmado.');
+    if (isAuthBusy) return;
+    setIsAuthBusy(true);
+    try {
+      const token = localStorage.getItem(SESSION_KEY) || '';
+      const result = await DeliveryApi.verifyCustomerCode({ token, code: authDraft.code });
+      setAccount(result.customer);
+      setAuthMessage('Cadastro confirmado.');
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : 'Não foi possível confirmar o cadastro agora.');
+    } finally {
+      setIsAuthBusy(false);
+    }
+  };
+
+  const handleTrackCustomerOrder = async (orderId: string) => {
+    try {
+      const result = await DeliveryApi.getOrder(orderId);
+      const order = result.order as DeliveryEvent;
+      localStorage.setItem(LAST_ORDER_KEY, order.orderId);
+      setCompletedOrder(order);
+      setIsAccountOpen(false);
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : 'Não foi possível abrir o acompanhamento agora.');
+    }
   };
 
   if (publicStatus !== 'open') {
@@ -564,6 +613,7 @@ export function DeliveryView() {
             onReset={handleResetPassword}
             onVerify={handleVerifyCode}
             onReloadOrders={loadCustomerOrders}
+            onTrackOrder={handleTrackCustomerOrder}
             onLogout={() => {
               localStorage.removeItem(SESSION_KEY);
               setAccount(null);
@@ -571,6 +621,7 @@ export function DeliveryView() {
               setAuthMode('login');
               setAuthMessage('Você saiu da conta.');
             }}
+            isBusy={isAuthBusy}
           />
         )}
       </AnimatePresence>
@@ -937,7 +988,9 @@ function DeliveryAccountModal({
   onReset,
   onVerify,
   onReloadOrders,
+  onTrackOrder,
   onLogout,
+  isBusy,
 }: {
   account: DeliveryCustomerAccount | null;
   mode: 'login' | 'forgot' | 'reset' | 'verify' | 'orders';
@@ -952,7 +1005,9 @@ function DeliveryAccountModal({
   onReset: () => void;
   onVerify: () => void;
   onReloadOrders: () => void;
+  onTrackOrder: (orderId: string) => void;
   onLogout: () => void;
+  isBusy: boolean;
 }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[300] flex items-center justify-center p-3 sm:p-8 bg-black/80 backdrop-blur-md">
@@ -972,15 +1027,15 @@ function DeliveryAccountModal({
             <div className="space-y-4">
               <Field label="E-mail ou telefone" value={draft.identity} onChange={(value) => onDraftChange('identity', value)} />
               <Field label="Senha" type="password" value={draft.password} onChange={(value) => onDraftChange('password', value)} />
-              <button onClick={onLogin} className="w-full btn-beco btn-beco-purple py-4 rounded-2xl font-black uppercase tracking-widest">Entrar</button>
-              <button onClick={() => onModeChange('forgot')} className="text-sm font-black text-zinc-400 uppercase tracking-widest">Esqueci senha</button>
+              <button type="button" onClick={onLogin} disabled={isBusy} className="w-full btn-beco btn-beco-purple py-4 rounded-2xl font-black uppercase tracking-widest disabled:opacity-50">{isBusy ? 'Entrando...' : 'Entrar'}</button>
+              <button type="button" onClick={() => onModeChange('forgot')} className="text-sm font-black text-zinc-400 uppercase tracking-widest">Esqueci senha</button>
             </div>
           )}
 
           {mode === 'forgot' && (
             <div className="space-y-4">
               <Field label="E-mail ou telefone" value={draft.identity} onChange={(value) => onDraftChange('identity', value)} />
-              <button onClick={onForgot} className="w-full btn-beco btn-beco-purple py-4 rounded-2xl font-black uppercase tracking-widest">Enviar código</button>
+              <button type="button" onClick={onForgot} disabled={isBusy} className="w-full btn-beco btn-beco-purple py-4 rounded-2xl font-black uppercase tracking-widest disabled:opacity-50">{isBusy ? 'Enviando...' : 'Enviar código'}</button>
             </div>
           )}
 
@@ -988,23 +1043,23 @@ function DeliveryAccountModal({
             <div className="space-y-4">
               <Field label="Código" value={draft.code} onChange={(value) => onDraftChange('code', value)} />
               <Field label="Nova senha" type="password" value={draft.newPassword} onChange={(value) => onDraftChange('newPassword', value)} />
-              <button onClick={onReset} className="w-full btn-beco btn-beco-purple py-4 rounded-2xl font-black uppercase tracking-widest">Trocar senha</button>
+              <button type="button" onClick={onReset} disabled={isBusy} className="w-full btn-beco btn-beco-purple py-4 rounded-2xl font-black uppercase tracking-widest disabled:opacity-50">{isBusy ? 'Salvando...' : 'Trocar senha'}</button>
             </div>
           )}
 
           {mode === 'verify' && account && (
             <div className="space-y-4">
               <Field label="Código recebido" value={draft.code} onChange={(value) => onDraftChange('code', value)} />
-              <button onClick={onVerify} className="w-full btn-beco btn-beco-purple py-4 rounded-2xl font-black uppercase tracking-widest">Confirmar cadastro</button>
-              <button onClick={() => onModeChange('orders')} className="text-sm font-black text-zinc-400 uppercase tracking-widest">Ver meus pedidos</button>
+              <button type="button" onClick={onVerify} disabled={isBusy} className="w-full btn-beco btn-beco-purple py-4 rounded-2xl font-black uppercase tracking-widest disabled:opacity-50">{isBusy ? 'Confirmando...' : 'Confirmar cadastro'}</button>
+              <button type="button" onClick={() => onModeChange('orders')} className="text-sm font-black text-zinc-400 uppercase tracking-widest">Ver meus pedidos</button>
             </div>
           )}
 
           {mode === 'orders' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
-                <button onClick={onReloadOrders} className="glass rounded-2xl border border-white/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-zinc-300">Atualizar</button>
-                <button onClick={onLogout} className="glass rounded-2xl border border-white/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-rose-300">Sair</button>
+                <button type="button" onClick={onReloadOrders} disabled={isBusy} className="glass rounded-2xl border border-white/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-zinc-300 disabled:opacity-50">Atualizar</button>
+                <button type="button" onClick={onLogout} className="glass rounded-2xl border border-white/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-rose-300">Sair</button>
               </div>
               {orders.length === 0 ? (
                 <div className="glass rounded-2xl border border-white/10 p-6 text-sm font-black text-zinc-400">Nenhum pedido encontrado.</div>
@@ -1022,6 +1077,9 @@ function DeliveryAccountModal({
                     <span>{getStatusLabel(order.kitchenStatus)}</span>
                     <span>{getStatusLabel(order.deliveryStatus)}</span>
                   </div>
+                  <button type="button" onClick={() => onTrackOrder(order.orderId)} className="mt-4 w-full glass rounded-2xl border border-white/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-primary">
+                    Acompanhar
+                  </button>
                 </div>
               ))}
             </div>
