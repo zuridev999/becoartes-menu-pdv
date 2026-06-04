@@ -13,9 +13,13 @@ const port = Number(process.env.PORT || 80);
 
 const tursoUrl = process.env.TURSO_DATABASE_URL || process.env.VITE_TURSO_DATABASE_URL;
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || process.env.VITE_TURSO_AUTH_TOKEN;
+const isLocalLibsqlUrl = /^file:/i.test(String(tursoUrl || ''));
 const OS_EMPRESA_ID = process.env.OS_EMPRESA_ID || process.env.VITE_OS_EMPRESA_ID || 'e19cbcce-b2a7-4cc1-bf70-c06d2f8feb8a';
 const OS_TENANT_SLUG = process.env.OS_TENANT_SLUG || process.env.VITE_OS_TENANT_SLUG || 'becoartes';
 const OS_SYSTEM_USER_ID = process.env.OS_SYSTEM_USER_ID || process.env.VITE_OS_SYSTEM_USER_ID || '';
+const DELIVERY_OS_CRM_SYNC = process.env.DELIVERY_OS_CRM_SYNC || 'disabled';
+const DELIVERY_OS_CRM_URL = process.env.DELIVERY_OS_CRM_URL || 'https://os.becoartes.com/api/delivery/clientes';
+const DELIVERY_OS_SYNC_SECRET = process.env.DELIVERY_OS_SYNC_SECRET || '';
 const BOOTSTRAP_ADMIN_PIN = process.env.BOOTSTRAP_ADMIN_PIN || process.env.VITE_BOOTSTRAP_ADMIN_PIN || '';
 const DEFAULT_MANAGER_PIN = process.env.DEFAULT_MANAGER_PIN || process.env.VITE_DEFAULT_MANAGER_PIN || '2020';
 const DEFAULT_OPERATOR_PIN = process.env.DEFAULT_OPERATOR_PIN || process.env.VITE_DEFAULT_OPERATOR_PIN || '0040';
@@ -29,7 +33,7 @@ const ALLOWED_WEB_ORIGINS = (process.env.ALLOWED_WEB_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
-const SESSION_SECRET = process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET || tursoAuthToken;
+const SESSION_SECRET = process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET || tursoAuthToken || (isLocalLibsqlUrl ? 'local-delivery-session-secret' : undefined);
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const PROCESSING_STALE_MS = 10 * 60 * 1000;
 const SERVICE_REQUEST_LIMIT = Number(process.env.SERVICE_REQUEST_LIMIT || 150);
@@ -38,14 +42,41 @@ const AUDIT_LOG_LIMIT = Number(process.env.AUDIT_LOG_LIMIT || 100);
 const CASH_SANDBOX_MODE = process.env.CASH_SANDBOX_MODE === '1';
 const CASH_TABLE = CASH_SANDBOX_MODE ? 'pdv_cash_sandbox' : 'caixa_diario';
 const DEFAULT_PAYMENT_METHOD = 'credit';
+const DELIVERY_PAYMENT_PROVIDER = process.env.DELIVERY_PAYMENT_PROVIDER || 'mock';
+const DELIVERY_LOGISTICS_PROVIDER = process.env.DELIVERY_LOGISTICS_PROVIDER || 'disabled';
+const DELIVERY_KITCHEN_DISPATCH_MODE = process.env.DELIVERY_KITCHEN_DISPATCH_MODE || 'mock';
+const DELIVERY_PUBLIC_STATUS = process.env.DELIVERY_PUBLIC_STATUS || 'building';
+const PAGBANK_API_BASE_URL = process.env.PAGBANK_API_BASE_URL || 'https://api.pagseguro.com';
+const PAGBANK_TOKEN = process.env.PAGBANK_TOKEN || '';
+const PAGBANK_NOTIFICATION_URL = process.env.PAGBANK_NOTIFICATION_URL || '';
+const PAGBANK_REDIRECT_URL = process.env.PAGBANK_REDIRECT_URL || '';
+const IFOOD_API_BASE_URL = process.env.IFOOD_API_BASE_URL || 'https://merchant-api.ifood.com.br';
+const IFOOD_ACCESS_TOKEN = process.env.IFOOD_ACCESS_TOKEN || '';
+const IFOOD_MERCHANT_ID = process.env.IFOOD_MERCHANT_ID || '';
+const IFOOD_SHIPPING_MODE = process.env.IFOOD_SHIPPING_MODE || 'dry_run';
+const IFOOD_PREPARATION_TIME_SECONDS = Number(process.env.IFOOD_PREPARATION_TIME_SECONDS || 900);
+const DELIVERY_GEOCODER_PROVIDER = process.env.DELIVERY_GEOCODER_PROVIDER || 'mock';
+const DELIVERY_MOCK_LATITUDE = Number(process.env.DELIVERY_MOCK_LATITUDE || -23.5505);
+const DELIVERY_MOCK_LONGITUDE = Number(process.env.DELIVERY_MOCK_LONGITUDE || -46.6333);
+const DELIVERY_POSTAL_CODE_PROVIDER = process.env.DELIVERY_POSTAL_CODE_PROVIDER || 'mock';
+const DELIVERY_WEBHOOK_SECRET = process.env.DELIVERY_WEBHOOK_SECRET || '';
+const DELIVERY_EMAIL_PROVIDER = process.env.DELIVERY_EMAIL_PROVIDER || 'mock';
+const DELIVERY_SMS_PROVIDER = process.env.DELIVERY_SMS_PROVIDER || 'mock';
+const DELIVERY_WHATSAPP_PROVIDER = process.env.DELIVERY_WHATSAPP_PROVIDER || 'mock';
+const DELIVERY_VIRTUAL_TABLE_ID = 'delivery_virtual';
+const DELIVERY_CLUB_CYCLE_SIZE = Math.max(1, Number(process.env.DELIVERY_CLUB_CYCLE_SIZE || 10));
+const DELIVERY_CLUB_REWARD_LABEL = process.env.DELIVERY_CLUB_REWARD_LABEL || '1 prato gratuito';
+const DELIVERY_DEFAULT_COUPONS = [
+  { code: 'BECO10', type: 'percent', value: 10, maxDiscount: 30, minSubtotal: 0, label: '10% de desconto' },
+];
 
-if (!tursoUrl || !tursoAuthToken) {
+if (!tursoUrl || (!tursoAuthToken && !isLocalLibsqlUrl)) {
   throw new Error('Missing Turso configuration for BFF runtime.');
 }
 
 const db = createClient({
   url: tursoUrl,
-  authToken: tursoAuthToken,
+  ...(tursoAuthToken ? { authToken: tursoAuthToken } : {}),
 });
 
 const jsonHeaders = {
@@ -83,6 +114,18 @@ const createId = () => randomUUID();
 const osTimestamp = () => Math.floor(Date.now() / 1000);
 const toStockAmount = (value) => Number(Math.max(0, Number(value || 0)).toFixed(4));
 const getBusinessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+const formatMoneyForNotification = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const hashToken = (value) => createHash('sha256').update(String(value || '')).digest('hex');
+const generateNumericCode = () => String(Math.floor(100000 + Math.random() * 900000));
+const hashDeliveryPassword = (password, salt = createId()) => {
+  const hash = createHash('sha256').update(`${salt}:${password}:becoartes_delivery_2026`).digest('hex');
+  return `${salt}:${hash}`;
+};
+const verifyDeliveryPassword = (password, storedHash = '') => {
+  const [salt] = String(storedHash || '').split(':');
+  if (!salt) return false;
+  return hashDeliveryPassword(password, salt) === storedHash;
+};
 
 const parseJsonArray = (value) => {
   if (!value || typeof value !== 'string') return [];
@@ -104,10 +147,46 @@ const parseJsonObject = (value) => {
   }
 };
 
+const normalizeDeliveryCoupon = (coupon = {}) => {
+  const code = normalizeText(coupon.code).toUpperCase();
+  if (!code) return null;
+  const type = coupon.type === 'fixed' ? 'fixed' : 'percent';
+  const value = Number(coupon.value || 0);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const maxDiscount = coupon.maxDiscount === undefined || coupon.maxDiscount === null || coupon.maxDiscount === ''
+    ? null
+    : Math.max(0, Number(coupon.maxDiscount || 0));
+  const minSubtotal = Math.max(0, Number(coupon.minSubtotal || 0));
+  return {
+    code,
+    type,
+    value,
+    maxDiscount: Number.isFinite(maxDiscount) ? maxDiscount : null,
+    minSubtotal,
+    label: normalizeText(coupon.label) || (type === 'fixed' ? `R$ ${value} de desconto` : `${value}% de desconto`),
+  };
+};
+
+const getDeliveryCoupons = () => {
+  const configured = process.env.DELIVERY_COUPONS_JSON;
+  if (!configured) return DELIVERY_DEFAULT_COUPONS;
+  try {
+    const parsed = JSON.parse(configured);
+    const coupons = (Array.isArray(parsed) ? parsed : [])
+      .map(normalizeDeliveryCoupon)
+      .filter(Boolean);
+    return coupons.length ? coupons : DELIVERY_DEFAULT_COUPONS;
+  } catch (error) {
+    console.error('DELIVERY_COUPONS_JSON invalido; usando cupom padrao.', error);
+    return DELIVERY_DEFAULT_COUPONS;
+  }
+};
+
 const hashPin = (pin) => createHash('sha256').update(`${pin}becoartes_salt_2024`).digest('hex');
 const isLegacyPlainPin = (storedPin) => /^\d{4}$/.test(String(storedPin || ''));
 const toSessionSeller = (seller) => ({ ...seller, pin: '' });
 const normalizeText = (value) => String(value || '').trim().replace(/\s+/g, ' ');
+const DELIVERY_COUPONS = getDeliveryCoupons();
 const normalizeSellerIdentity = (value) => normalizeText(value)
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -374,10 +453,17 @@ const permissionsByProfile = {
 
 const getEffectiveSessionPermissions = (session, settings = null) => {
   const profile = normalizePermission(session?.permission);
+  const sessionId = String(session?.id || '').trim();
+  const rawSessionId = sessionId.replace(/^os:/, '');
+  const userPermissionAliases = Array.from(new Set([sessionId, rawSessionId, rawSessionId ? `os:${rawSessionId}` : ''].filter(Boolean)));
+  const userPermissionOverrides = userPermissionAliases.reduce((acc, id) => ({
+    ...acc,
+    ...(settings?.pdvUserPermissions?.[id] || {}),
+  }), {});
   return {
     ...(permissionsByProfile[profile] || permissionsByProfile.operator),
     ...(settings?.pdvPermissions?.[profile] || {}),
-    ...(session?.id ? (settings?.pdvUserPermissions?.[session.id] || {}) : {}),
+    ...userPermissionOverrides,
     ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true, manageCoupons: true } : {}),
   };
 };
@@ -468,6 +554,18 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS closed_bills (id TEXT PRIMARY KEY, table_id TEXT, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, subtotal REAL NOT NULL, service_fee REAL DEFAULT 0, discount REAL DEFAULT 0, discount_reason TEXT, coupon_code TEXT, coupon_amount REAL DEFAULT 0, coupon_benefit TEXT, total REAL NOT NULL, payments TEXT, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS table_payments (id TEXT PRIMARY KEY, table_id TEXT NOT NULL, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, method TEXT NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, cancelled_at DATETIME, applied_closed_bill_id TEXT)",
     "CREATE TABLE IF NOT EXISTS pdv_coupons (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', note TEXT, created_by_id TEXT, created_by_name TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, redeemed_at DATETIME, redeemed_table_id TEXT, redeemed_closed_bill_id TEXT, customer_id TEXT, customer_name TEXT, phone TEXT, campaign_name TEXT, valid_until DATETIME, min_order_value REAL DEFAULT 0, selected_benefit TEXT, used_by_employee_id TEXT, used_by_employee TEXT, table_number INTEGER, order_id TEXT, whatsapp_message TEXT, sent_at DATETIME, benefit_type TEXT, discount_type TEXT, target_category TEXT, target_product_id TEXT, target_product_name TEXT, free_item_name TEXT, benefit_label TEXT, rule_json TEXT)",
+    "CREATE TABLE IF NOT EXISTS delivery_customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT NOT NULL, email TEXT NOT NULL, street TEXT, number TEXT, neighborhood TEXT, city TEXT, state TEXT, postal_code TEXT, complement TEXT, reference TEXT, latitude REAL, longitude REAL, join_club INTEGER DEFAULT 1, password_hash TEXT, email_verified INTEGER DEFAULT 0, phone_verified INTEGER DEFAULT 0, verification_code_hash TEXT, verification_code_expires_at DATETIME, reset_code_hash TEXT, reset_code_expires_at DATETIME, last_login_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS delivery_orders (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, subtotal REAL NOT NULL, delivery_fee REAL DEFAULT 0, discount REAL DEFAULT 0, total REAL NOT NULL, coupon_code TEXT, fulfillment TEXT NOT NULL DEFAULT 'delivery', payment_method TEXT NOT NULL, payment_status TEXT NOT NULL DEFAULT 'payment_pending', payment_provider TEXT, payment_external_id TEXT, checkout_url TEXT, kitchen_status TEXT NOT NULL DEFAULT 'pending', delivery_status TEXT NOT NULL DEFAULT 'pending', delivery_provider TEXT, delivery_external_id TEXT, production_order_id TEXT, customer_snapshot TEXT NOT NULL, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, paid_at DATETIME, kitchen_sent_at DATETIME, delivery_requested_at DATETIME)",
+    "CREATE TABLE IF NOT EXISTS delivery_order_items (id TEXT PRIMARY KEY, delivery_order_id TEXT NOT NULL, product_id TEXT NOT NULL, name TEXT NOT NULL, quantity INTEGER NOT NULL, price_at_time REAL NOT NULL, selected_modifiers TEXT, notes TEXT)",
+    "CREATE TABLE IF NOT EXISTS delivery_events (id TEXT PRIMARY KEY, delivery_order_id TEXT NOT NULL, type TEXT NOT NULL, status TEXT NOT NULL, provider TEXT, external_id TEXT, payload TEXT, error TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS delivery_customer_sessions (token_hash TEXT PRIMARY KEY, customer_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS delivery_notifications (id TEXT PRIMARY KEY, delivery_order_id TEXT, customer_id TEXT, channel TEXT NOT NULL, type TEXT NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL, destination TEXT, payload TEXT, error TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS estoque_produtos (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, categoria TEXT, ativo INTEGER DEFAULT 1, quantidade_atual REAL DEFAULT 0, estoque_minimo REAL DEFAULT 0, created_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS estoque_movimentacoes (id TEXT PRIMARY KEY, empresa_id TEXT, produto_id TEXT, tipo_movimentacao TEXT, quantidade REAL, quantidade_anterior REAL, quantidade_nova REAL, motivo TEXT, responsavel_id TEXT, created_at INTEGER, closed_bill_id TEXT, order_id TEXT, order_item_id TEXT, origem TEXT, integration_event_id TEXT, source_item_id TEXT, source_item_kind TEXT)",
+    "CREATE TABLE IF NOT EXISTS notificacoes (id TEXT PRIMARY KEY, empresa_id TEXT, usuario_id TEXT, titulo TEXT, mensagem TEXT, tipo TEXT, lida INTEGER DEFAULT 0, link TEXT, created_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, empresa_id TEXT, role TEXT, created_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS fichas_tecnicas (id TEXT PRIMARY KEY, empresa_id TEXT, nome_prato TEXT, status TEXT DEFAULT 'active')",
+    "CREATE TABLE IF NOT EXISTS ficha_ingredientes (id TEXT PRIMARY KEY, ficha_tecnica_id TEXT, estoque_produto_id TEXT, nome_exibicao TEXT, nome_ingrediente TEXT, quantidade_usada REAL, quantidade_estoque_baixa REAL, unidade_medida TEXT, unidade_estoque_baixa TEXT)",
     "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS integration_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, table_id TEXT, ref_id TEXT, payload TEXT, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     "CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, status TEXT NOT NULL, opening_balance REAL NOT NULL, closing_balance REAL, total_sales REAL DEFAULT 0, opened_at DATETIME DEFAULT CURRENT_TIMESTAMP, closed_at DATETIME, sort_order INTEGER DEFAULT 0)",
@@ -516,6 +614,25 @@ const ensureDatabase = async () => {
     "ALTER TABLE pdv_coupons ADD COLUMN free_item_name TEXT",
     "ALTER TABLE pdv_coupons ADD COLUMN benefit_label TEXT",
     "ALTER TABLE pdv_coupons ADD COLUMN rule_json TEXT",
+    "ALTER TABLE delivery_orders ADD COLUMN payment_provider TEXT",
+    "ALTER TABLE delivery_orders ADD COLUMN payment_external_id TEXT",
+    "ALTER TABLE delivery_orders ADD COLUMN checkout_url TEXT",
+    "ALTER TABLE delivery_orders ADD COLUMN production_order_id TEXT",
+    "ALTER TABLE delivery_customers ADD COLUMN city TEXT",
+    "ALTER TABLE delivery_customers ADD COLUMN state TEXT",
+    "ALTER TABLE delivery_customers ADD COLUMN postal_code TEXT",
+    "ALTER TABLE delivery_customers ADD COLUMN reference TEXT",
+    "ALTER TABLE delivery_customers ADD COLUMN latitude REAL",
+    "ALTER TABLE delivery_customers ADD COLUMN longitude REAL",
+    "ALTER TABLE delivery_customers ADD COLUMN password_hash TEXT",
+    "ALTER TABLE delivery_customers ADD COLUMN email_verified INTEGER DEFAULT 0",
+    "ALTER TABLE delivery_customers ADD COLUMN phone_verified INTEGER DEFAULT 0",
+    "ALTER TABLE delivery_customers ADD COLUMN verification_code_hash TEXT",
+    "ALTER TABLE delivery_customers ADD COLUMN verification_code_expires_at DATETIME",
+    "ALTER TABLE delivery_customers ADD COLUMN reset_code_hash TEXT",
+    "ALTER TABLE delivery_customers ADD COLUMN reset_code_expires_at DATETIME",
+    "ALTER TABLE delivery_customers ADD COLUMN last_login_at DATETIME",
+    "ALTER TABLE estoque_produtos ADD COLUMN estoque_minimo REAL DEFAULT 0",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN closed_bill_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN order_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN order_item_id TEXT",
@@ -551,6 +668,12 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_pdv_coupons_code_status ON pdv_coupons(code, status)",
     "CREATE INDEX IF NOT EXISTS idx_pdv_coupons_campaign_phone ON pdv_coupons(campaign_name, phone)",
     "CREATE INDEX IF NOT EXISTS idx_pdv_coupons_status_valid_until ON pdv_coupons(status, valid_until)",
+    "CREATE INDEX IF NOT EXISTS idx_delivery_orders_status_created ON delivery_orders(payment_status, kitchen_status, delivery_status, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_delivery_customers_phone_email ON delivery_customers(phone, email)",
+    "CREATE INDEX IF NOT EXISTS idx_delivery_sessions_customer ON delivery_customer_sessions(customer_id, expires_at)",
+    "CREATE INDEX IF NOT EXISTS idx_delivery_notifications_order ON delivery_notifications(delivery_order_id, channel, type)",
+    "CREATE INDEX IF NOT EXISTS idx_delivery_items_order ON delivery_order_items(delivery_order_id)",
+    "CREATE INDEX IF NOT EXISTS idx_delivery_events_order ON delivery_events(delivery_order_id, type, status)",
     "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_mov_pdv_once ON estoque_movimentacoes(integration_event_id, order_item_id, produto_id, source_item_kind, source_item_id) WHERE origem = 'pdv' AND integration_event_id IS NOT NULL AND order_item_id IS NOT NULL",
   ];
@@ -1333,7 +1456,7 @@ const getClosedBills = async (limit = 200) => {
     sql: "SELECT id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, coupon_code, coupon_amount, coupon_benefit, total, payments, strftime('%Y-%m-%dT%H:%M:%SZ', closed_at) as closed_at FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
     args: [Math.min(Number(limit) || CLOSED_BILLS_LIMIT, CLOSED_BILLS_LIMIT)],
   });
-  return res.rows.map((row) => ({
+  const bills = res.rows.map((row) => ({
     id: row.id,
     tableId: row.table_id || '',
     tableNumber: Number(row.table_number || 0),
@@ -1349,6 +1472,56 @@ const getClosedBills = async (limit = 200) => {
     total: Number(row.total || 0),
     payments: parseJsonArray(row.payments),
     closedAt: row.closed_at || new Date().toISOString(),
+  }));
+
+  const orderIdsByBill = {};
+  const allOrderIds = [];
+  for (const bill of bills) {
+    const prefix = `pdv_close_${bill.tableId}_`;
+    const orderIds = String(bill.id || '').startsWith(prefix)
+      ? String(bill.id).slice(prefix.length).split('_').filter(Boolean)
+      : [];
+    orderIdsByBill[bill.id] = orderIds;
+    allOrderIds.push(...orderIds);
+  }
+
+  const uniqueOrderIds = Array.from(new Set(allOrderIds));
+  if (uniqueOrderIds.length === 0) return bills.map((bill) => ({ ...bill, items: [] }));
+
+  const placeholders = uniqueOrderIds.map(() => '?').join(',');
+  const itemsRes = await db.execute({
+    sql: `
+      SELECT oi.id, oi.order_id, oi.product_id, oi.quantity, oi.price_at_time, oi.selected_modifiers, oi.notes,
+             m.name, m.category_id, c.name as category_name
+      FROM order_items oi
+      LEFT JOIN menu m ON oi.product_id = m.id
+      LEFT JOIN categories c ON m.category_id = c.id
+      WHERE oi.order_id IN (${placeholders})
+      ORDER BY oi.order_id ASC
+    `,
+    args: uniqueOrderIds,
+  });
+
+  const itemsByOrder = {};
+  for (const row of itemsRes.rows) {
+    if (!itemsByOrder[row.order_id]) itemsByOrder[row.order_id] = [];
+    itemsByOrder[row.order_id].push({
+      id: row.id,
+      orderId: row.order_id,
+      productId: row.product_id,
+      categoryId: row.category_id || '',
+      categoryName: row.category_name || '',
+      name: row.name || 'Item removido do cardapio',
+      price: Number(row.price_at_time || 0),
+      quantity: Number(row.quantity || 0),
+      selectedModifiers: parseJsonArray(row.selected_modifiers),
+      notes: row.notes || '',
+    });
+  }
+
+  return bills.map((bill) => ({
+    ...bill,
+    items: (orderIdsByBill[bill.id] || []).flatMap((orderId) => itemsByOrder[orderId] || []),
   }));
 };
 
@@ -1504,11 +1677,11 @@ const ensureDefaultSellersReady = () => {
 };
 
 const filterSnapshotForContext = (snapshot, { view = 'pdv', session = null } = {}) => {
-  const safeView = ['tablet', 'qr', 'kitchen', 'bar', 'pdv', 'admin'].includes(view) ? view : 'pdv';
+  const safeView = ['tablet', 'qr', 'delivery', 'kitchen', 'bar', 'pdv', 'admin'].includes(view) ? view : 'pdv';
   const canViewSales = canSessionWithSettings(session, 'viewSalesTotals', snapshot.savedSettings);
   const canManageTeam = canSessionWithSettings(session, 'manageTeam', snapshot.savedSettings);
 
-  if (safeView === 'tablet' || safeView === 'qr') {
+  if (safeView === 'tablet' || safeView === 'qr' || safeView === 'delivery') {
     return {
       ...snapshot,
       sellers: [],
@@ -1577,8 +1750,8 @@ const getRestrictedSnapshot = (view = 'pdv') => ({
 });
 
 const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, view = 'pdv', session = null, operationAccessAllowed = true } = {}) => {
-  const safeView = ['tablet', 'qr', 'kitchen', 'bar', 'pdv', 'admin'].includes(view) ? view : 'pdv';
-  const isPublicCustomerView = safeView === 'qr';
+  const safeView = ['tablet', 'qr', 'delivery', 'kitchen', 'bar', 'pdv', 'admin'].includes(view) ? view : 'pdv';
+  const isPublicCustomerView = safeView === 'qr' || safeView === 'delivery';
 
   if (!isPublicCustomerView && !operationAccessAllowed && !canAccessOutsideOperationIp(session)) {
     return getRestrictedSnapshot(safeView);
@@ -2506,6 +2679,1360 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
     },
     inventorySync,
     inventorySyncError: inventorySyncError instanceof Error ? inventorySyncError.message : inventorySyncError ? String(inventorySyncError) : null,
+  };
+};
+
+const normalizeDeliveryCustomer = (customer = {}) => ({
+  name: normalizeText(customer.name),
+  phone: normalizeText(customer.phone),
+  email: normalizeText(customer.email).toLowerCase(),
+  street: normalizeText(customer.street),
+  number: normalizeText(customer.number),
+  neighborhood: normalizeText(customer.neighborhood),
+  city: normalizeText(customer.city),
+  state: normalizeText(customer.state).toUpperCase().slice(0, 2),
+  postalCode: normalizeText(customer.postalCode).replace(/\D/g, ''),
+  complement: normalizeText(customer.complement),
+  reference: normalizeText(customer.reference),
+  latitude: customer.latitude === undefined || customer.latitude === null || customer.latitude === '' ? null : Number(customer.latitude),
+  longitude: customer.longitude === undefined || customer.longitude === null || customer.longitude === '' ? null : Number(customer.longitude),
+  quoteId: normalizeText(customer.quoteId),
+  quoteExpiresAt: normalizeText(customer.quoteExpiresAt),
+  notes: normalizeText(customer.notes),
+  fulfillment: customer.fulfillment === 'pickup' ? 'pickup' : 'delivery',
+  paymentMethod: ['pagbank', 'pix'].includes(customer.paymentMethod) ? customer.paymentMethod : 'pagbank',
+  coupon: normalizeText(customer.coupon).toUpperCase(),
+  joinClub: customer.joinClub !== false,
+});
+
+const getDeliveryCouponForCode = (code) => {
+  const normalizedCode = normalizeText(code).toUpperCase();
+  if (!normalizedCode) return null;
+  return DELIVERY_COUPONS.find((coupon) => coupon.code === normalizedCode) || null;
+};
+
+const calculateDeliveryCouponDiscount = ({ subtotal, couponCode }) => {
+  const coupon = getDeliveryCouponForCode(couponCode);
+  if (!coupon) return { discount: 0, coupon: null, status: couponCode ? 'not_found' : 'empty' };
+  if (subtotal < coupon.minSubtotal) {
+    return { discount: 0, coupon, status: 'min_subtotal_not_reached' };
+  }
+  const rawDiscount = coupon.type === 'fixed' ? coupon.value : subtotal * (coupon.value / 100);
+  const cappedDiscount = coupon.maxDiscount === null ? rawDiscount : Math.min(rawDiscount, coupon.maxDiscount);
+  return {
+    discount: Number(Math.min(subtotal, Math.max(0, cappedDiscount)).toFixed(2)),
+    coupon,
+    status: 'applied',
+  };
+};
+
+const calculateDeliveryTotals = ({ items, customer }) => {
+  const subtotal = items.reduce((acc, item) => {
+    const modifiersTotal = (Array.isArray(item.selectedModifiers) ? item.selectedModifiers : [])
+      .reduce((sum, modifier) => sum + Number(modifier.price || 0), 0);
+    return acc + (requireNumber(item.price, 'item.price') + modifiersTotal) * requireNumber(item.quantity, 'item.quantity');
+  }, 0);
+  const coupon = calculateDeliveryCouponDiscount({ subtotal, couponCode: customer.coupon });
+  const discount = coupon.discount;
+  const deliveryFee = customer.fulfillment === 'delivery' && subtotal > 0 ? 8 : 0;
+  const total = Math.max(0, subtotal + deliveryFee - discount);
+  return { subtotal, deliveryFee, discount, total, coupon };
+};
+
+const calculateDeliverySubtotal = (items = []) => items.reduce((acc, item) => {
+  const modifiersTotal = (Array.isArray(item.selectedModifiers) ? item.selectedModifiers : [])
+    .reduce((sum, modifier) => sum + Number(modifier.price || 0), 0);
+  return acc + (requireNumber(item.price, 'item.price') + modifiersTotal) * requireNumber(item.quantity, 'item.quantity');
+}, 0);
+
+const deliveryAddressIsComplete = (customer = {}) => Boolean(
+  normalizeText(customer.street)
+  && normalizeText(customer.number)
+  && normalizeText(customer.neighborhood)
+  && normalizeText(customer.city)
+  && normalizeText(customer.state)
+  && normalizeText(customer.postalCode)
+);
+
+const lookupDeliveryPostalCode = async ({ postalCode } = {}) => {
+  const safePostalCode = normalizeText(postalCode).replace(/\D/g, '');
+  if (safePostalCode.length !== 8) {
+    return { status: 'invalid_postal_code', provider: DELIVERY_POSTAL_CODE_PROVIDER, postalCode: safePostalCode, address: null };
+  }
+
+  if (DELIVERY_POSTAL_CODE_PROVIDER === 'disabled') {
+    return { status: 'disabled', provider: 'disabled', postalCode: safePostalCode, address: null };
+  }
+
+  if (DELIVERY_POSTAL_CODE_PROVIDER !== 'viacep') {
+    return {
+      status: 'mock_resolved',
+      provider: 'mock',
+      postalCode: safePostalCode,
+      address: {
+        street: 'Rua Becoartes Mock',
+        neighborhood: 'Centro',
+        city: 'Sao Paulo',
+        state: 'SP',
+      },
+    };
+  }
+
+  const response = await fetch(`https://viacep.com.br/ws/${safePostalCode}/json/`, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(5000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.erro) {
+    return { status: 'not_found', provider: 'viacep', postalCode: safePostalCode, address: null };
+  }
+  return {
+    status: 'resolved',
+    provider: 'viacep',
+    postalCode: safePostalCode,
+    address: {
+      street: normalizeText(payload.logradouro),
+      neighborhood: normalizeText(payload.bairro),
+      city: normalizeText(payload.localidade),
+      state: normalizeText(payload.uf).toUpperCase().slice(0, 2),
+    },
+  };
+};
+
+const geocodeDeliveryAddress = async (customer = {}) => {
+  const normalized = normalizeDeliveryCustomer(customer);
+  if (normalized.latitude && normalized.longitude) {
+    return {
+      status: 'provided',
+      provider: 'customer',
+      latitude: normalized.latitude,
+      longitude: normalized.longitude,
+      confidence: 'provided',
+    };
+  }
+
+  if (!deliveryAddressIsComplete(normalized)) {
+    return {
+      status: 'missing_address',
+      provider: DELIVERY_GEOCODER_PROVIDER,
+      latitude: null,
+      longitude: null,
+      confidence: 'none',
+    };
+  }
+
+  if (DELIVERY_GEOCODER_PROVIDER === 'disabled') {
+    return {
+      status: 'disabled',
+      provider: 'disabled',
+      latitude: null,
+      longitude: null,
+      confidence: 'none',
+    };
+  }
+
+  if (DELIVERY_GEOCODER_PROVIDER !== 'mock') {
+    return {
+      status: 'ready_for_homologation',
+      provider: DELIVERY_GEOCODER_PROVIDER,
+      latitude: null,
+      longitude: null,
+      confidence: 'pending_provider',
+      payload: {
+        address: {
+          street: normalized.street,
+          number: normalized.number,
+          neighborhood: normalized.neighborhood,
+          city: normalized.city,
+          state: normalized.state,
+          postalCode: normalized.postalCode,
+        },
+      },
+    };
+  }
+
+  return {
+    status: 'mock_resolved',
+    provider: 'mock',
+    latitude: DELIVERY_MOCK_LATITUDE,
+    longitude: DELIVERY_MOCK_LONGITUDE,
+    confidence: 'mock',
+  };
+};
+
+const getDeliveryIntegrationMode = () => ({
+  publicStatus: DELIVERY_PUBLIC_STATUS,
+  paymentProvider: DELIVERY_PAYMENT_PROVIDER,
+  logisticsProvider: DELIVERY_LOGISTICS_PROVIDER,
+  kitchenDispatchMode: DELIVERY_KITCHEN_DISPATCH_MODE,
+  paymentReady: DELIVERY_PAYMENT_PROVIDER === 'mock' || Boolean(PAGBANK_TOKEN),
+  logisticsReady: DELIVERY_LOGISTICS_PROVIDER === 'mock' || Boolean(IFOOD_ACCESS_TOKEN && IFOOD_MERCHANT_ID),
+  ifoodShippingMode: IFOOD_SHIPPING_MODE,
+  geocoderProvider: DELIVERY_GEOCODER_PROVIDER,
+  postalCodeProvider: DELIVERY_POSTAL_CODE_PROVIDER,
+});
+
+const getDeliveryClubConfig = () => ({
+  enabled: true,
+  cycleSize: DELIVERY_CLUB_CYCLE_SIZE,
+  rewardLabel: DELIVERY_CLUB_REWARD_LABEL,
+});
+
+const getDeliveryPublicConfig = () => ({
+  mode: getDeliveryIntegrationMode(),
+  club: getDeliveryClubConfig(),
+  coupons: DELIVERY_COUPONS.map((coupon) => ({
+    code: coupon.code,
+    type: coupon.type,
+    value: coupon.value,
+    maxDiscount: coupon.maxDiscount,
+    minSubtotal: coupon.minSubtotal,
+    label: coupon.label,
+  })),
+  routes: {
+    checkout: '/api/delivery/checkout',
+    quote: '/api/delivery/quote',
+    postalCode: '/api/delivery/postal-code',
+    geocode: '/api/delivery/geocode',
+    orderStatus: '/api/delivery/order?orderId=...',
+    pagbankWebhook: '/api/delivery/webhooks/pagbank',
+  },
+  webhookSecretEnabled: Boolean(DELIVERY_WEBHOOK_SECRET),
+  notifications: {
+    email: DELIVERY_EMAIL_PROVIDER,
+    sms: DELIVERY_SMS_PROVIDER,
+    whatsapp: DELIVERY_WHATSAPP_PROVIDER,
+  },
+});
+
+const createPagBankCheckoutPayload = ({ orderId, customer, items, totals }) => {
+  const amountInCents = Math.round(totals.total * 100);
+  const paymentMethods = customer.paymentMethod === 'pix'
+    ? [{ type: 'PIX' }]
+    : [{ type: 'CREDIT_CARD' }, { type: 'DEBIT_CARD' }, { type: 'PIX' }];
+  const payload = {
+    reference_id: orderId.slice(0, 64),
+    customer: {
+      name: customer.name,
+      email: customer.email,
+      phones: customer.phone ? [{ country: '55', area: '', number: customer.phone.replace(/\D/g, ''), type: 'MOBILE' }] : [],
+    },
+    items: items.map((item) => ({
+      reference_id: String(item.productId || item.id).slice(0, 64),
+      name: String(item.name || 'Item').slice(0, 100),
+      quantity: Number(item.quantity || 1),
+      unit_amount: Math.round(Number(item.price || 0) * 100),
+    })),
+    additional_amount: Math.round(totals.deliveryFee * 100),
+    discount_amount: Math.round(totals.discount * 100),
+    payment_methods: paymentMethods,
+  };
+
+  if (PAGBANK_NOTIFICATION_URL) payload.notification_urls = [PAGBANK_NOTIFICATION_URL];
+  if (PAGBANK_REDIRECT_URL) payload.redirect_url = PAGBANK_REDIRECT_URL;
+  if (amountInCents <= 0) payload.payment_methods = [{ type: 'PIX' }];
+  return payload;
+};
+
+const prepareDeliveryPayment = async ({ orderId, customer, items, totals }) => {
+  if (DELIVERY_PAYMENT_PROVIDER === 'disabled') {
+    return { status: 'disabled', provider: 'disabled', externalId: null, checkoutUrl: null, payload: null };
+  }
+
+  if (DELIVERY_PAYMENT_PROVIDER !== 'pagbank') {
+    return {
+      status: 'paid_mock',
+      provider: 'mock',
+      externalId: `pagbank_mock_${createId()}`,
+      checkoutUrl: null,
+      payload: { total: totals.total, paymentMethod: customer.paymentMethod },
+    };
+  }
+
+  const payload = createPagBankCheckoutPayload({ orderId, customer, items, totals });
+  if (!PAGBANK_TOKEN) {
+    return { status: 'missing_credentials', provider: 'pagbank', externalId: null, checkoutUrl: null, payload };
+  }
+
+  // Chamada real mantida atras de env explicito. Em producao, o webhook confirma o pagamento.
+  const response = await fetch(`${PAGBANK_API_BASE_URL}/checkouts`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${PAGBANK_TOKEN}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(result?.message || `PagBank recusou checkout (${response.status}).`);
+    error.statusCode = 502;
+    throw error;
+  }
+
+  const checkoutUrl = Array.isArray(result.links)
+    ? result.links.find((link) => link?.rel === 'PAY' || link?.media === 'text/html')?.href || null
+    : null;
+
+  return {
+    status: 'payment_pending',
+    provider: 'pagbank',
+    externalId: result.id || null,
+    checkoutUrl,
+    payload,
+  };
+};
+
+const splitBrazilianPhone = (phone = '') => {
+  const digits = String(phone).replace(/\D/g, '');
+  const withoutCountry = digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits;
+  return {
+    countryCode: '55',
+    areaCode: withoutCountry.slice(0, 2),
+    number: withoutCountry.slice(2, 11),
+    type: 'CUSTOMER',
+  };
+};
+
+const createIFoodShippingPayload = ({ orderId, customer, items, totals, quoteId = customer.quoteId || 'QUOTE_ID_FROM_DELIVERY_AVAILABILITIES' }) => ({
+  customer: {
+    name: String(customer.name || '').slice(0, 50),
+    phone: splitBrazilianPhone(customer.phone),
+  },
+  delivery: {
+    merchantFee: Number(totals.deliveryFee || 0),
+    preparationTime: IFOOD_PREPARATION_TIME_SECONDS,
+    quoteId,
+    deliveryAddress: {
+      postalCode: customer.postalCode,
+      streetNumber: String(customer.number || '').slice(0, 20),
+      streetName: String(customer.street || '').slice(0, 50),
+      complement: String(customer.complement || '').slice(0, 50),
+      reference: String(customer.reference || '').slice(0, 70),
+      neighborhood: String(customer.neighborhood || '').slice(0, 50),
+      city: String(customer.city || '').slice(0, 50),
+      state: customer.state,
+      country: 'BR',
+      coordinates: {
+        latitude: customer.latitude,
+        longitude: customer.longitude,
+      },
+    },
+  },
+  items: items.map((item) => {
+    const quantity = Number(item.quantity || 1);
+    const unitPrice = Number(item.price || 0);
+    return {
+      id: String(item.productId || item.id).slice(0, 64),
+      name: String(item.name || 'Item').slice(0, 50),
+      quantity,
+      unitPrice,
+      price: unitPrice * quantity,
+      optionsPrice: 0,
+      totalPrice: unitPrice * quantity,
+    };
+  }),
+  metadata: {
+    source: 'becoartes',
+    externalId: String(orderId).slice(-20),
+  },
+});
+
+const getDeliveryQuote = async ({ customer = {}, items = [] } = {}) => {
+  await ensureDatabaseReady();
+  const geocode = await geocodeDeliveryAddress(customer);
+  const safeCustomer = normalizeDeliveryCustomer({
+    ...customer,
+    latitude: customer.latitude ?? geocode.latitude,
+    longitude: customer.longitude ?? geocode.longitude,
+  });
+  const safeItems = Array.isArray(items) ? items : [];
+  const subtotal = calculateDeliverySubtotal(safeItems);
+
+  if (safeCustomer.fulfillment === 'pickup') {
+    return {
+      quote: {
+        status: 'not_required_pickup',
+        provider: 'none',
+        deliveryFee: 0,
+        quoteId: null,
+        expiresAt: null,
+        preparationTimeSeconds: 0,
+        payload: null,
+      },
+    };
+  }
+
+  if (DELIVERY_LOGISTICS_PROVIDER === 'disabled') {
+    return {
+      quote: {
+        status: 'disabled',
+        provider: 'disabled',
+        deliveryFee: 0,
+        quoteId: null,
+        expiresAt: null,
+        preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
+        payload: null,
+      },
+    };
+  }
+
+  if (DELIVERY_LOGISTICS_PROVIDER !== 'ifood') {
+    return {
+      quote: {
+        status: 'available_mock',
+        provider: 'ifood_mock',
+        deliveryFee: subtotal > 0 ? 8 : 0,
+        quoteId: `quote_mock_${createId()}`,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
+        payload: { mode: 'mock', geocode },
+      },
+    };
+  }
+
+  const availabilityEndpoint = `${IFOOD_API_BASE_URL}/shipping/v1.0/merchants/${IFOOD_MERCHANT_ID || '{merchantId}'}/deliveryAvailabilities`;
+  if (!IFOOD_ACCESS_TOKEN || !IFOOD_MERCHANT_ID) {
+    return {
+      quote: {
+        status: 'missing_credentials',
+        provider: 'ifood',
+        deliveryFee: 0,
+        quoteId: null,
+        expiresAt: null,
+        preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
+        payload: { availabilityEndpoint: `${availabilityEndpoint}?latitude={lat}&longitude={lng}`, geocode },
+      },
+    };
+  }
+
+  if (!safeCustomer.latitude || !safeCustomer.longitude) {
+    return {
+      quote: {
+        status: 'missing_coordinates',
+        provider: 'ifood',
+        deliveryFee: 0,
+        quoteId: null,
+        expiresAt: null,
+        preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
+        payload: { availabilityEndpoint: `${availabilityEndpoint}?latitude={lat}&longitude={lng}`, geocode },
+      },
+    };
+  }
+
+  if (IFOOD_SHIPPING_MODE !== 'live') {
+    const quoteId = safeCustomer.quoteId || `quote_dry_run_${createId()}`;
+    return {
+      quote: {
+        status: 'ready_for_homologation',
+        provider: 'ifood',
+        deliveryFee: 0,
+        quoteId,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
+        payload: {
+          mode: IFOOD_SHIPPING_MODE,
+          availabilityEndpoint: `${availabilityEndpoint}?latitude=${safeCustomer.latitude}&longitude=${safeCustomer.longitude}`,
+          geocode,
+        },
+      },
+    };
+  }
+
+  return {
+    quote: {
+      status: 'ready_for_homologation',
+      provider: 'ifood',
+      deliveryFee: 0,
+      quoteId: safeCustomer.quoteId || null,
+      expiresAt: safeCustomer.quoteExpiresAt || null,
+      preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
+      payload: {
+        mode: 'live_not_enabled_in_code_path',
+        availabilityEndpoint: `${availabilityEndpoint}?latitude=${safeCustomer.latitude}&longitude=${safeCustomer.longitude}`,
+        geocode,
+      },
+    },
+  };
+};
+
+const getDeliveryClubSummary = async (customerId) => {
+  if (!customerId) return null;
+  const customerRes = await db.execute({
+    sql: "SELECT join_club FROM delivery_customers WHERE id = ? LIMIT 1",
+    args: [customerId],
+  });
+  const joinClub = customerRes.rows[0]?.join_club !== 0;
+  if (!joinClub) {
+    return {
+      enrolled: false,
+      paidOrders: 0,
+      cycleSize: DELIVERY_CLUB_CYCLE_SIZE,
+      remainingToReward: DELIVERY_CLUB_CYCLE_SIZE,
+      rewardsEarned: 0,
+      rewardLabel: DELIVERY_CLUB_REWARD_LABEL,
+    };
+  }
+
+  const countRes = await db.execute({
+    sql: "SELECT COUNT(*) as paid_orders FROM delivery_orders WHERE customer_id = ? AND payment_status LIKE 'paid%'",
+    args: [customerId],
+  });
+  const paidOrders = Number(countRes.rows[0]?.paid_orders || 0);
+  const cycleSize = DELIVERY_CLUB_CYCLE_SIZE;
+  const remainder = paidOrders % cycleSize;
+  return {
+    enrolled: true,
+    paidOrders,
+    cycleSize,
+    remainingToReward: remainder === 0 && paidOrders > 0 ? 0 : cycleSize - remainder,
+    rewardsEarned: Math.floor(paidOrders / cycleSize),
+    rewardLabel: DELIVERY_CLUB_REWARD_LABEL,
+  };
+};
+
+const deliveryCustomerPublic = (row) => row ? ({
+  id: row.id,
+  name: row.name || '',
+  phone: row.phone || '',
+  email: row.email || '',
+  street: row.street || '',
+  number: row.number || '',
+  neighborhood: row.neighborhood || '',
+  city: row.city || '',
+  state: row.state || '',
+  postalCode: row.postal_code || '',
+  complement: row.complement || '',
+  reference: row.reference || '',
+  joinClub: row.join_club !== 0,
+  emailVerified: row.email_verified === 1,
+  phoneVerified: row.phone_verified === 1,
+}) : null;
+
+const recordDeliveryNotification = async ({ orderId = null, customerId = null, channel, type, provider, status, destination = '', payload = {}, error = null }) => {
+  await db.execute({
+    sql: "INSERT INTO delivery_notifications (id, delivery_order_id, customer_id, channel, type, provider, status, destination, payload, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    args: [createId(), orderId, customerId, channel, type, provider, status, destination, JSON.stringify(payload), error],
+  });
+};
+
+const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel, type, message, payload = {} }) => {
+  const providerByChannel = {
+    email: DELIVERY_EMAIL_PROVIDER,
+    sms: DELIVERY_SMS_PROVIDER,
+    whatsapp: DELIVERY_WHATSAPP_PROVIDER,
+  };
+  const destination = channel === 'email' ? customer.email : customer.phone;
+  const provider = providerByChannel[channel] || 'disabled';
+  const status = provider === 'disabled' ? 'disabled' : provider === 'mock' ? 'mock_logged' : 'ready_for_provider';
+  await recordDeliveryNotification({
+    orderId,
+    customerId: customer.id || null,
+    channel,
+    type,
+    provider,
+    status,
+    destination,
+    payload: { ...payload, message },
+  });
+  return { channel, provider, status };
+};
+
+const sendDeliveryCustomerCode = async ({ customer, type }) => {
+  const code = generateNumericCode();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const columnPrefix = type === 'reset_password' ? 'reset' : 'verification';
+  await db.execute({
+    sql: `UPDATE delivery_customers SET ${columnPrefix}_code_hash = ?, ${columnPrefix}_code_expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    args: [hashToken(code), expiresAt, customer.id],
+  });
+  await sendDeliveryNotification({
+    customer,
+    channel: 'email',
+    type,
+    message: `Seu codigo Becoartes e ${code}. Ele vale por 15 minutos.`,
+    payload: { codePreview: DELIVERY_EMAIL_PROVIDER === 'mock' ? code : undefined },
+  });
+  await sendDeliveryNotification({
+    customer,
+    channel: 'sms',
+    type,
+    message: `Becoartes: codigo ${code}`,
+    payload: { codePreview: DELIVERY_SMS_PROVIDER === 'mock' ? code : undefined },
+  });
+  await sendDeliveryNotification({
+    customer,
+    channel: 'whatsapp',
+    type,
+    message: `Becoartes: seu codigo e ${code}`,
+    payload: { codePreview: DELIVERY_WHATSAPP_PROVIDER === 'mock' ? code : undefined },
+  });
+  return { expiresAt, code: (DELIVERY_EMAIL_PROVIDER === 'mock' || DELIVERY_SMS_PROVIDER === 'mock' || DELIVERY_WHATSAPP_PROVIDER === 'mock') ? code : undefined };
+};
+
+const createDeliveryCustomerSession = async (customerId) => {
+  const token = createId() + createId();
+  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  await db.execute({
+    sql: "INSERT INTO delivery_customer_sessions (token_hash, customer_id, expires_at) VALUES (?, ?, ?)",
+    args: [hashToken(token), customerId, expiresAt],
+  });
+  await db.execute({
+    sql: "UPDATE delivery_customers SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    args: [customerId],
+  });
+  return { token, expiresAt };
+};
+
+const getDeliveryCustomerBySession = async (token = '') => {
+  const safeToken = normalizeText(token);
+  if (!safeToken) return null;
+  const sessionRes = await db.execute({
+    sql: "SELECT customer_id FROM delivery_customer_sessions WHERE token_hash = ? AND expires_at > CURRENT_TIMESTAMP LIMIT 1",
+    args: [hashToken(safeToken)],
+  });
+  const customerId = sessionRes.rows[0]?.customer_id;
+  if (!customerId) return null;
+  const customerRes = await db.execute({
+    sql: "SELECT * FROM delivery_customers WHERE id = ? LIMIT 1",
+    args: [customerId],
+  });
+  return customerRes.rows[0] || null;
+};
+
+const findDeliveryCustomerIdentity = async ({ email = '', phone = '' } = {}) => {
+  const safeEmail = normalizeText(email).toLowerCase();
+  const safePhone = normalizeText(phone).replace(/\D/g, '');
+  if (!safeEmail && !safePhone) return null;
+  const clauses = [];
+  const args = [];
+  if (safeEmail) {
+    clauses.push('email = ?');
+    args.push(safeEmail);
+  }
+  if (safePhone) {
+    clauses.push("replace(replace(replace(replace(phone, ' ', ''), '-', ''), '(', ''), ')', '') = ?");
+    args.push(safePhone);
+  }
+  const res = await db.execute({
+    sql: `SELECT * FROM delivery_customers WHERE ${clauses.join(' OR ')} ORDER BY updated_at DESC LIMIT 1`,
+    args,
+  });
+  return res.rows[0] || null;
+};
+
+const createDeliveryCustomerAccount = async ({ customer = {}, password = '' } = {}) => {
+  await ensureDatabaseReady();
+  const safeCustomer = normalizeDeliveryCustomer(customer);
+  requireString(safeCustomer.name, 'name');
+  requireString(safeCustomer.phone, 'phone');
+  requireString(safeCustomer.email, 'email');
+  requireString(password, 'password');
+  if (String(password).length < 6) throw new Error('Senha precisa ter pelo menos 6 caracteres.');
+
+  const customerId = createHash('sha256').update(`${safeCustomer.phone}|${safeCustomer.email}`).digest('hex').slice(0, 32);
+  const existing = await findDeliveryCustomerIdentity({ email: safeCustomer.email, phone: safeCustomer.phone });
+  const effectiveId = existing?.id || customerId;
+  await db.execute({
+    sql: `
+      INSERT INTO delivery_customers (id, name, phone, email, street, number, neighborhood, city, state, postal_code, complement, reference, join_club, password_hash, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        phone = excluded.phone,
+        email = excluded.email,
+        street = COALESCE(NULLIF(excluded.street, ''), delivery_customers.street),
+        number = COALESCE(NULLIF(excluded.number, ''), delivery_customers.number),
+        neighborhood = COALESCE(NULLIF(excluded.neighborhood, ''), delivery_customers.neighborhood),
+        city = COALESCE(NULLIF(excluded.city, ''), delivery_customers.city),
+        state = COALESCE(NULLIF(excluded.state, ''), delivery_customers.state),
+        postal_code = COALESCE(NULLIF(excluded.postal_code, ''), delivery_customers.postal_code),
+        complement = COALESCE(NULLIF(excluded.complement, ''), delivery_customers.complement),
+        reference = COALESCE(NULLIF(excluded.reference, ''), delivery_customers.reference),
+        join_club = excluded.join_club,
+        password_hash = excluded.password_hash,
+        updated_at = CURRENT_TIMESTAMP
+    `,
+    args: [effectiveId, safeCustomer.name, safeCustomer.phone, safeCustomer.email, safeCustomer.street, safeCustomer.number, safeCustomer.neighborhood, safeCustomer.city, safeCustomer.state, safeCustomer.postalCode, safeCustomer.complement, safeCustomer.reference, safeCustomer.joinClub ? 1 : 0, hashDeliveryPassword(password)],
+  });
+  const customerRow = (await db.execute({ sql: "SELECT * FROM delivery_customers WHERE id = ? LIMIT 1", args: [effectiveId] })).rows[0];
+  const session = await createDeliveryCustomerSession(effectiveId);
+  const verification = await sendDeliveryCustomerCode({ customer: customerRow, type: 'verify_account' });
+  return { customer: deliveryCustomerPublic(customerRow), session, verification };
+};
+
+const loginDeliveryCustomer = async ({ identity = '', password = '' } = {}) => {
+  await ensureDatabaseReady();
+  const customer = await findDeliveryCustomerIdentity({ email: identity, phone: identity });
+  if (!customer || !verifyDeliveryPassword(password, customer.password_hash)) {
+    const error = new Error('E-mail/telefone ou senha invalidos.');
+    error.statusCode = 401;
+    throw error;
+  }
+  const session = await createDeliveryCustomerSession(customer.id);
+  return { customer: deliveryCustomerPublic(customer), session };
+};
+
+const requestDeliveryPasswordReset = async ({ identity = '' } = {}) => {
+  await ensureDatabaseReady();
+  const customer = await findDeliveryCustomerIdentity({ email: identity, phone: identity });
+  if (!customer) return { sent: true, status: 'not_found_hidden' };
+  const reset = await sendDeliveryCustomerCode({ customer, type: 'reset_password' });
+  return { sent: true, expiresAt: reset.expiresAt, code: reset.code };
+};
+
+const resetDeliveryCustomerPassword = async ({ identity = '', code = '', password = '' } = {}) => {
+  await ensureDatabaseReady();
+  const customer = await findDeliveryCustomerIdentity({ email: identity, phone: identity });
+  if (!customer || !customer.reset_code_hash || customer.reset_code_hash !== hashToken(code) || new Date(customer.reset_code_expires_at).getTime() < Date.now()) {
+    const error = new Error('Codigo invalido ou expirado.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (String(password).length < 6) throw new Error('Senha precisa ter pelo menos 6 caracteres.');
+  await db.execute({
+    sql: "UPDATE delivery_customers SET password_hash = ?, reset_code_hash = NULL, reset_code_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    args: [hashDeliveryPassword(password), customer.id],
+  });
+  const session = await createDeliveryCustomerSession(customer.id);
+  const updated = (await db.execute({ sql: "SELECT * FROM delivery_customers WHERE id = ? LIMIT 1", args: [customer.id] })).rows[0];
+  return { customer: deliveryCustomerPublic(updated), session };
+};
+
+const verifyDeliveryCustomerCode = async ({ token = '', code = '' } = {}) => {
+  await ensureDatabaseReady();
+  const customer = await getDeliveryCustomerBySession(token);
+  if (!customer || !customer.verification_code_hash || customer.verification_code_hash !== hashToken(code) || new Date(customer.verification_code_expires_at).getTime() < Date.now()) {
+    const error = new Error('Codigo invalido ou expirado.');
+    error.statusCode = 400;
+    throw error;
+  }
+  await db.execute({
+    sql: "UPDATE delivery_customers SET email_verified = 1, phone_verified = 1, verification_code_hash = NULL, verification_code_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    args: [customer.id],
+  });
+  const updated = (await db.execute({ sql: "SELECT * FROM delivery_customers WHERE id = ? LIMIT 1", args: [customer.id] })).rows[0];
+  return { customer: deliveryCustomerPublic(updated) };
+};
+
+const getDeliveryCustomerSession = async ({ token = '' } = {}) => {
+  await ensureDatabaseReady();
+  const customer = await getDeliveryCustomerBySession(token);
+  return { customer: deliveryCustomerPublic(customer) };
+};
+
+const listDeliveryCustomerOrders = async ({ token = '' } = {}) => {
+  await ensureDatabaseReady();
+  const customer = await getDeliveryCustomerBySession(token);
+  if (!customer) {
+    const error = new Error('Sessao delivery obrigatoria.');
+    error.statusCode = 401;
+    throw error;
+  }
+  const ordersRes = await db.execute({
+    sql: "SELECT *, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at FROM delivery_orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50",
+    args: [customer.id],
+  });
+  return { orders: ordersRes.rows.map((row) => rowToDeliveryOrder(row, [])) };
+};
+
+const syncDeliveryCustomerToOsCrm = async ({ orderId, customer, totalGasto = 0, source = 'checkout' } = {}) => {
+  if (DELIVERY_OS_CRM_SYNC !== 'enabled') {
+    return { status: 'disabled', provider: 'becoartes_os' };
+  }
+
+  if (!DELIVERY_OS_SYNC_SECRET) {
+    return { status: 'missing_secret', provider: 'becoartes_os' };
+  }
+
+  const payload = {
+    empresaId: OS_EMPRESA_ID,
+    tenantSlug: OS_TENANT_SLUG,
+    nome: customer?.name,
+    telefone: customer?.phone,
+    email: customer?.email,
+    veioAtraves: 'delivery',
+    totalGasto,
+    ultimaVisita: new Date().toISOString(),
+  };
+
+  try {
+    const response = await fetch(DELIVERY_OS_CRM_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-beco-delivery-secret': DELIVERY_OS_SYNC_SECRET,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(5000),
+    });
+    const result = await response.json().catch(() => ({}));
+    const status = response.ok && result?.ok ? 'synced' : 'failed';
+
+    if (orderId) {
+      await db.execute({
+        sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, provider, external_id, payload, error) VALUES (?, ?, 'crm_sync', ?, 'becoartes_os', ?, ?, ?)",
+        args: [
+          createId(),
+          orderId,
+          status,
+          result?.cliente?.id || null,
+          JSON.stringify({ source, veioAtraves: 'delivery', totalGasto }),
+          status === 'failed' ? (result?.error || `OS CRM recusou (${response.status})`) : null,
+        ],
+      });
+    }
+
+    return { status, provider: 'becoartes_os', externalId: result?.cliente?.id || null };
+  } catch (error) {
+    if (orderId) {
+      await db.execute({
+        sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, provider, payload, error) VALUES (?, ?, 'crm_sync', 'failed', 'becoartes_os', ?, ?)",
+        args: [createId(), orderId, JSON.stringify({ source, veioAtraves: 'delivery', totalGasto }), error instanceof Error ? error.message : String(error)],
+      });
+    }
+    return { status: 'failed', provider: 'becoartes_os', error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+const requestDeliveryLogistics = async ({ orderId, customer, items, totals, paymentStatus }) => {
+  if (customer.fulfillment === 'pickup') {
+    return { status: 'not_required_pickup', provider: 'none', externalId: null, payload: null };
+  }
+
+  if (!String(paymentStatus || '').startsWith('paid')) {
+    return { status: 'waiting_payment', provider: DELIVERY_LOGISTICS_PROVIDER, externalId: null, payload: null };
+  }
+
+  if (DELIVERY_LOGISTICS_PROVIDER === 'disabled') {
+    return { status: 'disabled', provider: 'disabled', externalId: null, payload: null };
+  }
+
+  if (DELIVERY_LOGISTICS_PROVIDER !== 'ifood') {
+    return {
+      status: 'requested_mock',
+      provider: 'ifood_mock',
+      externalId: `ifood_mock_${createId()}`,
+      payload: { dispatchMode: 'parallel_after_paid' },
+    };
+  }
+
+  const payload = createIFoodShippingPayload({ orderId, customer, items, totals });
+  if (!IFOOD_ACCESS_TOKEN || !IFOOD_MERCHANT_ID) {
+    return { status: 'missing_credentials', provider: 'ifood', externalId: null, payload };
+  }
+
+  if (!customer.latitude || !customer.longitude) {
+    return {
+      status: 'missing_coordinates',
+      provider: 'ifood',
+      externalId: null,
+      payload: {
+        availabilityEndpoint: `${IFOOD_API_BASE_URL}/shipping/v1.0/merchants/${IFOOD_MERCHANT_ID}/deliveryAvailabilities?latitude={lat}&longitude={lng}`,
+        orderEndpoint: `${IFOOD_API_BASE_URL}/shipping/v1.0/merchants/${IFOOD_MERCHANT_ID}/orders`,
+        orderPayload: payload,
+      },
+    };
+  }
+
+  if (IFOOD_SHIPPING_MODE !== 'live') {
+    return {
+      status: 'ready_for_homologation',
+      provider: 'ifood',
+      externalId: null,
+      payload: {
+        mode: IFOOD_SHIPPING_MODE,
+        availabilityEndpoint: `${IFOOD_API_BASE_URL}/shipping/v1.0/merchants/${IFOOD_MERCHANT_ID}/deliveryAvailabilities?latitude=${customer.latitude}&longitude=${customer.longitude}`,
+        orderEndpoint: `${IFOOD_API_BASE_URL}/shipping/v1.0/merchants/${IFOOD_MERCHANT_ID}/orders`,
+        orderPayload: payload,
+      },
+    };
+  }
+
+  return {
+    status: 'ready_for_homologation',
+    provider: 'ifood',
+    externalId: null,
+    payload: {
+      mode: 'live_not_enabled_in_code_path',
+      availabilityEndpoint: `${IFOOD_API_BASE_URL}/shipping/v1.0/merchants/${IFOOD_MERCHANT_ID}/deliveryAvailabilities?latitude=${customer.latitude}&longitude=${customer.longitude}`,
+      orderEndpoint: `${IFOOD_API_BASE_URL}/shipping/v1.0/merchants/${IFOOD_MERCHANT_ID}/orders`,
+      orderPayload: payload,
+    },
+  };
+};
+
+const rowToDeliveryOrder = (row, items = [], club = null) => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    orderId: row.id,
+    createdAt: row.created_at,
+    total: Number(row.total || 0),
+    subtotal: Number(row.subtotal || 0),
+    deliveryFee: Number(row.delivery_fee || 0),
+    discount: Number(row.discount || 0),
+    couponCode: row.coupon_code || '',
+    customer: parseJsonObject(row.customer_snapshot) || {},
+    items,
+    paymentStatus: row.payment_status,
+    paymentProvider: row.payment_provider || null,
+    paymentExternalId: row.payment_external_id || null,
+    checkoutUrl: row.checkout_url || null,
+    kitchenStatus: row.kitchen_status,
+    deliveryStatus: row.delivery_status,
+    kitchenSentAt: row.kitchen_sent_at || null,
+    deliveryRequestedAt: row.delivery_requested_at || null,
+    deliveryProvider: row.delivery_provider || null,
+    deliveryExternalId: row.delivery_external_id || null,
+    club,
+  };
+};
+
+const getDeliveryOrder = async ({ orderId, includeEvents = false } = {}) => {
+  await ensureDatabaseReady();
+  const safeOrderId = requireString(orderId, 'orderId');
+  const orderRes = await db.execute({
+    sql: "SELECT *, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at FROM delivery_orders WHERE id = ? LIMIT 1",
+    args: [safeOrderId],
+  });
+  const row = orderRes.rows[0];
+  if (!row) {
+    const error = new Error('Pedido delivery não encontrado.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const itemsRes = await db.execute({
+    sql: "SELECT id, delivery_order_id, product_id, name, quantity, price_at_time, selected_modifiers, notes FROM delivery_order_items WHERE delivery_order_id = ?",
+    args: [safeOrderId],
+  });
+  const items = itemsRes.rows.map((item) => ({
+    id: item.id,
+    orderId: item.delivery_order_id,
+    productId: item.product_id,
+    name: item.name,
+    price: Number(item.price_at_time || 0),
+    quantity: Number(item.quantity || 0),
+    selectedModifiers: parseJsonArray(item.selected_modifiers),
+    notes: item.notes || '',
+  }));
+  const club = await getDeliveryClubSummary(row.customer_id);
+  const order = rowToDeliveryOrder(row, items, club);
+  if (!includeEvents) return { order };
+
+  const eventsRes = await db.execute({
+    sql: `
+      SELECT id, delivery_order_id, type, status, provider, external_id, payload, error, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at
+      FROM delivery_events
+      WHERE delivery_order_id = ?
+      ORDER BY created_at ASC
+    `,
+    args: [safeOrderId],
+  });
+  return {
+    order: {
+      ...order,
+      events: eventsRes.rows.map((event) => ({
+        id: event.id,
+        orderId: event.delivery_order_id,
+        type: event.type,
+        status: event.status,
+        provider: event.provider || null,
+        externalId: event.external_id || null,
+        payload: parseJsonObject(event.payload) || parseJsonArray(event.payload) || null,
+        error: event.error || null,
+        createdAt: event.created_at || new Date().toISOString(),
+      })),
+    },
+  };
+};
+
+const listDeliveryOrders = async ({ limit = 50 } = {}) => {
+  await ensureDatabaseReady();
+  const safeLimit = Math.max(1, Math.min(200, Number(limit || 50)));
+  const ordersRes = await db.execute({
+    sql: `
+      SELECT
+        *,
+        strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at
+      FROM delivery_orders
+      ORDER BY created_at DESC
+      LIMIT ?
+    `,
+    args: [safeLimit],
+  });
+  return {
+    orders: ordersRes.rows.map((row) => rowToDeliveryOrder(row, [])),
+  };
+};
+
+const materializeDeliveryProductionOrder = async ({ orderId, items, total }) => {
+  const productionOrderId = `delivery_prod_${orderId}`;
+  await db.batch([
+    {
+      sql: "INSERT OR IGNORE INTO tables (id, number, status, last_activity) VALUES (?, ?, 'ordering', CURRENT_TIMESTAMP)",
+      args: [DELIVERY_VIRTUAL_TABLE_ID, 0],
+    },
+    {
+      sql: "INSERT OR IGNORE INTO orders (id, table_id, total, status, origin, created_by_id) VALUES (?, ?, ?, 'pending', 'delivery', NULL)",
+      args: [productionOrderId, DELIVERY_VIRTUAL_TABLE_ID, total],
+    },
+    ...items.map((item) => ({
+      sql: "INSERT OR IGNORE INTO order_items (id, order_id, product_id, quantity, price_at_time, selected_modifiers, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      args: [
+        `delivery_${item.id}`,
+        productionOrderId,
+        requireString(item.productId, 'item.productId'),
+        requireNumber(item.quantity, 'item.quantity'),
+        requireNumber(item.price, 'item.price'),
+        JSON.stringify(item.selectedModifiers || []),
+        item.notes || '',
+      ],
+    })),
+    {
+      sql: "UPDATE delivery_orders SET production_order_id = ?, kitchen_status = 'sent_production', kitchen_sent_at = COALESCE(kitchen_sent_at, ?) WHERE id = ?",
+      args: [productionOrderId, new Date().toISOString(), orderId],
+    },
+    {
+      sql: "INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, 'new_order', 'pending', ?)",
+      args: [`new_order_${productionOrderId}`, DELIVERY_VIRTUAL_TABLE_ID, `DELIVERY ${orderId}`],
+    },
+  ], 'write');
+
+  return { productionOrderId, kitchenStatus: 'sent_production' };
+};
+
+const DELIVERY_TERMINAL_DISPATCH_STATUSES = new Set([
+  'disabled',
+  'requested_mock',
+  'requested',
+  'not_required_pickup',
+  'ready_for_homologation',
+]);
+
+const dispatchPaidDeliveryOrder = async ({ orderId, source = 'system' }) => {
+  await ensureDatabaseReady();
+  const safeOrderId = requireString(orderId, 'orderId');
+  const orderRes = await db.execute({
+    sql: "SELECT * FROM delivery_orders WHERE id = ? LIMIT 1",
+    args: [safeOrderId],
+  });
+  const row = orderRes.rows[0];
+  if (!row) throw new Error('Pedido delivery não encontrado.');
+  if (row.payment_status !== 'paid') return { dispatched: false, reason: 'payment_not_paid' };
+
+  const alreadyKitchenSent = Boolean(row.kitchen_sent_at) || ['sent_mock', 'sent_production'].includes(row.kitchen_status);
+  const alreadyDeliveryRequested = Boolean(row.delivery_requested_at) || DELIVERY_TERMINAL_DISPATCH_STATUSES.has(row.delivery_status);
+  if (alreadyKitchenSent && alreadyDeliveryRequested) {
+    return {
+      dispatched: false,
+      reason: 'already_dispatched',
+      kitchenStatus: row.kitchen_status,
+      productionOrderId: row.production_order_id || null,
+      deliveryStatus: row.delivery_status,
+      deliveryProvider: row.delivery_provider || null,
+      deliveryExternalId: row.delivery_external_id || null,
+    };
+  }
+
+  const now = new Date().toISOString();
+  const customer = parseJsonObject(row.customer_snapshot) || {};
+  const itemsRes = await db.execute({
+    sql: "SELECT id, product_id as productId, name, quantity, price_at_time as price, selected_modifiers as selectedModifiers, notes FROM delivery_order_items WHERE delivery_order_id = ?",
+    args: [safeOrderId],
+  });
+  const items = itemsRes.rows.map((item) => ({
+    ...item,
+    price: Number(item.price || 0),
+    quantity: Number(item.quantity || 0),
+    selectedModifiers: parseJsonArray(item.selectedModifiers),
+  }));
+  const totals = {
+    subtotal: Number(row.subtotal || 0),
+    deliveryFee: Number(row.delivery_fee || 0),
+    discount: Number(row.discount || 0),
+    total: Number(row.total || 0),
+  };
+  const production = !alreadyKitchenSent && DELIVERY_KITCHEN_DISPATCH_MODE === 'production'
+    ? await materializeDeliveryProductionOrder({ orderId: safeOrderId, items, total: totals.total })
+    : null;
+  const logistics = alreadyDeliveryRequested
+    ? {
+      status: row.delivery_status,
+      provider: row.delivery_provider || DELIVERY_LOGISTICS_PROVIDER,
+      externalId: row.delivery_external_id || null,
+      payload: { source, idempotent: true },
+    }
+    : await requestDeliveryLogistics({ orderId: safeOrderId, customer, items, totals, paymentStatus: 'paid' });
+  const kitchenStatus = production?.kitchenStatus || (row.kitchen_status === 'sent_mock' ? row.kitchen_status : 'sent_mock');
+  const kitchenSentAt = row.kitchen_sent_at || now;
+  const deliveryStatus = row.delivery_status === 'requested_mock' ? row.delivery_status : logistics.status;
+  const deliveryRequestedAt = row.delivery_requested_at || (logistics.status === 'requested_mock' ? now : null);
+
+  await db.batch([
+    {
+      sql: "UPDATE delivery_orders SET kitchen_status = ?, delivery_status = ?, delivery_provider = ?, delivery_external_id = ?, kitchen_sent_at = ?, delivery_requested_at = ? WHERE id = ?",
+      args: [kitchenStatus, deliveryStatus, logistics.provider, logistics.externalId, kitchenSentAt, deliveryRequestedAt, safeOrderId],
+    },
+    {
+      sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, payload) VALUES (?, ?, 'kitchen', ?, ?)",
+      args: [createId(), safeOrderId, kitchenStatus, JSON.stringify({ source })],
+    },
+    {
+      sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, provider, external_id, payload) VALUES (?, ?, 'delivery', ?, ?, ?, ?)",
+      args: [createId(), safeOrderId, deliveryStatus, logistics.provider, logistics.externalId, JSON.stringify(logistics.payload || { source })],
+    },
+  ], 'write');
+
+  await syncDeliveryCustomerToOsCrm({
+    orderId: safeOrderId,
+    customer,
+    totalGasto: totals.total,
+    source,
+  });
+
+  return { dispatched: true, kitchenStatus, productionOrderId: production?.productionOrderId || row.production_order_id || null, deliveryStatus, deliveryProvider: logistics.provider, deliveryExternalId: logistics.externalId };
+};
+
+const getPagBankWebhookStatus = (body = {}) => {
+  const candidates = [
+    body.status,
+    body.payment_status,
+    body.charges?.[0]?.status,
+    body.charges?.[0]?.payment_response?.status,
+  ].filter(Boolean).map((value) => String(value).toUpperCase());
+  if (candidates.some((status) => ['PAID', 'AUTHORIZED', 'APPROVED'].includes(status))) return 'paid';
+  if (candidates.some((status) => ['DECLINED', 'CANCELED', 'CANCELLED'].includes(status))) return 'payment_failed';
+  return 'payment_pending';
+};
+
+const getPagBankWebhookReferenceId = (body = {}) => (
+  body.reference_id
+  || body.referenceId
+  || body.order_id
+  || body.id
+  || body.charges?.[0]?.reference_id
+  || ''
+);
+
+const handlePagBankDeliveryWebhook = async (body, context = {}) => {
+  await ensureDatabaseReady();
+  if (DELIVERY_WEBHOOK_SECRET) {
+    const received = context.req?.headers['x-beco-delivery-secret'] || context.req?.headers['x-delivery-webhook-secret'];
+    if (received !== DELIVERY_WEBHOOK_SECRET) {
+      const error = new Error('Webhook delivery não autorizado.');
+      error.statusCode = 401;
+      throw error;
+    }
+  }
+
+  const referenceId = requireString(getPagBankWebhookReferenceId(body), 'reference_id');
+  const status = getPagBankWebhookStatus(body);
+  const paidAt = status === 'paid' ? new Date().toISOString() : null;
+
+  const orderRes = await db.execute({
+    sql: "SELECT id FROM delivery_orders WHERE id = ? OR payment_external_id = ? LIMIT 1",
+    args: [referenceId, referenceId],
+  });
+  const deliveryOrderId = orderRes.rows[0]?.id;
+  if (!deliveryOrderId) {
+    const error = new Error('Pedido delivery do webhook não encontrado.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await db.batch([
+    {
+      sql: "UPDATE delivery_orders SET payment_status = ?, paid_at = COALESCE(paid_at, ?) WHERE id = ?",
+      args: [status, paidAt, deliveryOrderId],
+    },
+    {
+      sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, provider, external_id, payload) VALUES (?, ?, 'payment_webhook', ?, 'pagbank', ?, ?)",
+      args: [createId(), deliveryOrderId, status, body.id || null, JSON.stringify(body)],
+    },
+  ], 'write');
+
+  const dispatch = status === 'paid'
+    ? await dispatchPaidDeliveryOrder({ orderId: deliveryOrderId, source: 'pagbank_webhook' })
+    : { dispatched: false, reason: status };
+
+  return { orderId: deliveryOrderId, status, dispatch };
+};
+
+const createDeliveryCheckout = async ({ orderId, customer, items }) => {
+  await ensureDatabaseReady();
+  const safeCustomer = normalizeDeliveryCustomer(customer);
+  requireString(safeCustomer.name, 'customer.name');
+  requireString(safeCustomer.phone, 'customer.phone');
+  requireString(safeCustomer.email, 'customer.email');
+  if (safeCustomer.fulfillment === 'delivery') {
+    requireString(safeCustomer.street, 'customer.street');
+    requireString(safeCustomer.number, 'customer.number');
+    requireString(safeCustomer.neighborhood, 'customer.neighborhood');
+    requireString(safeCustomer.city, 'customer.city');
+    requireString(safeCustomer.state, 'customer.state');
+    requireString(safeCustomer.postalCode, 'customer.postalCode');
+  }
+
+  const safeItems = Array.isArray(items) ? items : [];
+  if (safeItems.length === 0) throw new Error('Pedido delivery sem itens.');
+  await validateOrderItemsAvailability({
+    items: safeItems,
+    session: null,
+    settings: await getSettings(),
+    isPublicOrigin: true,
+  });
+
+  const deliveryOrderId = String(orderId || `delivery_${createId()}`);
+  const customerId = createHash('sha256')
+    .update(`${safeCustomer.phone}|${safeCustomer.email}`)
+    .digest('hex')
+    .slice(0, 32);
+  const now = new Date().toISOString();
+  const totals = calculateDeliveryTotals({ items: safeItems, customer: safeCustomer });
+  const { subtotal, deliveryFee, discount, total } = totals;
+  const payment = await prepareDeliveryPayment({ orderId: deliveryOrderId, customer: safeCustomer, items: safeItems, totals });
+  const logistics = await requestDeliveryLogistics({ orderId: deliveryOrderId, customer: safeCustomer, items: safeItems, totals, paymentStatus: payment.status });
+  const isPaid = String(payment.status).startsWith('paid');
+  const paidAt = isPaid ? now : null;
+  const productionOrderId = isPaid && DELIVERY_KITCHEN_DISPATCH_MODE === 'production' ? `delivery_prod_${deliveryOrderId}` : null;
+  const kitchenStatus = isPaid ? (productionOrderId ? 'sent_production' : 'sent_mock') : 'waiting_payment';
+  const kitchenSentAt = isPaid ? now : null;
+  const deliveryRequestedAt = logistics.status === 'requested_mock' ? now : null;
+  const persistedItems = safeItems.map((item) => ({
+    ...item,
+    id: item.id || createId(),
+    orderId: deliveryOrderId,
+  }));
+  const customerSnapshot = JSON.stringify(safeCustomer);
+
+  await db.batch([
+    {
+      sql: `
+        INSERT INTO delivery_customers (id, name, phone, email, street, number, neighborhood, city, state, postal_code, complement, reference, latitude, longitude, join_club, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          phone = excluded.phone,
+          email = excluded.email,
+          street = excluded.street,
+          number = excluded.number,
+          neighborhood = excluded.neighborhood,
+          city = excluded.city,
+          state = excluded.state,
+          postal_code = excluded.postal_code,
+          complement = excluded.complement,
+          reference = excluded.reference,
+          latitude = excluded.latitude,
+          longitude = excluded.longitude,
+          join_club = excluded.join_club,
+          updated_at = CURRENT_TIMESTAMP
+      `,
+      args: [customerId, safeCustomer.name, safeCustomer.phone, safeCustomer.email, safeCustomer.street, safeCustomer.number, safeCustomer.neighborhood, safeCustomer.city, safeCustomer.state, safeCustomer.postalCode, safeCustomer.complement, safeCustomer.reference, safeCustomer.latitude, safeCustomer.longitude, safeCustomer.joinClub ? 1 : 0],
+    },
+    {
+      sql: `
+        INSERT INTO delivery_orders (
+          id, customer_id, subtotal, delivery_fee, discount, total, coupon_code, fulfillment, payment_method,
+          payment_status, payment_provider, payment_external_id, checkout_url, kitchen_status, delivery_status, delivery_provider, delivery_external_id, production_order_id,
+          customer_snapshot, notes, paid_at, kitchen_sent_at, delivery_requested_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      args: [
+        deliveryOrderId, customerId, subtotal, deliveryFee, discount, total, safeCustomer.coupon, safeCustomer.fulfillment, safeCustomer.paymentMethod,
+        payment.status, payment.provider, payment.externalId, payment.checkoutUrl, kitchenStatus, logistics.status, logistics.provider, logistics.externalId, productionOrderId, customerSnapshot, safeCustomer.notes, paidAt, kitchenSentAt, deliveryRequestedAt,
+      ],
+    },
+    ...persistedItems.map((item) => ({
+      sql: "INSERT INTO delivery_order_items (id, delivery_order_id, product_id, name, quantity, price_at_time, selected_modifiers, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [
+        requireString(item.id, 'item.id'),
+        deliveryOrderId,
+        requireString(item.productId, 'item.productId'),
+        requireString(item.name, 'item.name'),
+        requireNumber(item.quantity, 'item.quantity'),
+        requireNumber(item.price, 'item.price'),
+        JSON.stringify(item.selectedModifiers || []),
+        item.notes || '',
+      ],
+    })),
+    {
+      sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, provider, external_id, payload) VALUES (?, ?, 'payment', ?, ?, ?, ?)",
+      args: [createId(), deliveryOrderId, payment.status, payment.provider, payment.externalId, JSON.stringify(payment.payload || { paymentMethod: safeCustomer.paymentMethod, total })],
+    },
+    {
+      sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, payload) VALUES (?, ?, 'kitchen', ?, ?)",
+      args: [createId(), deliveryOrderId, kitchenStatus, JSON.stringify({ dispatchMode: 'parallel_after_paid' })],
+    },
+    {
+      sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, provider, external_id, payload) VALUES (?, ?, 'delivery', ?, ?, ?, ?)",
+      args: [createId(), deliveryOrderId, logistics.status, logistics.provider, logistics.externalId, JSON.stringify(logistics.payload || {})],
+    },
+  ], 'write');
+
+  await syncDeliveryCustomerToOsCrm({
+    orderId: deliveryOrderId,
+    customer: safeCustomer,
+    totalGasto: isPaid ? total : 0,
+    source: isPaid ? 'checkout_paid' : 'checkout_pending',
+  });
+
+  const notificationCustomer = { id: customerId, ...safeCustomer };
+  await Promise.all([
+    sendDeliveryNotification({
+      orderId: deliveryOrderId,
+      customer: notificationCustomer,
+      channel: 'email',
+      type: 'order_created',
+      message: `Recebemos seu pedido ${deliveryOrderId}. Total: ${formatMoneyForNotification(total)}.`,
+    }),
+    sendDeliveryNotification({
+      orderId: deliveryOrderId,
+      customer: notificationCustomer,
+      channel: 'sms',
+      type: 'order_created',
+      message: `Becoartes: pedido ${deliveryOrderId} recebido.`,
+    }),
+    sendDeliveryNotification({
+      orderId: deliveryOrderId,
+      customer: notificationCustomer,
+      channel: 'whatsapp',
+      type: 'order_created',
+      message: `Becoartes: recebemos seu pedido ${deliveryOrderId}.`,
+    }),
+  ]);
+
+  if (productionOrderId) {
+    await materializeDeliveryProductionOrder({ orderId: deliveryOrderId, items: persistedItems, total });
+  }
+
+  const club = await getDeliveryClubSummary(customerId);
+
+  return {
+    order: {
+      id: deliveryOrderId,
+      orderId: deliveryOrderId,
+      createdAt: now,
+      total,
+      subtotal,
+      deliveryFee,
+      discount,
+      couponCode: safeCustomer.coupon,
+      customer: safeCustomer,
+      items: persistedItems,
+      paymentStatus: payment.status,
+      paymentProvider: payment.provider,
+      paymentExternalId: payment.externalId,
+      checkoutUrl: payment.checkoutUrl,
+      kitchenStatus,
+      deliveryStatus: logistics.status,
+      kitchenSentAt,
+      deliveryRequestedAt,
+      deliveryProvider: logistics.provider,
+      deliveryExternalId: logistics.externalId,
+      integrationMode: getDeliveryIntegrationMode(),
+      club,
+    },
   };
 };
 
@@ -4392,6 +5919,17 @@ const requirePermission = (session, permission, settings = null) => {
 const allowPublicOperationalOrigin = (body) => body?.origin === 'tablet' || body?.origin === 'qr';
 
 const isPublicCustomerRoute = (routeKey, body) => {
+  if (routeKey === 'POST /api/delivery/checkout') return true;
+  if (routeKey === 'POST /api/delivery/checkout/mock') return true;
+  if (routeKey === 'POST /api/delivery/quote') return true;
+  if (routeKey === 'POST /api/delivery/postal-code') return true;
+  if (routeKey === 'POST /api/delivery/geocode') return true;
+  if (routeKey === 'POST /api/delivery/webhooks/pagbank') return true;
+  if (routeKey.startsWith('POST /api/delivery/customer/')) return true;
+  if (routeKey === 'GET /api/delivery/order') return true;
+  if (routeKey === 'GET /api/delivery/customer/session') return true;
+  if (routeKey === 'GET /api/delivery/customer/orders') return true;
+  if (routeKey === 'GET /api/delivery/config') return true;
   if (routeKey === 'POST /api/service-requests' || routeKey === 'POST /api/tables/request-bill') return true;
   if (routeKey === 'POST /api/orders/send-to-kitchen' || routeKey === 'POST /api/orders/status') {
     return allowPublicOperationalOrigin(body);
@@ -4486,6 +6024,8 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/table-payments/cancel': 'cancelPayment',
     'POST /api/coupons/create': 'manageCoupons',
     'GET /api/coupons/list': 'manageCoupons',
+    'GET /api/delivery/orders': 'viewSalesTotals',
+    'GET /api/delivery/order-detail': 'viewSalesTotals',
   };
 
   const requiredPermission = permissionByRoute[routeKey];
@@ -4524,6 +6064,23 @@ const handlers = {
     })
   }),
   'POST /api/orders/send-to-kitchen': async (body, context) => sendToKitchen(body, context.session),
+  'POST /api/delivery/quote': async (body) => getDeliveryQuote(body),
+  'POST /api/delivery/postal-code': async (body) => ({ postalCode: await lookupDeliveryPostalCode(body) }),
+  'POST /api/delivery/geocode': async (body) => ({ geocode: await geocodeDeliveryAddress(body?.customer || body) }),
+  'POST /api/delivery/checkout': async (body) => createDeliveryCheckout(body),
+  'POST /api/delivery/checkout/mock': async (body) => createDeliveryCheckout(body),
+  'POST /api/delivery/webhooks/pagbank': async (body, context) => handlePagBankDeliveryWebhook(body, context),
+  'POST /api/delivery/customer/register': async (body) => createDeliveryCustomerAccount(body),
+  'POST /api/delivery/customer/login': async (body) => loginDeliveryCustomer(body),
+  'POST /api/delivery/customer/forgot-password': async (body) => requestDeliveryPasswordReset(body),
+  'POST /api/delivery/customer/reset-password': async (body) => resetDeliveryCustomerPassword(body),
+  'POST /api/delivery/customer/verify-code': async (body) => verifyDeliveryCustomerCode(body),
+  'GET /api/delivery/customer/session': async (_body, context) => getDeliveryCustomerSession({ token: context.req?.headers['x-beco-delivery-session'] || '' }),
+  'GET /api/delivery/customer/orders': async (_body, context) => listDeliveryCustomerOrders({ token: context.req?.headers['x-beco-delivery-session'] || '' }),
+  'GET /api/delivery/order': async (_body, context) => getDeliveryOrder({ orderId: context.url.searchParams.get('orderId') || '' }),
+  'GET /api/delivery/order-detail': async (_body, context) => getDeliveryOrder({ orderId: context.url.searchParams.get('orderId') || '', includeEvents: true }),
+  'GET /api/delivery/config': async () => getDeliveryPublicConfig(),
+  'GET /api/delivery/orders': async (_body, context) => listDeliveryOrders({ limit: context.url.searchParams.get('limit') || 50 }),
   'POST /api/orders/status': async (body) => updateOrderStatus(body),
   'POST /api/order-items/delete': async (body, context) => deleteOrderItem(body, context.session),
   'POST /api/table-payments': async (body, context) => createTablePayment(body, context.session),

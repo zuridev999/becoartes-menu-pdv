@@ -81,12 +81,14 @@ const getCurrentView = () => {
   const path = window.location.pathname.replace(/^\/+/, '');
   const host = window.location.hostname;
   if (path.startsWith('admin')) return 'admin';
+  if (path.startsWith('delivery')) return 'delivery';
   if (path.startsWith('qr/') || path.startsWith('mesa/')) return 'qr';
-  if (['tablet', 'pdv', 'kitchen', 'bar', 'qr'].includes(path)) return path;
+  if (['tablet', 'pdv', 'kitchen', 'bar', 'qr', 'delivery'].includes(path)) return path;
   if (host.startsWith('tablet.')) return 'tablet';
   if (host.startsWith('coz.')) return 'kitchen';
   if (host.startsWith('bar.')) return 'bar';
   if (host.startsWith('qr.')) return 'qr';
+  if (host.startsWith('delivery.')) return 'delivery';
   return 'pdv';
 };
 
@@ -106,8 +108,8 @@ const postJson = async <T>(path: string, body: unknown): Promise<T> => {
   return payload.data as T;
 };
 
-const getJson = async <T>(path: string): Promise<T> => {
-  const response = await fetch(path, { method: 'GET', headers: getAuthHeaders() });
+const getJson = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
+  const response = await fetch(path, { ...options, method: 'GET', headers: { ...getAuthHeaders(), ...(options.headers || {}) } });
   const payload = await readApiEnvelope<T>(response);
 
   if (!response.ok || !payload.ok) {
@@ -243,6 +245,239 @@ export const OperationalApi = {
   closeCash(closingBalance: number, notes = '', confirmationPin = '') {
     return postJson<{ cashState: CashState }>('/api/cash/close', { closingBalance, notes, confirmationPin });
   },
+};
+
+export type DeliveryCheckoutInput = {
+  orderId: string;
+  customer: {
+    name: string;
+    phone: string;
+    email: string;
+    street: string;
+    number: string;
+    neighborhood: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    complement: string;
+    reference: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    quoteId?: string;
+    quoteExpiresAt?: string;
+    notes: string;
+    fulfillment: 'delivery' | 'pickup';
+    paymentMethod: 'pagbank' | 'pix';
+    coupon: string;
+    joinClub: boolean;
+  };
+  items: OrderItem[];
+};
+
+export type DeliveryQuoteResult = {
+  quote: {
+    status: string;
+    provider: string;
+    deliveryFee: number;
+    quoteId: string | null;
+    expiresAt: string | null;
+    preparationTimeSeconds: number;
+    payload?: unknown;
+  };
+};
+
+export type DeliveryPostalCodeResult = {
+  postalCode: {
+    status: string;
+    provider: string;
+    postalCode: string;
+    address: null | {
+      street: string;
+      neighborhood: string;
+      city: string;
+      state: string;
+    };
+  };
+};
+
+export type DeliveryCouponConfig = {
+  code: string;
+  type: 'percent' | 'fixed';
+  value: number;
+  maxDiscount: number | null;
+  minSubtotal: number;
+  label: string;
+};
+
+type DeliveryClubSummary = {
+  enrolled: boolean;
+  paidOrders: number;
+  cycleSize: number;
+  remainingToReward: number;
+  rewardsEarned: number;
+  rewardLabel?: string;
+} | null;
+
+export type DeliveryOrderEvent = {
+  id: string;
+  orderId: string;
+  type: string;
+  status: string;
+  provider: string | null;
+  externalId: string | null;
+  payload: unknown;
+  error: string | null;
+  createdAt: string;
+};
+
+export type DeliveryOrderSummary = {
+  id: string;
+  orderId: string;
+  createdAt: string;
+  total: number;
+  subtotal: number;
+  deliveryFee: number;
+  discount: number;
+  couponCode?: string;
+  customer: DeliveryCheckoutInput['customer'];
+  items: OrderItem[];
+  paymentStatus: string;
+  paymentProvider?: string | null;
+  paymentExternalId?: string | null;
+  checkoutUrl?: string | null;
+  kitchenStatus: string;
+  deliveryStatus: string;
+  kitchenSentAt: string | null;
+  deliveryRequestedAt: string | null;
+  deliveryProvider: string | null;
+  deliveryExternalId: string | null;
+  club?: DeliveryClubSummary;
+  events?: DeliveryOrderEvent[];
+};
+
+export type DeliveryCustomerAccount = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  street: string;
+  number: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  complement: string;
+  reference: string;
+  joinClub: boolean;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+};
+
+export type DeliveryCustomerSession = {
+  token: string;
+  expiresAt: string;
+};
+
+export const DeliveryApi = {
+  config() {
+    return getJson<{
+      mode: Record<string, unknown>;
+      club: {
+        enabled: boolean;
+        cycleSize: number;
+        rewardLabel: string;
+      };
+      coupons: DeliveryCouponConfig[];
+      routes: Record<string, string>;
+      webhookSecretEnabled: boolean;
+      notifications?: Record<string, string>;
+    }>('/api/delivery/config');
+  },
+
+  quote(input: Pick<DeliveryCheckoutInput, 'customer' | 'items'>) {
+    return postJson<DeliveryQuoteResult>('/api/delivery/quote', input);
+  },
+
+  lookupPostalCode(postalCode: string) {
+    return postJson<DeliveryPostalCodeResult>('/api/delivery/postal-code', { postalCode });
+  },
+
+  checkout(input: DeliveryCheckoutInput) {
+    return postJson<{
+      order: {
+        id: string;
+        orderId: string;
+        createdAt: string;
+        total: number;
+        subtotal: number;
+        deliveryFee: number;
+        discount: number;
+        couponCode?: string;
+        customer: DeliveryCheckoutInput['customer'];
+        items: OrderItem[];
+        paymentStatus: string;
+        paymentProvider?: string;
+        paymentExternalId?: string | null;
+        checkoutUrl?: string | null;
+        kitchenStatus: string;
+        deliveryStatus: string;
+        kitchenSentAt: string | null;
+        deliveryRequestedAt: string | null;
+        deliveryProvider: string;
+        deliveryExternalId: string | null;
+        club?: DeliveryClubSummary;
+      };
+    }>('/api/delivery/checkout', input);
+  },
+
+  checkoutMock(input: DeliveryCheckoutInput) {
+    return this.checkout(input);
+  },
+
+  getOrder(orderId: string) {
+    return getJson<{ order: DeliveryOrderSummary }>(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+  },
+
+  getOrderDetail(orderId: string) {
+    return getJson<{ order: DeliveryOrderSummary }>(`/api/delivery/order-detail?orderId=${encodeURIComponent(orderId)}`);
+  },
+
+  listOrders(limit = 50) {
+    return getJson<{ orders: DeliveryOrderSummary[] }>(`/api/delivery/orders?limit=${encodeURIComponent(String(limit))}`);
+  },
+
+  registerCustomer(input: { customer: DeliveryCheckoutInput['customer']; password: string }) {
+    return postJson<{ customer: DeliveryCustomerAccount; session: DeliveryCustomerSession; verification?: { expiresAt: string; code?: string } }>('/api/delivery/customer/register', input);
+  },
+
+  loginCustomer(input: { identity: string; password: string }) {
+    return postJson<{ customer: DeliveryCustomerAccount; session: DeliveryCustomerSession }>('/api/delivery/customer/login', input);
+  },
+
+  forgotPassword(identity: string) {
+    return postJson<{ sent: boolean; expiresAt?: string; code?: string }>('/api/delivery/customer/forgot-password', { identity });
+  },
+
+  resetPassword(input: { identity: string; code: string; password: string }) {
+    return postJson<{ customer: DeliveryCustomerAccount; session: DeliveryCustomerSession }>('/api/delivery/customer/reset-password', input);
+  },
+
+  verifyCustomerCode(input: { token: string; code: string }) {
+    return postJson<{ customer: DeliveryCustomerAccount }>('/api/delivery/customer/verify-code', input);
+  },
+
+  getCustomerSession(token: string) {
+    return getJson<{ customer: DeliveryCustomerAccount | null }>('/api/delivery/customer/session', {
+      headers: { 'X-Beco-Delivery-Session': token },
+    });
+  },
+
+  listCustomerOrders(token: string) {
+    return getJson<{ orders: DeliveryOrderSummary[] }>('/api/delivery/customer/orders', {
+      headers: { 'X-Beco-Delivery-Session': token },
+    });
+  },
+
 };
 
 const hydrateSnapshot = (snapshot: any) => ({

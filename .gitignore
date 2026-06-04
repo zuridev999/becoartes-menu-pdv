@@ -26,3 +26,5 @@ dist-ssr
 # Local one-off database/debug scripts. Keep real maintenance scripts in scripts/.
 check_*.cjs
 test_*.cjs
+local-delivery.db
+local-delivery.db-*

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
@@ -6,7 +6,7 @@ import {
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
   GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy,
-  QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle
+  QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle, Bike
 } from 'lucide-react';
 import {
   DndContext,
@@ -42,12 +42,12 @@ import {
   type UserPermissionMatrix
 } from '../../lib/permissions';
 import { createId } from '../../lib/id';
-import { getImageSrc } from '../../lib/image';
+import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
-import { AdminApi, AppApi } from '../../lib/api';
+import { AdminApi, AppApi, DeliveryApi, type DeliveryOrderSummary } from '../../lib/api';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
-import type { ScheduleConfig, Seller } from '../../types';
+import type { ClosedBill, ScheduleConfig, Seller } from '../../types';
 
 type AdminDialog = {
   title: string;
@@ -73,6 +73,26 @@ type AuditMovement = {
   author: string;
   timestamp: string;
 };
+
+const deliveryStatusLabels: Record<string, string> = {
+  disabled: 'Motoboy não acionado',
+  missing_credentials: 'Aguardando configuracao',
+  missing_coordinates: 'Sem coordenadas',
+  not_required_pickup: 'Retirada',
+  paid: 'Pago',
+  paid_mock: 'Pago mock',
+  payment_failed: 'Pagamento recusado',
+  payment_pending: 'Aguardando pagamento',
+  pending: 'Pendente',
+  requested_mock: 'Motoboy mock',
+  ready_for_homologation: 'Homologacao',
+  sent_mock: 'Enviado mock',
+  sent_production: 'Na cozinha',
+  waiting_payment: 'Aguardando pagamento',
+};
+
+const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const formatDeliveryStatus = (status: string) => deliveryStatusLabels[status] || status.replace(/_/g, ' ');
 
 const QR_PUBLIC_BASE_URL = 'https://qr.becoartes.com';
 const QR_MENU_TEMPLATE_URL = '/qr/menu-qr-template.jpg';
@@ -395,7 +415,7 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
                 categoryProducts.map((p: any) => (
                   <div key={p.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all">
                     <div className="flex items-center gap-4 min-w-0">
-                      <img src={getImageSrc(p.image)} className="w-10 h-10 rounded-lg object-cover" />
+                      <img src={getImageSrc(p.image)} onError={applyImageFallback} className="w-10 h-10 rounded-lg object-cover" />
                       <p className="font-bold text-sm truncate">{p.name}</p>
                     </div>
                     <div className="flex items-center gap-3 sm:gap-4">
@@ -471,6 +491,11 @@ export function AdminView() {
   const [qrRangeEnd, setQrRangeEnd] = useState('50');
   const [isQrDownloading, setIsQrDownloading] = useState(false);
   const [isAuditLoading, setIsAuditLoading] = useState(false);
+  const [isDeliveryLoading, setIsDeliveryLoading] = useState(false);
+  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrderSummary[]>([]);
+  const [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState<DeliveryOrderSummary | null>(null);
+  const [isDeliveryDetailLoading, setIsDeliveryDetailLoading] = useState(false);
+  const [selectedClosedBill, setSelectedClosedBill] = useState<ClosedBill | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
 
@@ -521,6 +546,39 @@ export function AdminView() {
       fetchMovements();
     }
   }, [activeTab, auditStartDate, auditEndDate, auditAuthor, auditAction, addNotification]);
+
+  const fetchDeliveryOrders = useCallback(async () => {
+    setIsDeliveryLoading(true);
+    try {
+      const result = await DeliveryApi.listOrders(50);
+      setDeliveryOrders(result.orders || []);
+    } catch (error) {
+      console.error('Erro ao carregar delivery:', error);
+      addNotification('Não foi possível carregar os pedidos delivery agora.', 'error');
+    } finally {
+      setIsDeliveryLoading(false);
+    }
+  }, [addNotification]);
+
+  useEffect(() => {
+    if (activeTab === 'delivery') {
+      void fetchDeliveryOrders();
+    }
+  }, [activeTab, fetchDeliveryOrders]);
+
+
+  const openDeliveryOrderDetails = async (orderId: string) => {
+    setIsDeliveryDetailLoading(true);
+    try {
+      const result = await DeliveryApi.getOrderDetail(orderId);
+      setSelectedDeliveryOrder(result.order);
+    } catch (error) {
+      console.error('Erro ao carregar detalhe delivery:', error);
+      addNotification('Não foi possível carregar o detalhe do pedido delivery.', 'error');
+    } finally {
+      setIsDeliveryDetailLoading(false);
+    }
+  };
 
   const SectionCard = ({ title, icon: Icon, children }: { title: string, icon: any, children: React.ReactNode }) => (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6 sm:p-10 border-white/5 h-full">
@@ -643,7 +701,7 @@ export function AdminView() {
     ...(isAdminProfile && canManageSettings ? ['config'] : []),
     ...(isAdminProfile && canManageSettings ? ['qrcodes'] : []),
     ...(isAdminProfile && canManageTeam ? ['sellers'] : []),
-    ...(isAdminProfile && canViewSalesTotals ? ['finance', 'movements'] : []),
+    ...(isAdminProfile && canViewSalesTotals ? ['finance', 'delivery', 'movements'] : []),
   ]);
   const isActiveTabAllowed = allowedTabIds.has(activeTab);
 
@@ -1065,6 +1123,7 @@ export function AdminView() {
             { id: 'sellers', name: 'Equipe', icon: User },
             { id: 'qrcodes', name: 'QR Mesas', icon: QrCode },
             { id: 'finance', name: 'Fechamentos', icon: Wallet },
+            { id: 'delivery', name: 'Delivery', icon: Bike },
             { id: 'movements', name: 'Auditoria', icon: TrendingUp },
           ]
           .filter(tab => {
@@ -1344,7 +1403,7 @@ export function AdminView() {
                       <div key={p.id} className={`flex items-center justify-between gap-3 p-4 sm:p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group ${!p.visible ? 'opacity-40 grayscale' : ''}`}>
                         <div className="flex items-center gap-4 sm:gap-6 min-w-0">
                           <div className="relative">
-                            <img src={getImageSrc(p.image)} className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
+                            <img src={getImageSrc(p.image)} onError={applyImageFallback} className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
                             {!p.visible && <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center"><EyeOff size={20} className="text-white/40" /></div>}
                           </div>
                           <div className="min-w-0">
@@ -1515,7 +1574,7 @@ export function AdminView() {
                     >
                       {editingProduct.image ? (
                         <>
-                          <img src={getImageSrc(editingProduct.image)} className="absolute inset-0 w-full h-full object-cover opacity-40" />
+                          <img src={getImageSrc(editingProduct.image)} onError={applyImageFallback} className="absolute inset-0 w-full h-full object-cover opacity-40" />
                           <div className="relative z-10 flex flex-col items-center gap-2">
                              <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md group-hover:scale-110 transition-all">
                                <Plus size={24} />
@@ -1996,7 +2055,20 @@ export function AdminView() {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {closedBills.map((bill) => (
-                  <tr key={bill.id} className="hover:bg-white/[0.01] transition-all">
+                  <tr
+                    key={bill.id}
+                    onClick={() => setSelectedClosedBill(bill)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedClosedBill(bill);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    title="Abrir detalhes do fechamento"
+                    className="hover:bg-white/[0.04] transition-all cursor-pointer"
+                  >
                     <td className="p-8 font-black text-xl">{bill.tableNumber}</td>
                     <td className="p-8 font-medium text-gray-400">{new Date(bill.closedAt).toLocaleString('pt-BR')}</td>
                     <td className="p-8 font-black text-primary">{bill.sellerName}</td>
@@ -2017,6 +2089,133 @@ export function AdminView() {
                 ))}
               </tbody>
             </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'delivery' && canViewSalesTotals && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="glass-card p-8 border-white/5">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Pedidos delivery</span>
+              <p className="text-4xl font-black text-white mt-3">{deliveryOrders.length}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Últimos 50 registros</p>
+            </div>
+            <div className="glass-card p-8 border-white/5">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Pagos</span>
+              <p className="text-4xl font-black text-emerald-400 mt-3">{deliveryOrders.filter((order) => order.paymentStatus.startsWith('paid')).length}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Cozinha e motoboy acionados</p>
+            </div>
+            <div className="glass-card p-8 border-white/5">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Aguardando</span>
+              <p className="text-4xl font-black text-amber-300 mt-3">{deliveryOrders.filter((order) => order.paymentStatus === 'payment_pending').length}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Pagamento pendente</p>
+            </div>
+            <div className="glass-card p-8 border-white/5">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Total bruto</span>
+              <p className="text-4xl font-black text-primary mt-3">{formatCurrency(deliveryOrders.reduce((acc, order) => acc + Number(order.total || 0), 0))}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Inclui entregas e descontos</p>
+            </div>
+          </div>
+
+          <div className="glass rounded-[2rem] border-white/5 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.26em] text-primary">Operação delivery</p>
+              <h3 className="text-3xl font-black tracking-tighter mt-1">Pedidos fora da mesa</h3>
+            </div>
+            <button
+              onClick={fetchDeliveryOrders}
+              disabled={isDeliveryLoading}
+              className="btn-beco btn-beco-purple px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 disabled:opacity-50"
+            >
+              <RefreshCcw size={17} className={isDeliveryLoading ? 'animate-spin' : ''} />
+              Atualizar
+            </button>
+          </div>
+
+          <div className="glass rounded-[3rem] border-white/5 overflow-hidden">
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full min-w-[1300px] text-left">
+                <thead className="bg-white/5">
+                  <tr className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                    <th className="p-6">Pedido</th>
+                    <th className="p-6">Cliente</th>
+                    <th className="p-6">Tipo</th>
+                    <th className="p-6">Pagamento</th>
+                    <th className="p-6">Cozinha</th>
+                    <th className="p-6">Motoboy</th>
+                    <th className="p-6 text-right">Total</th>
+                    <th className="p-6">Criado em</th>
+                    <th className="p-6 text-right">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {isDeliveryLoading ? (
+                    <tr>
+                      <td colSpan={9} className="p-10 text-center text-xs font-black uppercase tracking-widest text-zinc-500">Carregando delivery...</td>
+                    </tr>
+                  ) : deliveryOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="p-10 text-center text-xs font-black uppercase tracking-widest text-zinc-500">Nenhum pedido delivery registrado.</td>
+                    </tr>
+                  ) : deliveryOrders.map((order) => {
+                    const customer = order.customer;
+                    const isPaid = order.paymentStatus.startsWith('paid');
+                    return (
+                      <tr key={order.id} className="hover:bg-white/[0.02] transition-all align-top">
+                        <td className="p-6">
+                          <p className="font-black text-sm text-white break-all">{order.orderId}</p>
+                          {order.couponCode && <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300 mt-2">Cupom {order.couponCode}</p>}
+                        </td>
+                        <td className="p-6">
+                          <p className="font-black text-white">{customer.name || '-'}</p>
+                          <p className="text-xs font-bold text-zinc-500 mt-1">{customer.phone || '-'}</p>
+                          <p className="text-xs font-bold text-zinc-600 mt-1">{customer.email || '-'}</p>
+                        </td>
+                        <td className="p-6">
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${customer.fulfillment === 'pickup' ? 'bg-amber-500/10 text-amber-300' : 'bg-red-500/10 text-red-300'}`}>
+                            {customer.fulfillment === 'pickup' ? 'Retirada' : 'Delivery'}
+                          </span>
+                        </td>
+                        <td className="p-6">
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${isPaid ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}>
+                            {formatDeliveryStatus(order.paymentStatus)}
+                          </span>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">{order.paymentProvider || '-'}</p>
+                        </td>
+                        <td className="p-6">
+                          <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white/5 text-zinc-300">
+                            {formatDeliveryStatus(order.kitchenStatus)}
+                          </span>
+                        </td>
+                        <td className="p-6 max-w-[220px]">
+                          <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white/5 text-zinc-300">
+                            {formatDeliveryStatus(order.deliveryStatus)}
+                          </span>
+                          {order.deliveryExternalId && <p className="text-[10px] font-bold text-zinc-600 mt-2 break-all">{order.deliveryExternalId}</p>}
+                        </td>
+                        <td className="p-6 text-right font-black text-emerald-400">{formatCurrency(order.total)}</td>
+                        <td className="p-6 font-bold text-gray-400 whitespace-nowrap">
+                          {order.createdAt ? new Date(order.createdAt).toLocaleString('pt-BR') : '-'}
+                        </td>
+                        <td className="p-6 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => openDeliveryOrderDetails(order.orderId)}
+                              disabled={isDeliveryDetailLoading}
+                              className="px-4 py-3 rounded-2xl bg-white/5 text-zinc-300 border border-white/10 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 disabled:opacity-50"
+                            >
+                              Detalhes
+                            </button>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-700">-</span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -2134,6 +2333,105 @@ export function AdminView() {
       )}
 
       <AnimatePresence>
+        {selectedDeliveryOrder && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[900] bg-black/80 backdrop-blur-xl p-3 sm:p-6 flex items-center justify-center"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 24 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 24 }}
+              className="w-full max-w-5xl max-h-[calc(100dvh-1.5rem)] glass-card border-red-500/20 overflow-hidden flex flex-col"
+            >
+              <div className="p-5 sm:p-7 border-b border-white/10 flex items-center justify-between gap-5">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-red-300 mb-2">Delivery</p>
+                  <h2 className="text-3xl font-black tracking-tighter break-all">{selectedDeliveryOrder.orderId}</h2>
+                  <p className="text-sm font-bold text-zinc-500 mt-1">
+                    {selectedDeliveryOrder.customer.name} • {formatCurrency(selectedDeliveryOrder.total)}
+                  </p>
+                </div>
+                <button onClick={() => setSelectedDeliveryOrder(null)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all shrink-0">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-7 overflow-y-auto custom-scrollbar space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="glass rounded-2xl border-white/10 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Pagamento</p>
+                    <p className="mt-2 text-lg font-black text-white">{formatDeliveryStatus(selectedDeliveryOrder.paymentStatus)}</p>
+                    <p className="text-xs font-bold text-zinc-600 mt-1">{selectedDeliveryOrder.paymentProvider || '-'}</p>
+                  </div>
+                  <div className="glass rounded-2xl border-white/10 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Cozinha</p>
+                    <p className="mt-2 text-lg font-black text-white">{formatDeliveryStatus(selectedDeliveryOrder.kitchenStatus)}</p>
+                    <p className="text-xs font-bold text-zinc-600 mt-1">{selectedDeliveryOrder.kitchenSentAt ? new Date(selectedDeliveryOrder.kitchenSentAt).toLocaleString('pt-BR') : '-'}</p>
+                  </div>
+                  <div className="glass rounded-2xl border-white/10 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Motoboy</p>
+                    <p className="mt-2 text-lg font-black text-white">{formatDeliveryStatus(selectedDeliveryOrder.deliveryStatus)}</p>
+                    <p className="text-xs font-bold text-zinc-600 mt-1 break-all">{selectedDeliveryOrder.deliveryExternalId || '-'}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-5">
+                  <div className="space-y-4">
+                    <div className="glass rounded-2xl border-white/10 p-5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-4">Cliente</p>
+                      <p className="font-black text-white">{selectedDeliveryOrder.customer.name}</p>
+                      <p className="text-sm font-bold text-zinc-500 mt-1">{selectedDeliveryOrder.customer.phone}</p>
+                      <p className="text-sm font-bold text-zinc-600 mt-1">{selectedDeliveryOrder.customer.email}</p>
+                      {selectedDeliveryOrder.customer.fulfillment === 'delivery' && (
+                        <p className="text-sm font-bold text-zinc-400 mt-4 leading-relaxed">
+                          {selectedDeliveryOrder.customer.street}, {selectedDeliveryOrder.customer.number} - {selectedDeliveryOrder.customer.neighborhood}, {selectedDeliveryOrder.customer.city}/{selectedDeliveryOrder.customer.state}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="glass rounded-2xl border-white/10 p-5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-4">Itens</p>
+                      <div className="space-y-3">
+                        {selectedDeliveryOrder.items.map((item) => (
+                          <div key={item.id} className="flex items-start justify-between gap-4">
+                            <div>
+                              <p className="font-black text-white">{item.quantity}x {item.name}</p>
+                              {item.notes && <p className="text-xs font-bold text-zinc-500 mt-1">{item.notes}</p>}
+                            </div>
+                            <p className="font-black text-emerald-300">{formatCurrency(item.price * item.quantity)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="glass rounded-2xl border-white/10 p-5">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-4">Eventos</p>
+                    <div className="space-y-3">
+                      {(selectedDeliveryOrder.events || []).length === 0 ? (
+                        <p className="text-sm font-bold text-zinc-500">Nenhum evento registrado.</p>
+                      ) : selectedDeliveryOrder.events?.map((event) => (
+                        <div key={event.id} className="border-l-2 border-primary/40 pl-4 py-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-primary">{event.type}</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">{formatDeliveryStatus(event.status)}</span>
+                            {event.provider && <span className="text-[10px] font-black uppercase tracking-widest text-zinc-600">{event.provider}</span>}
+                          </div>
+                          <p className="text-xs font-bold text-zinc-600 mt-1">{new Date(event.createdAt).toLocaleString('pt-BR')}</p>
+                          {event.externalId && <p className="text-xs font-bold text-zinc-500 mt-1 break-all">{event.externalId}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {showAddSellerModal && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -2602,7 +2900,133 @@ export function AdminView() {
         )}
       </AnimatePresence>
 
-      {/* Modal de Agenda */}
+      <AnimatePresence>
+        {selectedClosedBill && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[950] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4"
+            onClick={() => setSelectedClosedBill(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 18 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 18 }}
+              className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-[2rem] border border-white/10 bg-[#101014] shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="p-6 sm:p-8 border-b border-white/10 flex items-start justify-between gap-6">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.26em] text-primary">Fechamento detalhado</p>
+                  <h3 className="text-3xl sm:text-4xl font-black tracking-tighter mt-2">Mesa {selectedClosedBill.tableNumber}</h3>
+                  <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mt-2">
+                    {new Date(selectedClosedBill.closedAt).toLocaleString('pt-BR')} • {selectedClosedBill.sellerName || 'Sistema'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedClosedBill(null)}
+                  className="w-12 h-12 rounded-2xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white"
+                  aria-label="Fechar detalhes do fechamento"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 sm:p-8 overflow-y-auto max-h-[calc(90vh-132px)] custom-scrollbar space-y-6">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="rounded-2xl bg-white/[0.04] border border-white/5 p-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Produtos</p>
+                    <p className="text-xl font-black text-white mt-2">R$ {selectedClosedBill.subtotal.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/[0.04] border border-white/5 p-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Taxa</p>
+                    <p className="text-xl font-black text-amber-300 mt-2">R$ {selectedClosedBill.serviceFee.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/[0.04] border border-white/5 p-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Desconto</p>
+                    <p className="text-xl font-black text-rose-400 mt-2">R$ {selectedClosedBill.discount.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-emerald-300/70">Total</p>
+                    <p className="text-xl font-black text-emerald-300 mt-2">R$ {selectedClosedBill.total.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                {(selectedClosedBill.couponCode || selectedClosedBill.discountReason) && (
+                  <div className="rounded-2xl bg-rose-500/10 border border-rose-500/20 p-5">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-rose-300">Desconto / cupom</p>
+                    <p className="text-sm font-bold text-zinc-200 mt-2">
+                      {selectedClosedBill.couponCode ? `Cupom ${selectedClosedBill.couponCode}` : selectedClosedBill.discountReason}
+                      {selectedClosedBill.couponAmount ? ` • R$ ${selectedClosedBill.couponAmount.toFixed(2)}` : ''}
+                      {selectedClosedBill.couponBenefit ? ` • ${selectedClosedBill.couponBenefit}` : ''}
+                    </p>
+                  </div>
+                )}
+
+                <div className="rounded-3xl border border-white/10 overflow-hidden">
+                  <div className="p-5 bg-white/[0.04] flex items-center justify-between gap-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-400">Itens lançados na mesa</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600">{selectedClosedBill.items?.length || 0} item(ns)</p>
+                  </div>
+                  <div className="divide-y divide-white/5">
+                    {(selectedClosedBill.items || []).length > 0 ? (
+                      selectedClosedBill.items?.map((item) => {
+                        const modifiersTotal = (item.selectedModifiers || []).reduce((sum, modifier) => sum + Number(modifier.price || 0), 0);
+                        const lineTotal = (Number(item.price || 0) + modifiersTotal) * Number(item.quantity || 0);
+                        return (
+                          <div key={`${item.orderId}-${item.id}`} className="p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                            <div>
+                              <p className="font-black text-white">{item.quantity}x {item.name}</p>
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mt-1">
+                                {item.categoryName || 'Sem categoria'} • Pedido {item.orderId?.slice(0, 8)}
+                              </p>
+                              {(item.selectedModifiers || []).length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-3">
+                                  {item.selectedModifiers.map((modifier) => (
+                                    <span key={`${item.id}-${modifier.id || modifier.name}`} className="px-2 py-1 rounded-lg bg-primary/10 text-primary text-[10px] font-black uppercase">
+                                      + {modifier.name} R$ {Number(modifier.price || 0).toFixed(2)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {item.notes && <p className="text-xs font-bold text-amber-200 mt-3">Obs: {item.notes}</p>}
+                            </div>
+                            <div className="text-left sm:text-right shrink-0">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Unitário</p>
+                              <p className="font-black text-zinc-300">R$ {Number(item.price || 0).toFixed(2)}</p>
+                              <p className="font-black text-emerald-300 mt-1">R$ {lineTotal.toFixed(2)}</p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-8 text-center text-sm font-bold text-zinc-500">
+                        Itens antigos não encontrados no histórico de pedidos desta mesa.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-white/10 overflow-hidden">
+                  <div className="p-5 bg-white/[0.04]">
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-400">Pagamentos lançados</p>
+                  </div>
+                  <div className="p-5 flex flex-wrap gap-3">
+                    {(selectedClosedBill.payments || []).map((payment, idx) => (
+                      <span key={`${selectedClosedBill.id}-payment-${idx}`} className="px-4 py-2 rounded-full bg-white/5 text-zinc-200 text-[11px] font-black uppercase">
+                        {paymentLabels[payment.method] || payment.method}: R$ {payment.amount.toFixed(2)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Dialogo administrativo */}
       <AnimatePresence>
         {adminDialog && (
           <ActionDialog

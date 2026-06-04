@@ -11,7 +11,7 @@ import type {
 
 export type { Product, Table, OrderItem, KitchenOrder, ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier };
 
-type AdminTab = 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance' | 'qrcodes';
+type AdminTab = 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance' | 'qrcodes' | 'delivery';
 
 const TABLET_TABLE_STORAGE_KEY = 'beco_tablet_table_id';
 const LEGACY_TABLET_TABLE_STORAGE_KEY = 'becoartes_tablet_table_id';
@@ -92,7 +92,7 @@ export interface AppState {
   fetchAuditLogs: () => Promise<void>;
   syncData: (options?: { includeCatalog?: boolean }) => Promise<void>;
   addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string } | string, details?: string, tableNumber?: string, origin?: string) => Promise<void>;
-  activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | '';
+  activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | 'delivery' | '';
   adminTab: AdminTab;
   adminMode: 'menu' | 'settings';
   isLoading: boolean;
@@ -104,7 +104,7 @@ export interface AppState {
   currentTableId: string | null;
   setCurrentTableId: (id: string | null) => void;
   init: () => Promise<void>;
-  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr', tab?: AdminTab, mode?: 'menu' | 'settings') => void;
+  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | 'delivery', tab?: AdminTab, mode?: 'menu' | 'settings') => void;
   toggleProductVisibility: (id: string) => void;
   toggleCategoryVisibility: (id: string) => void;
   addProduct: (product: Product) => Promise<void>;
@@ -389,7 +389,9 @@ export const useStore = create<AppState>((set, get) => ({
       let initialView: any = 'tablet';
       let initialAdminMode: any = 'settings';
 
-      if (fullPath.startsWith('qr/') || fullPath.startsWith('mesa/')) {
+      if (fullPath.startsWith('delivery')) {
+        initialView = 'delivery';
+      } else if (fullPath.startsWith('qr/') || fullPath.startsWith('mesa/')) {
         initialView = 'qr';
       } else if (fullPath.startsWith('admin/menu')) {
         initialView = 'admin';
@@ -397,7 +399,7 @@ export const useStore = create<AppState>((set, get) => ({
       } else if (fullPath.startsWith('admin/settings') || fullPath.startsWith('admin/config')) {
         initialView = 'admin';
         initialAdminMode = 'settings';
-      } else if (['tablet', 'pdv', 'admin', 'kitchen', 'qr'].includes(fullPath)) {
+      } else if (['tablet', 'pdv', 'admin', 'kitchen', 'qr', 'delivery'].includes(fullPath)) {
         initialView = fullPath;
       } else if (fullPath === 'bar') {
         initialView = 'kitchen';
@@ -406,6 +408,7 @@ export const useStore = create<AppState>((set, get) => ({
       else if (hostname.startsWith('bar.')) initialView = 'kitchen';
       else if (hostname.startsWith('tablet.')) initialView = 'tablet';
       else if (hostname.startsWith('qr.')) initialView = 'qr';
+      else if (hostname.startsWith('delivery.')) initialView = 'delivery';
       else {
         initialView = 'tablet';
       }
@@ -436,8 +439,8 @@ export const useStore = create<AppState>((set, get) => ({
       // Para bloqueio total do hardware (botão Home, recentes, etc) no Android,
       // utilize o "Fully Kiosk Browser" apontando para este URL com "Kiosk Mode" ATIVO.
 
-      // Admin/QR nao possuem polling proprio. PDV, tablet e cozinha controlam seus ciclos nas views.
-      if (initialView === 'admin' || initialView === 'qr') {
+      // Admin/QR/Delivery nao possuem polling proprio. PDV, tablet e cozinha controlam seus ciclos nas views.
+      if (initialView === 'admin' || initialView === 'qr' || initialView === 'delivery') {
         if (syncIntervalId) window.clearInterval(syncIntervalId);
         syncIntervalId = window.setInterval(() => {
           get().syncData();

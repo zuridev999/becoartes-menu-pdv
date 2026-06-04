@@ -367,15 +367,27 @@ export const getPermissionProfile = (seller?: Seller | null): PermissionProfile 
   return legacyPermissionMap[seller?.permission || 'operator'] || 'operator';
 };
 
+const getUserOverrideAliases = (sellerId?: string) => {
+  const id = String(sellerId || '').trim();
+  if (!id) return [];
+  const withoutOsPrefix = id.replace(/^os:/, '');
+  return Array.from(new Set([id, withoutOsPrefix, `os:${withoutOsPrefix}`]));
+};
+
 export const getEffectiveUserPermissions = (
   seller: Seller | null | undefined,
   overrides?: PermissionMatrix,
   userOverrides?: UserPermissionMatrix
 ) => {
   const profile = getPermissionProfile(seller);
+  const sellerOverrides = getUserOverrideAliases(seller?.id)
+    .reduce<Partial<Record<PermissionKey, boolean>>>((acc, id) => ({
+      ...acc,
+      ...(userOverrides?.[id] || {}),
+    }), {});
   return {
     ...getEffectivePermissions(profile, overrides),
-    ...(seller?.id ? (userOverrides?.[seller.id] || {}) : {}),
+    ...sellerOverrides,
     ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true, manageCoupons: true } : {}),
   };
 };

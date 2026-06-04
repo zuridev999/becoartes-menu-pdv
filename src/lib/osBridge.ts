@@ -12,7 +12,7 @@ type BridgeMessage = {
   payload?: unknown;
 };
 
-type AppView = 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr';
+type AppView = 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | 'delivery';
 type AdminTab = 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance' | 'qrcodes';
 type AdminMode = 'menu' | 'settings';
 
@@ -34,7 +34,7 @@ const configuredOrigins = (import.meta.env.VITE_OS_ALLOWED_ORIGINS || DEFAULT_OS
 
 export const OS_ALLOWED_ORIGINS = new Set(configuredOrigins);
 
-const allowedViews = new Set<AppView>(['tablet', 'pdv', 'admin', 'kitchen', 'qr']);
+const allowedViews = new Set<AppView>(['tablet', 'pdv', 'admin', 'kitchen', 'qr', 'delivery']);
 const allowedTabs = new Set<AdminTab>(['config', 'products', 'categories', 'optionals', 'sellers', 'movements', 'finance', 'qrcodes']);
 const allowedModes = new Set<AdminMode>(['menu', 'settings']);
 

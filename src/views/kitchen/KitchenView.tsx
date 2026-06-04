@@ -144,6 +144,7 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
   const timeText = `${mins}:${secs.toString().padStart(2, '0')}`;
   const isWarning = mins >= 10 && mins < 20;
   const isDanger = mins >= 20;
+  const isDelivery = order.origin === 'delivery';
 
   return (
     <motion.div 
@@ -162,7 +163,16 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
       </div>
 
       <div className="flex justify-between items-start gap-3 mb-4 sm:mb-6">
-        <h3 className="text-3xl sm:text-6xl font-black italic tracking-tighter leading-none">Mesa {order.tableNumber}</h3>
+        <div className="min-w-0">
+          {isDelivery && (
+            <div className="mb-2 inline-flex rounded-xl bg-red-600 px-3 py-2 text-[11px] sm:text-sm font-black tracking-[0.24em] text-white shadow-lg">
+              DELIVERY
+            </div>
+          )}
+          <h3 className="text-3xl sm:text-6xl font-black italic tracking-tighter leading-none">
+            {isDelivery ? 'Delivery' : `Mesa ${order.tableNumber}`}
+          </h3>
+        </div>
         <div className="flex items-center gap-2 font-black text-black">
           <Clock size={20} className="sm:w-7 sm:h-7" />
           <span className="text-xl sm:text-3xl">{timeText}</span>
@@ -230,6 +240,7 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
   const [showConfirm, setShowConfirm] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [completeError, setCompleteError] = useState('');
+  const isDelivery = order.origin === 'delivery';
 
   const confirmComplete = async () => {
     if (isCompleting) return;
@@ -259,7 +270,14 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
                 <Clock size={28} className="sm:w-10 sm:h-10" />
              </div>
              <div className="min-w-0">
-                <h2 className="text-3xl sm:text-6xl font-black italic tracking-tighter text-black leading-none">Mesa {order.tableNumber}</h2>
+                {isDelivery && (
+                  <p className="mb-2 inline-flex rounded-xl bg-red-600 px-3 py-2 text-[11px] sm:text-sm font-black tracking-[0.24em] text-white">
+                    DELIVERY
+                  </p>
+                )}
+                <h2 className="text-3xl sm:text-6xl font-black italic tracking-tighter text-black leading-none">
+                  {isDelivery ? 'Delivery' : `Mesa ${order.tableNumber}`}
+                </h2>
                 <p className="text-black/60 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] text-[10px] sm:text-sm truncate">Preparando Agora</p>
              </div>
           </div>

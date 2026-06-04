@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, X } from 'lucide-react';
 import { useStore, type Product, type Modifier } from '../../store';
-import { getImageSrc } from '../../lib/image';
+import { applyImageFallback, getImageSrc } from '../../lib/image';
 
 export function ProductModal({
   product,
@@ -11,6 +11,7 @@ export function ProductModal({
   qrMobileFlow = false,
   canChangeItemQuantity = true,
   canEditItemNotes = true,
+  onAddToCart,
 }: {
   product: Product;
   onClose: () => void;
@@ -18,6 +19,7 @@ export function ProductModal({
   qrMobileFlow?: boolean;
   canChangeItemQuantity?: boolean;
   canEditItemNotes?: boolean;
+  onAddToCart?: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
 }) {
   const { addToCart } = useStore();
   const [quantity, setQuantity] = useState(1);
@@ -41,7 +43,11 @@ export function ProductModal({
     }
 
     setIsAdding(true);
-    addToCart(product, quantity, selectedModifiers, notes);
+    if (onAddToCart) {
+      onAddToCart(product, quantity, selectedModifiers, notes);
+    } else {
+      addToCart(product, quantity, selectedModifiers, notes);
+    }
     onClose();
   };
 
@@ -66,7 +72,7 @@ export function ProductModal({
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`fixed inset-0 z-[750] flex items-center justify-center pointer-events-none font-['Outfit'] ${modalShellClass}`}>
         <div className={`glass-card flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
           <div className={`relative shrink-0 overflow-hidden ${mediaPanelClass}`}>
-             <img src={getImageSrc(product.image)} className="w-full h-full object-cover" />
+             <img src={getImageSrc(product.image)} onError={applyImageFallback} className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
              <div className={tabletLandscape ? 'absolute bottom-5 left-5 right-5 min-[900px]:bottom-10 min-[900px]:left-10 min-[900px]:right-10' : 'absolute bottom-16 left-16'}>
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2 block">{product.categoryName}</span>

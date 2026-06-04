@@ -94,7 +94,7 @@ export interface KitchenOrder {
   items: OrderItem[];
   status: 'pending' | 'preparing' | 'ready';
   createdAt: Date;
-  origin: 'tablet' | 'pdv';
+  origin: 'tablet' | 'pdv' | 'qr' | 'delivery';
   chefNotes?: string;
 }
 
@@ -127,6 +127,7 @@ export interface ClosedBill {
     method: 'credit' | 'debit' | 'cash' | 'pix';
     amount: number;
   }>;
+  items?: OrderItem[];
   closedAt: Date;
 }
 

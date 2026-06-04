@@ -32,3 +32,10 @@ export const getImageSrc = (src?: string | null) => {
 };
 
 export const fallbackImageSrc = FALLBACK_IMAGE;
+
+export const applyImageFallback = (event: { currentTarget: HTMLImageElement }) => {
+  const image = event.currentTarget;
+  if (image.src.includes(FALLBACK_IMAGE)) return;
+  image.onerror = null;
+  image.src = FALLBACK_IMAGE;
+};
