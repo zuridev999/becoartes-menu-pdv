@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { createReadStream, existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@libsql/client';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -121,14 +121,33 @@ const getBusinessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Amer
 const formatMoneyForNotification = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const hashToken = (value) => createHash('sha256').update(String(value || '')).digest('hex');
 const generateNumericCode = () => String(Math.floor(100000 + Math.random() * 900000));
-const hashDeliveryPassword = (password, salt = createId()) => {
+const DELIVERY_PASSWORD_KEYLEN = 64;
+const hashDeliveryPassword = (password, salt = randomBytes(16).toString('hex')) => {
+  const hash = scryptSync(String(password || ''), salt, DELIVERY_PASSWORD_KEYLEN).toString('hex');
+  return `scrypt:${salt}:${hash}`;
+};
+const hashLegacyDeliveryPassword = (password, salt = createId()) => {
   const hash = createHash('sha256').update(`${salt}:${password}:becoartes_delivery_2026`).digest('hex');
   return `${salt}:${hash}`;
 };
 const verifyDeliveryPassword = (password, storedHash = '') => {
-  const [salt] = String(storedHash || '').split(':');
-  if (!salt) return false;
-  return hashDeliveryPassword(password, salt) === storedHash;
+  const parts = String(storedHash || '').split(':');
+  if (parts.length === 3 && parts[0] === 'scrypt') {
+    const [, salt, stored] = parts;
+    if (!salt || !stored) return { ok: false, needsRehash: false };
+    const actual = scryptSync(String(password || ''), salt, DELIVERY_PASSWORD_KEYLEN);
+    const expected = Buffer.from(stored, 'hex');
+    return {
+      ok: expected.length === actual.length && timingSafeEqual(expected, actual),
+      needsRehash: false,
+    };
+  }
+  const [salt] = parts;
+  if (!salt) return { ok: false, needsRehash: false };
+  return {
+    ok: hashLegacyDeliveryPassword(password, salt) === storedHash,
+    needsRehash: true,
+  };
 };
 
 const parseJsonArray = (value) => {
@@ -567,7 +586,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS estoque_produtos (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, categoria TEXT, ativo INTEGER DEFAULT 1, quantidade_atual REAL DEFAULT 0, estoque_minimo REAL DEFAULT 0, created_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS estoque_movimentacoes (id TEXT PRIMARY KEY, empresa_id TEXT, produto_id TEXT, tipo_movimentacao TEXT, quantidade REAL, quantidade_anterior REAL, quantidade_nova REAL, motivo TEXT, responsavel_id TEXT, created_at INTEGER, closed_bill_id TEXT, order_id TEXT, order_item_id TEXT, origem TEXT, integration_event_id TEXT, source_item_id TEXT, source_item_kind TEXT)",
     "CREATE TABLE IF NOT EXISTS notificacoes (id TEXT PRIMARY KEY, empresa_id TEXT, usuario_id TEXT, titulo TEXT, mensagem TEXT, tipo TEXT, lida INTEGER DEFAULT 0, link TEXT, created_at INTEGER)",
-    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, empresa_id TEXT, role TEXT, created_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, email TEXT, role TEXT, funcao TEXT, ativo INTEGER DEFAULT 1, pin TEXT, is_operador INTEGER DEFAULT 1, permitir_acesso_remoto INTEGER DEFAULT 0, tipo_vinculo TEXT, created_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS fichas_tecnicas (id TEXT PRIMARY KEY, empresa_id TEXT, nome_prato TEXT, status TEXT DEFAULT 'active')",
     "CREATE TABLE IF NOT EXISTS ficha_ingredientes (id TEXT PRIMARY KEY, ficha_tecnica_id TEXT, estoque_produto_id TEXT, nome_exibicao TEXT, nome_ingrediente TEXT, quantidade_usada REAL, quantidade_estoque_baixa REAL, unidade_medida TEXT, unidade_estoque_baixa TEXT)",
     "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -644,6 +663,14 @@ const ensureDatabase = async () => {
     "ALTER TABLE estoque_movimentacoes ADD COLUMN integration_event_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN source_item_id TEXT",
     "ALTER TABLE estoque_movimentacoes ADD COLUMN source_item_kind TEXT",
+    "ALTER TABLE users ADD COLUMN nome TEXT",
+    "ALTER TABLE users ADD COLUMN email TEXT",
+    "ALTER TABLE users ADD COLUMN funcao TEXT",
+    "ALTER TABLE users ADD COLUMN ativo INTEGER DEFAULT 1",
+    "ALTER TABLE users ADD COLUMN pin TEXT",
+    "ALTER TABLE users ADD COLUMN is_operador INTEGER DEFAULT 1",
+    "ALTER TABLE users ADD COLUMN permitir_acesso_remoto INTEGER DEFAULT 0",
+    "ALTER TABLE users ADD COLUMN tipo_vinculo TEXT",
   ];
 
   for (const sql of migrations) {
@@ -1149,11 +1176,13 @@ const getCashState = async () => {
 const getOperationalUsers = async ({ includePins = false } = {}) => {
   const res = await db.execute({
     sql: `
-      SELECT id, nome, email, role, funcao, ativo, pin, is_operador, permitir_acesso_remoto
+      SELECT id, nome, email, role, funcao, ativo, pin, is_operador, permitir_acesso_remoto, tipo_vinculo
       FROM users
       WHERE empresa_id = ?
         AND COALESCE(ativo, 1) = 1
         AND COALESCE(is_operador, 1) = 1
+        AND lower(trim(COALESCE(role, ''))) != 'freelancer'
+        AND lower(trim(COALESCE(tipo_vinculo, ''))) != 'freelancer'
       ORDER BY nome COLLATE NOCASE ASC
     `,
     args: [OS_EMPRESA_ID],
@@ -1173,6 +1202,56 @@ const getOperationalUsers = async ({ includePins = false } = {}) => {
       source: 'os',
       email: row.email || '',
     }));
+};
+
+const syncOperationalUsersToSellers = async () => {
+  const operationalUsers = await getOperationalUsers({ includePins: true });
+  for (const user of operationalUsers) {
+    const mirrorId = `os:${user.id}`;
+    const pin = String(user.pin || '').trim();
+    await db.execute({
+      sql: `
+        INSERT INTO sellers (id, name, nickname, status, role, permission, pin)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          nickname = excluded.nickname,
+          status = excluded.status,
+          role = excluded.role,
+          permission = excluded.permission,
+          pin = CASE WHEN excluded.pin != '' THEN excluded.pin ELSE sellers.pin END
+      `,
+      args: [
+        mirrorId,
+        user.name,
+        user.nickname,
+        user.status,
+        user.role,
+        user.permission,
+        pin ? (isLegacyPlainPin(pin) ? hashPin(pin) : pin) : '',
+      ],
+    });
+  }
+
+  const freelancerUsers = await db.execute({
+    sql: `
+      SELECT id
+      FROM users
+      WHERE empresa_id = ?
+        AND COALESCE(ativo, 1) = 1
+        AND (
+          lower(trim(COALESCE(role, ''))) = 'freelancer'
+          OR lower(trim(COALESCE(tipo_vinculo, ''))) = 'freelancer'
+        )
+    `,
+    args: [OS_EMPRESA_ID],
+  });
+  for (const row of freelancerUsers.rows) {
+    await db.execute({
+      sql: "UPDATE sellers SET status = 'inactive' WHERE id = ?",
+      args: [`os:${row.id}`],
+    });
+  }
 };
 
 const getAuthSellers = async ({ includePins = false } = {}) => {
@@ -1667,6 +1746,7 @@ const ensureDefaultSellers = async () => {
       args: [seller.id, seller.name, seller.nickname, 'active', seller.role, seller.permission, hashPin(seller.pin)],
     });
   }
+  await syncOperationalUsersToSellers();
 };
 
 let defaultSellersReadyPromise = null;
@@ -3442,10 +3522,17 @@ const createDeliveryCustomerAccount = async ({ customer = {}, password = '' } = 
 const loginDeliveryCustomer = async ({ identity = '', password = '' } = {}) => {
   await ensureDatabaseReady();
   const customer = await findDeliveryCustomerIdentity({ email: identity, phone: identity });
-  if (!customer || !verifyDeliveryPassword(password, customer.password_hash)) {
+  const passwordCheck = customer ? verifyDeliveryPassword(password, customer.password_hash) : { ok: false, needsRehash: false };
+  if (!customer || !passwordCheck.ok) {
     const error = new Error('E-mail/telefone ou senha invalidos.');
     error.statusCode = 401;
     throw error;
+  }
+  if (passwordCheck.needsRehash) {
+    await db.execute({
+      sql: "UPDATE delivery_customers SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      args: [hashDeliveryPassword(password), customer.id],
+    });
   }
   const session = await createDeliveryCustomerSession(customer.id);
   return { customer: deliveryCustomerPublic(customer), session };
@@ -5564,6 +5651,30 @@ const closeBillWithInventorySync = async (data, session = null) => {
 
   if (payments.length > 1) {
     requirePermission(session, 'splitPayment', settings);
+  }
+
+  const activePaymentsRes = await db.execute({
+    sql: "SELECT id, method, amount FROM table_payments WHERE table_id = ? AND status = 'active' ORDER BY created_at ASC",
+    args: [tableId],
+  });
+  const activePaymentsById = new Map(activePaymentsRes.rows.map((payment) => [String(payment.id), payment]));
+  if (totalCents > 0) {
+    if (activePaymentsById.size !== payments.length) {
+      throw new Error('Pagamentos da tela não batem com os pagamentos salvos na mesa. Reabra a conta e sincronize antes de fechar.');
+    }
+    for (const payment of payments) {
+      const paymentId = String(payment?.id || '');
+      const savedPayment = activePaymentsById.get(paymentId);
+      if (!paymentId || !savedPayment) {
+        throw new Error('Pagamento precisa estar lançado e salvo na mesa antes do fechamento.');
+      }
+      if (String(savedPayment.method) !== String(payment.method)) {
+        throw new Error('Forma de pagamento divergente entre tela e banco. Remova e lance novamente.');
+      }
+      if (moneyToCents(savedPayment.amount || 0, 'savedPayment.amount') !== moneyToCents(payment.amount || 0, 'payment.amount')) {
+        throw new Error('Valor de pagamento divergente entre tela e banco. Remova e lance novamente.');
+      }
+    }
   }
 
   const validPaymentMethods = new Set(['credit', 'debit', 'cash', 'pix']);

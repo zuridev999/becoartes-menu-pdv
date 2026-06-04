@@ -64,6 +64,31 @@ const fetchStatus = async (url, attempts = 2) => {
   return { status: 0, error: lastError?.cause?.code || lastError?.message || 'request_failed', attempts };
 };
 
+const checkAuthoritativeDns = async (domain) => {
+  const zone = domain.split('.').slice(-2).join('.');
+  try {
+    const nameservers = await dns.resolveNs(zone);
+    const checks = await Promise.all(nameservers.map(async (nameserver) => {
+      const result = { nameserver, addresses: [], resolvesExpectedIp: false };
+      try {
+        const nameserverIps = await dns.resolve4(nameserver);
+        result.nameserverIps = nameserverIps;
+        const resolver = new dns.Resolver();
+        resolver.setServers(nameserverIps);
+        const addresses = await resolver.resolve4(domain);
+        result.addresses = addresses;
+        result.resolvesExpectedIp = addresses.includes(expectedIp);
+      } catch (error) {
+        result.error = error.code || error.message;
+      }
+      return result;
+    }));
+    return { zone, nameservers: checks };
+  } catch (error) {
+    return { zone, nameservers: [], error: error.code || error.message };
+  }
+};
+
 const checkDomain = async (domain) => {
   const result = {
     domain,
@@ -74,6 +99,10 @@ const checkDomain = async (domain) => {
     httpError: null,
     httpsError: null,
   };
+
+  if (domain === 'delivery.becoartes.com') {
+    result.authoritative = await checkAuthoritativeDns(domain);
+  }
 
   try {
     result.addresses = await dns.resolve4(domain);
@@ -165,6 +194,12 @@ for (const domain of domainResults) {
   if (domain.domain !== 'bar.becoartes.com' && ![200, 301, 302, 307, 308].includes(domain.httpsStatus)) {
     failures.push(`${domain.domain} HTTPS inesperado (${domain.httpsStatus})`);
   }
+}
+
+const deliveryDomain = domainResults.find((domain) => domain.domain === 'delivery.becoartes.com');
+const brokenDeliveryNameservers = deliveryDomain?.authoritative?.nameservers?.filter((item) => !item.resolvesExpectedIp) || [];
+if (brokenDeliveryNameservers.length > 0) {
+  failures.push(`delivery.becoartes.com inconsistente nos nameservers autoritativos: ${brokenDeliveryNameservers.map((item) => item.nameserver).join(', ')}`);
 }
 
 if (!config.ok) failures.push(`config delivery indisponivel (${config.status})`);

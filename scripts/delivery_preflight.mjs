@@ -70,6 +70,31 @@ const safePublicConfig = async () => {
   }
 };
 
+const checkAuthoritativeDns = async (domain) => {
+  const zone = domain.split('.').slice(-2).join('.');
+  try {
+    const nameservers = await dns.resolveNs(zone);
+    const checks = await Promise.all(nameservers.map(async (nameserver) => {
+      const result = { nameserver, addresses: [], resolvesExpectedIp: false };
+      try {
+        const nameserverIps = await dns.resolve4(nameserver);
+        result.nameserverIps = nameserverIps;
+        const resolver = new dns.Resolver();
+        resolver.setServers(nameserverIps);
+        const addresses = await resolver.resolve4(domain);
+        result.addresses = addresses;
+        result.resolvesExpectedIp = addresses.includes(expectedIp);
+      } catch (error) {
+        result.error = error.code || error.message;
+      }
+      return result;
+    }));
+    return { zone, nameservers: checks };
+  } catch (error) {
+    return { zone, nameservers: [], error: error.code || error.message };
+  }
+};
+
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 const gitStatus = await commandResult('git', ['status', '--short']);
 const gitCommit = await commandResult('git', ['rev-parse', '--short', 'HEAD']);
@@ -85,6 +110,7 @@ if (runChecks) {
 }
 
 const domainResults = await Promise.all(domains.map(checkDomain));
+const deliveryAuthoritativeDns = await checkAuthoritativeDns('delivery.becoartes.com');
 const publicConfig = await safePublicConfig();
 
 const failures = [];
@@ -97,6 +123,10 @@ for (const domain of domainResults) {
 }
 const deliveryDomain = domainResults.find((domain) => domain.domain === 'delivery.becoartes.com');
 if (!deliveryDomain?.resolvesExpectedIp) failures.push(`delivery.becoartes.com ainda nao resolve para ${expectedIp}`);
+const brokenDeliveryNameservers = deliveryAuthoritativeDns.nameservers?.filter((item) => !item.resolvesExpectedIp) || [];
+if (brokenDeliveryNameservers.length > 0) {
+  failures.push(`delivery.becoartes.com inconsistente nos nameservers autoritativos: ${brokenDeliveryNameservers.map((item) => item.nameserver).join(', ')}`);
+}
 if (publicConfig && !publicConfig.ok) failures.push(`config publica delivery indisponivel (${publicConfig.status})`);
 for (const [name, result] of optionalChecks) {
   if (!result.ok) failures.push(`${name} falhou`);
@@ -117,6 +147,7 @@ const report = {
     warnings: dockerComposeConfig.stderr ? dockerComposeConfig.stderr.split('\n').slice(0, 5) : [],
   },
   domains: domainResults,
+  deliveryAuthoritativeDns,
   publicConfig,
   optionalChecks: Object.fromEntries(optionalChecks.map(([name, result]) => [name, { ok: result.ok }])),
   failures,

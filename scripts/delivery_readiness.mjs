@@ -36,12 +36,38 @@ const run = async (cmd, args, options = {}) => {
   }
 };
 
+const checkAuthoritativeDns = async (domain) => {
+  const zone = domain.split('.').slice(-2).join('.');
+  try {
+    const nameservers = await dns.resolveNs(zone);
+    const checks = await Promise.all(nameservers.map(async (nameserver) => {
+      const result = { nameserver, addresses: [], resolvesExpectedIp: false };
+      try {
+        const nameserverIps = await dns.resolve4(nameserver);
+        result.nameserverIps = nameserverIps;
+        const resolver = new dns.Resolver();
+        resolver.setServers(nameserverIps);
+        const addresses = await resolver.resolve4(domain);
+        result.addresses = addresses;
+        result.resolvesExpectedIp = addresses.includes(expectedIp);
+      } catch (error) {
+        result.error = error.code || error.message;
+      }
+      return result;
+    }));
+    return { zone, nameservers: checks };
+  } catch (error) {
+    return { zone, nameservers: [], error: error.code || error.message };
+  }
+};
+
 const checkDns = async (domain) => {
+  const authoritative = await checkAuthoritativeDns(domain);
   try {
     const addresses = await dns.resolve4(domain);
-    return { domain, addresses, resolvesExpectedIp: addresses.includes(expectedIp) };
+    return { domain, addresses, resolvesExpectedIp: addresses.includes(expectedIp), authoritative };
   } catch (error) {
-    return { domain, addresses: [], resolvesExpectedIp: false, error: error.code || error.message };
+    return { domain, addresses: [], resolvesExpectedIp: false, error: error.code || error.message, authoritative };
   }
 };
 
@@ -124,6 +150,8 @@ const deliveryViewExists = existsSync(new URL('../src/views/delivery/DeliveryVie
 const deliverySmokeExists = existsSync(new URL('../scripts/delivery_all_smokes.mjs', import.meta.url));
 
 const dnsDelivery = await checkDns('delivery.becoartes.com');
+const dnsDeliveryAuthoritativeReady = dnsDelivery.authoritative?.nameservers?.length > 0
+  && dnsDelivery.authoritative.nameservers.every((item) => item.resolvesExpectedIp);
 const publicConfig = await checkPublicConfig();
 const remoteRelease = await checkRemoteRelease();
 
@@ -189,9 +217,11 @@ const phases = [
   ),
   phase(
     'domain_dns',
-    dnsDelivery.resolvesExpectedIp ? 'ready' : 'needs_external',
+    dnsDelivery.resolvesExpectedIp && dnsDeliveryAuthoritativeReady ? 'ready' : 'needs_external',
     dnsDelivery,
-    dnsDelivery.resolvesExpectedIp ? '' : `Criar DNS delivery.becoartes.com apontando para ${expectedIp}.`
+    dnsDelivery.resolvesExpectedIp && dnsDeliveryAuthoritativeReady
+      ? ''
+      : `Corrigir o DNS autoritativo para que todos os nameservers de becoartes.com respondam delivery.becoartes.com -> ${expectedIp}.`
   ),
   phase(
     'remote_release',

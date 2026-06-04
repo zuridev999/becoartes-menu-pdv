@@ -1,12 +1,14 @@
 {
   "name": "becoartes-menu-pdv",
   "private": true,
-  "version": "1.4.30",
+  "version": "1.4.31",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "audit:ui": "node scripts/audit_ui_actions.mjs",
+    "profile:prod": "node scripts/profile_prod.mjs",
     "preview": "vite preview",
     "start": "node server/bff.mjs",
     "deploy:delivery:dry-run": "node scripts/delivery_deploy_dry_run.mjs",

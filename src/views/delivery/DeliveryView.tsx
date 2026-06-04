@@ -328,7 +328,6 @@ export function DeliveryView() {
     if (!validateCheckout() || cart.length === 0 || isPaying) return;
 
     setIsPaying(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 900));
 
     const now = new Date().toISOString();
     const orderId = `delivery_${createId()}`;
@@ -386,6 +385,10 @@ export function DeliveryView() {
       saveMockOrder(persistedOrder);
       localStorage.setItem(LAST_ORDER_KEY, persistedOrder.orderId);
       setCompletedOrder(persistedOrder);
+      setCart([]);
+      setIsCheckoutOpen(false);
+      setPassword('');
+      setCustomer((current) => account ? current : emptyCustomer);
       const message = result.order.checkoutUrl
         ? 'Checkout PagBank criado. Finalize o pagamento para acionar operação.'
         : isPaymentApproved(result.order.paymentStatus)
@@ -393,16 +396,9 @@ export function DeliveryView() {
           : 'Delivery registrado aguardando integração de pagamento.';
       addNotification(message, isPaymentApproved(result.order.paymentStatus) ? 'order' : 'info');
     } catch (error) {
-      console.warn('Checkout delivery mock ficou local:', error);
-      saveMockOrder(fallbackOrder);
-      localStorage.setItem(LAST_ORDER_KEY, fallbackOrder.orderId);
-      setCompletedOrder(fallbackOrder);
-      addNotification('Delivery pago em modo local. BFF indisponível para persistir.', 'info');
+      console.warn('Checkout delivery indisponível:', error);
+      addNotification(error instanceof Error ? error.message : 'Checkout indisponível. Revise os dados e tente novamente.', 'error');
     } finally {
-      setCart([]);
-      setIsCheckoutOpen(false);
-      setPassword('');
-      setCustomer((current) => account ? current : emptyCustomer);
       setIsPaying(false);
     }
   };
