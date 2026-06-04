@@ -5653,30 +5653,6 @@ const closeBillWithInventorySync = async (data, session = null) => {
     requirePermission(session, 'splitPayment', settings);
   }
 
-  const activePaymentsRes = await db.execute({
-    sql: "SELECT id, method, amount FROM table_payments WHERE table_id = ? AND status = 'active' ORDER BY created_at ASC",
-    args: [tableId],
-  });
-  const activePaymentsById = new Map(activePaymentsRes.rows.map((payment) => [String(payment.id), payment]));
-  if (totalCents > 0) {
-    if (activePaymentsById.size !== payments.length) {
-      throw new Error('Pagamentos da tela não batem com os pagamentos salvos na mesa. Reabra a conta e sincronize antes de fechar.');
-    }
-    for (const payment of payments) {
-      const paymentId = String(payment?.id || '');
-      const savedPayment = activePaymentsById.get(paymentId);
-      if (!paymentId || !savedPayment) {
-        throw new Error('Pagamento precisa estar lançado e salvo na mesa antes do fechamento.');
-      }
-      if (String(savedPayment.method) !== String(payment.method)) {
-        throw new Error('Forma de pagamento divergente entre tela e banco. Remova e lance novamente.');
-      }
-      if (moneyToCents(savedPayment.amount || 0, 'savedPayment.amount') !== moneyToCents(payment.amount || 0, 'payment.amount')) {
-        throw new Error('Valor de pagamento divergente entre tela e banco. Remova e lance novamente.');
-      }
-    }
-  }
-
   const validPaymentMethods = new Set(['credit', 'debit', 'cash', 'pix']);
   let paymentTotalCents = 0;
   let hasCashPayment = false;
