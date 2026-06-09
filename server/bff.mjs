@@ -1954,12 +1954,6 @@ const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = n
   await ensureDefaultSellersReady();
   const safePin = String(pin || '');
 
-  // O PIN super admin é reservado: ele não deve autenticar um colaborador que
-  // tenha recebido o mesmo PIN por engano no cadastro do PDV/OS.
-  if (isAdminBypassPin(safePin)) {
-    return createAdminBypassSession();
-  }
-
   const activeSellers = (await getAuthSellers({ includePins: true }))
     .filter((seller) => seller.status === 'active' && (!sellerId || seller.id === sellerId));
   let blockedNonAdminMatch = false;
@@ -2001,6 +1995,10 @@ const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = n
       seller: safeSeller,
       sessionToken: createSessionToken(safeSeller),
     };
+  }
+
+  if (!sellerId && isAdminBypassPin(safePin)) {
+    return createAdminBypassSession();
   }
 
   return { seller: null, sessionToken: null, accessRestricted: blockedNonAdminMatch };
