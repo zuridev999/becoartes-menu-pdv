@@ -15,6 +15,16 @@ import { ActionDialog } from '../../components/common/ActionDialog';
 import { ProductModal } from '../../components/modals/ProductModal';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
+import { AppApi, type PdvLockState } from '../../lib/api';
+
+const CANCEL_REASONS = [
+  { code: 'cliente_desistiu', label: 'Cliente desistiu' },
+  { code: 'pedido_por_engano', label: 'Pedido por engano' },
+  { code: 'produto_indisponivel', label: 'Produto indisponível' },
+  { code: 'erro_preparo', label: 'Erro de preparo' },
+  { code: 'correcao_administrativa', label: 'Correção administrativa' },
+  { code: 'outro', label: 'Outro motivo' },
+];
 
 export function PDVView() {
   const { 
@@ -57,6 +67,8 @@ export function PDVView() {
   const [logDetails, setLogDetails] = useState('');
   const [logTable, setLogTable] = useState('');
   const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableId: string; tableNumber: number } | null>(null);
+  const [cancelReasonCode, setCancelReasonCode] = useState('');
+  const [cancelReasonNotes, setCancelReasonNotes] = useState('');
   
   const [selectedRequestForDetails, setSelectedRequestForDetails] = useState<any>(null);
   const [isPanicDismissed, setIsPanicDismissed] = useState(false);
@@ -68,6 +80,7 @@ export function PDVView() {
   const [cashError, setCashError] = useState('');
   const [isCashSubmitting, setIsCashSubmitting] = useState(false);
   const [isEmbedded, setIsEmbedded] = useState(false);
+  const [pdvLockState, setPdvLockState] = useState<PdvLockState | null>(null);
 
   // Filtra solicitações das últimas 2 horas para manter a tela limpa
   const now = new Date();
@@ -175,6 +188,31 @@ export function PDVView() {
       setActiveCategory(categories[0].id);
     }
   }, [categories, activeCategory]);
+
+  useEffect(() => {
+    if (!currentSeller) {
+      setPdvLockState(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadLockState() {
+      try {
+        const state = await AppApi.getPdvLockState();
+        if (!cancelled) setPdvLockState(state);
+      } catch (error) {
+        console.warn('Falha ao consultar bloqueio do PDV:', error);
+      }
+    }
+
+    loadLockState();
+    const timer = window.setInterval(loadLockState, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [currentSeller?.id]);
 
   const handleLogin = async () => {
     const success = await login(pin);
@@ -348,6 +386,22 @@ export function PDVView() {
     >
       {/* MODO PÂNICO OVERLAY */}
       <AnimatePresence>
+        {pdvLockState?.locked && currentSeller.permission !== 'admin' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[1400] flex flex-col items-center justify-center bg-[#0b4dff] p-8 text-center"
+          >
+            <LockKeyhole size={92} className="mb-8 text-white" />
+            <h1 className="text-5xl sm:text-7xl xl:text-8xl font-black italic tracking-tighter text-white">
+              PDV BLOQUEADO
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg sm:text-2xl font-black uppercase tracking-[0.2em] text-white/80">
+              Consultar mensagens no celular
+            </p>
+          </motion.div>
+        )}
         {hasPanicAlert && (
           <motion.div 
             initial={{ opacity: 0 }}
@@ -726,7 +780,11 @@ export function PDVView() {
                         <p className="font-black italic text-zinc-300">R$ {getOrderItemTotal(o).toFixed(2)}</p>
                         {canCancelTableItem && (
                           <button
-                            onClick={() => setCancelItemDialog({ item: o, tableId: managedTable?.id || selectedTable.id, tableNumber: selectedTable.number })}
+                            onClick={() => {
+                              setCancelReasonCode('');
+                              setCancelReasonNotes('');
+                              setCancelItemDialog({ item: o, tableId: managedTable?.id || selectedTable.id, tableNumber: selectedTable.number });
+                            }}
                             className="p-3 glass rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all"
                             title="Cancelar item da mesa"
                           >
@@ -1080,20 +1138,35 @@ export function PDVView() {
             title="Cancelar item?"
             description={`Remover ${cancelItemDialog.item.quantity}x ${cancelItemDialog.item.name} da Mesa ${cancelItemDialog.tableNumber}. O total do pedido será recalculado.`}
             confirmLabel="Cancelar item"
-            onClose={() => setCancelItemDialog(null)}
+            confirmDisabled={!cancelReasonCode || (cancelReasonCode === 'outro' && !cancelReasonNotes.trim())}
+            onClose={() => {
+              setCancelItemDialog(null);
+              setCancelReasonCode('');
+              setCancelReasonNotes('');
+            }}
             onConfirm={async () => {
+              const reason = CANCEL_REASONS.find(item => item.code === cancelReasonCode);
               await removeOrderItem(cancelItemDialog.item.id, {
                 tableId: cancelItemDialog.tableId,
                 tableNumber: cancelItemDialog.tableNumber,
                 itemName: cancelItemDialog.item.name,
                 quantity: cancelItemDialog.item.quantity,
                 sellerName: currentSeller?.name,
-                sellerPermission: currentSeller?.permission
+                sellerPermission: currentSeller?.permission,
+                reasonCode: reason?.code,
+                reasonLabel: reason?.label,
+                reasonNotes: cancelReasonNotes.trim()
               });
               try {
                 await addAuditLog({
                   action: 'item_cancelled',
-                  details: { product_name: cancelItemDialog.item.name, quantity: cancelItemDialog.item.quantity },
+                  details: {
+                    product_name: cancelItemDialog.item.name,
+                    quantity: cancelItemDialog.item.quantity,
+                    reason_code: reason?.code,
+                    reason_label: reason?.label,
+                    reason_notes: cancelReasonNotes.trim(),
+                  },
                   table_number: cancelItemDialog.tableNumber.toString(),
                   origin: 'pdv'
                 });
@@ -1101,7 +1174,34 @@ export function PDVView() {
                 console.warn('Item removido, mas auditoria falhou:', error);
               }
             }}
-          />
+          >
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {CANCEL_REASONS.map((reason) => (
+                  <button
+                    key={reason.code}
+                    type="button"
+                    onClick={() => setCancelReasonCode(reason.code)}
+                    className={`rounded-2xl border px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest transition-all ${
+                      cancelReasonCode === reason.code
+                        ? 'border-rose-400 bg-rose-500/20 text-white shadow-lg shadow-rose-950/20'
+                        : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/25 hover:text-white'
+                    }`}
+                  >
+                    {reason.label}
+                  </button>
+                ))}
+              </div>
+              {cancelReasonCode === 'outro' && (
+                <textarea
+                  value={cancelReasonNotes}
+                  onChange={(event) => setCancelReasonNotes(event.target.value)}
+                  placeholder="Explique o motivo do cancelamento..."
+                  className="w-full min-h-24 glass rounded-2xl border-white/10 p-4 text-sm font-bold outline-none focus:border-rose-400/50"
+                />
+              )}
+            </div>
+          </ActionDialog>
         )}
       </AnimatePresence>
 

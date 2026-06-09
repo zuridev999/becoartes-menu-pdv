@@ -133,7 +133,7 @@ export interface AppState {
   syncBeveragesFromInventory: () => Promise<void>;
 
   addToCart: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
-  removeOrderItem: (itemId: string, context?: { tableId?: string; tableNumber: number; itemName: string; quantity: number; sellerName?: string; sellerPermission?: Seller['permission'] }) => Promise<void>;
+  removeOrderItem: (itemId: string, context?: { tableId?: string; tableNumber: number; itemName: string; quantity: number; sellerName?: string; sellerPermission?: Seller['permission']; reasonCode?: string; reasonLabel?: string; reasonNotes?: string }) => Promise<void>;
   removeFromCart: (itemId: string) => void;
   sendToKitchen: (tableId: string, origin?: 'tablet' | 'pdv' | 'qr', sellerId?: string) => Promise<void>;
   requestBill: (tableId: string) => void;
@@ -723,7 +723,10 @@ export const useStore = create<AppState>((set, get) => ({
           itemName: context.itemName,
           quantity: context.quantity,
           sellerName: context.sellerName || get().currentSeller?.name || 'Sistema',
-          sellerPermission: context.sellerPermission || get().currentSeller?.permission || 'standard'
+          sellerPermission: context.sellerPermission || get().currentSeller?.permission || 'standard',
+          reasonCode: context.reasonCode,
+          reasonLabel: context.reasonLabel,
+          reasonNotes: context.reasonNotes
         } : undefined
       });
 

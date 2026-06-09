@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { motion } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, X } from 'lucide-react';
@@ -17,6 +18,8 @@ type ActionDialogProps = {
     type?: string;
     inputMode?: InputHTMLAttributes<HTMLInputElement>['inputMode'];
   };
+  children?: ReactNode;
+  confirmDisabled?: boolean;
   onClose: () => void;
   onConfirm?: (value?: string) => void | Promise<void>;
 };
@@ -29,6 +32,8 @@ export function ActionDialog({
   cancelLabel = 'Cancelar',
   tone = 'primary',
   input,
+  children,
+  confirmDisabled = false,
   onClose,
   onConfirm
 }: ActionDialogProps) {
@@ -79,6 +84,8 @@ export function ActionDialog({
         <h3 className="text-3xl font-black italic tracking-tighter mb-3">{title}</h3>
         {description && <p className="text-sm font-bold text-zinc-400 leading-relaxed mb-8">{description}</p>}
 
+        {children && <div className="mb-8">{children}</div>}
+
         {input && (
           <div className="space-y-2 mb-8">
             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{input.label}</label>
@@ -101,7 +108,7 @@ export function ActionDialog({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={isSubmitting || Boolean(input && !value.trim())}
+            disabled={isSubmitting || confirmDisabled || Boolean(input && !value.trim())}
             className={`flex-1 py-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all disabled:opacity-40 ${isDanger ? 'bg-rose-500 text-white hover:bg-rose-400' : 'btn-beco btn-beco-purple'}`}
           >
             {isSubmitting ? 'Aguarde...' : confirmLabel}

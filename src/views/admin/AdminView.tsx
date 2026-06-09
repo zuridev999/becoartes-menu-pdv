@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
@@ -6,7 +6,7 @@ import {
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
   GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy,
-  QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle, Bike
+  QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle, Bike, LockKeyhole
 } from 'lucide-react';
 import {
   DndContext,
@@ -496,8 +496,11 @@ export function AdminView() {
   const [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState<DeliveryOrderSummary | null>(null);
   const [isDeliveryDetailLoading, setIsDeliveryDetailLoading] = useState(false);
   const [selectedClosedBill, setSelectedClosedBill] = useState<ClosedBill | null>(null);
+  const [pdvLockState, setPdvLockState] = useState<{ locked: boolean; message: string } | null>(null);
+  const [isPdvLockSaving, setIsPdvLockSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
+  const productImageInputRef = useRef<HTMLInputElement | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -510,6 +513,35 @@ export function AdminView() {
       const oldIndex = categories.findIndex(c => c.id === active.id);
       const newIndex = categories.findIndex(c => c.id === over.id);
       reorderCategories(arrayMove(categories, oldIndex, newIndex));
+    }
+  };
+
+  const refreshPdvLockState = useCallback(async () => {
+    try {
+      const state = await AppApi.getPdvLockState();
+      setPdvLockState({ locked: state.locked, message: state.message });
+    } catch (error) {
+      console.warn('Falha ao ler bloqueio do PDV:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshPdvLockState();
+  }, [refreshPdvLockState]);
+
+  const togglePdvLock = async () => {
+    if (isPdvLockSaving) return;
+    const nextLocked = !pdvLockState?.locked;
+    setIsPdvLockSaving(true);
+    try {
+      const state = await AppApi.setPdvLockState(nextLocked);
+      setPdvLockState({ locked: state.locked, message: state.message });
+      addNotification(state.locked ? 'PDV operacional bloqueado.' : 'PDV operacional liberado.', 'info');
+    } catch (error) {
+      console.error('Erro ao alternar bloqueio do PDV:', error);
+      addNotification('Não foi possível alternar o bloqueio do PDV.', 'error');
+    } finally {
+      setIsPdvLockSaving(false);
     }
   };
 
@@ -1059,7 +1091,7 @@ export function AdminView() {
   };
 
   const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new window.Image();
@@ -1087,10 +1119,32 @@ export function AdminView() {
           ctx?.drawImage(img, 0, 0, width, height);
           resolve(canvas.toDataURL('image/jpeg', 0.7));
         };
+        img.onerror = () => reject(new Error('Imagem inválida ou corrompida.'));
         img.src = e.target?.result as string;
       };
+      reader.onerror = () => reject(reader.error || new Error('Não foi possível ler a imagem.'));
       reader.readAsDataURL(file);
     });
+  };
+
+  const handleProductImageFile = async (file?: File | null) => {
+    if (!file) return;
+    if (!canEditProductFields) {
+      addNotification('Sem permissão para alterar a imagem deste produto.', 'error');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      addNotification('Selecione um arquivo de imagem.', 'error');
+      return;
+    }
+    try {
+      const compressed = await compressImage(file);
+      setEditingProduct((current) => current ? { ...current, image: compressed } : current);
+      addNotification('Imagem carregada. Salve o produto para publicar a alteração.', 'info');
+    } catch (error) {
+      console.error('Erro ao carregar imagem do produto:', error);
+      addNotification('Não foi possível carregar essa imagem.', 'error');
+    }
   };
 
   return (
@@ -1112,7 +1166,32 @@ export function AdminView() {
               {getAppLabel()} {APP_BUILD_LABEL}
             </p>
           </div>
+          <button
+            onClick={togglePdvLock}
+            disabled={isPdvLockSaving}
+            className={`ml-auto hidden sm:flex h-14 items-center gap-3 rounded-2xl border px-5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+              pdvLockState?.locked
+                ? 'border-rose-400/40 bg-rose-500/15 text-rose-200 shadow-xl shadow-rose-950/20'
+                : 'border-white/10 bg-white/[0.04] text-zinc-400 hover:border-primary/40 hover:text-white'
+            }`}
+            title={pdvLockState?.locked ? 'Liberar PDV operacional' : 'Bloquear PDV operacional'}
+          >
+            <LockKeyhole size={18} />
+            {isPdvLockSaving ? 'Salvando...' : pdvLockState?.locked ? 'Liberar PDV' : 'Travar PDV'}
+          </button>
         </div>
+        <button
+          onClick={togglePdvLock}
+          disabled={isPdvLockSaving}
+          className={`sm:hidden flex h-12 w-full items-center justify-center gap-3 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+            pdvLockState?.locked
+              ? 'border-rose-400/40 bg-rose-500/15 text-rose-200'
+              : 'border-white/10 bg-white/[0.04] text-zinc-400'
+          }`}
+        >
+          <LockKeyhole size={16} />
+          {isPdvLockSaving ? 'Salvando...' : pdvLockState?.locked ? 'Liberar PDV operacional' : 'Travar PDV operacional'}
+        </button>
         <div className="w-full max-w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-2">
         <div className="flex w-max min-w-full glass p-2 rounded-[2rem] border-white/5">
           {[
@@ -1558,19 +1637,33 @@ export function AdminView() {
                   <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Imagem do Produto</label>
                     <div
+                      role="button"
+                      tabIndex={0}
                       onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      onDrop={async (e) => {
+                      onDrop={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         const file = e.dataTransfer.files?.[0];
-                        if (file) {
-                          if (canEditProductFields) {
-                            const compressed = await compressImage(file);
-                            setEditingProduct({ ...editingProduct, image: compressed });
+                        void handleProductImageFile(file);
+                      }}
+                      onClick={() => {
+                        if (!canEditProductFields) {
+                          addNotification('Sem permissão para alterar a imagem deste produto.', 'error');
+                          return;
+                        }
+                        productImageInputRef.current?.click();
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          if (!canEditProductFields) {
+                            addNotification('Sem permissão para alterar a imagem deste produto.', 'error');
+                            return;
                           }
+                          productImageInputRef.current?.click();
                         }
                       }}
-                      className="relative h-48 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 group hover:border-primary/40 hover:bg-white/[0.04] transition-all overflow-hidden cursor-pointer"
+                      className={`relative h-48 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 group hover:border-primary/40 hover:bg-white/[0.04] transition-all overflow-hidden ${canEditProductFields ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
                     >
                       {editingProduct.image ? (
                         <>
@@ -1594,16 +1687,15 @@ export function AdminView() {
                         </>
                       )}
                       <input
+                        ref={productImageInputRef}
                         type="file"
                         accept="image/*"
-                        className="absolute inset-0 opacity-0 cursor-pointer"
+                        className="hidden"
                         disabled={!canEditProductFields}
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            const compressed = await compressImage(file);
-                            setEditingProduct({ ...editingProduct, image: compressed });
-                          }
+                          await handleProductImageFile(file);
+                          e.currentTarget.value = '';
                         }}
                       />
                     </div>

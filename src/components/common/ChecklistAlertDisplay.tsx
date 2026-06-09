@@ -19,7 +19,8 @@ type ChecklistAlertResponse = {
   alerts?: ChecklistAlert[];
 };
 
-const SNOOZE_MS = 5 * 60 * 1000;
+const BEFORE_DUE_SNOOZE_MS = 30 * 60 * 1000;
+const OVERDUE_SNOOZE_MS = 2 * 60 * 1000;
 const POLL_MS = 60 * 1000;
 const DEFAULT_ALERTS_URL = 'https://os.becoartes.com/api/operational/checklist-alerts?slug=becoartes';
 
@@ -33,6 +34,13 @@ function getSnoozeKey(alertId: string) {
 
 function isSnoozed(alertId: string, nowMs: number) {
   return Number(localStorage.getItem(getSnoozeKey(alertId)) || 0) > nowMs;
+}
+
+function getAlertDueMs(alert: ChecklistAlert) {
+  const [hour, minute] = String(alert.horario || '').split(':').map(Number);
+  if (!alert.dataOperacional || Number.isNaN(hour) || Number.isNaN(minute)) return Date.now();
+
+  return new Date(`${alert.dataOperacional}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`).getTime();
 }
 
 export function ChecklistAlertDisplay() {
@@ -71,7 +79,9 @@ export function ChecklistAlertDisplay() {
   if (!alert) return null;
 
   function snoozeAlert() {
-    localStorage.setItem(getSnoozeKey(alert.id), String(Date.now() + SNOOZE_MS));
+    const now = Date.now();
+    const snoozeMs = now < getAlertDueMs(alert) ? BEFORE_DUE_SNOOZE_MS : OVERDUE_SNOOZE_MS;
+    localStorage.setItem(getSnoozeKey(alert.id), String(now + snoozeMs));
     setNowMs(Date.now());
   }
 
@@ -108,7 +118,7 @@ export function ChecklistAlertDisplay() {
                 </span>
               </div>
               <p className="mt-3 text-xs font-bold leading-relaxed text-zinc-300">
-                Ainda faltam {alert.pendente} item(ns). Fechar este aviso só pausa por 5 minutos.
+                Ainda faltam {alert.pendente} item(ns). Antes do horário o aviso pausa por 30 minutos; depois do horário ele volta em 2 minutos.
               </p>
             </div>
             <button

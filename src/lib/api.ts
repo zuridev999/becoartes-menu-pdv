@@ -39,6 +39,14 @@ type UpdateOrderStatusResult = {
   request: (Omit<ServiceRequest, 'createdAt'> & { createdAt: string }) | null;
 };
 
+export type PdvLockState = {
+  locked: boolean;
+  message: string;
+  lockedById?: string;
+  lockedByName?: string;
+  updatedAt?: string;
+};
+
 export type CashState = {
   businessDate: string;
   isOpen: boolean;
@@ -174,6 +182,9 @@ export const OperationalApi = {
       quantity: number;
       sellerName?: string;
       sellerPermission?: string;
+      reasonCode?: string;
+      reasonLabel?: string;
+      reasonNotes?: string;
     };
   }) {
     return postJson<{ orderId: string | null }>('/api/order-items/delete', input);
@@ -204,8 +215,8 @@ export const OperationalApi = {
       }));
   },
 
-  cancelTablePayment(id: string) {
-    return postJson<{ cancelled: boolean }>('/api/table-payments/cancel', { id });
+  cancelTablePayment(id: string, cancelContext?: { reasonCode?: string; reasonLabel?: string; reasonNotes?: string }) {
+    return postJson<{ cancelled: boolean }>('/api/table-payments/cancel', { id, cancelContext });
   },
 
   validateCoupon(input: {
@@ -529,6 +540,14 @@ export const AppApi = {
 
   fetchAuditLogs(limit = 100, filters: { startDate?: string; endDate?: string; author?: string; action?: string } = {}) {
     return postJson<{ auditLogs: any[] }>('/api/audit-logs/list', { limit, ...filters });
+  },
+
+  getPdvLockState() {
+    return getJson<PdvLockState>('/api/pdv-lock/status');
+  },
+
+  setPdvLockState(locked: boolean, message = 'PDV bloqueado. Consultar mensagens no celular.') {
+    return postJson<PdvLockState>('/api/pdv-lock', { locked, message });
   },
 };
 

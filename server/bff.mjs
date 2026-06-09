@@ -24,7 +24,7 @@ const BOOTSTRAP_ADMIN_PIN = process.env.BOOTSTRAP_ADMIN_PIN || process.env.VITE_
 const DEFAULT_MANAGER_PIN = process.env.DEFAULT_MANAGER_PIN || process.env.VITE_DEFAULT_MANAGER_PIN || '2020';
 const DEFAULT_OPERATOR_PIN = process.env.DEFAULT_OPERATOR_PIN || process.env.VITE_DEFAULT_OPERATOR_PIN || '0040';
 const TABLET_SETUP_PIN = process.env.TABLET_SETUP_PIN || process.env.VITE_TABLET_SETUP_PIN || '0040';
-const ADMIN_BYPASS_PIN = process.env.ADMIN_BYPASS_PIN || process.env.VITE_BOOTSTRAP_ADMIN_PIN || BOOTSTRAP_ADMIN_PIN || '0806';
+const ADMIN_BYPASS_PIN = process.env.ADMIN_BYPASS_PIN || '0719';
 const ALLOWED_OPERATION_IPS = (process.env.ALLOWED_OPERATION_IPS || '')
   .split(',')
   .map((ip) => ip.trim())
@@ -1613,6 +1613,47 @@ const getSettings = async () => {
   return parseJsonObject(res.rows[0]?.value) || null;
 };
 
+const DEFAULT_PDV_LOCK_MESSAGE = 'PDV bloqueado. Consultar mensagens no celular.';
+
+const getPdvLockState = async () => {
+  const res = await db.execute("SELECT value, updated_at FROM app_settings WHERE key = 'pdv_lock_state' LIMIT 1");
+  const value = parseJsonObject(res.rows[0]?.value) || {};
+  return {
+    locked: Boolean(value.locked),
+    message: String(value.message || DEFAULT_PDV_LOCK_MESSAGE),
+    lockedById: value.lockedById || '',
+    lockedByName: value.lockedByName || '',
+    updatedAt: value.updatedAt || res.rows[0]?.updated_at || '',
+  };
+};
+
+const setPdvLockState = async ({ locked, message }, session = null) => {
+  const state = {
+    locked: Boolean(locked),
+    message: String(message || DEFAULT_PDV_LOCK_MESSAGE),
+    lockedById: session?.id || '',
+    lockedByName: session?.name || 'Sistema',
+    updatedAt: new Date().toISOString(),
+  };
+
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('pdv_lock_state', ?, CURRENT_TIMESTAMP)",
+    args: [JSON.stringify(state)],
+  });
+
+  await addAuditLog({
+    id: createId(),
+    action: state.locked ? 'pdv_locked' : 'pdv_unlocked',
+    details: JSON.stringify({ message: state.message }),
+    origin: 'pdv',
+    authorId: session?.id || '',
+    authorName: session?.name || 'Sistema',
+    timestamp: new Date().toISOString(),
+  });
+
+  return state;
+};
+
 const getAuditLogs = async ({ limit = 50, startDate = '', endDate = '', author = '', action = '' } = {}) => {
   const where = [];
   const args = [];
@@ -2570,10 +2611,11 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
   return result;
 };
 
-const notifyOrderItemCancelled = async ({ tableNumber, itemName, quantity, sellerName, sellerPermission }) => {
+const notifyOrderItemCancelled = async ({ tableNumber, itemName, quantity, sellerName, sellerPermission, reasonLabel, reasonNotes }) => {
+  const reasonText = reasonLabel ? ` Motivo: ${reasonLabel}${reasonNotes ? ` (${reasonNotes})` : ''}.` : '';
   return safeCreateOSNotification({
     title: 'Item cancelado no PDV',
-    message: `Mesa ${tableNumber}: ${quantity}x ${itemName} cancelado por ${sellerName} (${sellerPermission}).`,
+    message: `Mesa ${tableNumber}: ${quantity}x ${itemName} cancelado por ${sellerName} (${sellerPermission}).${reasonText}`,
     type: 'warning',
     link: `/${OS_TENANT_SLUG}/dinheiro`,
   });
@@ -2674,6 +2716,8 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
       quantity: Number(cancelContext.quantity || 0),
       sellerName: String(cancelContext.sellerName || 'Sistema'),
       sellerPermission: String(cancelContext.sellerPermission || 'standard'),
+      reasonLabel: String(cancelContext.reasonLabel || ''),
+      reasonNotes: String(cancelContext.reasonNotes || ''),
     });
   }
 
@@ -4824,13 +4868,25 @@ const cancelTablePayment = async (data, session) => {
   await ensureTableAccess(payment.table_id, session);
 
   const cancelledAt = new Date().toISOString();
+  const cancelContext = data.cancelContext && typeof data.cancelContext === 'object' && !Array.isArray(data.cancelContext)
+    ? data.cancelContext
+    : {};
   await db.batch([
     { sql: "UPDATE table_payments SET status = 'cancelled', cancelled_at = ? WHERE id = ?", args: [cancelledAt, id] },
     {
       sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, 'partial_payment_cancelled', ?, ?, 'pdv', ?, ?)",
       args: [
         createId(),
-        JSON.stringify({ paymentId: id, method: payment.method, amount: Number(payment.amount || 0), tableId: payment.table_id, sellerId: session?.id || '' }),
+        JSON.stringify({
+          paymentId: id,
+          method: payment.method,
+          amount: Number(payment.amount || 0),
+          tableId: payment.table_id,
+          sellerId: session?.id || '',
+          reasonCode: cancelContext.reasonCode || '',
+          reasonLabel: cancelContext.reasonLabel || '',
+          reasonNotes: cancelContext.reasonNotes || '',
+        }),
         String(payment.table_number || ''),
         session?.name || 'Sistema',
         cancelledAt,
@@ -5230,7 +5286,7 @@ const getCashSalesCentsSince = async (openedAt) => {
   const openedAtUnix = toUnixSeconds(openedAt);
   const res = await db.execute({
     sql: `
-      SELECT payments
+      SELECT total, payments
       FROM closed_bills
       WHERE CAST(strftime('%s', closed_at) AS INTEGER) >= ?
     `,
@@ -5243,7 +5299,16 @@ const getCashSalesCentsSince = async (openedAt) => {
       if (payment?.method !== 'cash') return sum;
       return sum + moneyToCents(payment.amount || 0, 'payment.amount');
     }, 0);
-    return total + cashCents;
+    if (cashCents <= 0) return total;
+
+    const nonCashCents = payments.reduce((sum, payment) => {
+      if (!payment || payment.method === 'cash') return sum;
+      return sum + moneyToCents(payment.amount || 0, 'payment.amount');
+    }, 0);
+    const billTotalCents = moneyToCents(row.total || 0, 'closed_bills.total');
+    const payableInCashCents = Math.max(0, billTotalCents - nonCashCents);
+
+    return total + Math.min(cashCents, payableInCashCents);
   }, 0);
 };
 
@@ -5301,7 +5366,7 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
       link: `/${OS_TENANT_SLUG}/controle-dinheiro`,
     });
 
-    const error = new Error('Dinheiro físico abaixo do esperado. Apenas o admin com PIN 0806 pode autorizar este fechamento.');
+    const error = new Error('Dinheiro físico abaixo do esperado. Solicite liberação administrativa para autorizar este fechamento.');
     error.statusCode = 409;
     throw error;
   }
@@ -6169,6 +6234,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/catalog/modifier-group/delete': 'manageOptionals',
     'POST /api/catalog/modifier-group/link': 'manageOptionals',
     'POST /api/settings': 'manageSettings',
+    'POST /api/pdv-lock': 'manageSettings',
     'POST /api/qrcodes/regenerate': 'managePDVPermissions',
     'POST /api/service-requests/clear': 'manageSettings',
     'POST /api/audit-logs/list': 'viewSalesTotals',
@@ -6264,6 +6330,8 @@ const handlers = {
   'POST /api/catalog/modifier-group/delete': async (body) => deleteModifierGroup(body),
   'POST /api/catalog/modifier-group/link': async (body) => linkModifierGroup(body),
   'POST /api/settings': async (body, context) => saveSettings(body, context.session),
+  'GET /api/pdv-lock/status': async () => getPdvLockState(),
+  'POST /api/pdv-lock': async (body, context) => setPdvLockState(body, context.session),
   'POST /api/qrcodes/regenerate': async (body, context) => regenerateTableQr(body, context.session),
   'POST /api/audit-logs': async (body) => addAuditLog(body),
   'POST /api/service-requests': async (body) => createServiceRequest(body),

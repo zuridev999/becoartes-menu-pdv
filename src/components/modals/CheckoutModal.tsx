@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight } from 'lucide-react';
 import { useStore, type Table as TableType } from '../../store';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
 import { can } from '../../lib/permissions';
 import { OperationalApi } from '../../lib/api';
+import { ActionDialog } from '../common/ActionDialog';
 
 interface Payment {
   id?: string;
@@ -15,6 +16,15 @@ interface Payment {
 }
 
 type PaymentMethod = Payment['method'];
+
+const PAYMENT_CANCEL_REASONS = [
+  { code: 'forma_errada', label: 'Forma errada' },
+  { code: 'valor_errado', label: 'Valor errado' },
+  { code: 'mesa_errada', label: 'Mesa errada' },
+  { code: 'cliente_desistiu', label: 'Cliente desistiu' },
+  { code: 'correcao_administrativa', label: 'Correção administrativa' },
+  { code: 'outro', label: 'Outro motivo' },
+];
 
 const paymentMethodLabels: Record<PaymentMethod, string> = {
   credit: 'Crédito',
@@ -39,7 +49,7 @@ type ValidatedCoupon = {
 
 export function CheckoutModal({ table, onClose }: { table: TableType, onClose: () => void }) {
   const { closeBill, settings, sellers, currentSeller } = useStore();
-  const [selectedSellerId, setSelectedSellerId] = useState<string>(currentSeller?.id || '');
+  const [selectedSellerId, setSelectedSellerId] = useState<string>('');
   const defaultServiceFeePercent = clampServiceFeePercent(Number(settings.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
   const [serviceFeePercent, setServiceFeePercent] = useState(defaultServiceFeePercent);
   const [discountValue, setDiscountValue] = useState(0);
@@ -48,6 +58,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const [payments, setPayments] = useState<Payment[]>(() => table.payments || []);
   const [currentMethod, setCurrentMethod] = useState<PaymentMethod | null>(null);
   const [pendingPayment, setPendingPayment] = useState<{ method: PaymentMethod; amount: number } | null>(null);
+  const [paymentCancelDialog, setPaymentCancelDialog] = useState<{ payment: Payment; index: number } | null>(null);
+  const [paymentCancelReasonCode, setPaymentCancelReasonCode] = useState('');
+  const [paymentCancelReasonNotes, setPaymentCancelReasonNotes] = useState('');
   const [isSavingPayment, setIsSavingPayment] = useState(false);
   const [couponInput, setCouponInput] = useState('');
   const [coupon, setCoupon] = useState<ValidatedCoupon | null>(null);
@@ -56,6 +69,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const sellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
+  const selectedSeller = sellerOptions.find(s => s.id === selectedSellerId);
   const canApplyDiscount = can(currentSeller, 'applyDiscount', settings.pdvPermissions, settings.pdvUserPermissions);
   const canEditServiceFee = can(currentSeller, 'editServiceFee', settings.pdvPermissions, settings.pdvUserPermissions);
   const canLaunchPayment = can(currentSeller, 'launchPayment', settings.pdvPermissions, settings.pdvUserPermissions);
@@ -119,6 +133,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     if (!canLaunchPayment) return;
     if (payments.length >= 1 && !canSplitPayment) return;
     if (!currentMethod) return;
+    if (!selectedSeller) return;
     const val = currentPaymentAmount;
     if (val <= 0) return;
     const nextPaidTotal = roundMoney(paidTotal + val);
@@ -127,7 +142,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   };
 
   const handleConfirmPayment = async () => {
-    if (!pendingPayment || !canLaunchPayment) return;
+    if (!pendingPayment || !canLaunchPayment || !selectedSeller) return;
     setIsSavingPayment(true);
     try {
       const result = await OperationalApi.createTablePayment({
@@ -135,8 +150,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
         tableNumber: table.number,
         method: pendingPayment.method,
         amount: pendingPayment.amount,
-        sellerId: selectedSellerId || currentSeller?.id,
-        sellerName: sellerOptions.find(s => s.id === selectedSellerId)?.name || currentSeller?.name || 'Sistema',
+        sellerId: selectedSeller.id,
+        sellerName: selectedSeller.name,
       });
       setPayments([...payments, result.payment]);
       setPendingPayment(null);
@@ -148,8 +163,13 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
 
   const handleRemovePayment = async (payment: Payment, idx: number) => {
     if (!canCancelPayment) return;
+    const reason = PAYMENT_CANCEL_REASONS.find(item => item.code === paymentCancelReasonCode);
     if (payment.id) {
-      await OperationalApi.cancelTablePayment(payment.id);
+      await OperationalApi.cancelTablePayment(payment.id, {
+        reasonCode: reason?.code,
+        reasonLabel: reason?.label,
+        reasonNotes: paymentCancelReasonNotes.trim(),
+      });
     }
     setPayments(payments.filter((_, i) => i !== idx));
   };
@@ -186,13 +206,12 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   };
 
   const handleFinish = async () => {
-    if (hasInvalidOverpayment || hasPendingCouponChoice || remaining > 0 || !selectedSellerId || !canLaunchPayment || !canCloseBill) return;
-    const seller = sellerOptions.find(s => s.id === selectedSellerId);
+    if (hasInvalidOverpayment || hasPendingCouponChoice || remaining > 0 || !selectedSeller || !canLaunchPayment || !canCloseBill) return;
     const success = await closeBill({
       tableId: table.id,
       tableNumber: table.number,
-      sellerId: selectedSellerId,
-      sellerName: seller?.name || 'Sistema',
+      sellerId: selectedSeller.id,
+      sellerName: selectedSeller.name,
       subtotal,
       serviceFee: feeValue,
       discount: discountAmountValue,
@@ -303,7 +322,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
            <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-10 flex flex-col bg-[#0d0d0f] overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 lg:gap-8 mb-6 lg:mb-8">
                  <div>
-                    <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-3">Operador Responsável</h4>
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-3">Vendedor responsável</h4>
                     <select 
                        value={selectedSellerId} 
                        onChange={(e) => setSelectedSellerId(e.target.value)}
@@ -448,7 +467,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                     </div>
                     <button 
                        onClick={handleAddPayment}
-                       disabled={isSavingPayment || !canLaunchPayment || !currentMethod || (payments.length >= 1 && !canSplitPayment) || currentPaymentCreatesInvalidChange}
+                       disabled={isSavingPayment || !canLaunchPayment || !selectedSeller || !currentMethod || (payments.length >= 1 && !canSplitPayment) || currentPaymentCreatesInvalidChange}
                        className="w-full sm:w-auto py-4 px-8 btn-beco btn-beco-purple text-base font-black rounded-2xl disabled:opacity-30 disabled:grayscale"
                     >
                        {isSavingPayment ? 'Salvando...' : 'Lançar Valor'}
@@ -493,6 +512,11 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                      Seu perfil não pode lançar pagamentos.
                    </p>
                  )}
+                 {canLaunchPayment && !selectedSeller && (
+                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                     Selecione o vendedor responsável antes de lançar qualquer pagamento.
+                   </p>
+                 )}
                  {canLaunchPayment && payments.length >= 1 && !canSplitPayment && (
                    <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
                      Seu perfil não pode dividir pagamento em mais de uma forma.
@@ -517,7 +541,11 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                          <div className="flex items-center gap-6">
                             <p className="text-xl font-black text-white">R$ {p.amount.toFixed(2)}</p>
                             <button
-                              onClick={() => handleRemovePayment(p, idx)}
+                              onClick={() => {
+                                setPaymentCancelReasonCode('');
+                                setPaymentCancelReasonNotes('');
+                                setPaymentCancelDialog({ payment: p, index: idx });
+                              }}
                               disabled={!canCancelPayment}
                               className="text-rose-500 p-1.5 hover:bg-rose-500/10 rounded-lg disabled:opacity-20 disabled:cursor-not-allowed"
                               title={canCancelPayment ? 'Remover pagamento' : 'Sem permissão para cancelar pagamento'}
@@ -542,20 +570,67 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
               </div>
 
               <button 
-                 disabled={remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSellerId || !canLaunchPayment || !canCloseBill}
+                 disabled={remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill}
                  onClick={handleFinish}
                  className="w-full btn-beco btn-beco-purple py-4 sm:py-5 text-base sm:text-2xl font-black mt-5 sm:mt-6 shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-4 group rounded-2xl"
               >
                  FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={26}/>
               </button>
-              {(remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSellerId || !canLaunchPayment || !canCloseBill) && (
+              {(remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill) && (
                 <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-rose-500 mt-3 animate-pulse">
-                  {!canCloseBill ? 'Sem permissão para fechar conta' : !canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSellerId ? 'Selecione o Operador para liberar' : hasPendingCouponChoice ? 'Escolha o benefício do cupom' : hasInvalidOverpayment ? 'Troco só pode existir em pagamento em dinheiro' : `Falta receber R$ ${remaining.toFixed(2)}`}
+                  {!canCloseBill ? 'Sem permissão para fechar conta' : !canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSeller ? 'Selecione o vendedor responsável' : hasPendingCouponChoice ? 'Escolha o benefício do cupom' : hasInvalidOverpayment ? 'Troco só pode existir em pagamento em dinheiro' : `Falta receber R$ ${remaining.toFixed(2)}`}
                 </p>
               )}
            </div>
         </div>
       </motion.div>
+      <AnimatePresence>
+        {paymentCancelDialog && (
+          <ActionDialog
+            isOpen
+            tone="danger"
+            title="Cancelar pagamento?"
+            description={`Remover ${paymentMethodLabels[paymentCancelDialog.payment.method]} de R$ ${paymentCancelDialog.payment.amount.toFixed(2)} desta mesa.`}
+            confirmLabel="Cancelar pagamento"
+            confirmDisabled={!paymentCancelReasonCode || (paymentCancelReasonCode === 'outro' && !paymentCancelReasonNotes.trim())}
+            onClose={() => {
+              setPaymentCancelDialog(null);
+              setPaymentCancelReasonCode('');
+              setPaymentCancelReasonNotes('');
+            }}
+            onConfirm={async () => {
+              await handleRemovePayment(paymentCancelDialog.payment, paymentCancelDialog.index);
+            }}
+          >
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {PAYMENT_CANCEL_REASONS.map((reason) => (
+                  <button
+                    key={reason.code}
+                    type="button"
+                    onClick={() => setPaymentCancelReasonCode(reason.code)}
+                    className={`rounded-2xl border px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest transition-all ${
+                      paymentCancelReasonCode === reason.code
+                        ? 'border-rose-400 bg-rose-500/20 text-white shadow-lg shadow-rose-950/20'
+                        : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/25 hover:text-white'
+                    }`}
+                  >
+                    {reason.label}
+                  </button>
+                ))}
+              </div>
+              {paymentCancelReasonCode === 'outro' && (
+                <textarea
+                  value={paymentCancelReasonNotes}
+                  onChange={(event) => setPaymentCancelReasonNotes(event.target.value)}
+                  placeholder="Explique o motivo do cancelamento..."
+                  className="w-full min-h-24 glass rounded-2xl border-white/10 p-4 text-sm font-bold outline-none focus:border-rose-400/50"
+                />
+              )}
+            </div>
+          </ActionDialog>
+        )}
+      </AnimatePresence>
     </>
   );
 }
