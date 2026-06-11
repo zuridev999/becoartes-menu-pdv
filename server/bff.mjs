@@ -1221,6 +1221,11 @@ const getOperationalUsers = async ({ includePins = false } = {}) => {
 };
 
 const listSellerCandidates = async () => {
+  const activeSellerIds = new Set(
+    (await getAuthSellers({ includePins: false }))
+      .filter((seller) => seller.status === 'active')
+      .map((seller) => seller.id)
+  );
   const res = await db.execute({
     sql: `
       SELECT id, nome, email, role, funcao, ativo, pin, is_operador, tipo_vinculo, pdv_sell_enabled
@@ -1241,7 +1246,7 @@ const listSellerCandidates = async () => {
       role: String(row.role || ''),
       funcao: String(row.funcao || ''),
       employmentType: String(row.tipo_vinculo || ''),
-      canSellInPdv: Boolean(Number(row.pdv_sell_enabled || 0)),
+      canSellInPdv: Boolean(Number(row.pdv_sell_enabled || 0)) || activeSellerIds.has(`os:${row.id}`),
       isOperador: Boolean(Number(row.is_operador || 0)),
       hasPin: Boolean(String(row.pin || '').trim()),
     }));
