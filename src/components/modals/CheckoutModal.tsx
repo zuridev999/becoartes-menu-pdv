@@ -125,7 +125,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const canChangePaymentMethod = can(currentSeller, 'changePaymentMethod', settings.pdvPermissions, settings.pdvUserPermissions);
   const canCancelPayment = can(currentSeller, 'cancelPayment', settings.pdvPermissions, settings.pdvUserPermissions);
   const canCloseBill = can(currentSeller, 'closeBill', settings.pdvPermissions, settings.pdvUserPermissions);
-  const canManageSellers = can(currentSeller, 'managePDVUsers', settings.pdvPermissions, settings.pdvUserPermissions);
+  const canManageSellers = ['admin', 'manager'].includes(String(currentSeller?.permission || ''))
+    || can(currentSeller, 'managePDVUsers', settings.pdvPermissions, settings.pdvUserPermissions);
   
   const subtotal = roundMoney(table.orders.reduce((acc: number, o: any) => {
     const itemPrice = o.price + (o.selectedModifiers || []).reduce((mAcc: number, m: any) => mAcc + m.price, 0);
