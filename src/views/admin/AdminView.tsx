@@ -1225,6 +1225,28 @@ export function AdminView() {
               <ConfigInput label="Moeda" value={settings.currency} onChange={(val) => updateSettings({ currency: val })} />
               <ConfigInput label="Taxa de Serviço (%)" type="number" value={settings.serviceTax} onChange={(val) => updateSettings({ serviceTax: val })} />
             </div>
+            <div className="mt-6 rounded-[1.75rem] border border-amber-300/15 bg-amber-300/5 p-5 space-y-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-300">Faixa do PDV</p>
+                <p className="mt-1 text-xs font-bold text-zinc-500">Texto rolando no topo da Central Operacional.</p>
+              </div>
+              <ConfigInput
+                label="Ativar faixa"
+                type="checkbox"
+                value={settings.pdv?.tickerEnabled !== false}
+                onChange={(val) => updateSettings({ pdv: { ...settings.pdv, tickerEnabled: val } })}
+              />
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">Texto da faixa</label>
+                <textarea
+                  value={settings.pdv?.tickerText || ''}
+                  onChange={(event) => updateSettings({ pdv: { ...settings.pdv, tickerText: event.target.value } })}
+                  rows={5}
+                  className="w-full resize-none bg-white/[0.03] p-4 rounded-2xl border border-white/5 focus:border-primary/40 focus:bg-white/[0.05] outline-none font-bold text-sm transition-all placeholder:text-zinc-700 custom-scrollbar"
+                  placeholder="Digite o aviso que deve ficar rodando no topo do PDV..."
+                />
+              </div>
+            </div>
           </SectionCard>
           <SectionCard title="Tablet & Slideshow" icon={Image}>
             <ConfigInput label="Banner Automático" type="checkbox" value={settings.tablet.autoBanner} onChange={(val) => updateSettings({ tablet: { ...settings.tablet, autoBanner: val } })} />

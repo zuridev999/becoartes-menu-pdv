@@ -13,6 +13,7 @@ import { useStore, type OrderItem, type Product, type Table as TableType } from 
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
 import { ActionDialog } from '../../components/common/ActionDialog';
 import { ProductModal } from '../../components/modals/ProductModal';
+import { PdvTicker } from '../../components/pdv/PdvTicker';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { AppApi, type PdvLockState } from '../../lib/api';
@@ -420,6 +421,7 @@ export function PDVView() {
       </AnimatePresence>
 
       {/* HEADER */}
+      <PdvTicker enabled={settings.pdv?.tickerEnabled !== false} text={settings.pdv?.tickerText} />
       <header className="flex flex-col xl:flex-row xl:justify-between xl:items-center gap-6 mb-8 xl:mb-12">
         <div className="min-w-0">
           <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter flex flex-wrap items-center gap-x-3 gap-y-1 leading-none">

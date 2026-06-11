@@ -154,3 +154,27 @@ html, body {
 .animate-bounce-slow {
   animation: bounce-slow 2s infinite ease-in-out;
 }
+
+@keyframes pdv-ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-33.333%);
+  }
+}
+
+.pdv-ticker-track {
+  animation: pdv-ticker-scroll var(--pdv-ticker-duration, 48s) linear infinite;
+}
+
+.pdv-ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdv-ticker-track {
+    animation: none;
+    transform: none;
+  }
+}

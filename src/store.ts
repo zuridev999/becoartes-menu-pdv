@@ -199,6 +199,10 @@ export const useStore = create<AppState>((set, get) => ({
     },
     pdvPermissions: {},
     pdvUserPermissions: {},
+    pdv: {
+      tickerEnabled: true,
+      tickerText: 'Sempre circular, andar entre as mesas, conversar com os clientes, recolher copos e talheres sujos com agilidade. Nunca deixar copos e talheres sujos na mesa depois do consumo do cliente. Simpatia: recebam o cliente como se aqui fosse a segunda casa deles.'
+    },
     theme: 'dark-becoartes',
     tablet: {
       inactivityTimeout: 60,
@@ -235,6 +239,7 @@ export const useStore = create<AppState>((set, get) => ({
       ...newSettings,
       tablet: newSettings.tablet ? { ...currentSettings.tablet, ...newSettings.tablet } : currentSettings.tablet,
       kitchen: newSettings.kitchen ? { ...currentSettings.kitchen, ...newSettings.kitchen } : currentSettings.kitchen,
+      pdv: newSettings.pdv ? { ...(currentSettings.pdv || {}), ...newSettings.pdv } : currentSettings.pdv,
       pdvPermissions: newSettings.pdvPermissions || currentSettings.pdvPermissions,
       pdvUserPermissions: newSettings.pdvUserPermissions || currentSettings.pdvUserPermissions,
       qrCodes: newSettings.qrCodes ? {
