@@ -1220,6 +1220,17 @@ const getOperationalUsers = async ({ includePins = false } = {}) => {
     }));
 };
 
+const isEligibleOsSellerCandidate = (row) => {
+  const name = normalizeText(row?.nome).toLowerCase();
+  const role = normalizeText(row?.role).toLowerCase();
+  const funcao = normalizeText(row?.funcao).toLowerCase();
+  if (!name) return false;
+  if (['administrador', 'admin full', 'admin mestre', 'gui mameluco', 'operador', 'operacional'].includes(name)) return false;
+  if (['super_admin', 'operacional'].includes(role)) return false;
+  if (funcao.includes('cozinha') || funcao.includes('cozinheira')) return false;
+  return true;
+};
+
 const listSellerCandidates = async () => {
   const activeSellerIds = new Set(
     (await getAuthSellers({ includePins: false }))
@@ -1238,6 +1249,7 @@ const listSellerCandidates = async () => {
   });
 
   return res.rows
+    .filter(isEligibleOsSellerCandidate)
     .filter((row) => normalizeText(row.nome))
     .map((row) => ({
       id: String(row.id || ''),

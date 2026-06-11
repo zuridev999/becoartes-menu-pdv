@@ -4,7 +4,7 @@ import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Pl
 import { useStore, type Seller, type Table as TableType } from '../../store';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
 import { can } from '../../lib/permissions';
-import { AdminApi, OperationalApi, type SellerCandidate } from '../../lib/api';
+import { AdminApi, OperationalApi, hasApiSessionToken, setApiSessionToken, type SellerCandidate } from '../../lib/api';
 import { ActionDialog } from '../common/ActionDialog';
 
 interface Payment {
@@ -44,6 +44,7 @@ const paymentMethodLabels: Record<PaymentMethod, string> = {
 
 const TECHNICAL_SELLER_IDS = new Set(['admin-bootstrap', 'manager-default', 'operator-default', 'master']);
 const TECHNICAL_SELLER_NAMES = new Set(['administrador', 'admin full', 'admin mestre', 'operador']);
+const SELLER_SESSION_STORAGE_KEY = 'beco_seller_session';
 
 const isCheckoutSeller = (seller: Seller) => {
   if (seller.status !== 'active') return false;
@@ -59,6 +60,22 @@ const normalizeSellerName = (value: string) => (
     .trim()
     .toLowerCase()
 );
+
+const isSessionExpiredError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /sess[aã]o obrigat[oó]ria|session/i.test(message);
+};
+
+const isEligibleSellerCandidate = (candidate: SellerCandidate) => {
+  const name = normalizeSellerName(candidate.name);
+  const role = normalizeSellerName(candidate.role);
+  const funcao = normalizeSellerName(candidate.funcao);
+  if (TECHNICAL_SELLER_NAMES.has(name)) return false;
+  if (['gui mameluco', 'operacional'].includes(name)) return false;
+  if (['super_admin', 'operacional'].includes(role)) return false;
+  if (['cozinha', 'cozinheira'].some((term) => funcao.includes(term))) return false;
+  return true;
+};
 
 type ValidatedCoupon = {
   code: string;
@@ -108,6 +125,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const sellerCandidateSearch = normalizeSellerName(newSellerName);
   const visibleSellerCandidates = useMemo(() => (
     sellerCandidates
+      .filter(isEligibleSellerCandidate)
       .filter((candidate) => !candidate.canSellInPdv)
       .filter((candidate) => {
         if (!sellerCandidateSearch) return true;
@@ -127,6 +145,22 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const canCloseBill = can(currentSeller, 'closeBill', settings.pdvPermissions, settings.pdvUserPermissions);
   const canManageSellers = ['admin', 'manager'].includes(String(currentSeller?.permission || ''))
     || can(currentSeller, 'managePDVUsers', settings.pdvPermissions, settings.pdvUserPermissions);
+
+  const expireSellerSession = () => {
+    localStorage.removeItem(SELLER_SESSION_STORAGE_KEY);
+    setApiSessionToken(null);
+    useStore.setState({ currentSeller: null });
+    setShowAddSellerModal(false);
+    addNotification('Sessão expirada. Entre com o PIN novamente para cadastrar vendedor.', 'error');
+  };
+
+  const openAddSellerModal = () => {
+    if (!hasApiSessionToken()) {
+      expireSellerSession();
+      return;
+    }
+    setShowAddSellerModal(true);
+  };
   
   const subtotal = roundMoney(table.orders.reduce((acc: number, o: any) => {
     const itemPrice = o.price + (o.selectedModifiers || []).reduce((mAcc: number, m: any) => mAcc + m.price, 0);
@@ -150,6 +184,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const hasPendingCouponChoice = Boolean(coupon?.requiresBenefitChoice);
 
   const handleCreateCheckoutSeller = async () => {
+    if (!hasApiSessionToken()) {
+      expireSellerSession();
+      return;
+    }
     const name = newSellerName.trim();
     const pin = newSellerPin.trim();
     if (!name) {
@@ -183,6 +221,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       setShowAddSellerModal(false);
     } catch (error) {
       console.error('Erro ao criar vendedor no OS:', error);
+      if (isSessionExpiredError(error)) {
+        expireSellerSession();
+        return;
+      }
       addNotification(error instanceof Error ? error.message : 'Não foi possível criar este vendedor no OS.', 'error');
     } finally {
       setIsCreatingOsSeller(false);
@@ -190,6 +232,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   };
 
   const handleActivateSellerCandidate = async (candidate: SellerCandidate) => {
+    if (!hasApiSessionToken()) {
+      expireSellerSession();
+      return;
+    }
     const pin = newSellerPin.trim();
     if (!candidate.hasPin && !/^\d{4}$/.test(pin)) {
       addNotification('Esse cadastro do OS ainda não tem PIN. Informe um PIN de 4 dígitos para ativar.', 'error');
@@ -218,6 +264,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       setShowAddSellerModal(false);
     } catch (error) {
       console.error('Erro ao ativar vendedor do OS:', error);
+      if (isSessionExpiredError(error)) {
+        expireSellerSession();
+        return;
+      }
       addNotification(error instanceof Error ? error.message : 'Não foi possível ativar este vendedor.', 'error');
     } finally {
       setActivatingSellerCandidateId(null);
@@ -242,6 +292,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
 
   useEffect(() => {
     if (!showAddSellerModal) return;
+    if (!hasApiSessionToken()) {
+      expireSellerSession();
+      return;
+    }
     let cancelled = false;
     setIsLoadingSellerCandidates(true);
     AdminApi.listSellerCandidates()
@@ -251,6 +305,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       .catch((error) => {
         console.error('Erro ao carregar candidatos de vendedor:', error);
         if (!cancelled) {
+          if (isSessionExpiredError(error)) {
+            expireSellerSession();
+            return;
+          }
           setSellerCandidates([]);
           addNotification('Não foi possível carregar funcionários/freelas do OS agora.', 'error');
         }
@@ -475,7 +533,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                       {canManageSellers && (
                         <button
                           type="button"
-                          onClick={() => setShowAddSellerModal(true)}
+                          onClick={openAddSellerModal}
                           className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-primary transition-all hover:bg-primary hover:text-white"
                         >
                           <Plus size={12} /> Add vendedor
@@ -759,10 +817,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
             >
               <div className="p-6 border-b border-white/10 flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">OS + PDV</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">VENDA + GORJETA</p>
                   <h3 className="mt-1 text-3xl font-black italic tracking-tight text-white">Add vendedor</h3>
                   <p className="mt-2 text-xs font-bold text-zinc-500">
-                    Vincule alguém do Becoartes OS ou crie um cadastro novo já conciliado.
+                    Use quando uma pessoa vendeu a mesa e precisamos rastrear venda, taxa de serviço e comissão.
                   </p>
                 </div>
                 <button
@@ -776,7 +834,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
 
               <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar">
                 <label className="block">
-                  <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-zinc-500">Buscar ou criar vendedor</span>
+                  <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-zinc-500">Nome do vendedor</span>
                   <input
                     value={newSellerName}
                     onChange={(event) => setNewSellerName(event.target.value)}
@@ -788,8 +846,11 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                 <div className="rounded-[1.75rem] border border-emerald-500/15 bg-emerald-500/5 p-4">
                   <div className="flex items-center justify-between gap-4 mb-3">
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300">Recomendado</p>
-                      <h4 className="text-lg font-black text-white">Vincular cadastro existente do OS</h4>
+                      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300">Já existe?</p>
+                      <h4 className="text-lg font-black text-white">Usar pessoa cadastrada no OS</h4>
+                      <p className="mt-1 text-xs font-bold text-emerald-100/55">
+                        Se aparecer aqui, clique para ativar como vendedor e selecionar nesta conta.
+                      </p>
                     </div>
                     {isLoadingSellerCandidates && (
                       <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Carregando...</span>
@@ -798,7 +859,11 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                   <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
                     {visibleSellerCandidates.length === 0 ? (
                       <div className="rounded-2xl border border-white/5 bg-black/20 p-4 text-xs font-bold text-zinc-500">
-                        {isLoadingSellerCandidates ? 'Buscando cadastros do OS...' : 'Nenhum cadastro do OS encontrado para este filtro.'}
+                        {isLoadingSellerCandidates
+                          ? 'Buscando pessoas no OS...'
+                          : sellerCandidateSearch
+                            ? 'Nenhuma pessoa compatível encontrada. Se for vendedor novo, crie abaixo.'
+                            : 'Digite o nome para procurar no OS antes de criar.'}
                       </div>
                     ) : visibleSellerCandidates.map((candidate) => (
                       <button
@@ -816,7 +881,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                             </p>
                           </div>
                           <span className="shrink-0 rounded-xl bg-emerald-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-300">
-                            {activatingSellerCandidateId === candidate.id ? 'Ativando...' : 'Ativar'}
+                            {activatingSellerCandidateId === candidate.id ? 'Ativando...' : 'Usar'}
                           </span>
                         </div>
                         {!candidate.hasPin && (
@@ -831,10 +896,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
 
                 <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.03] p-4 space-y-4">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500">Novo cadastro</p>
-                    <h4 className="text-lg font-black text-white">Criar no OS e ativar no PDV</h4>
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500">Vendedor novo</p>
+                    <h4 className="text-lg font-black text-white">Criar para rastrear venda e gorjeta</h4>
                     <p className="text-xs font-bold text-zinc-500 mt-1">
-                      Use quando a pessoa ainda não existe no OS. Ela já nasce marcada como vendedora do PDV.
+                      Use só quando a pessoa realmente vendeu ou vai vender mesas. O cadastro já nasce no OS e aparece no PDV.
                     </p>
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -868,7 +933,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                 disabled={isCreatingOsSeller}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-primary/25 transition-all hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
               >
-                <Plus size={16} /> {isCreatingOsSeller ? 'Criando...' : 'Criar no OS e selecionar'}
+                <Plus size={16} /> {isCreatingOsSeller ? 'Criando...' : 'Salvar vendedor e selecionar'}
               </button>
               </div>
             </motion.div>
