@@ -66,6 +66,18 @@ export type CashState = {
   };
 };
 
+export type SellerCandidate = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  funcao: string;
+  employmentType: string;
+  canSellInPdv: boolean;
+  isOperador: boolean;
+  hasPin: boolean;
+};
+
 const getSessionToken = () => {
   if (typeof localStorage === 'undefined') return '';
   return localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || '';
@@ -617,6 +629,14 @@ export const AdminApi = {
 
   updateSellerStatus(id: string, status: 'active' | 'inactive') {
     return postJson<{ status: 'active' | 'inactive' }>('/api/sellers/status', { id, status });
+  },
+
+  listSellerCandidates() {
+    return getJson<{ candidates: SellerCandidate[] }>('/api/sellers/candidates');
+  },
+
+  activateSellerCandidate(userId: string, pin?: string) {
+    return postJson<{ activated: boolean; seller: any }>('/api/sellers/activate-os-user', { userId, pin });
   },
 
   regenerateTableQr(tableNumber: number, adminPin: string) {

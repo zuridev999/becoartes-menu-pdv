@@ -24,6 +24,8 @@ export const SellerSchema = z.object({
   role: z.enum(['garçom', 'atendente', 'gerente', 'outro']),
   permission: z.enum(['admin', 'manager', 'operator', 'standard', 'restricted']).default('operator'),
   pin: z.string().length(4, "O PIN deve ter 4 dígitos"),
+  employmentType: z.enum(['fixo', 'freelancer']).default('fixo'),
+  canSellInPdv: z.boolean().optional(),
   lastLogin: z.date().optional(),
 });
 

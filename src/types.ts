@@ -187,6 +187,8 @@ export interface Seller {
   permission: 'admin' | 'manager' | 'operator' | 'standard' | 'restricted';
   source?: 'os' | 'pdv';
   allowRemote?: boolean;
+  canSellInPdv?: boolean;
+  employmentType?: string;
 }
 
 export interface AppSettings {

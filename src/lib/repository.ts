@@ -359,21 +359,22 @@ export const Repository = {
       role: row.role as any,
       permission: row.permission as any,
       pin: row.pin as string,
+      employmentType: row.tipo_vinculo as string || 'fixo',
       createdAt: new Date(row.created_at as string)
     }));
   },
 
   async addSeller(s: SellerInput) {
     await db.execute({
-      sql: "INSERT INTO sellers (id, name, nickname, status, role, permission, pin) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [s.id, s.name, s.nickname || '', s.status, s.role, s.permission, s.pin]
+      sql: "INSERT INTO sellers (id, name, nickname, status, role, permission, pin, tipo_vinculo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [s.id, s.name, s.nickname || '', s.status, s.role, s.permission, s.pin, s.employmentType || 'fixo']
     });
   },
 
   async upsertSeller(s: SellerInput) {
     await db.execute({
-      sql: "INSERT OR REPLACE INTO sellers (id, name, nickname, status, role, permission, pin) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [s.id, s.name, s.nickname || '', s.status, s.role, s.permission, s.pin]
+      sql: "INSERT OR REPLACE INTO sellers (id, name, nickname, status, role, permission, pin, tipo_vinculo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [s.id, s.name, s.nickname || '', s.status, s.role, s.permission, s.pin, s.employmentType || 'fixo']
     });
   },
 

@@ -577,7 +577,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS order_items (id TEXT PRIMARY KEY, order_id TEXT, product_id TEXT, quantity INTEGER NOT NULL, price_at_time REAL NOT NULL, selected_modifiers TEXT, notes TEXT)",
     "CREATE TABLE IF NOT EXISTS production_tickets (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, station TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS service_requests (id TEXT PRIMARY KEY, table_id TEXT, type TEXT NOT NULL, status TEXT NOT NULL, message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-    "CREATE TABLE IF NOT EXISTS sellers (id TEXT PRIMARY KEY, name TEXT NOT NULL, nickname TEXT, status TEXT NOT NULL, role TEXT NOT NULL, permission TEXT DEFAULT 'standard', pin TEXT DEFAULT '1234', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS sellers (id TEXT PRIMARY KEY, name TEXT NOT NULL, nickname TEXT, status TEXT NOT NULL, role TEXT NOT NULL, permission TEXT DEFAULT 'standard', pin TEXT DEFAULT '1234', notes TEXT, tipo_vinculo TEXT DEFAULT 'fixo', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, details TEXT, table_number TEXT, origin TEXT, author_id TEXT, author_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS closed_bills (id TEXT PRIMARY KEY, table_id TEXT, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, subtotal REAL NOT NULL, service_fee REAL DEFAULT 0, discount REAL DEFAULT 0, discount_reason TEXT, coupon_code TEXT, coupon_amount REAL DEFAULT 0, coupon_benefit TEXT, total REAL NOT NULL, payments TEXT, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS table_payments (id TEXT PRIMARY KEY, table_id TEXT NOT NULL, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, method TEXT NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, cancelled_at DATETIME, applied_closed_bill_id TEXT)",
@@ -591,7 +591,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS estoque_produtos (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, categoria TEXT, ativo INTEGER DEFAULT 1, quantidade_atual REAL DEFAULT 0, estoque_minimo REAL DEFAULT 0, created_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS estoque_movimentacoes (id TEXT PRIMARY KEY, empresa_id TEXT, produto_id TEXT, tipo_movimentacao TEXT, quantidade REAL, quantidade_anterior REAL, quantidade_nova REAL, motivo TEXT, responsavel_id TEXT, created_at INTEGER, closed_bill_id TEXT, order_id TEXT, order_item_id TEXT, origem TEXT, integration_event_id TEXT, source_item_id TEXT, source_item_kind TEXT)",
     "CREATE TABLE IF NOT EXISTS notificacoes (id TEXT PRIMARY KEY, empresa_id TEXT, usuario_id TEXT, titulo TEXT, mensagem TEXT, tipo TEXT, lida INTEGER DEFAULT 0, link TEXT, created_at INTEGER)",
-    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, email TEXT, role TEXT, funcao TEXT, ativo INTEGER DEFAULT 1, pin TEXT, is_operador INTEGER DEFAULT 1, permitir_acesso_remoto INTEGER DEFAULT 0, tipo_vinculo TEXT, created_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, email TEXT, role TEXT, funcao TEXT, ativo INTEGER DEFAULT 1, pin TEXT, is_operador INTEGER DEFAULT 1, permitir_acesso_remoto INTEGER DEFAULT 0, tipo_vinculo TEXT, pdv_sell_enabled INTEGER DEFAULT 0, created_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS fichas_tecnicas (id TEXT PRIMARY KEY, empresa_id TEXT, nome_prato TEXT, status TEXT DEFAULT 'active')",
     "CREATE TABLE IF NOT EXISTS ficha_ingredientes (id TEXT PRIMARY KEY, ficha_tecnica_id TEXT, estoque_produto_id TEXT, nome_exibicao TEXT, nome_ingrediente TEXT, quantidade_usada REAL, quantidade_estoque_baixa REAL, unidade_medida TEXT, unidade_estoque_baixa TEXT)",
     "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -608,6 +608,7 @@ const ensureDatabase = async () => {
     "ALTER TABLE categories ADD COLUMN schedule_config TEXT",
     "ALTER TABLE sellers ADD COLUMN permission TEXT DEFAULT 'standard'",
     "ALTER TABLE sellers ADD COLUMN pin TEXT DEFAULT '1234'",
+    "ALTER TABLE sellers ADD COLUMN tipo_vinculo TEXT DEFAULT 'fixo'",
     "ALTER TABLE orders ADD COLUMN origin TEXT DEFAULT 'pdv'",
     "ALTER TABLE order_items ADD COLUMN notes TEXT",
     "ALTER TABLE modifier_groups ADD COLUMN status TEXT DEFAULT 'active'",
@@ -676,6 +677,7 @@ const ensureDatabase = async () => {
     "ALTER TABLE users ADD COLUMN is_operador INTEGER DEFAULT 1",
     "ALTER TABLE users ADD COLUMN permitir_acesso_remoto INTEGER DEFAULT 0",
     "ALTER TABLE users ADD COLUMN tipo_vinculo TEXT",
+    "ALTER TABLE users ADD COLUMN pdv_sell_enabled INTEGER DEFAULT 0",
   ];
 
   for (const sql of migrations) {
@@ -1127,6 +1129,7 @@ const getSellers = async ({ includePins = false } = {}) => {
     permission: row.permission || 'operator',
     pin: includePins ? row.pin || '' : '',
     allowRemote: false,
+    employmentType: row.tipo_vinculo || 'fixo',
     source: 'pdv',
   }));
 };
@@ -1182,13 +1185,18 @@ const getCashState = async () => {
 const getOperationalUsers = async ({ includePins = false } = {}) => {
   const res = await db.execute({
     sql: `
-      SELECT id, nome, email, role, funcao, ativo, pin, is_operador, permitir_acesso_remoto, tipo_vinculo
+      SELECT id, nome, email, role, funcao, ativo, pin, is_operador, permitir_acesso_remoto, tipo_vinculo, pdv_sell_enabled
       FROM users
       WHERE empresa_id = ?
         AND COALESCE(ativo, 1) = 1
-        AND COALESCE(is_operador, 1) = 1
-        AND lower(trim(COALESCE(role, ''))) != 'freelancer'
-        AND lower(trim(COALESCE(tipo_vinculo, ''))) != 'freelancer'
+        AND (COALESCE(is_operador, 1) = 1 OR COALESCE(pdv_sell_enabled, 0) = 1)
+        AND (
+          (
+            lower(trim(COALESCE(role, ''))) != 'freelancer'
+            AND lower(trim(COALESCE(tipo_vinculo, ''))) != 'freelancer'
+          )
+          OR COALESCE(pdv_sell_enabled, 0) = 1
+        )
       ORDER BY nome COLLATE NOCASE ASC
     `,
     args: [OS_EMPRESA_ID],
@@ -1205,9 +1213,87 @@ const getOperationalUsers = async ({ includePins = false } = {}) => {
       permission: mapOperationalPermission(row.role, row.funcao),
       pin: includePins ? String(row.pin || '') : '',
       allowRemote: Boolean(Number(row.permitir_acesso_remoto || 0)),
+      canSellInPdv: Boolean(Number(row.pdv_sell_enabled || 0)),
+      employmentType: row.tipo_vinculo || '',
       source: 'os',
       email: row.email || '',
     }));
+};
+
+const listSellerCandidates = async () => {
+  const res = await db.execute({
+    sql: `
+      SELECT id, nome, email, role, funcao, ativo, pin, is_operador, tipo_vinculo, pdv_sell_enabled
+      FROM users
+      WHERE empresa_id = ?
+        AND COALESCE(ativo, 1) = 1
+      ORDER BY nome COLLATE NOCASE ASC
+    `,
+    args: [OS_EMPRESA_ID],
+  });
+
+  return res.rows
+    .filter((row) => normalizeText(row.nome))
+    .map((row) => ({
+      id: String(row.id || ''),
+      name: normalizeText(row.nome),
+      email: String(row.email || ''),
+      role: String(row.role || ''),
+      funcao: String(row.funcao || ''),
+      employmentType: String(row.tipo_vinculo || ''),
+      canSellInPdv: Boolean(Number(row.pdv_sell_enabled || 0)),
+      isOperador: Boolean(Number(row.is_operador || 0)),
+      hasPin: Boolean(String(row.pin || '').trim()),
+    }));
+};
+
+const activateOsUserAsSeller = async ({ userId, pin }) => {
+  const safeUserId = requireString(userId, 'userId');
+  const safePin = String(pin || '').trim();
+  if (safePin && !/^\d{4}$/.test(safePin) && !/^[a-f0-9]{64}$/i.test(safePin)) {
+    const error = new Error('PIN deve ter 4 dígitos.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const userRes = await db.execute({
+    sql: `
+      SELECT id, nome, pin, ativo
+      FROM users
+      WHERE empresa_id = ? AND id = ?
+      LIMIT 1
+    `,
+    args: [OS_EMPRESA_ID, safeUserId],
+  });
+  const user = userRes.rows[0];
+  if (!user || Number(user.ativo || 0) !== 1) {
+    const error = new Error('Funcionário/freelancer não encontrado ou inativo no OS.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const currentPin = String(user.pin || '').trim();
+  const nextPin = currentPin || (safePin ? (isLegacyPlainPin(safePin) ? hashPin(safePin) : safePin) : '');
+  if (!nextPin) {
+    const error = new Error('Defina um PIN de 4 dígitos para ativar este vendedor.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await db.execute({
+    sql: `
+      UPDATE users
+      SET pdv_sell_enabled = 1,
+          pin = ?
+      WHERE empresa_id = ? AND id = ?
+    `,
+    args: [nextPin, OS_EMPRESA_ID, safeUserId],
+  });
+
+  await syncOperationalUsersToSellers();
+  const sellers = await getAuthSellers({ includePins: false });
+  const seller = sellers.find((item) => item.id === `os:${safeUserId}`);
+  return { activated: true, seller };
 };
 
 const syncOperationalUsersToSellers = async () => {
@@ -1217,14 +1303,15 @@ const syncOperationalUsersToSellers = async () => {
     const pin = String(user.pin || '').trim();
     await db.execute({
       sql: `
-        INSERT INTO sellers (id, name, nickname, status, role, permission, pin)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sellers (id, name, nickname, status, role, permission, pin, tipo_vinculo)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           nickname = excluded.nickname,
           status = excluded.status,
           role = excluded.role,
           permission = excluded.permission,
+          tipo_vinculo = excluded.tipo_vinculo,
           pin = CASE WHEN excluded.pin != '' THEN excluded.pin ELSE sellers.pin END
       `,
       args: [
@@ -1235,6 +1322,7 @@ const syncOperationalUsersToSellers = async () => {
         user.role,
         user.permission,
         pin ? (isLegacyPlainPin(pin) ? hashPin(pin) : pin) : '',
+        user.employmentType || 'fixo',
       ],
     });
   }
@@ -1245,6 +1333,7 @@ const syncOperationalUsersToSellers = async () => {
       FROM users
       WHERE empresa_id = ?
         AND COALESCE(ativo, 1) = 1
+        AND COALESCE(pdv_sell_enabled, 0) != 1
         AND (
           lower(trim(COALESCE(role, ''))) = 'freelancer'
           OR lower(trim(COALESCE(tipo_vinculo, ''))) = 'freelancer'
@@ -5467,19 +5556,27 @@ const closeShift = async ({ id, closingBalance }) => {
   return { closed: true };
 };
 
-const addSeller = async ({ seller }) => {
+const addSeller = async ({ seller }, session = null) => {
   const safeSeller = seller || {};
   const pin = requireString(safeSeller.pin, 'seller.pin');
+  const employmentType = safeSeller.employmentType === 'freelancer' || safeSeller.tipo_vinculo === 'freelancer'
+    ? 'freelancer'
+    : 'fixo';
+  const requestedPermission = safeSeller.permission || 'operator';
+  const permission = normalizePermission(session?.permission) === 'admin'
+    ? requestedPermission
+    : 'operator';
   await db.execute({
-    sql: "INSERT INTO sellers (id, name, nickname, status, role, permission, pin) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    sql: "INSERT INTO sellers (id, name, nickname, status, role, permission, pin, tipo_vinculo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     args: [
       requireString(safeSeller.id, 'seller.id'),
       requireString(safeSeller.name, 'seller.name'),
       safeSeller.nickname || '',
       safeSeller.status || 'active',
       safeSeller.role || 'atendente',
-      safeSeller.permission || 'operator',
+      permission,
       isLegacyPlainPin(pin) ? hashPin(pin) : pin,
+      employmentType,
     ],
   });
   return { saved: true };
@@ -5495,7 +5592,7 @@ const updateSellerPin = async ({ id, pin }) => {
   return { updated: true };
 };
 
-const updateSeller = async ({ id, seller }) => {
+const updateSeller = async ({ id, seller }, session = null) => {
   const safeId = requireString(id, 'id');
   const safeSeller = seller || {};
   const fields = [];
@@ -5526,6 +5623,11 @@ const updateSeller = async ({ id, seller }) => {
   }
 
   if (safeSeller.permission !== undefined) {
+    if (normalizePermission(session?.permission) !== 'admin') {
+      const error = new Error('Somente admin pode alterar perfil de permissão.');
+      error.statusCode = 403;
+      throw error;
+    }
     const permission = ['admin', 'manager', 'operator', 'standard', 'restricted'].includes(safeSeller.permission)
       ? safeSeller.permission
       : 'operator';
@@ -5536,6 +5638,14 @@ const updateSeller = async ({ id, seller }) => {
   if (safeSeller.status !== undefined) {
     fields.push('status = ?');
     args.push(safeSeller.status === 'inactive' ? 'inactive' : 'active');
+  }
+
+  if (safeSeller.employmentType !== undefined || safeSeller.tipo_vinculo !== undefined) {
+    const employmentType = safeSeller.employmentType === 'freelancer' || safeSeller.tipo_vinculo === 'freelancer'
+      ? 'freelancer'
+      : 'fixo';
+    fields.push('tipo_vinculo = ?');
+    args.push(employmentType);
   }
 
   if (safeSeller.pin !== undefined && String(safeSeller.pin).trim()) {
@@ -5677,6 +5787,9 @@ const closeBillWithInventorySync = async (data, session = null) => {
   const tableId = requireString(data.tableId, 'tableId');
   const settings = await getSettings();
   await ensureTableAccess(tableId, session);
+  const sellerId = normalizeText(data.sellerId || '');
+  const sellerName = normalizeText(data.sellerName || '');
+  const isSelfServiceSeller = sellerId === 'self-service' || sellerName.toLowerCase() === 'cliente pediu sozinho';
   const subtotalCents = moneyToCents(data.subtotal || 0, 'subtotal');
   const serviceFeeCents = moneyToCents(data.serviceFee || 0, 'serviceFee');
   const discountCents = moneyToCents(data.discount || 0, 'discount');
@@ -5685,6 +5798,22 @@ const closeBillWithInventorySync = async (data, session = null) => {
   let couponCents = moneyToCents(data.couponAmount || 0, 'couponAmount');
   const totalCents = moneyToCents(data.total || 0, 'total');
   const payments = Array.isArray(data.payments) ? data.payments : [];
+
+  if (!sellerId || !sellerName) {
+    const error = new Error('Selecione o vendedor responsável antes de fechar a conta.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const activeSeller = isSelfServiceSeller
+    ? { id: 'self-service', name: 'Cliente pediu sozinho' }
+    : (await getAuthSellers({ includePins: false }))
+      .find((seller) => seller.id === sellerId && seller.status === 'active');
+  if (!activeSeller) {
+    const error = new Error('Vendedor responsável não encontrado ou inativo.');
+    error.statusCode = 400;
+    throw error;
+  }
 
   if (subtotalCents < 0) throw new Error('Subtotal inválido.');
   if (serviceFeeCents < 0) throw new Error('Taxa de serviço não pode ser negativa.');
@@ -5803,6 +5932,8 @@ const closeBillWithInventorySync = async (data, session = null) => {
   data.couponAmount = centsToMoney(couponCents);
   data.couponBenefit = data.couponBenefit || '';
   data.total = centsToMoney(totalCents);
+  data.sellerId = activeSeller.id;
+  data.sellerName = activeSeller.name;
   data.payments = payments.map((payment) => ({
     id: payment.id ? String(payment.id) : undefined,
     method: payment.method,
@@ -6283,6 +6414,8 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/sellers/pin': 'managePDVUsers',
     'POST /api/sellers/delete': 'managePDVUsers',
     'POST /api/sellers/status': 'managePDVUsers',
+    'GET /api/sellers/candidates': 'managePDVUsers',
+    'POST /api/sellers/activate-os-user': 'managePDVUsers',
     'POST /api/inventory/sync-beverages': 'confirmPurchaseEntry',
     'POST /api/inventory/sync-open-orders': 'manageSettings',
     'POST /api/tables/status': 'updateTableStatus',
@@ -6387,11 +6520,13 @@ const handlers = {
   'POST /api/cash/close': async (body, context) => closeCash(body, context.session),
   'POST /api/shifts/open': async (body) => openShift(body),
   'POST /api/shifts/close': async (body) => closeShift(body),
-  'POST /api/sellers': async (body) => addSeller(body),
-  'POST /api/sellers/update': async (body) => updateSeller(body),
+  'POST /api/sellers': async (body, context) => addSeller(body, context.session),
+  'POST /api/sellers/update': async (body, context) => updateSeller(body, context.session),
   'POST /api/sellers/pin': async (body) => updateSellerPin(body),
   'POST /api/sellers/delete': async (body) => deleteSeller(body),
   'POST /api/sellers/status': async (body) => updateSellerStatus(body),
+  'GET /api/sellers/candidates': async () => ({ candidates: await listSellerCandidates() }),
+  'POST /api/sellers/activate-os-user': async (body) => activateOsUserAsSeller(body),
   'POST /api/inventory/sync-beverages': async () => syncBeveragesFromInventory(),
   'POST /api/inventory/sync-open-orders': async () => syncOpenOrdersInventory(),
 };

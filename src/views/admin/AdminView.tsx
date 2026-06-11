@@ -44,7 +44,7 @@ import {
 import { createId } from '../../lib/id';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
-import { AdminApi, AppApi, DeliveryApi, type DeliveryOrderSummary } from '../../lib/api';
+import { AdminApi, AppApi, DeliveryApi, type DeliveryOrderSummary, type SellerCandidate } from '../../lib/api';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ClosedBill, ScheduleConfig, Seller } from '../../types';
@@ -72,6 +72,25 @@ type AuditMovement = {
   origin: string;
   author: string;
   timestamp: string;
+};
+
+type SellerPerformance = {
+  key: string;
+  sellerId: string;
+  sellerName: string;
+  sellerStatus: string;
+  role: string;
+  source: string;
+  billsCount: number;
+  subtotal: number;
+  serviceFee: number;
+  discount: number;
+  total: number;
+  avgTicket: number;
+  serviceRate: number;
+  commissionFee: number;
+  isSelfService: boolean;
+  lastClosedAt?: Date;
 };
 
 const deliveryStatusLabels: Record<string, string> = {
@@ -462,23 +481,32 @@ export function AdminView() {
   const [schedulingItem, setSchedulingItem] = useState<{ type: 'product' | 'category', id: string, name: string, config?: ScheduleConfig } | null>(null);
 
   const [newSellerName, setNewSellerName] = useState('');
+  const [newSellerNickname, setNewSellerNickname] = useState('');
   const [newSellerRole, setNewSellerRole] = useState<'garçom' | 'atendente' | 'gerente' | 'outro'>('garçom');
   const [newSellerPermission, setNewSellerPermission] = useState<'admin' | 'manager' | 'operator'>('operator');
+  const [newSellerEmploymentType, setNewSellerEmploymentType] = useState<'fixo' | 'freelancer'>('fixo');
   const [newSellerPin, setNewSellerPin] = useState('1234');
   const [showPermissionConfig, setShowPermissionConfig] = useState(false);
   const [activePermissionProfile, setActivePermissionProfile] = useState<PermissionProfile>('operator');
   const [permissionSearch, setPermissionSearch] = useState('');
   const [showAddSellerModal, setShowAddSellerModal] = useState(false);
+  const [sellerCandidates, setSellerCandidates] = useState<SellerCandidate[]>([]);
+  const [isLoadingSellerCandidates, setIsLoadingSellerCandidates] = useState(false);
+  const [activatingSellerCandidateId, setActivatingSellerCandidateId] = useState<string | null>(null);
   const [selectedSeller, setSelectedSeller] = useState<any | null>(null);
   const [sellerDraft, setSellerDraft] = useState<{
     name: string;
+    nickname: string;
     role: Seller['role'];
     permission: PermissionProfile;
+    employmentType: 'fixo' | 'freelancer';
     pin: string;
   }>({
     name: '',
+    nickname: '',
     role: 'garçom',
     permission: 'operator',
+    employmentType: 'fixo',
     pin: '',
   });
 
@@ -496,6 +524,7 @@ export function AdminView() {
   const [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState<DeliveryOrderSummary | null>(null);
   const [isDeliveryDetailLoading, setIsDeliveryDetailLoading] = useState(false);
   const [selectedClosedBill, setSelectedClosedBill] = useState<ClosedBill | null>(null);
+  const [selectedSellerPerformanceKey, setSelectedSellerPerformanceKey] = useState<string>('all');
   const [pdvLockState, setPdvLockState] = useState<{ locked: boolean; message: string } | null>(null);
   const [isPdvLockSaving, setIsPdvLockSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -598,6 +627,29 @@ export function AdminView() {
     }
   }, [activeTab, fetchDeliveryOrders]);
 
+  useEffect(() => {
+    if (!showAddSellerModal) return;
+    let cancelled = false;
+    setIsLoadingSellerCandidates(true);
+    AdminApi.listSellerCandidates()
+      .then((result) => {
+        if (!cancelled) setSellerCandidates(result.candidates || []);
+      })
+      .catch((error) => {
+        console.error('Erro ao carregar candidatos de vendedor:', error);
+        if (!cancelled) {
+          setSellerCandidates([]);
+          addNotification('Não foi possível carregar funcionários/freelas do OS agora.', 'error');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingSellerCandidates(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showAddSellerModal, addNotification]);
+
 
   const openDeliveryOrderDetails = async (orderId: string) => {
     setIsDeliveryDetailLoading(true);
@@ -645,7 +697,7 @@ export function AdminView() {
   const isAdminProfile = currentSeller.permission === 'admin';
   const isSuperAdmin = currentSeller.permission === 'admin' && ['admin-bootstrap', 'admin-bypass', 'master'].includes(currentSeller.id);
   const canManageSettings = can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides);
-  const canManageTeam = can(currentSeller, 'manageTeam', permissionOverrides, userPermissionOverrides);
+  const canManagePDVUsers = can(currentSeller, 'managePDVUsers', permissionOverrides, userPermissionOverrides);
   const canManageOptionals = can(currentSeller, 'manageOptionals', permissionOverrides, userPermissionOverrides);
   const canAddProduct = can(currentSeller, 'addProduct', permissionOverrides, userPermissionOverrides);
   const canEditProduct = can(currentSeller, 'editProduct', permissionOverrides, userPermissionOverrides);
@@ -732,7 +784,7 @@ export function AdminView() {
     ...(canManageOptionals ? ['optionals'] : []),
     ...(isAdminProfile && canManageSettings ? ['config'] : []),
     ...(isAdminProfile && canManageSettings ? ['qrcodes'] : []),
-    ...(isAdminProfile && canManageTeam ? ['sellers'] : []),
+    ...(canManagePDVUsers ? ['sellers'] : []),
     ...(isAdminProfile && canViewSalesTotals ? ['finance', 'delivery', 'movements'] : []),
   ]);
   const isActiveTabAllowed = allowedTabIds.has(activeTab);
@@ -775,6 +827,87 @@ export function AdminView() {
   const closedBillsServiceFee = closedBills.reduce((acc, bill) => acc + bill.serviceFee, 0);
   const closedBillsDiscount = closedBills.reduce((acc, bill) => acc + bill.discount, 0);
   const closedBillsTotal = closedBills.reduce((acc, bill) => acc + bill.total, 0);
+  const sellerPerformanceMap = new Map<string, SellerPerformance>();
+  const sellerMetadata = new Map(sellers.map((seller: any) => [
+    String(seller.id || ''),
+    {
+      name: String(seller.name || ''),
+      status: String(seller.status || ''),
+      role: String(seller.role || ''),
+      source: String(seller.source || 'pdv'),
+    },
+  ]));
+
+  for (const seller of sellers) {
+    const sellerId = String((seller as any).id || '');
+    if (!sellerId) continue;
+    sellerPerformanceMap.set(sellerId, {
+      key: sellerId,
+      sellerId,
+      sellerName: String((seller as any).name || 'Sem nome'),
+      sellerStatus: String((seller as any).status || ''),
+      role: String((seller as any).role || ''),
+      source: String((seller as any).source || 'pdv'),
+      billsCount: 0,
+      subtotal: 0,
+      serviceFee: 0,
+      discount: 0,
+      total: 0,
+      avgTicket: 0,
+      serviceRate: 0,
+      commissionFee: 0,
+      isSelfService: sellerId === 'self-service',
+    });
+  }
+
+  for (const bill of closedBills) {
+    const sellerId = String(bill.sellerId || '');
+    const fallbackKey = sellerId || `name:${bill.sellerName || 'Sem vendedor'}`;
+    const metadata = sellerMetadata.get(sellerId);
+    const current = sellerPerformanceMap.get(fallbackKey) || {
+      key: fallbackKey,
+      sellerId,
+      sellerName: metadata?.name || bill.sellerName || 'Sem vendedor',
+      sellerStatus: metadata?.status || '',
+      role: metadata?.role || '',
+      source: metadata?.source || 'histórico',
+      billsCount: 0,
+      subtotal: 0,
+      serviceFee: 0,
+      discount: 0,
+      total: 0,
+      avgTicket: 0,
+      serviceRate: 0,
+      commissionFee: 0,
+      isSelfService: sellerId === 'self-service' || bill.sellerName === 'Cliente pediu sozinho',
+    };
+    const closedAt = new Date(bill.closedAt);
+    current.billsCount += 1;
+    current.subtotal += Number(bill.subtotal || 0);
+    current.serviceFee += Number(bill.serviceFee || 0);
+    current.discount += Number(bill.discount || 0);
+    current.total += Number(bill.total || 0);
+    current.lastClosedAt = !current.lastClosedAt || closedAt > current.lastClosedAt ? closedAt : current.lastClosedAt;
+    current.sellerName = metadata?.name || bill.sellerName || current.sellerName;
+    sellerPerformanceMap.set(fallbackKey, current);
+  }
+
+  const sellerPerformanceRows = Array.from(sellerPerformanceMap.values())
+    .map((row) => ({
+      ...row,
+      avgTicket: row.billsCount > 0 ? row.total / row.billsCount : 0,
+      serviceRate: row.subtotal > 0 ? (row.serviceFee / row.subtotal) * 100 : 0,
+      commissionFee: row.isSelfService ? 0 : row.serviceFee,
+    }))
+    .filter((row) => row.billsCount > 0 || row.sellerStatus === 'active')
+    .sort((a, b) => b.commissionFee - a.commissionFee || b.total - a.total || a.sellerName.localeCompare(b.sellerName, 'pt-BR'));
+  const selectedSellerPerformance = sellerPerformanceRows.find((row) => row.key === selectedSellerPerformanceKey);
+  const financeBills = selectedSellerPerformance
+    ? closedBills.filter((bill) => {
+      const billKey = String(bill.sellerId || '') || `name:${bill.sellerName || 'Sem vendedor'}`;
+      return billKey === selectedSellerPerformance.key;
+    })
+    : closedBills;
 
   const requestCategoryRename = (cat: any) => {
     setAdminDialog({
@@ -927,8 +1060,10 @@ export function AdminView() {
     setSelectedSeller(seller);
     setSellerDraft({
       name: seller?.name || '',
+      nickname: seller?.nickname || '',
       role: seller?.role || 'garçom',
       permission: getPermissionProfile(seller),
+      employmentType: seller?.employmentType === 'freelancer' ? 'freelancer' : 'fixo',
       pin: '',
     });
   };
@@ -951,8 +1086,10 @@ export function AdminView() {
 
     const payload: Partial<Seller> = {
       name,
+      nickname: sellerDraft.nickname.trim(),
       role: sellerDraft.role,
-      permission: sellerDraft.permission,
+      permission: isAdminProfile ? sellerDraft.permission : getPermissionProfile(selectedSeller),
+      employmentType: sellerDraft.employmentType,
     };
 
     if (pin) {
@@ -978,6 +1115,7 @@ export function AdminView() {
 
   const setSellerPermissionValue = (seller: any, key: PermissionKey, value: boolean) => {
     if (!seller?.id) return;
+    if (!isAdminProfile) return;
     if (isCoreAdminPermission(getPermissionProfile(seller), key)) return;
 
     updateSettings({
@@ -993,6 +1131,7 @@ export function AdminView() {
 
   const resetSellerPermissionValue = (seller: any, key: PermissionKey) => {
     if (!seller?.id) return;
+    if (!isAdminProfile) return;
     const nextUserPermissions = { ...(settings.pdvUserPermissions || {}) };
     const nextSellerPermissions = { ...(nextUserPermissions[seller.id] || {}) };
     delete nextSellerPermissions[key];
@@ -1008,24 +1147,97 @@ export function AdminView() {
 
   const resetSellerPermissions = (seller: any) => {
     if (!seller?.id) return;
+    if (!isAdminProfile) return;
     const nextUserPermissions = { ...(settings.pdvUserPermissions || {}) };
     delete nextUserPermissions[seller.id];
     updateSettings({ pdvUserPermissions: nextUserPermissions });
   };
 
+  const sellerCandidateSearch = normalizeSellerName(newSellerName);
+  const visibleSellerCandidates = sellerCandidates
+    .filter((candidate) => !candidate.canSellInPdv)
+    .filter((candidate) => {
+      if (!sellerCandidateSearch) return true;
+      return normalizeSellerName(candidate.name).includes(sellerCandidateSearch);
+    })
+    .slice(0, 6);
+
+  const handleActivateSellerCandidate = async (candidate: SellerCandidate) => {
+    const pin = newSellerPin.trim();
+    if (!candidate.hasPin && !/^\d{4}$/.test(pin)) {
+      addNotification('Esse cadastro do OS ainda não tem PIN. Informe um PIN de 4 dígitos para ativar.', 'error');
+      return;
+    }
+
+    setActivatingSellerCandidateId(candidate.id);
+    try {
+      const result = await AdminApi.activateSellerCandidate(candidate.id, candidate.hasPin ? undefined : pin);
+      const activatedSeller = result.seller;
+      if (activatedSeller?.id) {
+        useStore.setState((state) => ({
+          sellers: [
+            ...state.sellers.filter((seller) => seller.id !== activatedSeller.id),
+            activatedSeller,
+          ],
+        }));
+      }
+      addNotification(`${candidate.name} agora aparece como vendedor no PDV.`, 'info');
+      setShowAddSellerModal(false);
+      setNewSellerName('');
+      setNewSellerNickname('');
+      setNewSellerPin('1234');
+    } catch (error) {
+      console.error('Erro ao ativar vendedor do OS:', error);
+      addNotification(error instanceof Error ? error.message : 'Não foi possível ativar este vendedor.', 'error');
+    } finally {
+      setActivatingSellerCandidateId(null);
+    }
+  };
+
   const handleCreateSeller = async () => {
+    const name = newSellerName.trim();
+    const nickname = newSellerNickname.trim();
+    const pin = newSellerPin.trim();
+    const normalizedName = normalizeSellerName(name);
+
+    if (!name) {
+      addNotification('Nome do vendedor é obrigatório.', 'error');
+      return;
+    }
+
+    const existingSeller = sellers.find((seller: any) => normalizeSellerName(seller?.name || '') === normalizedName);
+    const existingOsCandidate = sellerCandidates.find((candidate) => normalizeSellerName(candidate.name) === normalizedName);
+    if (existingSeller || existingOsCandidate) {
+      addNotification(
+        existingSeller
+          ? 'Já existe um vendedor com esse nome. Abra o cadastro existente em vez de criar duplicado.'
+          : 'Já existe uma pessoa com esse nome no OS. Use Vincular funcionário/freela do OS.',
+        'error'
+      );
+      return;
+    }
+
+    if (!/^\d{4}$/.test(pin)) {
+      addNotification('PIN deve ter 4 dígitos.', 'error');
+      return;
+    }
+
     await addSeller({
       id: createId(),
-      name: newSellerName,
+      name,
+      nickname,
       role: newSellerRole,
-      permission: newSellerPermission,
-      pin: newSellerPin,
+      permission: isAdminProfile ? newSellerPermission : 'operator',
+      employmentType: newSellerEmploymentType,
+      pin,
       status: 'active'
-    });
+    } as Seller);
     setNewSellerName('');
+    setNewSellerNickname('');
     setNewSellerPin('1234');
     setNewSellerRole('garçom');
     setNewSellerPermission('operator');
+    setNewSellerEmploymentType('fixo');
     setShowAddSellerModal(false);
   };
 
@@ -2000,7 +2212,7 @@ export function AdminView() {
         </div>
       )}
 
-      {activeTab === 'sellers' && canManageTeam && (
+      {activeTab === 'sellers' && canManagePDVUsers && (
         <div className="space-y-8">
           {isSuperAdmin && (
             <div className="glass-card p-6 border-primary/20 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -2055,7 +2267,7 @@ export function AdminView() {
                 onClick={() => setShowAddSellerModal(true)}
                 className="btn-beco btn-beco-purple px-6 py-4 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-3"
               >
-                <Plus size={18} /> Novo operador
+                <Plus size={18} /> Add vendedor
               </button>
             </div>
 
@@ -2152,7 +2364,97 @@ export function AdminView() {
             })}
           </div>
 
+          <div className="glass-card p-6 sm:p-8 border-white/5">
+            <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-5 mb-6">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Vendas por vendedor</p>
+	                <h3 className="text-3xl font-black tracking-tighter">Gorjetas e comissões</h3>
+	                <p className="text-sm font-bold text-zinc-500 mt-1">
+	                  A comissão abaixo usa a taxa de serviço consolidada no fechamento. Pedidos sem vendedor ficam como self-service, sem comissão humana.
+	                </p>
+              </div>
+              {selectedSellerPerformance && (
+                <button
+                  onClick={() => setSelectedSellerPerformanceKey('all')}
+                  className="px-5 py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest text-zinc-300"
+                >
+                  Limpar filtro de vendedor
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full min-w-[980px] text-left">
+                <thead className="bg-white/5">
+                  <tr className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                    <th className="p-5">Vendedor</th>
+                    <th className="p-5 text-right">Mesas</th>
+                    <th className="p-5 text-right">Produtos</th>
+	                    <th className="p-5 text-right">Comissão</th>
+	                    <th className="p-5 text-right">Taxa gerada</th>
+	                    <th className="p-5 text-right">% taxa</th>
+                    <th className="p-5 text-right">Total vendido</th>
+                    <th className="p-5 text-right">Ticket médio</th>
+                    <th className="p-5">Última venda</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {sellerPerformanceRows.length === 0 ? (
+                    <tr>
+	                      <td colSpan={9} className="p-8 text-center text-sm font-bold text-zinc-500">
+                        Nenhum fechamento com vendedor encontrado neste período carregado.
+                      </td>
+                    </tr>
+                  ) : sellerPerformanceRows.map((row) => (
+                    <tr
+                      key={row.key}
+                      onClick={() => setSelectedSellerPerformanceKey(row.key)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setSelectedSellerPerformanceKey(row.key);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className={`transition-all cursor-pointer ${selectedSellerPerformanceKey === row.key ? 'bg-primary/10' : 'hover:bg-white/[0.04]'}`}
+                      title="Filtrar fechamentos deste vendedor"
+                    >
+                      <td className="p-5">
+	                        <p className="font-black text-white">{row.sellerName}</p>
+	                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-600 mt-1">
+	                          {row.isSelfService ? 'self-service • sem comissão' : `${row.role || 'sem cargo'} • ${row.source || 'pdv'}${row.sellerStatus === 'inactive' ? ' • inativo' : ''}`}
+	                        </p>
+	                      </td>
+	                      <td className="p-5 text-right font-black text-zinc-300">{row.billsCount}</td>
+	                      <td className="p-5 text-right font-black text-zinc-300">R$ {row.subtotal.toFixed(2)}</td>
+	                      <td className="p-5 text-right font-black text-amber-300">R$ {row.commissionFee.toFixed(2)}</td>
+	                      <td className="p-5 text-right font-black text-zinc-300">R$ {row.serviceFee.toFixed(2)}</td>
+	                      <td className="p-5 text-right font-black text-primary">{row.serviceRate.toFixed(1)}%</td>
+                      <td className="p-5 text-right font-black text-emerald-300">R$ {row.total.toFixed(2)}</td>
+                      <td className="p-5 text-right font-black text-zinc-300">R$ {row.avgTicket.toFixed(2)}</td>
+                      <td className="p-5 text-xs font-bold text-zinc-500 uppercase tracking-widest">
+                        {row.lastClosedAt ? row.lastClosedAt.toLocaleString('pt-BR') : 'Sem venda'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div className="glass rounded-[2rem] sm:rounded-[3rem] border-white/5 overflow-hidden">
+            {selectedSellerPerformance && (
+              <div className="px-8 py-5 border-b border-white/5 bg-primary/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-primary">Filtro ativo</p>
+                  <p className="text-lg font-black text-white mt-1">{selectedSellerPerformance.sellerName}</p>
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                  {financeBills.length} fechamento(s) exibidos
+                </p>
+              </div>
+            )}
             <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full min-w-[1120px] text-left">
               <thead className="bg-white/5">
@@ -2168,7 +2470,7 @@ export function AdminView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {closedBills.map((bill) => (
+                {financeBills.map((bill) => (
                   <tr
                     key={bill.id}
                     onClick={() => setSelectedClosedBill(bill)}
@@ -2560,19 +2862,75 @@ export function AdminView() {
               className="w-full max-w-2xl max-h-[calc(100dvh-1.5rem)] glass-card border-primary/20 overflow-hidden flex flex-col"
             >
               <div className="p-5 sm:p-7 border-b border-white/10 flex items-center justify-between gap-5">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Equipe PDV</p>
-                  <h2 className="text-3xl font-black tracking-tighter">Novo Operador</h2>
-                  <p className="text-sm font-bold text-zinc-500 mt-1">Cadastro próprio do PDV para uso independente do OS.</p>
-                </div>
+	                <div>
+	                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Equipe PDV</p>
+	                  <h2 className="text-3xl font-black tracking-tighter">Novo Vendedor</h2>
+	                  <p className="text-sm font-bold text-zinc-500 mt-1">Vincule alguém do OS primeiro. Use cadastro próprio só em emergência.</p>
+	                </div>
                 <button onClick={() => setShowAddSellerModal(false)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all">
                   <X size={24} />
                 </button>
               </div>
 
-              <div className="p-5 sm:p-7 space-y-6 overflow-y-auto custom-scrollbar">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <ConfigInput label="Nome Completo" value={newSellerName} onChange={setNewSellerName} />
+	              <div className="p-5 sm:p-7 space-y-6 overflow-y-auto custom-scrollbar">
+	                <div className="rounded-[2rem] border border-emerald-500/15 bg-emerald-500/5 p-5 space-y-4">
+	                  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+	                    <div>
+	                      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300">Recomendado</p>
+	                      <h3 className="text-xl font-black tracking-tighter mt-1">Vincular funcionário/freela do OS</h3>
+	                      <p className="text-xs font-bold text-zinc-500 mt-1">
+	                        Procure pelo nome acima. Isso ativa o cadastro real como vendedor e evita duplicidade.
+	                      </p>
+	                    </div>
+	                    {isLoadingSellerCandidates && (
+	                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Carregando OS...</span>
+	                    )}
+	                  </div>
+
+	                  <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
+	                    {visibleSellerCandidates.length === 0 ? (
+	                      <div className="rounded-2xl border border-white/5 bg-black/20 p-4 text-xs font-bold text-zinc-500">
+	                        {isLoadingSellerCandidates ? 'Buscando cadastros...' : 'Nenhum cadastro do OS encontrado para vincular agora.'}
+	                      </div>
+	                    ) : visibleSellerCandidates.map((candidate) => (
+	                      <button
+	                        key={candidate.id}
+	                        onClick={() => handleActivateSellerCandidate(candidate)}
+	                        disabled={activatingSellerCandidateId === candidate.id}
+	                        className="w-full rounded-2xl border border-white/5 bg-black/20 hover:border-emerald-400/40 hover:bg-emerald-500/10 p-4 text-left transition-all disabled:opacity-50"
+	                      >
+	                        <div className="flex items-center justify-between gap-4">
+	                          <div className="min-w-0">
+	                            <p className="font-black text-white truncate">{candidate.name}</p>
+	                            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 truncate">
+	                              {candidate.role || 'sem nível'} • {candidate.funcao || 'sem função'} • {candidate.employmentType || 'sem vínculo'}
+	                            </p>
+	                          </div>
+	                          <span className="shrink-0 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-300 text-[10px] font-black uppercase tracking-widest">
+	                            {activatingSellerCandidateId === candidate.id ? 'Ativando...' : 'Ativar'}
+	                          </span>
+	                        </div>
+	                        {!candidate.hasPin && (
+	                          <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+	                            Sem PIN no OS. Usará o PIN informado abaixo.
+	                          </p>
+	                        )}
+	                      </button>
+	                    ))}
+	                  </div>
+	                </div>
+
+	                <div className="rounded-[2rem] border border-white/5 bg-white/[0.03] p-5 space-y-4">
+	                  <div>
+	                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500">Emergencial</p>
+	                    <h3 className="text-xl font-black tracking-tighter mt-1">Criar só no PDV</h3>
+	                    <p className="text-xs font-bold text-zinc-500 mt-1">
+	                      Use apenas se a pessoa ainda não existir no OS. Depois consolide o cadastro oficial.
+	                    </p>
+	                  </div>
+	                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+	                  <ConfigInput label="Nome completo" value={newSellerName} onChange={setNewSellerName} />
+                  <ConfigInput label="Apelido" value={newSellerNickname} onChange={setNewSellerNickname} />
                   <ConfigInput label="PIN (4 dígitos)" value={newSellerPin} onChange={setNewSellerPin} />
                   <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Cargo</label>
@@ -2584,21 +2942,34 @@ export function AdminView() {
                     </select>
                   </div>
                   <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Perfil de Permissão</label>
-                    <select value={newSellerPermission} onChange={(e) => setNewSellerPermission(e.target.value as any)} className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent">
-                      <option value="admin" className="bg-[#0a0a0c]">Admin full access</option>
-                      <option value="manager" className="bg-[#0a0a0c]">Gerente</option>
-                      <option value="operator" className="bg-[#0a0a0c]">Operador</option>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Vínculo</label>
+                    <select value={newSellerEmploymentType} onChange={(e) => setNewSellerEmploymentType(e.target.value as any)} className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent">
+                      <option value="fixo" className="bg-[#0a0a0c]">Fixo</option>
+                      <option value="freelancer" className="bg-[#0a0a0c]">Freelancer</option>
                     </select>
                   </div>
-                </div>
+	                  <div className="space-y-3">
+	                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Perfil de Permissão</label>
+	                    <select value={newSellerPermission} onChange={(e) => setNewSellerPermission(e.target.value as any)} className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-sm bg-transparent">
+	                      {isAdminProfile && <option value="admin" className="bg-[#0a0a0c]">Admin full access</option>}
+	                      {isAdminProfile && <option value="manager" className="bg-[#0a0a0c]">Gerente</option>}
+	                      <option value="operator" className="bg-[#0a0a0c]">Operador</option>
+	                    </select>
+	                    {!isAdminProfile && (
+	                      <p className="text-[10px] font-bold uppercase tracking-widest text-amber-300">
+	                        Gerente cadastra vendedores como operador. Perfil sensível é só admin.
+	                      </p>
+	                    )}
+	                  </div>
+	                </div>
+	                </div>
 
-                <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
+	                <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
                   <button onClick={() => setShowAddSellerModal(false)} className="px-6 py-4 rounded-2xl glass font-black uppercase tracking-widest text-xs">
                     Cancelar
                   </button>
                   <button onClick={handleCreateSeller} className="btn-beco btn-beco-purple px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs">
-                    Registrar operador
+                    Adicionar vendedor
                   </button>
                 </div>
               </div>
@@ -2696,12 +3067,20 @@ export function AdminView() {
                               Salvar usuário
                             </button>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                             <label className="space-y-2">
                               <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Nome</span>
                               <input
                                 value={sellerDraft.name}
                                 onChange={(event) => setSellerDraft((prev) => ({ ...prev, name: event.target.value }))}
+                                className="w-full bg-black/25 border border-white/10 rounded-2xl px-4 py-4 font-black outline-none focus:border-primary"
+                              />
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Apelido</span>
+                              <input
+                                value={sellerDraft.nickname}
+                                onChange={(event) => setSellerDraft((prev) => ({ ...prev, nickname: event.target.value }))}
                                 className="w-full bg-black/25 border border-white/10 rounded-2xl px-4 py-4 font-black outline-none focus:border-primary"
                               />
                             </label>
@@ -2718,16 +3097,36 @@ export function AdminView() {
                                 <option value="outro">Outro</option>
                               </select>
                             </label>
+	                            {isAdminProfile ? (
+	                              <label className="space-y-2">
+	                                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Perfil base</span>
+	                                <select
+	                                  value={sellerDraft.permission}
+	                                  onChange={(event) => setSellerDraft((prev) => ({ ...prev, permission: event.target.value as PermissionProfile }))}
+	                                  className="w-full bg-black/25 border border-white/10 rounded-2xl px-4 py-4 font-black outline-none focus:border-primary"
+	                                >
+	                                  {permissionProfiles.map((profileOption) => (
+	                                    <option key={profileOption} value={profileOption}>{profileLabels[profileOption]}</option>
+	                                  ))}
+	                                </select>
+	                              </label>
+	                            ) : (
+	                              <div className="space-y-2">
+	                                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Perfil base</span>
+	                                <div className="w-full bg-black/25 border border-white/10 rounded-2xl px-4 py-4 font-black text-zinc-400">
+	                                  {profileLabels[profile]}
+	                                </div>
+	                              </div>
+	                            )}
                             <label className="space-y-2">
-                              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Perfil base</span>
+                              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Vínculo</span>
                               <select
-                                value={sellerDraft.permission}
-                                onChange={(event) => setSellerDraft((prev) => ({ ...prev, permission: event.target.value as PermissionProfile }))}
+                                value={sellerDraft.employmentType}
+                                onChange={(event) => setSellerDraft((prev) => ({ ...prev, employmentType: event.target.value as 'fixo' | 'freelancer' }))}
                                 className="w-full bg-black/25 border border-white/10 rounded-2xl px-4 py-4 font-black outline-none focus:border-primary"
                               >
-                                {permissionProfiles.map((profileOption) => (
-                                  <option key={profileOption} value={profileOption}>{profileLabels[profileOption]}</option>
-                                ))}
+                                <option value="fixo">Fixo</option>
+                                <option value="freelancer">Freelancer</option>
                               </select>
                             </label>
                             <label className="space-y-2">
@@ -2751,75 +3150,88 @@ export function AdminView() {
                         </div>
                       )}
 
-                      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-                        <p className="text-xs font-black uppercase tracking-widest text-amber-300 mb-2">Permissão por pessoa</p>
-                        <p className="text-sm font-bold text-zinc-400 leading-relaxed">
-                          Os checkboxes abaixo valem só para <span className="text-white">{selectedSeller.name}</span>.
-                          O perfil <span className="text-white">{profileLabels[profile]}</span> continua sendo o padrão quando não houver exceção marcada.
-                        </p>
-                      </div>
+	                      {isAdminProfile ? (
+	                        <>
+	                          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+	                            <p className="text-xs font-black uppercase tracking-widest text-amber-300 mb-2">Permissão por pessoa</p>
+	                            <p className="text-sm font-bold text-zinc-400 leading-relaxed">
+	                              Os checkboxes abaixo valem só para <span className="text-white">{selectedSeller.name}</span>.
+	                              O perfil <span className="text-white">{profileLabels[profile]}</span> continua sendo o padrão quando não houver exceção marcada.
+	                            </p>
+	                          </div>
 
-                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                        {permissionGroups.map((group) => {
-                          const groupActiveCount = group.keys.filter((key) => getSellerPermissionValue(selectedSeller, key)).length;
-                          return (
-                            <div key={`${selectedSeller.id}-${group.title}`} className="bg-black/20 rounded-2xl p-5 border border-white/5">
-                              <div className="mb-4">
-                                <h4 className="text-sm font-black uppercase tracking-widest text-primary">{group.title}</h4>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-1">
-                                  {groupActiveCount} de {group.keys.length} ativas
-                                </p>
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {group.keys.map((key) => {
-                                  const active = getSellerPermissionValue(selectedSeller, key);
-                                  const locked = isCoreAdminPermission(profile, key);
-                                  const overridden = isSellerPermissionOverridden(selectedSeller, key);
-                                  return (
-                                    <button
-                                      key={`${selectedSeller.id}-${key}`}
-                                      onClick={() => setSellerPermissionValue(selectedSeller, key, !active)}
-                                      disabled={locked}
-                                      className={`min-h-[60px] rounded-xl border px-4 py-3 text-left transition-all flex items-start gap-3 ${
-                                        active
-                                          ? 'bg-primary/15 border-primary/30 text-white'
-                                          : 'bg-white/[0.03] border-white/5 text-zinc-500'
-                                      } ${locked ? 'opacity-70 cursor-not-allowed' : 'hover:border-white/20'}`}
-                                    >
-                                      <span className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${active ? 'bg-primary border-primary' : 'border-white/20'}`}>
-                                        {active && <Check size={13} strokeWidth={4} />}
-                                      </span>
-                                      <span className="min-w-0 flex-1">
-                                        <span className="text-xs font-black uppercase tracking-wide leading-snug block">{permissionLabels[key]}</span>
-                                        {overridden && (
-                                          <span
-                                            onClick={(event) => {
-                                              event.stopPropagation();
-                                              resetSellerPermissionValue(selectedSeller, key);
-                                            }}
-                                            className="inline-flex mt-2 text-[9px] font-black uppercase tracking-widest text-amber-300 hover:text-amber-100"
-                                          >
-                                            Exceção • usar padrão
-                                          </span>
-                                        )}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+	                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+	                            {permissionGroups.map((group) => {
+	                              const groupActiveCount = group.keys.filter((key) => getSellerPermissionValue(selectedSeller, key)).length;
+	                              return (
+	                                <div key={`${selectedSeller.id}-${group.title}`} className="bg-black/20 rounded-2xl p-5 border border-white/5">
+	                                  <div className="mb-4">
+	                                    <h4 className="text-sm font-black uppercase tracking-widest text-primary">{group.title}</h4>
+	                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-1">
+	                                      {groupActiveCount} de {group.keys.length} ativas
+	                                    </p>
+	                                  </div>
+	                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+	                                    {group.keys.map((key) => {
+	                                      const active = getSellerPermissionValue(selectedSeller, key);
+	                                      const locked = isCoreAdminPermission(profile, key);
+	                                      const overridden = isSellerPermissionOverridden(selectedSeller, key);
+	                                      return (
+	                                        <button
+	                                          key={`${selectedSeller.id}-${key}`}
+	                                          onClick={() => setSellerPermissionValue(selectedSeller, key, !active)}
+	                                          disabled={locked}
+	                                          className={`min-h-[60px] rounded-xl border px-4 py-3 text-left transition-all flex items-start gap-3 ${
+	                                            active
+	                                              ? 'bg-primary/15 border-primary/30 text-white'
+	                                              : 'bg-white/[0.03] border-white/5 text-zinc-500'
+	                                          } ${locked ? 'opacity-70 cursor-not-allowed' : 'hover:border-white/20'}`}
+	                                        >
+	                                          <span className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${active ? 'bg-primary border-primary' : 'border-white/20'}`}>
+	                                            {active && <Check size={13} strokeWidth={4} />}
+	                                          </span>
+	                                          <span className="min-w-0 flex-1">
+	                                            <span className="text-xs font-black uppercase tracking-wide leading-snug block">{permissionLabels[key]}</span>
+	                                            {overridden && (
+	                                              <span
+	                                                onClick={(event) => {
+	                                                  event.stopPropagation();
+	                                                  resetSellerPermissionValue(selectedSeller, key);
+	                                                }}
+	                                                className="inline-flex mt-2 text-[9px] font-black uppercase tracking-widest text-amber-300 hover:text-amber-100"
+	                                              >
+	                                                Exceção • usar padrão
+	                                              </span>
+	                                            )}
+	                                          </span>
+	                                        </button>
+	                                      );
+	                                    })}
+	                                  </div>
+	                                </div>
+	                              );
+	                            })}
+	                          </div>
+	                        </>
+	                      ) : (
+	                        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+	                          <p className="text-xs font-black uppercase tracking-widest text-amber-300 mb-2">Permissões protegidas</p>
+	                          <p className="text-sm font-bold text-zinc-400 leading-relaxed">
+	                            Gerente pode cadastrar e vincular vendedor, mas exceções individuais e perfil de acesso ficam restritos ao admin.
+	                          </p>
+	                        </div>
+	                      )}
 
-                      <div className="flex flex-col sm:flex-row justify-between gap-3 pt-2">
-                        <button
-                          onClick={() => resetSellerPermissions(selectedSeller)}
-                          disabled={stats.overridden === 0}
-                          className="px-6 py-4 rounded-2xl glass font-black uppercase tracking-widest text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          Restaurar padrão do perfil
-                        </button>
+	                      <div className="flex flex-col sm:flex-row justify-between gap-3 pt-2">
+	                        {isAdminProfile && (
+	                          <button
+	                            onClick={() => resetSellerPermissions(selectedSeller)}
+	                            disabled={stats.overridden === 0}
+	                            className="px-6 py-4 rounded-2xl glass font-black uppercase tracking-widest text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+	                          >
+	                            Restaurar padrão do perfil
+	                          </button>
+	                        )}
                         <button
                           onClick={async () => {
                             if (selectedSeller.source === 'os') return;

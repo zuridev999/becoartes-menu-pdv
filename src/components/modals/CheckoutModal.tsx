@@ -17,6 +17,15 @@ interface Payment {
 
 type PaymentMethod = Payment['method'];
 
+const SELF_SERVICE_SELLER = {
+  id: 'self-service',
+  name: 'Cliente pediu sozinho',
+  nickname: 'Self',
+  status: 'active',
+  role: 'outro',
+  permission: 'operator',
+} as const;
+
 const PAYMENT_CANCEL_REASONS = [
   { code: 'forma_errada', label: 'Forma errada' },
   { code: 'valor_errado', label: 'Valor errado' },
@@ -49,7 +58,7 @@ type ValidatedCoupon = {
 
 export function CheckoutModal({ table, onClose }: { table: TableType, onClose: () => void }) {
   const { closeBill, settings, sellers, currentSeller } = useStore();
-  const [selectedSellerId, setSelectedSellerId] = useState<string>('');
+  const [selectedSellerId, setSelectedSellerId] = useState<string>(SELF_SERVICE_SELLER.id);
   const defaultServiceFeePercent = clampServiceFeePercent(Number(settings.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
   const [serviceFeePercent, setServiceFeePercent] = useState(defaultServiceFeePercent);
   const [discountValue, setDiscountValue] = useState(0);
@@ -69,7 +78,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const sellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
-  const selectedSeller = sellerOptions.find(s => s.id === selectedSellerId);
+  const selectedSeller = selectedSellerId === SELF_SERVICE_SELLER.id
+    ? SELF_SERVICE_SELLER
+    : sellerOptions.find(s => s.id === selectedSellerId);
   const canApplyDiscount = can(currentSeller, 'applyDiscount', settings.pdvPermissions, settings.pdvUserPermissions);
   const canEditServiceFee = can(currentSeller, 'editServiceFee', settings.pdvPermissions, settings.pdvUserPermissions);
   const canLaunchPayment = can(currentSeller, 'launchPayment', settings.pdvPermissions, settings.pdvUserPermissions);
@@ -328,7 +339,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                        onChange={(e) => setSelectedSellerId(e.target.value)}
                        className="w-full glass p-4 rounded-xl border-white/10 outline-none font-bold text-base bg-transparent"
                     >
-                       <option value="">Selecione o Vendedor</option>
+                       <option value={SELF_SERVICE_SELLER.id} className="bg-[#0d0d0f]">Cliente pediu sozinho</option>
                        {sellerOptions.filter((s: any) => s.status === 'active').map((s: any) => (
                          <option key={s.id} value={s.id} className="bg-[#0d0d0f]">{s.name}</option>
                        ))}
