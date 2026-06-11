@@ -639,6 +639,10 @@ export const AdminApi = {
     return postJson<{ activated: boolean; seller: any }>('/api/sellers/activate-os-user', { userId, pin });
   },
 
+  createOsSeller(data: { name: string; pin: string; employmentType: 'fixo' | 'freelancer' }) {
+    return postJson<{ created: boolean; seller: any }>('/api/sellers/create-os-user', data);
+  },
+
   regenerateTableQr(tableNumber: number, adminPin: string) {
     return postJson<{
       tableNumber: number;

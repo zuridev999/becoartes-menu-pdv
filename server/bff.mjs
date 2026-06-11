@@ -1296,6 +1296,68 @@ const activateOsUserAsSeller = async ({ userId, pin }) => {
   return { activated: true, seller };
 };
 
+const createOsUserAsSeller = async ({ name, pin, employmentType }) => {
+  const safeName = requireString(name, 'name').trim();
+  const safePin = requireString(pin, 'pin').trim();
+  if (!safeName) {
+    const error = new Error('Nome do vendedor é obrigatório.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!/^\d{4}$/.test(safePin) && !/^[a-f0-9]{64}$/i.test(safePin)) {
+    const error = new Error('PIN deve ter 4 dígitos.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizedName = normalizeText(safeName).toLowerCase();
+  const existingUsers = await db.execute({
+    sql: `
+      SELECT id, nome, pdv_sell_enabled
+      FROM users
+      WHERE empresa_id = ?
+        AND COALESCE(ativo, 1) = 1
+    `,
+    args: [OS_EMPRESA_ID],
+  });
+  const existingUser = existingUsers.rows.find((row) => normalizeText(row.nome).toLowerCase() === normalizedName);
+  if (existingUser) {
+    const error = new Error('Já existe uma pessoa com esse nome no OS. Use vincular cadastro existente.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const existingSellers = await getAuthSellers({ includePins: false });
+  const existingSeller = existingSellers.find((seller) => normalizeText(seller.name).toLowerCase() === normalizedName);
+  if (existingSeller) {
+    const error = new Error('Já existe um vendedor com esse nome no PDV.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const id = createId();
+  const isFreelancer = String(employmentType || '').toLowerCase() === 'freelancer';
+  const tipoVinculo = isFreelancer ? 'Freelancer' : 'CLT';
+  const role = isFreelancer ? 'freelancer' : 'colaborador';
+  const funcao = 'Vendedor';
+  const hashedPin = isLegacyPlainPin(safePin) ? hashPin(safePin) : safePin;
+
+  await db.execute({
+    sql: `
+      INSERT INTO users (
+        id, empresa_id, nome, email, role, funcao, ativo, pin,
+        is_operador, permitir_acesso_remoto, tipo_vinculo, pdv_sell_enabled, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, 0, ?, 1, ?)
+    `,
+    args: [id, OS_EMPRESA_ID, safeName, '', role, funcao, hashedPin, tipoVinculo, osTimestamp()],
+  });
+
+  await syncOperationalUsersToSellers();
+  const sellers = await getAuthSellers({ includePins: false });
+  const seller = sellers.find((item) => item.id === `os:${id}`);
+  return { created: true, seller };
+};
+
 const syncOperationalUsersToSellers = async () => {
   const operationalUsers = await getOperationalUsers({ includePins: true });
   for (const user of operationalUsers) {
@@ -6416,6 +6478,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/sellers/status': 'managePDVUsers',
     'GET /api/sellers/candidates': 'managePDVUsers',
     'POST /api/sellers/activate-os-user': 'managePDVUsers',
+    'POST /api/sellers/create-os-user': 'managePDVUsers',
     'POST /api/inventory/sync-beverages': 'confirmPurchaseEntry',
     'POST /api/inventory/sync-open-orders': 'manageSettings',
     'POST /api/tables/status': 'updateTableStatus',
@@ -6527,6 +6590,7 @@ const handlers = {
   'POST /api/sellers/status': async (body) => updateSellerStatus(body),
   'GET /api/sellers/candidates': async () => ({ candidates: await listSellerCandidates() }),
   'POST /api/sellers/activate-os-user': async (body) => activateOsUserAsSeller(body),
+  'POST /api/sellers/create-os-user': async (body) => createOsUserAsSeller(body),
   'POST /api/inventory/sync-beverages': async () => syncBeveragesFromInventory(),
   'POST /api/inventory/sync-open-orders': async () => syncOpenOrdersInventory(),
 };

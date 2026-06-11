@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Plus } from 'lucide-react';
 import { useStore, type Seller, type Table as TableType } from '../../store';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
 import { can } from '../../lib/permissions';
-import { OperationalApi } from '../../lib/api';
+import { AdminApi, OperationalApi, type SellerCandidate } from '../../lib/api';
 import { ActionDialog } from '../common/ActionDialog';
 
 interface Payment {
@@ -52,6 +52,14 @@ const isCheckoutSeller = (seller: Seller) => {
   return !TECHNICAL_SELLER_NAMES.has(normalizedName);
 };
 
+const normalizeSellerName = (value: string) => (
+  String(value || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim()
+    .toLowerCase()
+);
+
 type ValidatedCoupon = {
   code: string;
   amount: number;
@@ -67,7 +75,7 @@ type ValidatedCoupon = {
 };
 
 export function CheckoutModal({ table, onClose }: { table: TableType, onClose: () => void }) {
-  const { closeBill, settings, sellers, currentSeller, addSeller, addNotification } = useStore();
+  const { closeBill, settings, sellers, currentSeller, addNotification } = useStore();
   const [selectedSellerId, setSelectedSellerId] = useState<string>(SELF_SERVICE_SELLER.id);
   const defaultServiceFeePercent = clampServiceFeePercent(Number(settings.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
   const [serviceFeePercent, setServiceFeePercent] = useState(defaultServiceFeePercent);
@@ -89,10 +97,24 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const [newSellerName, setNewSellerName] = useState('');
   const [newSellerPin, setNewSellerPin] = useState('1234');
   const [newSellerEmploymentType, setNewSellerEmploymentType] = useState<'fixo' | 'freelancer'>('fixo');
+  const [sellerCandidates, setSellerCandidates] = useState<SellerCandidate[]>([]);
+  const [isLoadingSellerCandidates, setIsLoadingSellerCandidates] = useState(false);
+  const [activatingSellerCandidateId, setActivatingSellerCandidateId] = useState<string | null>(null);
+  const [isCreatingOsSeller, setIsCreatingOsSeller] = useState(false);
   const rawSellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
   const sellerOptions = rawSellerOptions.filter(isCheckoutSeller);
+  const sellerCandidateSearch = normalizeSellerName(newSellerName);
+  const visibleSellerCandidates = useMemo(() => (
+    sellerCandidates
+      .filter((candidate) => !candidate.canSellInPdv)
+      .filter((candidate) => {
+        if (!sellerCandidateSearch) return true;
+        return normalizeSellerName(candidate.name).includes(sellerCandidateSearch);
+      })
+      .slice(0, 8)
+  ), [sellerCandidates, sellerCandidateSearch]);
   const selectedSeller = selectedSellerId === SELF_SERVICE_SELLER.id
     ? SELF_SERVICE_SELLER
     : sellerOptions.find(s => s.id === selectedSellerId);
@@ -138,28 +160,67 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       return;
     }
 
-    const beforeIds = new Set(sellers.map((seller) => seller.id));
-    await addSeller({
-      id: '',
-      name,
-      nickname: '',
-      pin,
-      status: 'active',
-      role: 'garçom',
-      permission: 'operator',
-      employmentType: newSellerEmploymentType,
-    });
-
-    const createdSeller = useStore.getState().sellers.find((seller) => !beforeIds.has(seller.id) && seller.name === name);
-    if (createdSeller?.id) {
+    setIsCreatingOsSeller(true);
+    try {
+      const result = await AdminApi.createOsSeller({ name, pin, employmentType: newSellerEmploymentType });
+      const createdSeller = result.seller;
+      if (!createdSeller?.id) {
+        addNotification('Cadastro criado, mas não voltou como vendedor. Atualize e tente selecionar.', 'error');
+        return;
+      }
+      useStore.setState((state) => ({
+        sellers: [
+          ...state.sellers.filter((seller) => seller.id !== createdSeller.id),
+          createdSeller,
+        ],
+      }));
       setSelectedSellerId(createdSeller.id);
-    } else {
+      addNotification(`${name} foi criado no OS e ativado como vendedor no PDV.`, 'info');
+      setNewSellerName('');
+      setNewSellerPin('1234');
+      setNewSellerEmploymentType('fixo');
+      setShowAddSellerModal(false);
+    } catch (error) {
+      console.error('Erro ao criar vendedor no OS:', error);
+      addNotification(error instanceof Error ? error.message : 'Não foi possível criar este vendedor no OS.', 'error');
+    } finally {
+      setIsCreatingOsSeller(false);
+    }
+  };
+
+  const handleActivateSellerCandidate = async (candidate: SellerCandidate) => {
+    const pin = newSellerPin.trim();
+    if (!candidate.hasPin && !/^\d{4}$/.test(pin)) {
+      addNotification('Esse cadastro do OS ainda não tem PIN. Informe um PIN de 4 dígitos para ativar.', 'error');
       return;
     }
-    setNewSellerName('');
-    setNewSellerPin('1234');
-    setNewSellerEmploymentType('fixo');
-    setShowAddSellerModal(false);
+
+    setActivatingSellerCandidateId(candidate.id);
+    try {
+      const result = await AdminApi.activateSellerCandidate(candidate.id, candidate.hasPin ? undefined : pin);
+      const activatedSeller = result.seller;
+      if (!activatedSeller?.id) {
+        addNotification('Cadastro ativado, mas não voltou como vendedor. Atualize e tente selecionar.', 'error');
+        return;
+      }
+      useStore.setState((state) => ({
+        sellers: [
+          ...state.sellers.filter((seller) => seller.id !== activatedSeller.id),
+          activatedSeller,
+        ],
+      }));
+      setSelectedSellerId(activatedSeller.id);
+      addNotification(`${candidate.name} agora aparece como vendedor no PDV.`, 'info');
+      setNewSellerName('');
+      setNewSellerPin('1234');
+      setNewSellerEmploymentType('fixo');
+      setShowAddSellerModal(false);
+    } catch (error) {
+      console.error('Erro ao ativar vendedor do OS:', error);
+      addNotification(error instanceof Error ? error.message : 'Não foi possível ativar este vendedor.', 'error');
+    } finally {
+      setActivatingSellerCandidateId(null);
+    }
   };
 
   const [amountDigits, setAmountDigits] = useState<string>(() => {
@@ -177,6 +238,29 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   useEffect(() => {
     setPayments(table.payments || []);
   }, [table.id, table.payments]);
+
+  useEffect(() => {
+    if (!showAddSellerModal) return;
+    let cancelled = false;
+    setIsLoadingSellerCandidates(true);
+    AdminApi.listSellerCandidates()
+      .then((result) => {
+        if (!cancelled) setSellerCandidates(result.candidates || []);
+      })
+      .catch((error) => {
+        console.error('Erro ao carregar candidatos de vendedor:', error);
+        if (!cancelled) {
+          setSellerCandidates([]);
+          addNotification('Não foi possível carregar funcionários/freelas do OS agora.', 'error');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingSellerCandidates(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showAddSellerModal, addNotification]);
 
   const currentPaymentAmount = Number(amountDigits) / 100;
   const currentPaymentCreatesInvalidChange = roundMoney(paidTotal + currentPaymentAmount) > totalFinal
@@ -664,20 +748,20 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-[900] bg-black/85 backdrop-blur-xl flex items-center justify-center p-4"
           >
             <motion.div
               initial={{ scale: 0.96, y: 18 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.96, y: 18 }}
-              className="w-full max-w-lg rounded-[2rem] border border-primary/30 bg-[#111114] p-6 shadow-2xl shadow-primary/20"
+              className="w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-hidden rounded-[2rem] border border-primary/30 bg-[#111114] shadow-2xl shadow-primary/20 flex flex-col"
             >
-              <div className="mb-6 flex items-start justify-between gap-4">
+              <div className="p-6 border-b border-white/10 flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Cadastro rápido</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">OS + PDV</p>
                   <h3 className="mt-1 text-3xl font-black italic tracking-tight text-white">Add vendedor</h3>
                   <p className="mt-2 text-xs font-bold text-zinc-500">
-                    Use para alguém que vai aparecer no fechamento desta mesa.
+                    Vincule alguém do Becoartes OS ou crie um cadastro novo já conciliado.
                   </p>
                 </div>
                 <button
@@ -689,17 +773,70 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                 </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar">
                 <label className="block">
-                  <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-zinc-500">Nome do vendedor</span>
+                  <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-zinc-500">Buscar ou criar vendedor</span>
                   <input
                     value={newSellerName}
                     onChange={(event) => setNewSellerName(event.target.value)}
-                    placeholder="Ex: João Silva"
+                    placeholder="Digite o nome..."
                     className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-base font-black text-white outline-none transition-all focus:border-primary/60"
                   />
                 </label>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
+                <div className="rounded-[1.75rem] border border-emerald-500/15 bg-emerald-500/5 p-4">
+                  <div className="flex items-center justify-between gap-4 mb-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300">Recomendado</p>
+                      <h4 className="text-lg font-black text-white">Vincular cadastro existente do OS</h4>
+                    </div>
+                    {isLoadingSellerCandidates && (
+                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Carregando...</span>
+                    )}
+                  </div>
+                  <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                    {visibleSellerCandidates.length === 0 ? (
+                      <div className="rounded-2xl border border-white/5 bg-black/20 p-4 text-xs font-bold text-zinc-500">
+                        {isLoadingSellerCandidates ? 'Buscando cadastros do OS...' : 'Nenhum cadastro do OS encontrado para este filtro.'}
+                      </div>
+                    ) : visibleSellerCandidates.map((candidate) => (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        onClick={() => handleActivateSellerCandidate(candidate)}
+                        disabled={activatingSellerCandidateId === candidate.id}
+                        className="w-full rounded-2xl border border-white/5 bg-black/25 p-4 text-left transition-all hover:border-emerald-400/40 hover:bg-emerald-500/10 disabled:opacity-50"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="font-black text-white truncate">{candidate.name}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 truncate">
+                              {candidate.role || 'sem nível'} • {candidate.funcao || 'sem função'} • {candidate.employmentType || 'sem vínculo'}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-xl bg-emerald-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-300">
+                            {activatingSellerCandidateId === candidate.id ? 'Ativando...' : 'Ativar'}
+                          </span>
+                        </div>
+                        {!candidate.hasPin && (
+                          <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                            Sem PIN no OS. Vai usar o PIN informado abaixo.
+                          </p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.03] p-4 space-y-4">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500">Novo cadastro</p>
+                    <h4 className="text-lg font-black text-white">Criar no OS e ativar no PDV</h4>
+                    <p className="text-xs font-bold text-zinc-500 mt-1">
+                      Use quando a pessoa ainda não existe no OS. Ela já nasce marcada como vendedora do PDV.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <label className="block">
                     <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-zinc-500">PIN</span>
                     <input
@@ -721,16 +858,18 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                       <option value="freelancer">Freelancer</option>
                     </select>
                   </label>
+                  </div>
                 </div>
-              </div>
 
               <button
                 type="button"
                 onClick={handleCreateCheckoutSeller}
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-primary/25 transition-all hover:scale-[1.01]"
+                disabled={isCreatingOsSeller}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-primary/25 transition-all hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
               >
-                <Plus size={16} /> Cadastrar e selecionar
+                <Plus size={16} /> {isCreatingOsSeller ? 'Criando...' : 'Criar no OS e selecionar'}
               </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
