@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight } from 'lucide-react';
-import { useStore, type Table as TableType } from '../../store';
+import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Plus } from 'lucide-react';
+import { useStore, type Seller, type Table as TableType } from '../../store';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
 import { can } from '../../lib/permissions';
 import { OperationalApi } from '../../lib/api';
@@ -42,6 +42,16 @@ const paymentMethodLabels: Record<PaymentMethod, string> = {
   cash: 'Dinheiro',
 };
 
+const TECHNICAL_SELLER_IDS = new Set(['admin-bootstrap', 'manager-default', 'operator-default', 'master']);
+const TECHNICAL_SELLER_NAMES = new Set(['administrador', 'admin full', 'admin mestre', 'operador']);
+
+const isCheckoutSeller = (seller: Seller) => {
+  if (seller.status !== 'active') return false;
+  if (TECHNICAL_SELLER_IDS.has(seller.id)) return false;
+  const normalizedName = String(seller.name || '').trim().toLowerCase();
+  return !TECHNICAL_SELLER_NAMES.has(normalizedName);
+};
+
 type ValidatedCoupon = {
   code: string;
   amount: number;
@@ -57,7 +67,7 @@ type ValidatedCoupon = {
 };
 
 export function CheckoutModal({ table, onClose }: { table: TableType, onClose: () => void }) {
-  const { closeBill, settings, sellers, currentSeller } = useStore();
+  const { closeBill, settings, sellers, currentSeller, addSeller, addNotification } = useStore();
   const [selectedSellerId, setSelectedSellerId] = useState<string>(SELF_SERVICE_SELLER.id);
   const defaultServiceFeePercent = clampServiceFeePercent(Number(settings.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
   const [serviceFeePercent, setServiceFeePercent] = useState(defaultServiceFeePercent);
@@ -75,9 +85,14 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const [coupon, setCoupon] = useState<ValidatedCoupon | null>(null);
   const [couponMessage, setCouponMessage] = useState('');
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
-  const sellerOptions = sellers.some(s => s.id === currentSeller?.id)
+  const [showAddSellerModal, setShowAddSellerModal] = useState(false);
+  const [newSellerName, setNewSellerName] = useState('');
+  const [newSellerPin, setNewSellerPin] = useState('1234');
+  const [newSellerEmploymentType, setNewSellerEmploymentType] = useState<'fixo' | 'freelancer'>('fixo');
+  const rawSellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
+  const sellerOptions = rawSellerOptions.filter(isCheckoutSeller);
   const selectedSeller = selectedSellerId === SELF_SERVICE_SELLER.id
     ? SELF_SERVICE_SELLER
     : sellerOptions.find(s => s.id === selectedSellerId);
@@ -88,6 +103,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const canChangePaymentMethod = can(currentSeller, 'changePaymentMethod', settings.pdvPermissions, settings.pdvUserPermissions);
   const canCancelPayment = can(currentSeller, 'cancelPayment', settings.pdvPermissions, settings.pdvUserPermissions);
   const canCloseBill = can(currentSeller, 'closeBill', settings.pdvPermissions, settings.pdvUserPermissions);
+  const canManageSellers = can(currentSeller, 'managePDVUsers', settings.pdvPermissions, settings.pdvUserPermissions);
   
   const subtotal = roundMoney(table.orders.reduce((acc: number, o: any) => {
     const itemPrice = o.price + (o.selectedModifiers || []).reduce((mAcc: number, m: any) => mAcc + m.price, 0);
@@ -109,6 +125,42 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const hasCashPayment = payments.some((payment) => payment.method === 'cash');
   const hasInvalidOverpayment = paidTotal > totalFinal && !hasCashPayment;
   const hasPendingCouponChoice = Boolean(coupon?.requiresBenefitChoice);
+
+  const handleCreateCheckoutSeller = async () => {
+    const name = newSellerName.trim();
+    const pin = newSellerPin.trim();
+    if (!name) {
+      addNotification('Nome do vendedor é obrigatório.', 'error');
+      return;
+    }
+    if (!/^\d{4}$/.test(pin)) {
+      addNotification('PIN deve ter 4 dígitos.', 'error');
+      return;
+    }
+
+    const beforeIds = new Set(sellers.map((seller) => seller.id));
+    await addSeller({
+      id: '',
+      name,
+      nickname: '',
+      pin,
+      status: 'active',
+      role: 'garçom',
+      permission: 'operator',
+      employmentType: newSellerEmploymentType,
+    });
+
+    const createdSeller = useStore.getState().sellers.find((seller) => !beforeIds.has(seller.id) && seller.name === name);
+    if (createdSeller?.id) {
+      setSelectedSellerId(createdSeller.id);
+    } else {
+      return;
+    }
+    setNewSellerName('');
+    setNewSellerPin('1234');
+    setNewSellerEmploymentType('fixo');
+    setShowAddSellerModal(false);
+  };
 
   const [amountDigits, setAmountDigits] = useState<string>(() => {
     return Math.round(remaining * 100).toString();
@@ -333,14 +385,25 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
            <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-10 flex flex-col bg-[#0d0d0f] overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 lg:gap-8 mb-6 lg:mb-8">
                  <div>
-                    <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-3">Vendedor responsável</h4>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500">Vendedor responsável</h4>
+                      {canManageSellers && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAddSellerModal(true)}
+                          className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-primary transition-all hover:bg-primary hover:text-white"
+                        >
+                          <Plus size={12} /> Add vendedor
+                        </button>
+                      )}
+                    </div>
                     <select 
                        value={selectedSellerId} 
                        onChange={(e) => setSelectedSellerId(e.target.value)}
                        className="w-full glass p-4 rounded-xl border-white/10 outline-none font-bold text-base bg-transparent"
                     >
                        <option value={SELF_SERVICE_SELLER.id} className="bg-[#0d0d0f]">Cliente pediu sozinho</option>
-                       {sellerOptions.filter((s: any) => s.status === 'active').map((s: any) => (
+                       {sellerOptions.map((s: any) => (
                          <option key={s.id} value={s.id} className="bg-[#0d0d0f]">{s.name}</option>
                        ))}
                     </select>
@@ -596,6 +659,81 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
         </div>
       </motion.div>
       <AnimatePresence>
+        {showAddSellerModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 18 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 18 }}
+              className="w-full max-w-lg rounded-[2rem] border border-primary/30 bg-[#111114] p-6 shadow-2xl shadow-primary/20"
+            >
+              <div className="mb-6 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Cadastro rápido</p>
+                  <h3 className="mt-1 text-3xl font-black italic tracking-tight text-white">Add vendedor</h3>
+                  <p className="mt-2 text-xs font-bold text-zinc-500">
+                    Use para alguém que vai aparecer no fechamento desta mesa.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddSellerModal(false)}
+                  className="rounded-2xl bg-white/5 p-3 text-zinc-400 transition-all hover:bg-white/10 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <label className="block">
+                  <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-zinc-500">Nome do vendedor</span>
+                  <input
+                    value={newSellerName}
+                    onChange={(event) => setNewSellerName(event.target.value)}
+                    placeholder="Ex: João Silva"
+                    className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-base font-black text-white outline-none transition-all focus:border-primary/60"
+                  />
+                </label>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-zinc-500">PIN</span>
+                    <input
+                      value={newSellerPin}
+                      onChange={(event) => setNewSellerPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                      inputMode="numeric"
+                      maxLength={4}
+                      className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-base font-black text-white outline-none transition-all focus:border-primary/60"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-zinc-500">Vínculo</span>
+                    <select
+                      value={newSellerEmploymentType}
+                      onChange={(event) => setNewSellerEmploymentType(event.target.value as 'fixo' | 'freelancer')}
+                      className="w-full rounded-2xl border border-white/10 bg-[#17171b] px-4 py-4 text-base font-black text-white outline-none transition-all focus:border-primary/60"
+                    >
+                      <option value="fixo">Fixo</option>
+                      <option value="freelancer">Freelancer</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCreateCheckoutSeller}
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-primary/25 transition-all hover:scale-[1.01]"
+              >
+                <Plus size={16} /> Cadastrar e selecionar
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
         {paymentCancelDialog && (
           <ActionDialog
             isOpen
