@@ -358,7 +358,7 @@ const permissionsByProfile = {
     deleteProduct: true,
     toggleProductVisibility: true,
     manageCategories: true,
-    sellUnavailableProduct: false,
+    sellUnavailableProduct: true,
     viewZeroStockProducts: true,
     openCash: true,
     closeCash: true,
@@ -424,7 +424,7 @@ const permissionsByProfile = {
     deleteProduct: false,
     toggleProductVisibility: true,
     manageCategories: true,
-    sellUnavailableProduct: false,
+    sellUnavailableProduct: true,
     viewZeroStockProducts: false,
     openCash: true,
     closeCash: true,
@@ -2674,6 +2674,18 @@ const validateOrderItemsAvailability = async ({ items, session, settings, isPubl
 };
 
 const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
+  const safeCancelContext = cancelContext && typeof cancelContext === 'object' && !Array.isArray(cancelContext)
+    ? cancelContext
+    : null;
+  const reasonCode = normalizeText(safeCancelContext?.reasonCode);
+  const reasonLabel = normalizeText(safeCancelContext?.reasonLabel);
+  const reasonNotes = normalizeText(safeCancelContext?.reasonNotes);
+  if (!reasonCode || !reasonLabel || reasonNotes.length < 3) {
+    const error = new Error('Informe o motivo e uma justificativa para cancelar o item.');
+    error.statusCode = 400;
+    throw error;
+  }
+
   const itemRes = await db.execute({
     sql: "SELECT oi.order_id, o.table_id FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1",
     args: [itemId],
@@ -2713,17 +2725,15 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
     }
   }
 
-  if (cancelContext) {
-    void notifyOrderItemCancelled({
-      tableNumber: Number(cancelContext.tableNumber || 0),
-      itemName: String(cancelContext.itemName || 'Item'),
-      quantity: Number(cancelContext.quantity || 0),
-      sellerName: String(cancelContext.sellerName || 'Sistema'),
-      sellerPermission: String(cancelContext.sellerPermission || 'standard'),
-      reasonLabel: String(cancelContext.reasonLabel || ''),
-      reasonNotes: String(cancelContext.reasonNotes || ''),
-    });
-  }
+  void notifyOrderItemCancelled({
+    tableNumber: Number(safeCancelContext.tableNumber || 0),
+    itemName: String(safeCancelContext.itemName || 'Item'),
+    quantity: Number(safeCancelContext.quantity || 0),
+    sellerName: String(safeCancelContext.sellerName || 'Sistema'),
+    sellerPermission: String(safeCancelContext.sellerPermission || 'standard'),
+    reasonLabel,
+    reasonNotes,
+  });
 
   return { orderId: orderId || null };
 };

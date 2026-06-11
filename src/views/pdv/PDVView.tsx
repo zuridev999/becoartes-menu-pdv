@@ -1140,7 +1140,7 @@ export function PDVView() {
             title="Cancelar item?"
             description={`Remover ${cancelItemDialog.item.quantity}x ${cancelItemDialog.item.name} da Mesa ${cancelItemDialog.tableNumber}. O total do pedido será recalculado.`}
             confirmLabel="Cancelar item"
-            confirmDisabled={!cancelReasonCode || (cancelReasonCode === 'outro' && !cancelReasonNotes.trim())}
+            confirmDisabled={!cancelReasonCode || cancelReasonNotes.trim().length < 3}
             onClose={() => {
               setCancelItemDialog(null);
               setCancelReasonCode('');
@@ -1194,14 +1194,15 @@ export function PDVView() {
                   </button>
                 ))}
               </div>
-              {cancelReasonCode === 'outro' && (
-                <textarea
-                  value={cancelReasonNotes}
-                  onChange={(event) => setCancelReasonNotes(event.target.value)}
-                  placeholder="Explique o motivo do cancelamento..."
-                  className="w-full min-h-24 glass rounded-2xl border-white/10 p-4 text-sm font-bold outline-none focus:border-rose-400/50"
-                />
-              )}
+              <textarea
+                value={cancelReasonNotes}
+                onChange={(event) => setCancelReasonNotes(event.target.value)}
+                placeholder="Justificativa obrigatória. Ex: cliente desistiu depois de pedir, item lançado em duplicidade..."
+                className="w-full min-h-24 glass rounded-2xl border-white/10 p-4 text-sm font-bold outline-none focus:border-rose-400/50"
+              />
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-rose-200/80">
+                Selecione um motivo e escreva a justificativa antes de cancelar.
+              </p>
             </div>
           </ActionDialog>
         )}
