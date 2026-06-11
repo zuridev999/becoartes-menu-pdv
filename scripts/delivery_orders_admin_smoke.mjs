@@ -2,7 +2,7 @@ import { createClient } from '@libsql/client';
 
 const baseUrl = process.env.DELIVERY_SMOKE_BASE_URL || 'http://127.0.0.1:18080';
 const dbUrl = process.env.DELIVERY_SMOKE_DB_URL || process.env.TURSO_DATABASE_URL || 'file:local-delivery.db';
-const adminPin = process.env.DELIVERY_SMOKE_ADMIN_PIN || process.env.ADMIN_BYPASS_PIN || '0806';
+const adminPin = process.env.DELIVERY_SMOKE_ADMIN_PIN || process.env.ADMIN_BYPASS_PIN || '0719';
 const orderId = `delivery_admin_list_${Date.now()}`;
 
 const fail = (message, details = null) => {

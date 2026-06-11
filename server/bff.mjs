@@ -523,6 +523,11 @@ const safeEqual = (left, right) => {
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 };
 
+const getHeaderValue = (headers, name) => {
+  const value = headers?.[name.toLowerCase()];
+  return Array.isArray(value) ? String(value[0] || '') : String(value || '');
+};
+
 const parseCookies = (header = '') => Object.fromEntries(
   String(header)
     .split(';')
@@ -729,6 +734,7 @@ const readJsonBody = async (req) => {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const raw = Buffer.concat(chunks).toString('utf8');
+  req.rawBody = raw;
   if (!raw.trim()) return {};
   return JSON.parse(raw);
 };
@@ -3033,6 +3039,8 @@ const getDeliveryPublicConfig = () => ({
 
 const createPagBankCheckoutPayload = ({ orderId, customer, items, totals }) => {
   const amountInCents = Math.round(totals.total * 100);
+  const phone = splitBrazilianPhone(customer.phone);
+  const notificationUrls = PAGBANK_NOTIFICATION_URL ? [PAGBANK_NOTIFICATION_URL] : [];
   const paymentMethods = customer.paymentMethod === 'pix'
     ? [{ type: 'PIX' }]
     : [{ type: 'CREDIT_CARD' }, { type: 'DEBIT_CARD' }, { type: 'PIX' }];
@@ -3041,8 +3049,14 @@ const createPagBankCheckoutPayload = ({ orderId, customer, items, totals }) => {
     customer: {
       name: customer.name,
       email: customer.email,
-      phones: customer.phone ? [{ country: '55', area: '', number: customer.phone.replace(/\D/g, ''), type: 'MOBILE' }] : [],
+      phones: phone.areaCode && phone.number ? [{
+        country: phone.countryCode,
+        area: phone.areaCode,
+        number: phone.number,
+        type: 'MOBILE',
+      }] : [],
     },
+    customer_modifiable: true,
     items: items.map((item) => ({
       reference_id: String(item.productId || item.id).slice(0, 64),
       name: String(item.name || 'Item').slice(0, 100),
@@ -3052,10 +3066,17 @@ const createPagBankCheckoutPayload = ({ orderId, customer, items, totals }) => {
     additional_amount: Math.round(totals.deliveryFee * 100),
     discount_amount: Math.round(totals.discount * 100),
     payment_methods: paymentMethods,
+    soft_descriptor: 'BECOARTES',
   };
 
-  if (PAGBANK_NOTIFICATION_URL) payload.notification_urls = [PAGBANK_NOTIFICATION_URL];
-  if (PAGBANK_REDIRECT_URL) payload.redirect_url = PAGBANK_REDIRECT_URL;
+  if (notificationUrls.length > 0) {
+    payload.notification_urls = notificationUrls;
+    payload.payment_notification_urls = notificationUrls;
+  }
+  if (PAGBANK_REDIRECT_URL) {
+    payload.redirect_url = PAGBANK_REDIRECT_URL;
+    payload.return_url = PAGBANK_REDIRECT_URL;
+  }
   if (amountInCents <= 0) payload.payment_methods = [{ type: 'PIX' }];
   return payload;
 };
@@ -4022,15 +4043,26 @@ const getPagBankWebhookReferenceId = (body = {}) => (
   || ''
 );
 
+const isPagBankAuthenticityTokenValid = ({ headers, rawBody }) => {
+  const authenticityToken = getHeaderValue(headers, 'x-authenticity-token').trim();
+  if (!authenticityToken || !PAGBANK_TOKEN || !String(rawBody || '').trim()) return false;
+  const expected = createHash('sha256').update(`${PAGBANK_TOKEN}-${rawBody}`).digest('hex');
+  return safeEqual(authenticityToken.toLowerCase(), expected);
+};
+
 const handlePagBankDeliveryWebhook = async (body, context = {}) => {
   await ensureDatabaseReady();
-  if (DELIVERY_WEBHOOK_SECRET) {
-    const received = context.req?.headers['x-beco-delivery-secret'] || context.req?.headers['x-delivery-webhook-secret'];
-    if (received !== DELIVERY_WEBHOOK_SECRET) {
-      const error = new Error('Webhook delivery não autorizado.');
-      error.statusCode = 401;
-      throw error;
-    }
+  const receivedInternalSecret = getHeaderValue(context.req?.headers, 'x-beco-delivery-secret')
+    || getHeaderValue(context.req?.headers, 'x-delivery-webhook-secret');
+  const internalSecretOk = DELIVERY_WEBHOOK_SECRET && safeEqual(receivedInternalSecret, DELIVERY_WEBHOOK_SECRET);
+  const pagBankSignatureOk = isPagBankAuthenticityTokenValid({
+    headers: context.req?.headers,
+    rawBody: context.rawBody,
+  });
+  if ((DELIVERY_WEBHOOK_SECRET || PAGBANK_TOKEN) && !internalSecretOk && !pagBankSignatureOk) {
+    const error = new Error('Webhook delivery não autorizado.');
+    error.statusCode = 401;
+    throw error;
   }
 
   const referenceId = requireString(getPagBankWebhookReferenceId(body), 'reference_id');
@@ -6386,7 +6418,7 @@ const handleApi = async (req, res, url) => {
     // que um token admin salvo no navegador libere PIN de colaborador fora da rede.
     const operationAccessAllowed = isOperationIpAllowed(req) || (!isLoginRoute && isAdminSession(session));
     await enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
-    const data = await handler(body, { req, url, session, operationAccessAllowed });
+    const data = await handler(body, { req, url, session, operationAccessAllowed, rawBody: req.rawBody || '' });
     sendJson(res, 200, { ok: true, data });
   } catch (error) {
     console.error('BFF error:', error);

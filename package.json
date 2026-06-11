@@ -1,7 +1,7 @@
 {
   "name": "becoartes-menu-pdv",
   "private": true,
-  "version": "1.4.40",
+  "version": "1.4.41",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -35,6 +35,7 @@
     "smoke:delivery:postal-code": "node scripts/delivery_postal_code_smoke.mjs",
     "smoke:delivery:production": "node scripts/delivery_production_smoke.mjs",
     "smoke:delivery:webhook:secret": "node scripts/delivery_webhook_secret_smoke.mjs",
+    "smoke:delivery:webhook:pagbank-signature": "node scripts/delivery_pagbank_signature_smoke.mjs",
     "smoke:delivery:webhook": "node scripts/delivery_webhook_smoke.mjs",
     "smoke:delivery:webhook:idempotency": "node scripts/delivery_webhook_idempotency_smoke.mjs",
     "smoke:delivery:webhook:production": "node scripts/delivery_webhook_production_smoke.mjs"
