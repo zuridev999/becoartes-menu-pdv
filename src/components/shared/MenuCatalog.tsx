@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Search, ChevronRight, Plus, Utensils } from 'lucide-react';
 import { useStore, type Product } from '../../store';
@@ -9,9 +9,10 @@ interface MenuCatalogProps {
   onProductSelect: (product: Product) => void;
   viewMode?: 'grid' | 'list';
   navigationMode?: 'sidebar' | 'menu' | 'continuous';
+  footerContent?: ReactNode;
 }
 
-export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar' }: MenuCatalogProps) {
+export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', footerContent }: MenuCatalogProps) {
   const { menu, categories: dbCategories } = useStore();
   const availableCategories = useMemo(() => dbCategories.filter(c => {
     if (c.visible === false) return false;
@@ -212,6 +213,11 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
                  </div>
                </motion.button>
              ))}
+           </div>
+         )}
+         {footerContent && (
+           <div className="pt-8 pb-10">
+             {footerContent}
            </div>
          )}
       </div>
