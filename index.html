@@ -8,8 +8,21 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Becoartes Tablet</title>
+    <title>Becoartes PDV</title>
     <script>
+      const becoHost = window.location.hostname;
+      if (becoHost.startsWith('qr.')) {
+        document.title = 'Becoartes Pedidos';
+      } else if (becoHost.startsWith('tablet.')) {
+        document.title = 'Becoartes Tablet';
+      } else if (becoHost.startsWith('coz.')) {
+        document.title = 'Becoartes Cozinha';
+      } else if (becoHost.startsWith('bar.')) {
+        document.title = 'Becoartes Bar';
+      } else if (becoHost.startsWith('pdv.')) {
+        document.title = 'Becoartes PDV';
+      }
+
       // Register Service Worker
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
