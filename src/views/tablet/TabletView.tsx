@@ -117,7 +117,10 @@ export function TabletView() {
 
       <AnimatePresence>
         {isOrderOpen && (
-          <CustomerOrderModal onClose={() => setIsOrderOpen(false)} />
+          <CustomerOrderModal
+            onClose={() => setIsOrderOpen(false)}
+            onSent={() => setIsAccountOpen(true)}
+          />
         )}
       </AnimatePresence>
 

@@ -7,6 +7,7 @@ import { ProductModal } from '../../components/modals/ProductModal';
 import { CustomerAccountModal } from '../../components/modals/CustomerAccountModal';
 import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
+import { getOrderItemsTotal } from '../../lib/totals';
 
 export function QRView() {
   const { currentTableId, tables, setCurrentTableId } = useStore();
@@ -83,12 +84,19 @@ export function QRView() {
     );
   }
 
-  const cartTotal = currentTable?.cart.reduce((acc, o) => {
-    const itemPrice = o.price + (o.selectedModifiers?.reduce((mAcc, m) => mAcc + m.price, 0) || 0);
-    return acc + (itemPrice * o.quantity);
-  }, 0) || 0;
+  const cartTotal = getOrderItemsTotal(currentTable?.cart || []);
+  const accountTotal = getOrderItemsTotal(currentTable?.orders || []);
   const cartCount = currentTable?.cart.length || 0;
+  const accountCount = currentTable?.orders.length || 0;
   const hasCartItems = cartCount > 0;
+  const hasAccountItems = accountCount > 0;
+  const handlePrimaryAccountAction = () => {
+    if (hasCartItems) {
+      setIsOrderOpen(true);
+      return;
+    }
+    setIsAccountOpen(true);
+  };
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
@@ -113,14 +121,14 @@ export function QRView() {
             <Bell size={18} />
           </button>
           <button 
-            onClick={() => setIsOrderOpen(true)}
+            onClick={handlePrimaryAccountAction}
             className="btn-beco btn-beco-purple px-4 py-3 relative active:scale-95"
-            aria-label="Ver pedido"
+            aria-label={hasCartItems ? 'Ver pedido antes de enviar' : 'Ver minha conta'}
           >
             <ShoppingBag size={18} />
-            {currentTable?.cart.length > 0 && (
+            {(hasCartItems || hasAccountItems) && (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-accent text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-[#0a0a0c]">
-                {currentTable.cart.length}
+                {hasCartItems ? cartCount : accountCount}
               </span>
             )}
           </button>
@@ -134,16 +142,22 @@ export function QRView() {
       {/* CTA principal do celular: revisar/enviar pedido quando houver carrinho */}
       <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50">
         <button 
-          onClick={() => hasCartItems ? setIsOrderOpen(true) : setIsAccountOpen(true)}
+          onClick={handlePrimaryAccountAction}
           className="w-full sm:w-auto glass-card px-5 sm:px-8 py-4 flex items-center justify-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 sm:scale-110 active:scale-95 transition-all"
         >
           {hasCartItems ? <Send size={20} className="text-accent" /> : <FileText size={20} className="text-accent" />}
           <div className="text-left">
             <p className="text-[8px] font-black uppercase text-gray-500">
-              {hasCartItems ? `${cartCount} item${cartCount > 1 ? 's' : ''} no pedido` : 'Total do Pedido'}
+              {hasCartItems
+                ? `${cartCount} item${cartCount > 1 ? 's' : ''} no pedido`
+                : hasAccountItems
+                  ? `${accountCount} item${accountCount > 1 ? 's' : ''} na minha conta`
+                  : 'Nenhum consumo lançado ainda'}
             </p>
             <p className="text-lg font-black text-white leading-none">
-              {hasCartItems ? `Enviar meu pedido - R$ ${cartTotal.toFixed(2)}` : `R$ ${cartTotal.toFixed(2)}`}
+              {hasCartItems
+                ? `Enviar meu pedido - R$ ${cartTotal.toFixed(2)}`
+                : `Minha conta - R$ ${accountTotal.toFixed(2)}`}
             </p>
           </div>
         </button>
@@ -163,7 +177,11 @@ export function QRView() {
 
       <AnimatePresence>
         {isOrderOpen && (
-          <CustomerOrderModal onClose={() => setIsOrderOpen(false)} origin="qr" />
+          <CustomerOrderModal
+            onClose={() => setIsOrderOpen(false)}
+            onSent={() => setIsAccountOpen(true)}
+            origin="qr"
+          />
         )}
       </AnimatePresence>
 

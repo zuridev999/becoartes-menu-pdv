@@ -21,6 +21,7 @@ let syncInFlight: Promise<void> | null = null;
 let lastCatalogSyncAt = 0;
 let lastCatalogVersion = '0';
 const CATALOG_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const RECENT_PUBLIC_ORDER_PROTECTION_MS = 120_000;
 const modifierGroupSaveTimers = new Map<string, number>();
 const MODIFIER_GROUP_SAVE_DEBOUNCE_MS = 550;
 
@@ -627,10 +628,26 @@ export const useStore = create<AppState>((set, get) => ({
         }
 
         const currentTables = get().tables;
+        const currentView = get().activeView;
+        const shouldProtectRecentPublicOrders = currentView === 'qr' || currentView === 'tablet';
+        const now = Date.now();
         const finalTables = snapshot.tables.map((newTable: Table) => {
           const localTable = currentTables.find(t => t.id === newTable.id);
+          const localOrders = localTable?.orders || [];
+          const serverOrders = newTable.orders || [];
+          const hasRecentLocalOrder = localOrders.some((order) => {
+            const rawTime = order.orderedAt instanceof Date ? order.orderedAt.getTime() : new Date(order.orderedAt || 0).getTime();
+            return Number.isFinite(rawTime) && now - rawTime < RECENT_PUBLIC_ORDER_PROTECTION_MS;
+          });
+          const shouldKeepLocalOrders =
+            shouldProtectRecentPublicOrders
+            && localOrders.length > 0
+            && serverOrders.length === 0
+            && newTable.status !== 'available'
+            && hasRecentLocalOrder;
           return {
             ...newTable,
+            orders: shouldKeepLocalOrders ? localOrders : serverOrders,
             cart: localTable?.cart || [],
           };
         });
@@ -871,7 +888,8 @@ export const useStore = create<AppState>((set, get) => ({
       const persistedItems: OrderItem[] = table.cart.map(item => ({
         ...item,
         id: createId(),
-        orderId
+        orderId,
+        orderedAt: new Date()
       }));
 
       const sendResult = await OperationalApi.sendToKitchen({

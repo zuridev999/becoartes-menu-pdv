@@ -6,9 +6,11 @@ import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 
 export function CustomerOrderModal({
   onClose,
+  onSent,
   origin = 'tablet'
 }: {
   onClose: () => void;
+  onSent?: () => void;
   origin?: 'tablet' | 'qr';
 }) {
   const { currentTableId, tables, removeFromCart, sendToKitchen, addNotification } = useStore();
@@ -19,6 +21,13 @@ export function CustomerOrderModal({
   if (!table) return null;
 
   const cartTotal = getOrderItemsTotal(table.cart);
+  const accountTotal = getOrderItemsTotal(table.orders);
+  const hasAccountItems = table.orders.length > 0;
+  const displayTotal = table.cart.length > 0 ? cartTotal : accountTotal;
+  const handleOpenAccount = () => {
+    onClose();
+    onSent?.();
+  };
 
   const handleSendOrder = async () => {
     setIsSending(true);
@@ -27,8 +36,9 @@ export function CustomerOrderModal({
       setIsSent(true);
       setTimeout(() => {
         onClose();
+        onSent?.();
         setIsSent(false);
-      }, 2500);
+      }, 1800);
     } catch {
       addNotification('Erro ao enviar pedido. Tente novamente.', 'error');
     } finally {
@@ -88,10 +98,17 @@ export function CustomerOrderModal({
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-12 custom-scrollbar">
           {table.cart.length === 0 ? (
-            <div className="text-center py-16 sm:py-24 opacity-20">
+            <div className={`text-center py-16 sm:py-24 ${hasAccountItems ? '' : 'opacity-20'}`}>
               <ShoppingBag size={76} className="mx-auto mb-8 sm:hidden" />
               <ShoppingBag size={100} className="mx-auto mb-8 hidden sm:block" />
-              <p className="text-2xl sm:text-3xl font-black uppercase tracking-widest italic">Seu pedido está vazio</p>
+              <p className="text-2xl sm:text-3xl font-black uppercase tracking-widest italic">
+                {hasAccountItems ? 'Pedido já enviado' : 'Seu pedido está vazio'}
+              </p>
+              {hasAccountItems && (
+                <p className="mt-4 text-sm sm:text-base font-bold uppercase tracking-widest text-gray-400">
+                  Os itens enviados estão em Minha Conta.
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-4 sm:space-y-8">
@@ -128,20 +145,22 @@ export function CustomerOrderModal({
         <div className="p-4 sm:p-10 bg-black/40 border-t border-white/5 space-y-4 sm:space-y-8">
            <div className="flex justify-between items-end">
               <div>
-                <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-2">Total do Pedido</p>
-                <p className="text-4xl sm:text-6xl font-black text-accent italic tracking-tighter">R$ {cartTotal.toFixed(2)}</p>
+                <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-2">
+                  {table.cart.length > 0 ? 'Total do Pedido' : 'Total na Minha Conta'}
+                </p>
+                <p className="text-4xl sm:text-6xl font-black text-accent italic tracking-tighter">R$ {displayTotal.toFixed(2)}</p>
               </div>
            </div>
 
            <div className="flex gap-6">
               <button
-                onClick={handleSendOrder}
-                disabled={isSending || table.cart.length === 0}
+                onClick={table.cart.length === 0 && hasAccountItems ? handleOpenAccount : handleSendOrder}
+                disabled={isSending || (table.cart.length === 0 && !hasAccountItems)}
                 className="flex-1 py-5 sm:py-9 btn-beco btn-beco-purple text-base sm:text-3xl font-black tracking-[0.16em] sm:tracking-[0.2em] rounded-3xl sm:rounded-[2.5rem] shadow-2xl shadow-primary/30 flex items-center justify-center gap-3 sm:gap-4 animate-pulse-slow disabled:opacity-20"
               >
                 <Send size={22} className="sm:hidden" />
                 <Send size={32} className="hidden sm:block" />
-                ENVIAR PEDIDO
+                {table.cart.length === 0 && hasAccountItems ? 'VER MINHA CONTA' : 'ENVIAR PEDIDO'}
               </button>
            </div>
         </div>
