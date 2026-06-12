@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Plus } from 'lucide-react';
+import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Plus, Menu } from 'lucide-react';
 import { useStore, type Seller, type Table as TableType } from '../../store';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
 import { can } from '../../lib/permissions';
@@ -69,11 +69,9 @@ const isSessionExpiredError = (error: unknown) => {
 const isEligibleSellerCandidate = (candidate: SellerCandidate) => {
   const name = normalizeSellerName(candidate.name);
   const role = normalizeSellerName(candidate.role);
-  const funcao = normalizeSellerName(candidate.funcao);
   if (TECHNICAL_SELLER_NAMES.has(name)) return false;
   if (['gui mameluco', 'operacional'].includes(name)) return false;
   if (['super_admin', 'operacional'].includes(role)) return false;
-  if (['cozinha', 'cozinheira'].some((term) => funcao.includes(term))) return false;
   return true;
 };
 
@@ -118,13 +116,15 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const [isLoadingSellerCandidates, setIsLoadingSellerCandidates] = useState(false);
   const [activatingSellerCandidateId, setActivatingSellerCandidateId] = useState<string | null>(null);
   const [isCreatingOsSeller, setIsCreatingOsSeller] = useState(false);
+  const [showSellerDirectory, setShowSellerDirectory] = useState(false);
   const rawSellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
   const sellerOptions = rawSellerOptions.filter(isCheckoutSeller);
   const sellerCandidateSearch = normalizeSellerName(newSellerName);
+  const shouldShowSellerCandidates = showSellerDirectory || Boolean(sellerCandidateSearch);
   const visibleSellerCandidates = useMemo(() => (
-    sellerCandidates
+    shouldShowSellerCandidates ? sellerCandidates
       .filter(isEligibleSellerCandidate)
       .filter((candidate) => !candidate.canSellInPdv)
       .filter((candidate) => {
@@ -132,7 +132,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
         return normalizeSellerName(candidate.name).includes(sellerCandidateSearch);
       })
       .slice(0, 8)
-  ), [sellerCandidates, sellerCandidateSearch]);
+      : []
+  ), [sellerCandidates, sellerCandidateSearch, shouldShowSellerCandidates]);
   const selectedSeller = selectedSellerId === SELF_SERVICE_SELLER.id
     ? SELF_SERVICE_SELLER
     : sellerOptions.find(s => s.id === selectedSellerId);
@@ -218,6 +219,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       setNewSellerName('');
       setNewSellerPin('1234');
       setNewSellerEmploymentType('fixo');
+      setShowSellerDirectory(false);
       setShowAddSellerModal(false);
     } catch (error) {
       console.error('Erro ao criar vendedor no OS:', error);
@@ -261,6 +263,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       setNewSellerName('');
       setNewSellerPin('1234');
       setNewSellerEmploymentType('fixo');
+      setShowSellerDirectory(false);
       setShowAddSellerModal(false);
     } catch (error) {
       console.error('Erro ao ativar vendedor do OS:', error);
@@ -844,7 +847,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                 </label>
 
                 <div className="rounded-[1.75rem] border border-emerald-500/15 bg-emerald-500/5 p-4">
-                  <div className="flex items-center justify-between gap-4 mb-3">
+                  <div className="flex items-start justify-between gap-4 mb-3">
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300">Já existe?</p>
                       <h4 className="text-lg font-black text-white">Usar pessoa cadastrada no OS</h4>
@@ -852,18 +855,27 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                         Se aparecer aqui, clique para ativar como vendedor e selecionar nesta conta.
                       </p>
                     </div>
-                    {isLoadingSellerCandidates && (
-                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Carregando...</span>
-                    )}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {isLoadingSellerCandidates && (
+                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Carregando...</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowSellerDirectory((value) => !value)}
+                        className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-200 transition-all hover:bg-emerald-400 hover:text-black"
+                      >
+                        <Menu size={13} /> Lista
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
                     {visibleSellerCandidates.length === 0 ? (
                       <div className="rounded-2xl border border-white/5 bg-black/20 p-4 text-xs font-bold text-zinc-500">
                         {isLoadingSellerCandidates
                           ? 'Buscando pessoas no OS...'
-                          : sellerCandidateSearch
+                          : sellerCandidateSearch || showSellerDirectory
                             ? 'Nenhuma pessoa compatível encontrada. Se for vendedor novo, crie abaixo.'
-                            : 'Digite o nome para procurar no OS antes de criar.'}
+                            : 'Digite o nome ou toque em Lista para ver todos os cadastros do OS que ainda não são vendedores.'}
                       </div>
                     ) : visibleSellerCandidates.map((candidate) => (
                       <button

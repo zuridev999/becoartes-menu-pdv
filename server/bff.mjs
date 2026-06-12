@@ -1227,7 +1227,6 @@ const isEligibleOsSellerCandidate = (row) => {
   if (!name) return false;
   if (['administrador', 'admin full', 'admin mestre', 'gui mameluco', 'operador', 'operacional'].includes(name)) return false;
   if (['super_admin', 'operacional'].includes(role)) return false;
-  if (funcao.includes('cozinha') || funcao.includes('cozinheira')) return false;
   return true;
 };
 
@@ -1358,15 +1357,18 @@ const createOsUserAsSeller = async ({ name, pin, employmentType }) => {
   const role = isFreelancer ? 'freelancer' : 'colaborador';
   const funcao = 'Vendedor';
   const hashedPin = isLegacyPlainPin(safePin) ? hashPin(safePin) : safePin;
+  const timestamp = osTimestamp();
+  const email = `pdv+${id}@becoartes.local`;
+  const passwordHash = hashDeliveryPassword(randomBytes(24).toString('hex'));
 
   await db.execute({
     sql: `
       INSERT INTO users (
-        id, empresa_id, nome, email, role, funcao, ativo, pin,
-        is_operador, permitir_acesso_remoto, tipo_vinculo, pdv_sell_enabled, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, 0, ?, 1, ?)
+        id, empresa_id, nome, email, password_hash, role, funcao, ativo, pin,
+        is_operador, permitir_acesso_remoto, tipo_vinculo, pdv_sell_enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 1, 0, ?, 1, ?, ?)
     `,
-    args: [id, OS_EMPRESA_ID, safeName, '', role, funcao, hashedPin, tipoVinculo, osTimestamp()],
+    args: [id, OS_EMPRESA_ID, safeName, email, passwordHash, role, funcao, hashedPin, tipoVinculo, timestamp, timestamp],
   });
 
   await syncOperationalUsersToSellers();
