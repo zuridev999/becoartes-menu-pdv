@@ -131,6 +131,17 @@ export interface ClosedBill {
   closedAt: Date;
 }
 
+export interface CounterSaleInput {
+  items: OrderItem[];
+  payments: Array<{
+    id?: string;
+    method: 'credit' | 'debit' | 'cash' | 'pix';
+    amount: number;
+  }>;
+  subtotal: number;
+  total: number;
+}
+
 export interface TablePayment {
   id: string;
   tableId: string;

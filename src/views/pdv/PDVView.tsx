@@ -7,10 +7,11 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole
+  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag
 } from 'lucide-react';
 import { useStore, type OrderItem, type Product, type Table as TableType } from '../../store';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
+import { CounterSaleModal } from '../../components/modals/CounterSaleModal';
 import { ActionDialog } from '../../components/common/ActionDialog';
 import { ProductModal } from '../../components/modals/ProductModal';
 import { PdvTicker } from '../../components/pdv/PdvTicker';
@@ -60,6 +61,7 @@ export function PDVView() {
   const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
   const [showCheckout, setShowCheckout] = useState(false);
   const [showProductMenu, setShowProductMenu] = useState(false);
+  const [showCounterSale, setShowCounterSale] = useState(false);
   const [showManualLog, setShowManualLog] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(categories[0]?.id || null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -283,6 +285,7 @@ export function PDVView() {
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides, userPermissionOverrides);
   const canCancelTableItem = can(currentSeller, 'cancelTableItem', permissionOverrides, userPermissionOverrides);
   const canCloseBill = can(currentSeller, 'closeBill', permissionOverrides, userPermissionOverrides);
+  const canLaunchPayment = can(currentSeller, 'launchPayment', permissionOverrides, userPermissionOverrides);
   const canOpenCash = can(currentSeller, 'openCash', permissionOverrides, userPermissionOverrides);
   const canCloseCash = can(currentSeller, 'closeCash', permissionOverrides, userPermissionOverrides);
   const canUseCashAction = isCashOpen ? canCloseCash : canOpenCash;
@@ -451,6 +454,19 @@ export function PDVView() {
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Mesas Ativas</span>
             <span className="text-2xl font-black text-purple-400">{activeTablesCount}</span>
           </div>
+          <button
+            onClick={() => setShowCounterSale(true)}
+            disabled={!isCashOpen || !canAddOrderItem || !canLaunchPayment || !canCloseBill}
+            className={`glass-card px-6 py-4 flex items-center gap-3 transition-all border-white/5 ${
+              isCashOpen && canAddOrderItem && canLaunchPayment && canCloseBill
+                ? 'hover:bg-amber-400/10 hover:text-amber-300'
+                : 'opacity-40 cursor-not-allowed text-zinc-600'
+            }`}
+            title="Venda balcão"
+          >
+            <ShoppingBag size={22} />
+            <span className="text-[10px] font-black uppercase tracking-[0.18em]">Venda balcão</span>
+          </button>
           <button 
             onClick={() => useStore.getState().setActiveView('admin', 'products', 'menu')} 
             className="glass-card p-4 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all border-white/5"
@@ -1018,6 +1034,21 @@ export function PDVView() {
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showCounterSale && (
+          <CounterSaleModal
+            onClose={() => setShowCounterSale(false)}
+            canAddOrderItem={canAddOrderItem}
+            canSellUnavailableProduct={canSellUnavailableProduct}
+            canViewZeroStockProducts={canViewZeroStockProducts}
+            canChangeItemQuantity={can(currentSeller, 'changeItemQuantity', permissionOverrides, userPermissionOverrides)}
+            canEditItemNotes={can(currentSeller, 'editItemNotes', permissionOverrides, userPermissionOverrides)}
+            canLaunchPayment={canLaunchPayment}
+            canCloseBill={canCloseBill}
+          />
         )}
       </AnimatePresence>
 

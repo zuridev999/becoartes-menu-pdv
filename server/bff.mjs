@@ -6401,6 +6401,241 @@ const closeBillWithInventorySync = async (data, session = null) => {
   }
 };
 
+const closeCounterSaleWithInventorySync = async (data, session = null) => {
+  const settings = await getSettings();
+  requirePermission(session, 'closeBill', settings);
+
+  const safeItems = Array.isArray(data.items) ? data.items : [];
+  if (safeItems.length === 0) throw new Error('Venda balcão sem itens.');
+
+  await validateOrderItemsAvailability({
+    items: safeItems,
+    session,
+    settings,
+    isPublicOrigin: false,
+  });
+
+  const subtotalCents = moneyToCents(data.subtotal || 0, 'subtotal');
+  const totalCents = moneyToCents(data.total || 0, 'total');
+  const payments = Array.isArray(data.payments) ? data.payments : [];
+  const calculatedSubtotalCents = safeItems.reduce((sum, item) => (
+    sum + moneyToCents(getOrderItemLineTotal(item), 'item.total')
+  ), 0);
+
+  if (subtotalCents <= 0) throw new Error('Subtotal da venda balcão inválido.');
+  if (subtotalCents !== calculatedSubtotalCents) {
+    throw new Error('Subtotal da venda balcão não confere com os itens.');
+  }
+  if (totalCents !== subtotalCents) {
+    throw new Error('Venda balcão não possui taxa de serviço ou desconto. Total precisa ser igual ao subtotal.');
+  }
+  if (payments.length === 0) {
+    throw new Error('Lance ao menos um pagamento antes de fechar a venda balcão.');
+  }
+
+  requirePermission(session, 'launchPayment', settings);
+  if (payments.length > 1) requirePermission(session, 'splitPayment', settings);
+
+  const validPaymentMethods = new Set(['credit', 'debit', 'cash', 'pix']);
+  let paymentTotalCents = 0;
+  let hasCashPayment = false;
+  let usesNonDefaultPaymentMethod = false;
+  const normalizedPayments = payments.map((payment) => {
+    if (!validPaymentMethods.has(payment?.method)) throw new Error('Forma de pagamento inválida.');
+    if (payment.method !== DEFAULT_PAYMENT_METHOD) usesNonDefaultPaymentMethod = true;
+    if (payment.method === 'cash') hasCashPayment = true;
+    const amountCents = moneyToCents(payment.amount || 0, 'payment.amount');
+    if (amountCents <= 0) throw new Error('Pagamento precisa ter valor maior que zero.');
+    paymentTotalCents += amountCents;
+    return {
+      id: payment.id ? String(payment.id) : undefined,
+      method: payment.method,
+      amount: centsToMoney(amountCents),
+    };
+  });
+
+  if (usesNonDefaultPaymentMethod) requirePermission(session, 'changePaymentMethod', settings);
+  if (paymentTotalCents < totalCents) throw new Error('Pagamentos lançados não cobrem o total da venda balcão.');
+  if (paymentTotalCents > totalCents && !hasCashPayment) {
+    throw new Error('Troco só pode existir quando houver pagamento em dinheiro.');
+  }
+
+  const orderId = String(data.orderId || `counter_${createId()}`);
+  const tableId = `counter:${orderId}`;
+  const tableNumber = 0;
+  const integrationId = `pdv_counter_${orderId}`;
+  const sellerId = session?.id || 'counter-sale';
+  const sellerName = session?.name || 'Venda Balcão';
+  const persistedItems = safeItems.map((item) => ({
+    ...item,
+    id: item.id || createId(),
+    orderId,
+  }));
+
+  const duplicateProbe = {
+    tableId,
+    tableNumber,
+    sellerId,
+    sellerName,
+    subtotal: centsToMoney(subtotalCents),
+    serviceFee: 0,
+    discount: 0,
+    couponAmount: 0,
+    total: centsToMoney(totalCents),
+    payments: normalizedPayments,
+  };
+  const recentDuplicate = await findRecentDuplicateClosedBill(duplicateProbe, 30);
+  if (recentDuplicate) {
+    return {
+      skipped: true,
+      integrationId: String(recentDuplicate.id),
+      closedBill: null,
+      inventorySync: null,
+    };
+  }
+
+  const claimed = await claimIntegrationEvent(integrationId, 'pdv_counter_sale', tableId, {
+    itemCount: persistedItems.length,
+    total: centsToMoney(totalCents),
+    sellerId,
+    sellerName,
+  });
+  if (!claimed) {
+    return {
+      skipped: true,
+      integrationId,
+      closedBill: null,
+      inventorySync: null,
+    };
+  }
+
+  try {
+    const closedAt = new Date();
+    const closedBill = {
+      id: integrationId,
+      tableId,
+      tableNumber,
+      sellerId,
+      sellerName,
+      subtotal: centsToMoney(subtotalCents),
+      serviceFee: 0,
+      discount: 0,
+      discountReason: null,
+      couponCode: null,
+      couponAmount: 0,
+      couponBenefit: null,
+      total: centsToMoney(totalCents),
+      payments: normalizedPayments,
+      closedAt: closedAt.toISOString(),
+    };
+
+    await db.batch([
+      {
+        sql: "INSERT INTO orders (id, table_id, total, status, origin, created_by_id) VALUES (?, ?, ?, ?, ?, ?)",
+        args: [orderId, tableId, centsToMoney(totalCents), 'closed', 'counter', sellerId],
+      },
+      ...persistedItems.map((item) => ({
+        sql: "INSERT INTO order_items (id, order_id, product_id, quantity, price_at_time, selected_modifiers, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        args: [
+          requireString(item.id, 'item.id'),
+          orderId,
+          requireString(item.productId, 'item.productId'),
+          requireNumber(item.quantity, 'item.quantity'),
+          requireNumber(item.price, 'item.price'),
+          JSON.stringify(item.selectedModifiers || []),
+          item.notes || '',
+        ],
+      })),
+    ], 'write');
+
+    let inventorySync = { movementCount: 0, unmatched: [], insufficient: [], critical: [], catalogVersion: null };
+    try {
+      inventorySync = await syncPdvOrderItemsToInventory({
+        items: persistedItems,
+        integrationId,
+        tableNumber,
+        reason: `Venda Balcão | Fechamento ${integrationId}`,
+        closedBillId: integrationId,
+      });
+    } catch (error) {
+      inventorySync.unmatched.push(`Sincronização OS indisponível: ${error instanceof Error ? error.message : String(error)}`);
+      void safeCreateOSNotification({
+        title: 'Baixa de estoque na venda balcão falhou',
+        message: `Venda ${integrationId}: ${error instanceof Error ? error.message : String(error)}`,
+        type: 'error',
+        link: `/${OS_TENANT_SLUG}/estoque`,
+      });
+    }
+
+    const batch = [
+      {
+        sql: "INSERT OR REPLACE INTO closed_bills (id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, coupon_code, coupon_amount, coupon_benefit, total, payments, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        args: [
+          closedBill.id,
+          closedBill.tableId,
+          closedBill.tableNumber,
+          closedBill.sellerId,
+          closedBill.sellerName,
+          closedBill.subtotal,
+          closedBill.serviceFee,
+          closedBill.discount,
+          null,
+          null,
+          0,
+          null,
+          closedBill.total,
+          JSON.stringify(closedBill.payments),
+          closedBill.closedAt,
+        ],
+      },
+      {
+        sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'counter_sale_closed', ?, 'BALCAO', 'pdv', ?, ?, ?)",
+        args: [
+          createId(),
+          JSON.stringify({
+            subtotal: closedBill.subtotal,
+            serviceFee: 0,
+            total: closedBill.total,
+            paid: centsToMoney(paymentTotalCents),
+            change: centsToMoney(Math.max(0, paymentTotalCents - totalCents)),
+            payments: closedBill.payments,
+            itemCount: persistedItems.length,
+            inventoryMovements: inventorySync.movementCount,
+            eventId: integrationId,
+          }),
+          sellerId,
+          sellerName,
+          closedBill.closedAt,
+        ],
+      },
+      {
+        sql: "UPDATE integration_events SET status = 'completed', payload = ?, error = NULL, updated_at = ? WHERE id = ?",
+        args: [
+          JSON.stringify({
+            tableNumber: 'BALCAO',
+            orderId,
+            inventorySync,
+          }),
+          Date.now(),
+          integrationId,
+        ],
+      },
+    ];
+
+    await db.batch(batch, 'write');
+
+    return {
+      skipped: false,
+      integrationId,
+      closedBill,
+      inventorySync,
+    };
+  } catch (error) {
+    await failIntegrationEvent(integrationId, error);
+    throw error;
+  }
+};
+
 const requireSession = (session) => {
   if (!session) {
     const error = new Error('Sessão obrigatória.');
@@ -6463,6 +6698,21 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     const settings = await getSettings();
     requirePermission(session, 'addOrderItem', settings);
     requirePermission(session, 'sendOrderToProduction', settings);
+    const items = Array.isArray(body?.items) ? body.items : [];
+    if (items.some((item) => Number(item?.quantity || 0) !== 1)) {
+      requirePermission(session, 'changeItemQuantity', settings);
+    }
+    if (items.some((item) => String(item?.notes || '').trim())) {
+      requirePermission(session, 'editItemNotes', settings);
+    }
+    return;
+  }
+
+  if (routeKey === 'POST /api/counter-sales/close') {
+    const settings = await getSettings();
+    requirePermission(session, 'addOrderItem', settings);
+    requirePermission(session, 'launchPayment', settings);
+    requirePermission(session, 'closeBill', settings);
     const items = Array.isArray(body?.items) ? body.items : [];
     if (items.some((item) => Number(item?.quantity || 0) !== 1)) {
       requirePermission(session, 'changeItemQuantity', settings);
@@ -6595,6 +6845,7 @@ const handlers = {
   'POST /api/coupons/create': async (body, context) => createCoupon(body, context.session),
   'POST /api/coupons/validate': async (body, context) => validateCoupon(body, context.session),
   'POST /api/bills/close': async (body, context) => closeBillWithInventorySync(body, context.session),
+  'POST /api/counter-sales/close': async (body, context) => closeCounterSaleWithInventorySync(body, context.session),
   'POST /api/catalog/category': async (body) => upsertCategory(body),
   'POST /api/catalog/category/delete': async (body) => deleteCategory(body),
   'POST /api/catalog/category/visibility': async (body) => toggleCategoryVisibility(body),

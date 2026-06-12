@@ -1,4 +1,4 @@
-import type { Category, ClosedBill, Coupon, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
+import type { Category, ClosedBill, CounterSaleInput, Coupon, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
 
@@ -204,6 +204,16 @@ export const OperationalApi = {
 
   closeBill(data: Omit<ClosedBill, 'id' | 'closedAt'>) {
     return postJson<CloseBillResult>('/api/bills/close', data)
+      .then(result => ({
+        ...result,
+        closedBill: result.closedBill
+          ? { ...result.closedBill, closedAt: new Date(result.closedBill.closedAt) }
+          : null,
+      }));
+  },
+
+  closeCounterSale(data: CounterSaleInput) {
+    return postJson<CloseBillResult>('/api/counter-sales/close', data)
       .then(result => ({
         ...result,
         closedBill: result.closedBill

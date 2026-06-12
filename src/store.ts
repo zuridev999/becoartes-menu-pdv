@@ -6,7 +6,7 @@ import { postOSMessage } from './lib/osBridge';
 import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, hasApiSessionToken, setApiSessionToken, type CashState } from './lib/api';
 import type {
   Product, Table, OrderItem, KitchenOrder,
-  ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category
+  ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category, CounterSaleInput
 } from './types';
 
 export type { Product, Table, OrderItem, KitchenOrder, ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier };
@@ -142,6 +142,7 @@ export interface AppState {
   resolveService: (requestId: string) => void;
   clearServiceRequest: (requestId: string) => Promise<void>;
   closeBill: (data: Omit<ClosedBill, 'id' | 'closedAt'>) => Promise<boolean>;
+  closeCounterSale: (data: CounterSaleInput) => Promise<boolean>;
   updateTableStatus: (tableId: string, status: Table['status']) => void;
   updateKitchenOrderStatus: (orderId: string, status: KitchenOrder['status']) => void;
   addNotification: (message: string, type?: 'info' | 'error' | 'order' | 'service', tableId?: string) => void;
@@ -1095,6 +1096,57 @@ export const useStore = create<AppState>((set, get) => ({
 
       const message = getErrorMessage(error);
       get().addNotification(message ? `Erro ao lançar conta: ${message}` : "Erro ao lançar conta. Tente novamente.", "error");
+      return false;
+    }
+  },
+
+  closeCounterSale: async (data) => {
+    if (!hasApiSessionToken()) {
+      clearSellerSession();
+      set({ currentSeller: null });
+      get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+      return false;
+    }
+
+    try {
+      const closeResult = await OperationalApi.closeCounterSale(data);
+
+      if (closeResult.skipped || !closeResult.closedBill || !closeResult.inventorySync) {
+        get().addNotification("Esta venda balcão já foi processada ou está em andamento.", "info");
+        await get().syncData();
+        return false;
+      }
+
+      set((state) => ({
+        closedBills: [...state.closedBills, closeResult.closedBill]
+      }));
+
+      const inventorySuffix = closeResult.inventorySync.unmatched.length > 0
+        ? ` ${closeResult.inventorySync.unmatched.length} item(ns) sem vínculo de estoque.`
+        : '';
+      get().addNotification(`Venda balcão finalizada com sucesso!${inventorySuffix}`, 'info');
+
+      if (closeResult.inventorySync.movementCount || closeResult.inventorySync.unmatched.length > 0) {
+        await get().syncData({ includeCatalog: true });
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Erro ao fechar venda balcão:", error);
+      if (isSessionExpiredError(error)) {
+        clearSellerSession();
+        set({ currentSeller: null });
+        get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
+        return false;
+      }
+
+      if (isNetworkError(error)) {
+        get().addNotification("Banco demorou para responder. Tente finalizar a venda balcão novamente.", "error");
+        return false;
+      }
+
+      const message = getErrorMessage(error);
+      get().addNotification(message ? `Erro na venda balcão: ${message}` : "Erro na venda balcão. Tente novamente.", "error");
       return false;
     }
   },
