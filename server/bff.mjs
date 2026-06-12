@@ -1308,7 +1308,17 @@ const activateOsUserAsSeller = async ({ userId, pin }) => {
 
   await syncOperationalUsersToSellers();
   const sellers = await getAuthSellers({ includePins: false });
-  const seller = sellers.find((item) => item.id === `os:${safeUserId}`);
+  const seller = sellers.find((item) => item.id === `os:${safeUserId}`) || {
+    id: `os:${safeUserId}`,
+    name: normalizeText(user.nome),
+    nickname: normalizeText(user.nome).split(' ')[0] || '',
+    status: 'active',
+    role: 'outro',
+    permission: 'operator',
+    pin: '',
+    employmentType: '',
+    source: 'os',
+  };
   return { activated: true, seller };
 };
 
@@ -1373,7 +1383,17 @@ const createOsUserAsSeller = async ({ name, pin, employmentType }) => {
 
   await syncOperationalUsersToSellers();
   const sellers = await getAuthSellers({ includePins: false });
-  const seller = sellers.find((item) => item.id === `os:${id}`);
+  const seller = sellers.find((item) => item.id === `os:${id}`) || {
+    id: `os:${id}`,
+    name: safeName,
+    nickname: safeName.split(' ')[0] || '',
+    status: 'active',
+    role: mapOperationalRoleLabel(role, funcao),
+    permission: mapOperationalPermission(role, funcao),
+    pin: '',
+    employmentType: tipoVinculo,
+    source: 'os',
+  };
   return { created: true, seller };
 };
 
