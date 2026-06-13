@@ -207,6 +207,7 @@ const getDeliveryCoupons = () => {
 
 const hashPin = (pin) => createHash('sha256').update(`${pin}becoartes_salt_2024`).digest('hex');
 const isLegacyPlainPin = (storedPin) => /^\d{4}$/.test(String(storedPin || ''));
+const isReservedSellerPin = (pin) => String(pin || '').trim() === '1234';
 const toSessionSeller = (seller) => ({ ...seller, pin: '' });
 const normalizeText = (value) => String(value || '').trim().replace(/\s+/g, ' ');
 const DELIVERY_COUPONS = getDeliveryCoupons();
@@ -347,7 +348,7 @@ const permissionsByProfile = {
     viewFinancialReports: true,
     manageSettings: false,
     manageTeam: false,
-    managePDVUsers: false,
+    managePDVUsers: true,
     managePDVPermissions: false,
     manageCoupons: false,
     manageRoles: false,
@@ -1271,6 +1272,11 @@ const activateOsUserAsSeller = async ({ userId, pin }) => {
     error.statusCode = 400;
     throw error;
   }
+  if (safePin && isReservedSellerPin(safePin)) {
+    const error = new Error('Escolha um PIN diferente de 1234.');
+    error.statusCode = 400;
+    throw error;
+  }
 
   const userRes = await db.execute({
     sql: `
@@ -1332,6 +1338,11 @@ const createOsUserAsSeller = async ({ name, pin, employmentType }) => {
   }
   if (!/^\d{4}$/.test(safePin) && !/^[a-f0-9]{64}$/i.test(safePin)) {
     const error = new Error('PIN deve ter 4 dígitos.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (isReservedSellerPin(safePin)) {
+    const error = new Error('Escolha um PIN diferente de 1234.');
     error.statusCode = 400;
     throw error;
   }
@@ -5660,6 +5671,16 @@ const closeShift = async ({ id, closingBalance }) => {
 const addSeller = async ({ seller }, session = null) => {
   const safeSeller = seller || {};
   const pin = requireString(safeSeller.pin, 'seller.pin');
+  if (!/^\d{4}$/.test(pin) && !/^[a-f0-9]{64}$/i.test(pin)) {
+    const error = new Error('PIN deve ter 4 dígitos.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (isReservedSellerPin(pin)) {
+    const error = new Error('Escolha um PIN diferente de 1234.');
+    error.statusCode = 400;
+    throw error;
+  }
   const employmentType = safeSeller.employmentType === 'freelancer' || safeSeller.tipo_vinculo === 'freelancer'
     ? 'freelancer'
     : 'fixo';

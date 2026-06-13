@@ -159,27 +159,27 @@ export function CounterSaleModal({
         initial={{ scale: 0.96, y: 20, opacity: 0 }}
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={{ scale: 0.96, y: 20, opacity: 0 }}
-        className="fixed inset-0 z-[650] flex items-center justify-center p-3 sm:p-6 pointer-events-none font-['Outfit']"
+        className="fixed inset-0 z-[650] flex items-start xl:items-center justify-center p-2 sm:p-4 xl:p-6 pointer-events-none font-['Outfit'] overflow-y-auto overscroll-contain"
       >
-        <div className="glass-card pointer-events-auto w-full max-w-7xl h-[calc(100dvh-1.5rem)] overflow-hidden border-white/10 shadow-2xl flex flex-col">
-          <div className="p-5 sm:p-8 border-b border-white/10 flex flex-col lg:flex-row gap-5 lg:items-center lg:justify-between">
+        <div className="glass-card pointer-events-auto w-full max-w-7xl border-white/10 shadow-2xl flex flex-col overflow-visible xl:overflow-hidden xl:h-[calc(100dvh-1.5rem)] mb-[calc(env(safe-area-inset-bottom)+1rem)]">
+          <div className="p-4 sm:p-6 xl:p-8 border-b border-white/10 flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-3xl bg-amber-400 text-black flex items-center justify-center shadow-2xl shadow-amber-500/20">
-                <ShoppingBag size={26} strokeWidth={3} />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-3xl bg-amber-400 text-black flex items-center justify-center shadow-2xl shadow-amber-500/20 shrink-0">
+                <ShoppingBag size={24} strokeWidth={3} />
               </div>
-              <div>
+              <div className="min-w-0 pr-14 sm:pr-0">
                 <p className="text-[10px] font-black uppercase tracking-[0.35em] text-amber-300">PDV</p>
                 <h2 className="text-3xl sm:text-5xl font-black italic tracking-tighter text-white leading-none">Venda Balcão</h2>
                 <p className="text-xs font-bold text-zinc-500 mt-2">Sem mesa, sem gorjeta, com baixa de estoque.</p>
               </div>
             </div>
-            <button onClick={onClose} className="absolute top-4 right-4 sm:static p-4 glass rounded-2xl hover:text-rose-400">
+            <button onClick={onClose} className="absolute top-4 right-4 xl:static p-4 glass rounded-2xl hover:text-rose-400">
               <X size={24} />
             </button>
           </div>
 
-          <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[1fr_430px]">
-            <div className="min-h-0 flex flex-col p-4 sm:p-6">
+          <div className="xl:flex-1 xl:min-h-0 grid grid-cols-1 xl:grid-cols-[1fr_430px]">
+            <div className="xl:min-h-0 flex flex-col p-4 sm:p-6">
               <div className="flex flex-col md:flex-row gap-3 mb-4">
                 <div className="relative flex-1">
                   <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -207,7 +207,7 @@ export function CounterSaleModal({
                 </div>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+              <div className="max-h-[34dvh] xl:max-h-none xl:flex-1 xl:min-h-0 overflow-y-auto custom-scrollbar pr-1">
                 <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
                   {visibleProducts.map((product) => (
                     <button
@@ -232,14 +232,14 @@ export function CounterSaleModal({
               </div>
             </div>
 
-            <aside className="min-h-0 border-t xl:border-t-0 xl:border-l border-white/10 bg-black/20 flex flex-col">
-              <div className="p-5 sm:p-6 border-b border-white/10">
+            <aside className="xl:min-h-0 border-t xl:border-t-0 xl:border-l border-white/10 bg-black/20 flex flex-col">
+              <div className="p-4 sm:p-6 border-b border-white/10">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500">Total balcão</p>
-                <p className="text-5xl font-black italic tracking-tighter text-amber-300 mt-2">{formatCurrency(subtotal)}</p>
+                <p className="text-4xl sm:text-5xl font-black italic tracking-tighter text-amber-300 mt-2">{formatCurrency(subtotal)}</p>
                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Taxa de serviço: R$ 0,00</p>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-3">
+              <div className="max-h-[28dvh] xl:max-h-none xl:flex-1 xl:min-h-0 overflow-y-auto custom-scrollbar p-4 sm:p-6 space-y-3">
                 {cart.length === 0 ? (
                   <div className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-zinc-500 text-sm font-bold">
                     Adicione produtos para iniciar a venda balcão.
@@ -272,8 +272,8 @@ export function CounterSaleModal({
                 ))}
               </div>
 
-              <div className="p-5 sm:p-6 border-t border-white/10 space-y-4">
-                <div className="grid grid-cols-4 gap-2">
+              <div className="p-4 sm:p-6 border-t border-white/10 space-y-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {PAYMENT_OPTIONS.map((option) => {
                     const Icon = option.icon;
                     return (

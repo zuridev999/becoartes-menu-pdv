@@ -152,7 +152,7 @@ export const defaultPermissionsByProfile: Record<PermissionProfile, Record<Permi
     viewFinancialReports: true,
     manageSettings: false,
     manageTeam: false,
-    managePDVUsers: false,
+    managePDVUsers: true,
     managePDVPermissions: false,
     manageCoupons: false,
     manageRoles: false,

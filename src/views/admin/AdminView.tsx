@@ -485,7 +485,7 @@ export function AdminView() {
   const [newSellerRole, setNewSellerRole] = useState<'garçom' | 'atendente' | 'gerente' | 'outro'>('garçom');
   const [newSellerPermission, setNewSellerPermission] = useState<'admin' | 'manager' | 'operator'>('operator');
   const [newSellerEmploymentType, setNewSellerEmploymentType] = useState<'fixo' | 'freelancer'>('fixo');
-  const [newSellerPin, setNewSellerPin] = useState('1234');
+  const [newSellerPin, setNewSellerPin] = useState('');
   const [showPermissionConfig, setShowPermissionConfig] = useState(false);
   const [activePermissionProfile, setActivePermissionProfile] = useState<PermissionProfile>('operator');
   const [permissionSearch, setPermissionSearch] = useState('');
@@ -1164,6 +1164,10 @@ export function AdminView() {
 
   const handleActivateSellerCandidate = async (candidate: SellerCandidate) => {
     const pin = newSellerPin.trim();
+    if (pin === '1234') {
+      addNotification('Escolha um PIN diferente de 1234.', 'error');
+      return;
+    }
     if (!candidate.hasPin && !/^\d{4}$/.test(pin)) {
       addNotification('Esse cadastro do OS ainda não tem PIN. Informe um PIN de 4 dígitos para ativar.', 'error');
       return;
@@ -1185,7 +1189,7 @@ export function AdminView() {
       setShowAddSellerModal(false);
       setNewSellerName('');
       setNewSellerNickname('');
-      setNewSellerPin('1234');
+      setNewSellerPin('');
     } catch (error) {
       console.error('Erro ao ativar vendedor do OS:', error);
       addNotification(error instanceof Error ? error.message : 'Não foi possível ativar este vendedor.', 'error');
@@ -1221,6 +1225,10 @@ export function AdminView() {
       addNotification('PIN deve ter 4 dígitos.', 'error');
       return;
     }
+    if (pin === '1234') {
+      addNotification('Escolha um PIN diferente de 1234.', 'error');
+      return;
+    }
 
     await addSeller({
       id: createId(),
@@ -1234,7 +1242,7 @@ export function AdminView() {
     } as Seller);
     setNewSellerName('');
     setNewSellerNickname('');
-    setNewSellerPin('1234');
+    setNewSellerPin('');
     setNewSellerRole('garçom');
     setNewSellerPermission('operator');
     setNewSellerEmploymentType('fixo');
