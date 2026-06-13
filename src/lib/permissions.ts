@@ -360,6 +360,7 @@ export const permissionGroups: Array<{ title: string; keys: PermissionKey[] }> =
 export const getEffectivePermissions = (profile: PermissionProfile, overrides?: PermissionMatrix) => ({
   ...defaultPermissionsByProfile[profile],
   ...(overrides?.[profile] || {}),
+  ...(profile === 'manager' ? { managePDVUsers: true } : {}),
   ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true, manageCoupons: true } : {}),
 });
 
@@ -388,6 +389,7 @@ export const getEffectiveUserPermissions = (
   return {
     ...getEffectivePermissions(profile, overrides),
     ...sellerOverrides,
+    ...(profile === 'manager' ? { managePDVUsers: true } : {}),
     ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true, manageCoupons: true } : {}),
   };
 };

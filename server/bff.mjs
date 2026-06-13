@@ -488,6 +488,7 @@ const getEffectiveSessionPermissions = (session, settings = null) => {
     ...(permissionsByProfile[profile] || permissionsByProfile.operator),
     ...(settings?.pdvPermissions?.[profile] || {}),
     ...userPermissionOverrides,
+    ...(profile === 'manager' ? { managePDVUsers: true } : {}),
     ...(profile === 'admin' ? { accessPDV: true, manageSettings: true, managePDVPermissions: true, manageCoupons: true } : {}),
   };
 };
