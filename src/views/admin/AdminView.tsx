@@ -113,6 +113,38 @@ const deliveryStatusLabels: Record<string, string> = {
 const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const formatDeliveryStatus = (status: string) => deliveryStatusLabels[status] || status.replace(/_/g, ' ');
 
+const toDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getMonthStartValue = () => {
+  const now = new Date();
+  return toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+};
+
+const getTodayValue = () => toDateInputValue(new Date());
+
+const getDaysAgoValue = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return toDateInputValue(date);
+};
+
+const parseDateStart = (value: string) => {
+  if (!value) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+};
+
+const parseDateEnd = (value: string) => {
+  if (!value) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day, 23, 59, 59, 999);
+};
+
 const QR_PUBLIC_BASE_URL = 'https://qr.becoartes.com';
 const QR_MENU_TEMPLATE_URL = '/qr/menu-qr-template.jpg';
 const QR_TEMPLATE_WIDTH = 3875;
@@ -525,6 +557,10 @@ export function AdminView() {
   const [isDeliveryDetailLoading, setIsDeliveryDetailLoading] = useState(false);
   const [selectedClosedBill, setSelectedClosedBill] = useState<ClosedBill | null>(null);
   const [selectedSellerPerformanceKey, setSelectedSellerPerformanceKey] = useState<string>('all');
+  const [financeDateFrom, setFinanceDateFrom] = useState('');
+  const [financeDateTo, setFinanceDateTo] = useState('');
+  const [financeSellerFilter, setFinanceSellerFilter] = useState('all');
+  const [financePaymentFilter, setFinancePaymentFilter] = useState('all');
   const [pdvLockState, setPdvLockState] = useState<{ locked: boolean; message: string } | null>(null);
   const [isPdvLockSaving, setIsPdvLockSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -820,7 +856,47 @@ export function AdminView() {
     pix: 'PIX',
   };
 
-  const paymentSummary = closedBills.reduce((acc, bill) => {
+  const financeStartDate = parseDateStart(financeDateFrom);
+  const financeEndDate = parseDateEnd(financeDateTo);
+  const financeSellerOptions = Array.from(new Map(
+    closedBills.map((bill) => {
+      const sellerKey = String(bill.sellerId || '') || `name:${bill.sellerName || 'Sem vendedor'}`;
+      return [sellerKey, bill.sellerName || 'Sem vendedor'] as const;
+    })
+  ).entries()).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
+
+  const filteredClosedBills = closedBills.filter((bill) => {
+    const closedAt = new Date(bill.closedAt);
+    const billSellerKey = String(bill.sellerId || '') || `name:${bill.sellerName || 'Sem vendedor'}`;
+    const matchesStart = !financeStartDate || closedAt >= financeStartDate;
+    const matchesEnd = !financeEndDate || closedAt <= financeEndDate;
+    const matchesSeller = financeSellerFilter === 'all' || billSellerKey === financeSellerFilter;
+    const matchesPayment = financePaymentFilter === 'all' || (bill.payments || []).some((payment) => payment.method === financePaymentFilter);
+    return matchesStart && matchesEnd && matchesSeller && matchesPayment;
+  });
+
+  const setFinancePeriod = (period: 'all' | 'today' | '7d' | 'month') => {
+    if (period === 'all') {
+      setFinanceDateFrom('');
+      setFinanceDateTo('');
+      return;
+    }
+    if (period === 'today') {
+      const today = getTodayValue();
+      setFinanceDateFrom(today);
+      setFinanceDateTo(today);
+      return;
+    }
+    if (period === '7d') {
+      setFinanceDateFrom(getDaysAgoValue(6));
+      setFinanceDateTo(getTodayValue());
+      return;
+    }
+    setFinanceDateFrom(getMonthStartValue());
+    setFinanceDateTo(getTodayValue());
+  };
+
+  const paymentSummary = filteredClosedBills.reduce((acc, bill) => {
     for (const payment of bill.payments || []) {
       const current = acc[payment.method] || { total: 0, count: 0 };
       acc[payment.method] = {
@@ -831,10 +907,10 @@ export function AdminView() {
     return acc;
   }, {} as Record<string, { total: number; count: number }>);
 
-  const closedBillsSubtotal = closedBills.reduce((acc, bill) => acc + bill.subtotal, 0);
-  const closedBillsServiceFee = closedBills.reduce((acc, bill) => acc + bill.serviceFee, 0);
-  const closedBillsDiscount = closedBills.reduce((acc, bill) => acc + bill.discount, 0);
-  const closedBillsTotal = closedBills.reduce((acc, bill) => acc + bill.total, 0);
+  const closedBillsSubtotal = filteredClosedBills.reduce((acc, bill) => acc + bill.subtotal, 0);
+  const closedBillsServiceFee = filteredClosedBills.reduce((acc, bill) => acc + bill.serviceFee, 0);
+  const closedBillsDiscount = filteredClosedBills.reduce((acc, bill) => acc + bill.discount, 0);
+  const closedBillsTotal = filteredClosedBills.reduce((acc, bill) => acc + bill.total, 0);
   const sellerPerformanceMap = new Map<string, SellerPerformance>();
   const sellerMetadata = new Map(sellers.map((seller: any) => [
     String(seller.id || ''),
@@ -868,7 +944,7 @@ export function AdminView() {
     });
   }
 
-  for (const bill of closedBills) {
+  for (const bill of filteredClosedBills) {
     const sellerId = String(bill.sellerId || '');
     const fallbackKey = sellerId || `name:${bill.sellerName || 'Sem vendedor'}`;
     const metadata = sellerMetadata.get(sellerId);
@@ -911,11 +987,11 @@ export function AdminView() {
     .sort((a, b) => b.commissionFee - a.commissionFee || b.total - a.total || a.sellerName.localeCompare(b.sellerName, 'pt-BR'));
   const selectedSellerPerformance = sellerPerformanceRows.find((row) => row.key === selectedSellerPerformanceKey);
   const financeBills = selectedSellerPerformance
-    ? closedBills.filter((bill) => {
+    ? filteredClosedBills.filter((bill) => {
       const billKey = String(bill.sellerId || '') || `name:${bill.sellerName || 'Sem vendedor'}`;
       return billKey === selectedSellerPerformance.key;
     })
-    : closedBills;
+    : filteredClosedBills;
 
   const requestCategoryRename = (cat: any) => {
     setAdminDialog({
@@ -2365,25 +2441,108 @@ export function AdminView() {
 
       {activeTab === 'finance' && canViewSalesTotals && (
         <div className="space-y-10">
+          <div className="glass-card p-5 sm:p-6 border-white/5">
+            <div className="flex flex-col 2xl:flex-row 2xl:items-end justify-between gap-5">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Filtros de fechamento</p>
+                <h3 className="text-2xl font-black tracking-tighter">Período, vendedor e forma de pagamento</h3>
+                <p className="text-xs font-bold text-zinc-500 mt-1">
+                  Exibindo {filteredClosedBills.length} de {closedBills.length} fechamento(s). Os cards abaixo seguem estes filtros.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 w-full 2xl:w-auto">
+                <div className="sm:col-span-2 xl:col-span-2 flex flex-wrap gap-2">
+                  {[
+                    { label: 'Tudo', value: 'all' as const },
+                    { label: 'Hoje', value: 'today' as const },
+                    { label: '7 dias', value: '7d' as const },
+                    { label: 'Mês atual', value: 'month' as const },
+                  ].map((period) => (
+                    <button
+                      key={period.value}
+                      type="button"
+                      onClick={() => setFinancePeriod(period.value)}
+                      className="px-4 py-3 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-primary/50 text-[10px] font-black uppercase tracking-widest text-zinc-300 transition-all"
+                    >
+                      {period.label}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="block">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500 block mb-2">De</span>
+                  <input
+                    type="date"
+                    value={financeDateFrom}
+                    onChange={(event) => setFinanceDateFrom(event.target.value)}
+                    className="w-full bg-[#121214] border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500 block mb-2">Até</span>
+                  <input
+                    type="date"
+                    value={financeDateTo}
+                    onChange={(event) => setFinanceDateTo(event.target.value)}
+                    className="w-full bg-[#121214] border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500 block mb-2">Vendedor</span>
+                  <select
+                    value={financeSellerFilter}
+                    onChange={(event) => {
+                      setFinanceSellerFilter(event.target.value);
+                      setSelectedSellerPerformanceKey('all');
+                    }}
+                    className="w-full bg-[#121214] border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
+                  >
+                    <option value="all">Todos</option>
+                    {financeSellerOptions.map(([sellerKey, sellerName]) => (
+                      <option key={sellerKey} value={sellerKey}>{sellerName}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500 block mb-2">Pagamento</span>
+                  <select
+                    value={financePaymentFilter}
+                    onChange={(event) => setFinancePaymentFilter(event.target.value)}
+                    className="w-full bg-[#121214] border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
+                  >
+                    <option value="all">Todos</option>
+                    {Object.entries(paymentLabels).map(([method, label]) => (
+                      <option key={method} value={method}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="glass-card p-8 border-white/5">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Produtos vendidos</span>
-              <p className="text-4xl font-black text-white mt-3">R$ {closedBillsSubtotal.toFixed(2)}</p>
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">{closedBills.length} mesas fechadas</p>
+              <p className="text-4xl font-black text-white mt-3">{formatCurrency(closedBillsSubtotal)}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">{filteredClosedBills.length} mesas fechadas</p>
             </div>
             <div className="glass-card p-8 border-white/5">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Taxa de serviço</span>
-              <p className="text-4xl font-black text-amber-300 mt-3">R$ {closedBillsServiceFee.toFixed(2)}</p>
+              <p className="text-4xl font-black text-amber-300 mt-3">{formatCurrency(closedBillsServiceFee)}</p>
               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Separado do desconto</p>
             </div>
             <div className="glass-card p-8 border-white/5">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Descontos</span>
-              <p className="text-4xl font-black text-rose-400 mt-3">R$ {closedBillsDiscount.toFixed(2)}</p>
+              <p className="text-4xl font-black text-rose-400 mt-3">{formatCurrency(closedBillsDiscount)}</p>
               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Não inclui taxa removida</p>
             </div>
             <div className="glass-card p-8 border-white/5">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Total recebido</span>
-              <p className="text-4xl font-black text-emerald-400 mt-3">R$ {closedBillsTotal.toFixed(2)}</p>
+              <p className="text-4xl font-black text-emerald-400 mt-3">{formatCurrency(closedBillsTotal)}</p>
               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Produtos + taxa - desconto</p>
             </div>
           </div>
@@ -2398,7 +2557,7 @@ export function AdminView() {
                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{paymentLabels[method]}</span>
                     <Icon size={22} className="text-primary" />
                   </div>
-                  <p className="text-3xl font-black text-white">R$ {summary.total.toFixed(2)}</p>
+                  <p className="text-3xl font-black text-white">{formatCurrency(summary.total)}</p>
                   <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">{summary.count} lançamentos</p>
                 </div>
               );
@@ -2468,12 +2627,12 @@ export function AdminView() {
 	                        </p>
 	                      </td>
 	                      <td className="p-5 text-right font-black text-zinc-300">{row.billsCount}</td>
-	                      <td className="p-5 text-right font-black text-zinc-300">R$ {row.subtotal.toFixed(2)}</td>
-	                      <td className="p-5 text-right font-black text-amber-300">R$ {row.commissionFee.toFixed(2)}</td>
-	                      <td className="p-5 text-right font-black text-zinc-300">R$ {row.serviceFee.toFixed(2)}</td>
+	                      <td className="p-5 text-right font-black text-zinc-300">{formatCurrency(row.subtotal)}</td>
+	                      <td className="p-5 text-right font-black text-amber-300">{formatCurrency(row.commissionFee)}</td>
+	                      <td className="p-5 text-right font-black text-zinc-300">{formatCurrency(row.serviceFee)}</td>
 	                      <td className="p-5 text-right font-black text-primary">{row.serviceRate.toFixed(1)}%</td>
-                      <td className="p-5 text-right font-black text-emerald-300">R$ {row.total.toFixed(2)}</td>
-                      <td className="p-5 text-right font-black text-zinc-300">R$ {row.avgTicket.toFixed(2)}</td>
+                      <td className="p-5 text-right font-black text-emerald-300">{formatCurrency(row.total)}</td>
+                      <td className="p-5 text-right font-black text-zinc-300">{formatCurrency(row.avgTicket)}</td>
                       <td className="p-5 text-xs font-bold text-zinc-500 uppercase tracking-widest">
                         {row.lastClosedAt ? row.lastClosedAt.toLocaleString('pt-BR') : 'Sem venda'}
                       </td>
@@ -2529,19 +2688,19 @@ export function AdminView() {
                     <td className="p-8 font-black text-xl">{bill.tableNumber}</td>
                     <td className="p-8 font-medium text-gray-400">{new Date(bill.closedAt).toLocaleString('pt-BR')}</td>
                     <td className="p-8 font-black text-primary">{bill.sellerName}</td>
-                    <td className="p-8 text-right font-black text-zinc-300">R$ {bill.subtotal.toFixed(2)}</td>
-                    <td className="p-8 text-right font-black text-amber-300">R$ {bill.serviceFee.toFixed(2)}</td>
-                    <td className="p-8 text-right font-black text-rose-400">R$ {bill.discount.toFixed(2)}</td>
+                    <td className="p-8 text-right font-black text-zinc-300">{formatCurrency(bill.subtotal)}</td>
+                    <td className="p-8 text-right font-black text-amber-300">{formatCurrency(bill.serviceFee)}</td>
+                    <td className="p-8 text-right font-black text-rose-400">{formatCurrency(bill.discount)}</td>
                     <td className="p-8">
                       <div className="flex flex-wrap gap-2">
                         {(bill.payments || []).map((payment, idx) => (
                           <span key={`${bill.id}-${idx}`} className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-white/5 text-zinc-300">
-                            {paymentLabels[payment.method] || payment.method}: R$ {payment.amount.toFixed(2)}
+                            {paymentLabels[payment.method] || payment.method}: {formatCurrency(payment.amount)}
                           </span>
                         ))}
                       </div>
                     </td>
-                    <td className="p-8 text-right font-black text-emerald-400">R$ {bill.total.toFixed(2)}</td>
+                    <td className="p-8 text-right font-black text-emerald-400">{formatCurrency(bill.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -3504,19 +3663,19 @@ export function AdminView() {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="rounded-2xl bg-white/[0.04] border border-white/5 p-4">
                     <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Produtos</p>
-                    <p className="text-xl font-black text-white mt-2">R$ {selectedClosedBill.subtotal.toFixed(2)}</p>
+                    <p className="text-xl font-black text-white mt-2">{formatCurrency(selectedClosedBill.subtotal)}</p>
                   </div>
                   <div className="rounded-2xl bg-white/[0.04] border border-white/5 p-4">
                     <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Taxa</p>
-                    <p className="text-xl font-black text-amber-300 mt-2">R$ {selectedClosedBill.serviceFee.toFixed(2)}</p>
+                    <p className="text-xl font-black text-amber-300 mt-2">{formatCurrency(selectedClosedBill.serviceFee)}</p>
                   </div>
                   <div className="rounded-2xl bg-white/[0.04] border border-white/5 p-4">
                     <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Desconto</p>
-                    <p className="text-xl font-black text-rose-400 mt-2">R$ {selectedClosedBill.discount.toFixed(2)}</p>
+                    <p className="text-xl font-black text-rose-400 mt-2">{formatCurrency(selectedClosedBill.discount)}</p>
                   </div>
                   <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-4">
                     <p className="text-[9px] font-black uppercase tracking-widest text-emerald-300/70">Total</p>
-                    <p className="text-xl font-black text-emerald-300 mt-2">R$ {selectedClosedBill.total.toFixed(2)}</p>
+                    <p className="text-xl font-black text-emerald-300 mt-2">{formatCurrency(selectedClosedBill.total)}</p>
                   </div>
                 </div>
 
@@ -3525,7 +3684,7 @@ export function AdminView() {
                     <p className="text-[10px] font-black uppercase tracking-widest text-rose-300">Desconto / cupom</p>
                     <p className="text-sm font-bold text-zinc-200 mt-2">
                       {selectedClosedBill.couponCode ? `Cupom ${selectedClosedBill.couponCode}` : selectedClosedBill.discountReason}
-                      {selectedClosedBill.couponAmount ? ` • R$ ${selectedClosedBill.couponAmount.toFixed(2)}` : ''}
+                      {selectedClosedBill.couponAmount ? ` • ${formatCurrency(selectedClosedBill.couponAmount)}` : ''}
                       {selectedClosedBill.couponBenefit ? ` • ${selectedClosedBill.couponBenefit}` : ''}
                     </p>
                   </div>
@@ -3552,7 +3711,7 @@ export function AdminView() {
                                 <div className="flex flex-wrap gap-2 mt-3">
                                   {item.selectedModifiers.map((modifier) => (
                                     <span key={`${item.id}-${modifier.id || modifier.name}`} className="px-2 py-1 rounded-lg bg-primary/10 text-primary text-[10px] font-black uppercase">
-                                      + {modifier.name} R$ {Number(modifier.price || 0).toFixed(2)}
+                                      + {modifier.name} {formatCurrency(Number(modifier.price || 0))}
                                     </span>
                                   ))}
                                 </div>
@@ -3561,8 +3720,8 @@ export function AdminView() {
                             </div>
                             <div className="text-left sm:text-right shrink-0">
                               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Unitário</p>
-                              <p className="font-black text-zinc-300">R$ {Number(item.price || 0).toFixed(2)}</p>
-                              <p className="font-black text-emerald-300 mt-1">R$ {lineTotal.toFixed(2)}</p>
+                              <p className="font-black text-zinc-300">{formatCurrency(Number(item.price || 0))}</p>
+                              <p className="font-black text-emerald-300 mt-1">{formatCurrency(lineTotal)}</p>
                             </div>
                           </div>
                         );
@@ -3582,7 +3741,7 @@ export function AdminView() {
                   <div className="p-5 flex flex-wrap gap-3">
                     {(selectedClosedBill.payments || []).map((payment, idx) => (
                       <span key={`${selectedClosedBill.id}-payment-${idx}`} className="px-4 py-2 rounded-full bg-white/5 text-zinc-200 text-[11px] font-black uppercase">
-                        {paymentLabels[payment.method] || payment.method}: R$ {payment.amount.toFixed(2)}
+                        {paymentLabels[payment.method] || payment.method}: {formatCurrency(payment.amount)}
                       </span>
                     ))}
                   </div>
