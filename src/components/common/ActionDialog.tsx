@@ -6,7 +6,7 @@ import { AlertTriangle, CheckCircle2, X } from 'lucide-react';
 
 type ActionDialogProps = {
   isOpen: boolean;
-  title: string;
+  title?: string;
   description?: string;
   confirmLabel?: string;
   cancelLabel?: string;
@@ -47,6 +47,7 @@ export function ActionDialog({
   if (!isOpen) return null;
 
   const isDanger = tone === 'danger';
+  const hasHeader = Boolean(title || description);
 
   const handleConfirm = async () => {
     setIsSubmitting(true);
@@ -72,16 +73,22 @@ export function ActionDialog({
         exit={{ scale: 0.94, y: 16 }}
         className="relative z-10 w-full max-w-lg glass-card border-white/10 p-10 shadow-2xl"
       >
-        <div className="flex items-start justify-between gap-6 mb-8">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDanger ? 'bg-rose-500/10 text-rose-400' : 'bg-primary/10 text-primary'}`}>
-            {isDanger ? <AlertTriangle size={28} /> : <CheckCircle2 size={28} />}
+        {hasHeader ? (
+          <div className="flex items-start justify-between gap-6 mb-8">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDanger ? 'bg-rose-500/10 text-rose-400' : 'bg-primary/10 text-primary'}`}>
+              {isDanger ? <AlertTriangle size={28} /> : <CheckCircle2 size={28} />}
+            </div>
+            <button onClick={onClose} className="p-3 glass rounded-xl hover:text-rose-400 transition-all">
+              <X size={18} />
+            </button>
           </div>
-          <button onClick={onClose} className="p-3 glass rounded-xl hover:text-rose-400 transition-all">
+        ) : (
+          <button onClick={onClose} className="absolute right-5 top-5 p-3 glass rounded-xl hover:text-rose-400 transition-all">
             <X size={18} />
           </button>
-        </div>
+        )}
 
-        <h3 className="text-3xl font-black italic tracking-tighter mb-3">{title}</h3>
+        {title && <h3 className="text-3xl font-black italic tracking-tighter mb-3">{title}</h3>}
         {description && <p className="text-sm font-bold text-zinc-400 leading-relaxed mb-8">{description}</p>}
 
         {children && <div className="mb-8">{children}</div>}

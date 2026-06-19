@@ -666,6 +666,10 @@ export const AdminApi = {
     return postJson<{ saved: boolean }>('/api/settings', { settings });
   },
 
+  setQrMode(qrMode: 'mesa' | 'comanda', authorizationPin?: string) {
+    return postJson<{ saved: boolean; settings: unknown }>('/api/settings/qr-mode', { qrMode, authorizationPin });
+  },
+
   addSeller(seller: unknown) {
     return postJson<{ saved: boolean }>('/api/sellers', { seller });
   },

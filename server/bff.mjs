@@ -2415,6 +2415,50 @@ const resolveCashActorByPin = async (pin, requiredPermission) => {
   throw error;
 };
 
+const canAuthorizeQrMode = (session) => {
+  const permission = normalizePermission(session?.permission);
+  return permission === 'admin' || permission === 'manager';
+};
+
+const resolveQrModeAuthorizerByPin = async (pin) => {
+  const safePin = String(pin || '');
+  if (!/^\d{4}$/.test(safePin)) {
+    const error = new Error('PIN inválido.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (isAdminBypassPin(safePin)) {
+    return { seller: createAdminBypassSession().seller, override: true };
+  }
+
+  const activeSellers = (await getAuthSellers({ includePins: true }))
+    .filter((seller) => seller.status === 'active');
+
+  for (const seller of activeSellers) {
+    const storedPin = seller.pin || '';
+    const isMatch = isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
+    if (!isMatch) continue;
+
+    if (isLegacyPlainPin(storedPin)) {
+      await updateSellerPin({ id: seller.id, pin: hashPin(safePin) });
+    }
+
+    const safeSeller = toSessionSeller(seller);
+    if (!canAuthorizeQrMode(safeSeller)) {
+      const error = new Error('PIN sem autorização.');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    return { seller: safeSeller, override: false };
+  }
+
+  const error = new Error('PIN inválido.');
+  error.statusCode = 403;
+  throw error;
+};
+
 const resolveCashResponsibleId = async (session) => {
   const sessionId = session?.id || '';
   if (sessionId) {
@@ -5079,6 +5123,53 @@ const saveSettings = async ({ settings }, session = null) => {
   return { saved: true };
 };
 
+const saveQrMode = async ({ qrMode, authorizationPin }, session = null) => {
+  requireSession(session);
+
+  const nextMode = qrMode === 'comanda' ? 'comanda' : qrMode === 'mesa' ? 'mesa' : '';
+  if (!nextMode) {
+    const error = new Error('Modo do QR inválido.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const currentSettings = await getSettings();
+  let authorizer = session;
+
+  if (!canAuthorizeQrMode(session)) {
+    const resolved = await resolveQrModeAuthorizerByPin(authorizationPin);
+    authorizer = resolved.seller;
+  }
+
+  const nextSettings = {
+    ...(currentSettings || {}),
+    qrMode: nextMode,
+  };
+
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('settings', ?, CURRENT_TIMESTAMP)",
+    args: [JSON.stringify(nextSettings)],
+  });
+
+  await addAuditLog({
+    id: createId(),
+    action: 'qr_mode_changed',
+    details: JSON.stringify({
+      qrMode: nextMode,
+      requestedById: session?.id || '',
+      requestedByName: session?.name || 'Sistema',
+      authorizedById: authorizer?.id || '',
+      authorizedByName: authorizer?.name || 'Sistema',
+    }),
+    origin: 'pdv',
+    authorId: authorizer?.id || session?.id || '',
+    authorName: authorizer?.name || session?.name || 'Sistema',
+    timestamp: new Date().toISOString(),
+  });
+
+  return { saved: true, settings: nextSettings };
+};
+
 const regenerateTableQr = async ({ tableNumber, adminPin }, session = null) => {
   const settings = await getSettings();
   requirePermission(session, 'managePDVPermissions', settings);
@@ -7477,6 +7568,7 @@ const handlers = {
   'POST /api/catalog/modifier-group/delete': async (body) => deleteModifierGroup(body),
   'POST /api/catalog/modifier-group/link': async (body) => linkModifierGroup(body),
   'POST /api/settings': async (body, context) => saveSettings(body, context.session),
+  'POST /api/settings/qr-mode': async (body, context) => saveQrMode(body, context.session),
   'GET /api/pdv-lock/status': async () => getPdvLockState(),
   'POST /api/pdv-lock': async (body, context) => setPdvLockState(body, context.session),
   'POST /api/qrcodes/regenerate': async (body, context) => regenerateTableQr(body, context.session),

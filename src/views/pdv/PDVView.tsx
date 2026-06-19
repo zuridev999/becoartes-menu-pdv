@@ -19,7 +19,7 @@ import { ProductModal } from '../../components/modals/ProductModal';
 import { PdvTicker } from '../../components/pdv/PdvTicker';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
-import { AppApi, CustomerTabApi, type PdvLockState } from '../../lib/api';
+import { AdminApi, AppApi, CustomerTabApi, type PdvLockState } from '../../lib/api';
 
 const CANCEL_REASONS = [
   { code: 'cliente_desistiu', label: 'Cliente desistiu' },
@@ -53,7 +53,6 @@ export function PDVView() {
     updateTableStatus,
     cashState,
     settings,
-    updateSettings,
     openCash,
     closeCash,
     addNotification
@@ -90,6 +89,7 @@ export function PDVView() {
   const [isEmbedded, setIsEmbedded] = useState(false);
   const [pdvLockState, setPdvLockState] = useState<PdvLockState | null>(null);
   const [isSwitchingQrMode, setIsSwitchingQrMode] = useState(false);
+  const [showQrModePinDialog, setShowQrModePinDialog] = useState(false);
   const [customerTabSearch, setCustomerTabSearch] = useState('');
   const [customerTabResults, setCustomerTabResults] = useState<CustomerTab[]>([]);
   const [isCustomerTabSearching, setIsCustomerTabSearching] = useState(false);
@@ -308,7 +308,13 @@ export function PDVView() {
   const canViewZeroStockProducts = can(currentSeller, 'viewZeroStockProducts', permissionOverrides, userPermissionOverrides);
   const canAddItems = canAddOrderItem && canSendOrderToProduction;
   const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides, userPermissionOverrides);
-  const canManageQrMode = can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides);
+  const currentSellerPermission = currentSeller?.permission === 'admin'
+    ? 'admin'
+    : currentSeller?.permission === 'manager' || currentSeller?.permission === 'standard'
+      ? 'manager'
+      : 'operator';
+  const canSwitchQrModeDirectly = currentSellerPermission === 'admin' || currentSellerPermission === 'manager';
+  const canUseQrModeSwitch = Boolean(currentSeller);
   const canInspectCustomerTabs = canViewSalesTotals;
   const isAdminProfile = currentSeller.permission === 'admin';
   const isComandaMode = settings.qrMode === 'comanda';
@@ -335,18 +341,33 @@ export function PDVView() {
 
   const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-  const switchQrMode = async () => {
-    if (!canManageQrMode || isSwitchingQrMode) return;
+  const submitQrModeSwitch = async (authorizationPin?: string) => {
+    if (isSwitchingQrMode) return;
     setIsSwitchingQrMode(true);
     const nextMode = isComandaMode ? 'mesa' : 'comanda';
     try {
-      await updateSettings({ qrMode: nextMode });
+      await AdminApi.setQrMode(nextMode, authorizationPin);
       addNotification(nextMode === 'comanda' ? 'Modo comanda ativado no QR.' : 'Modo mesa ativado no QR.', 'info');
+      setShowQrModePinDialog(false);
       await syncData({ includeCatalog: false });
-    } catch {
-      addNotification('Não foi possível alterar o modo do QR.', 'error');
+    } catch (error) {
+      addNotification(error instanceof Error ? error.message : 'Não foi possível alterar o modo do QR.', 'error');
+      throw error;
     } finally {
       setIsSwitchingQrMode(false);
+    }
+  };
+
+  const switchQrMode = async () => {
+    if (!canUseQrModeSwitch || isSwitchingQrMode) return;
+    if (!canSwitchQrModeDirectly) {
+      setShowQrModePinDialog(true);
+      return;
+    }
+    try {
+      await submitQrModeSwitch();
+    } catch {
+      // A notificação já foi exibida em submitQrModeSwitch.
     }
   };
 
@@ -516,9 +537,9 @@ export function PDVView() {
           </div>
           <button
             onClick={switchQrMode}
-            disabled={!canManageQrMode || isSwitchingQrMode}
+            disabled={!canUseQrModeSwitch || isSwitchingQrMode}
             className={`glass-card px-6 py-4 flex items-center gap-3 transition-all border-white/5 ${
-              canManageQrMode
+              canUseQrModeSwitch
                 ? (isComandaMode ? 'bg-amber-400/10 text-amber-300 hover:bg-amber-400/20' : 'hover:bg-primary/10 hover:text-primary')
                 : 'opacity-40 cursor-not-allowed text-zinc-600'
             }`}
@@ -1389,6 +1410,27 @@ export function PDVView() {
               </button>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showQrModePinDialog && (
+          <ActionDialog
+            isOpen
+            title=""
+            confirmLabel="Confirmar"
+            input={{
+              label: 'PIN',
+              placeholder: '****',
+              type: 'password',
+              inputMode: 'numeric',
+            }}
+            confirmDisabled={isSwitchingQrMode}
+            onClose={() => setShowQrModePinDialog(false)}
+            onConfirm={async (value) => {
+              await submitQrModeSwitch(value);
+            }}
+          />
         )}
       </AnimatePresence>
 
