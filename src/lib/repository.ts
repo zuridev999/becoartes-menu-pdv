@@ -125,9 +125,10 @@ export const Repository = {
   // --- MENU ---
   async getMenu() {
     const res = await db.execute(`
-      SELECT m.*, c.name as category_name 
+      SELECT m.*, c.name as category_name, c.sort_order as category_sort_order
       FROM menu m 
       LEFT JOIN categories c ON m.category_id = c.id
+      ORDER BY COALESCE(c.sort_order, 0) ASC, COALESCE(m.sort_order, 0) ASC, m.rowid ASC
     `);
     return res.rows.map(row => ({
       id: row.id as string,
@@ -138,6 +139,7 @@ export const Repository = {
       categoryName: row.category_name as string,
       image: row.image as string,
       visible: row.visible === 1,
+      sortOrder: Number(row.sort_order || 0),
       schedule: row.schedule_config ? JSON.parse(row.schedule_config as string) : undefined,
       erpCode: row.erp_code as string,
       remoteStockId: row.remote_stock_id as string,
@@ -148,13 +150,14 @@ export const Repository = {
 
   async upsertProduct(p: any) {
     await db.execute({
-      sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category, category_id, image, visible, erp_code, remote_stock_id, schedule_config, cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category, category_id, image, visible, erp_code, remote_stock_id, schedule_config, cost, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       args: [
         p.id, p.name, p.description || '', p.price, 
         p.categoryId, p.categoryId, p.image, p.visible ? 1 : 0, 
         p.erpCode || null, p.remoteStockId || null,
         p.schedule ? JSON.stringify(p.schedule) : null,
-        p.cost || 0
+        p.cost || 0,
+        Number(p.sortOrder || 0)
       ]
     });
 

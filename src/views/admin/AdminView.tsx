@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import {
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
-  ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
+  ArrowLeft, ArrowDown, ArrowUp, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
   GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy,
   QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle, Bike, LockKeyhole
 } from 'lucide-react';
@@ -467,7 +467,7 @@ export function AdminView() {
     settings, updateSettings,
     tables, sellers, addSeller, updateSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
-    adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, toggleCategoryVisibility,
+    adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, reorderProducts, toggleCategoryVisibility,
     linkGroupToCategory, linkGroupToProduct, currentSeller, closedBills, addNotification,
     productModifierMapping, categoryModifierMapping
   } = useStore();
@@ -543,6 +543,14 @@ export function AdminView() {
       const newIndex = categories.findIndex(c => c.id === over.id);
       reorderCategories(arrayMove(categories, oldIndex, newIndex));
     }
+  };
+
+  const moveProductInCategory = async (categoryId: string, productId: string, direction: -1 | 1) => {
+    const categoryProducts = menu.filter(product => product.categoryId === categoryId);
+    const currentIndex = categoryProducts.findIndex(product => product.id === productId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= categoryProducts.length) return;
+    await reorderProducts(categoryId, arrayMove(categoryProducts, currentIndex, nextIndex));
   };
 
   const refreshPdvLockState = useCallback(async () => {
@@ -1705,8 +1713,11 @@ export function AdminView() {
                 </div>
               </div>
               {canAddProduct && (
-                <button onClick={() => setEditingProduct({ id: createId(), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
+                <button onClick={() => setEditingProduct({ id: createId(), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, sortOrder: 0, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
               )}
+            </div>
+            <div className="mb-3 px-2 sm:px-4 text-[10px] font-black uppercase tracking-[0.22em] text-gray-500">
+              Ordem salva aqui aparece igual no Tablet, QR e Delivery.
             </div>
             <div className="glass rounded-[2rem] sm:rounded-[3rem] border-white/5 overflow-hidden max-h-[60vh] overflow-y-auto custom-scrollbar">
               {categories.map((cat) => {
@@ -1736,6 +1747,26 @@ export function AdminView() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 sm:gap-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
+                          {canEditProduct && (
+                            <div className="flex flex-col gap-1">
+                              <button
+                                onClick={() => moveProductInCategory(cat.id, p.id, -1)}
+                                disabled={items.findIndex(item => item.id === p.id) === 0}
+                                className="p-2 glass rounded-xl text-gray-400 disabled:opacity-20 disabled:cursor-not-allowed hover:text-primary transition-all"
+                                title="Subir produto"
+                              >
+                                <ArrowUp size={14}/>
+                              </button>
+                              <button
+                                onClick={() => moveProductInCategory(cat.id, p.id, 1)}
+                                disabled={items.findIndex(item => item.id === p.id) === items.length - 1}
+                                className="p-2 glass rounded-xl text-gray-400 disabled:opacity-20 disabled:cursor-not-allowed hover:text-primary transition-all"
+                                title="Descer produto"
+                              >
+                                <ArrowDown size={14}/>
+                              </button>
+                            </div>
+                          )}
                           {canToggleVisibility && (
                             <button
                               onClick={() => toggleProductVisibility(p.id)}
@@ -1791,6 +1822,7 @@ export function AdminView() {
                               visible: false,
                               erpCode: '',
                               remoteStockId: '',
+                              sortOrder: Math.max(-1, ...menu.filter(product => product.categoryId === editingProduct.categoryId).map(product => Number(product.sortOrder ?? 0))) + 1,
                             };
 
                             await addProduct(duplicatedProduct);
@@ -1966,6 +1998,7 @@ export function AdminView() {
                           image: editingProduct.image || "",
                           erpCode: editingProduct.erpCode || "",
                           remoteStockId: editingProduct.remoteStockId || "",
+                          sortOrder: Number(editingProduct.sortOrder ?? 0),
                         };
                         if (!canEditProductFields) {
                           delete cleanProduct.modifierGroups;

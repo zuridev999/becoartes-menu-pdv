@@ -7,9 +7,10 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag
+  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag, ShieldCheck, Search
 } from 'lucide-react';
 import { useStore, type OrderItem, type Product, type Table as TableType } from '../../store';
+import type { CustomerTab } from '../../types';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
 import { CounterSaleModal } from '../../components/modals/CounterSaleModal';
 import { ActionDialog } from '../../components/common/ActionDialog';
@@ -17,7 +18,7 @@ import { ProductModal } from '../../components/modals/ProductModal';
 import { PdvTicker } from '../../components/pdv/PdvTicker';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
-import { AppApi, type PdvLockState } from '../../lib/api';
+import { AppApi, CustomerTabApi, type PdvLockState } from '../../lib/api';
 
 const CANCEL_REASONS = [
   { code: 'cliente_desistiu', label: 'Cliente desistiu' },
@@ -49,6 +50,7 @@ export function PDVView() {
     updateTableStatus,
     cashState,
     settings,
+    updateSettings,
     openCash,
     closeCash,
     addNotification
@@ -84,6 +86,11 @@ export function PDVView() {
   const [isCashSubmitting, setIsCashSubmitting] = useState(false);
   const [isEmbedded, setIsEmbedded] = useState(false);
   const [pdvLockState, setPdvLockState] = useState<PdvLockState | null>(null);
+  const [isSwitchingQrMode, setIsSwitchingQrMode] = useState(false);
+  const [customerTabSearch, setCustomerTabSearch] = useState('');
+  const [customerTabResults, setCustomerTabResults] = useState<CustomerTab[]>([]);
+  const [isCustomerTabSearching, setIsCustomerTabSearching] = useState(false);
+  const [isFinalizingCustomerTab, setIsFinalizingCustomerTab] = useState<string | null>(null);
 
   // Filtra solicitações das últimas 2 horas para manter a tela limpa
   const now = new Date();
@@ -298,13 +305,18 @@ export function PDVView() {
   const canViewZeroStockProducts = can(currentSeller, 'viewZeroStockProducts', permissionOverrides, userPermissionOverrides);
   const canAddItems = canAddOrderItem && canSendOrderToProduction;
   const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides, userPermissionOverrides);
+  const canManageQrMode = can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides);
+  const canInspectCustomerTabs = canViewSalesTotals;
   const isAdminProfile = currentSeller.permission === 'admin';
+  const isComandaMode = settings.qrMode === 'comanda';
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
   const canAccessTable = (table: TableType) => (
     canViewOtherOperatorTables || !table.currentSellerId || table.currentSellerId === currentSeller.id
   );
-  const visibleTables = tables.filter(canAccessTable);
-  const activeTablesCount = visibleTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested').length;
+  const visibleTables = tables
+    .filter(table => (isComandaMode ? table.number <= 200 : table.number <= 50))
+    .filter(canAccessTable);
+  const activeTablesCount = visibleTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested' || t.customerTab).length;
 
   const parseMoneyValue = (value: string) => {
     const digits = value.replace(/\D/g, '');
@@ -319,6 +331,49 @@ export function PDVView() {
   };
 
   const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  const switchQrMode = async () => {
+    if (!canManageQrMode || isSwitchingQrMode) return;
+    setIsSwitchingQrMode(true);
+    const nextMode = isComandaMode ? 'mesa' : 'comanda';
+    try {
+      await updateSettings({ qrMode: nextMode });
+      addNotification(nextMode === 'comanda' ? 'Modo comanda ativado no QR.' : 'Modo mesa ativado no QR.', 'info');
+      await syncData({ includeCatalog: false });
+    } catch {
+      addNotification('Não foi possível alterar o modo do QR.', 'error');
+    } finally {
+      setIsSwitchingQrMode(false);
+    }
+  };
+
+  const runCustomerTabSearch = async (query = customerTabSearch) => {
+    if (!canInspectCustomerTabs) return;
+    setIsCustomerTabSearching(true);
+    try {
+      const result = await CustomerTabApi.lookup(query);
+      setCustomerTabResults(result.tabs);
+    } catch (error) {
+      addNotification(error instanceof Error ? error.message : 'Falha ao buscar comandas.', 'error');
+    } finally {
+      setIsCustomerTabSearching(false);
+    }
+  };
+
+  const finalizeCustomerTab = async (tab: CustomerTab) => {
+    if (!canCloseBill) return;
+    setIsFinalizingCustomerTab(tab.id);
+    try {
+      await CustomerTabApi.finalize(tab.id);
+      addNotification(`Comanda ${tab.tableNumber} finalizada.`, 'info');
+      await runCustomerTabSearch(customerTabSearch);
+      await syncData({ includeCatalog: false });
+    } catch (error) {
+      addNotification(error instanceof Error ? error.message : 'Falha ao finalizar comanda.', 'error');
+    } finally {
+      setIsFinalizingCustomerTab(null);
+    }
+  };
 
   const submitCashDialog = async () => {
     const value = parseMoneyValue(cashValue);
@@ -361,6 +416,8 @@ export function PDVView() {
   };
 
   const getStatusColor = (table: TableType) => {
+    if (table.customerTab?.status === 'paid') return 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300';
+    if (table.customerTab?.status === 'open') return 'bg-amber-500/20 border-amber-400/40 text-amber-300';
     switch (table.status) {
       case 'available': return 'bg-zinc-800/50 border-zinc-700/50 text-zinc-500';
       case 'bill_requested': return 'bg-rose-600/20 border-rose-500/40 text-rose-400';
@@ -454,6 +511,26 @@ export function PDVView() {
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Mesas Ativas</span>
             <span className="text-2xl font-black text-purple-400">{activeTablesCount}</span>
           </div>
+          <button
+            onClick={switchQrMode}
+            disabled={!canManageQrMode || isSwitchingQrMode}
+            className={`glass-card px-6 py-4 flex items-center gap-3 transition-all border-white/5 ${
+              canManageQrMode
+                ? (isComandaMode ? 'bg-amber-400/10 text-amber-300 hover:bg-amber-400/20' : 'hover:bg-primary/10 hover:text-primary')
+                : 'opacity-40 cursor-not-allowed text-zinc-600'
+            }`}
+            title="Alternar modo do QR"
+          >
+            <ShieldCheck size={22} />
+            <div className="text-left">
+              <span className="block text-[10px] font-black uppercase tracking-[0.18em]">
+                {isSwitchingQrMode ? 'Salvando...' : isComandaMode ? 'Modo Comanda' : 'Modo Mesa'}
+              </span>
+              <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-white/35">
+                QR {isComandaMode ? '200 comandas' : '50 mesas'}
+              </span>
+            </div>
+          </button>
           <button
             onClick={() => setShowCounterSale(true)}
             disabled={!isCashOpen || !canAddOrderItem || !canLaunchPayment || !canCloseBill}
@@ -589,7 +666,7 @@ export function PDVView() {
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
             {visibleTables
-              .filter(t => !showOnlyActive || t.status !== 'available')
+              .filter(t => !showOnlyActive || t.status !== 'available' || t.customerTab)
               .map((table) => (
               <motion.button
                 key={table.id}
@@ -614,6 +691,11 @@ export function PDVView() {
                       <span className="text-base sm:text-lg font-black italic tracking-tighter">
                         R$ {getOrderItemsTotal(table.orders).toFixed(2)}
                       </span>
+                      {table.customerTab && (
+                        <span className="mt-1 max-w-full truncate text-[9px] font-black uppercase tracking-widest text-white/55">
+                          {table.customerTab.customerName}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -626,6 +708,83 @@ export function PDVView() {
 
         {/* RIGHT: LANÇAMENTOS & ACTIVITY */}
         <div className="xl:col-span-4 glass-card border-white/5 flex flex-col overflow-hidden min-h-[360px] xl:min-h-0">
+          {isComandaMode && canInspectCustomerTabs && (
+            <div className="border-b border-white/5 bg-amber-400/[0.03] p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-300">Saída</p>
+                  <h3 className="text-xl font-black italic tracking-tight">Conferir comanda</h3>
+                </div>
+                <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-amber-200">
+                  CPF chave
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <div className="flex flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4">
+                  <Search size={16} className="text-amber-300" />
+                  <input
+                    value={customerTabSearch}
+                    onChange={(event) => setCustomerTabSearch(event.target.value)}
+                    onKeyDown={(event) => event.key === 'Enter' && runCustomerTabSearch()}
+                    className="w-full bg-transparent py-4 text-sm font-black outline-none placeholder:text-zinc-600"
+                    placeholder="CPF, nome ou telefone"
+                  />
+                </div>
+                <button
+                  onClick={() => runCustomerTabSearch()}
+                  disabled={isCustomerTabSearching}
+                  className="rounded-2xl bg-amber-300 px-4 text-[10px] font-black uppercase tracking-widest text-black disabled:opacity-50"
+                >
+                  {isCustomerTabSearching ? '...' : 'Buscar'}
+                </button>
+              </div>
+              <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1 custom-scrollbar">
+                {customerTabResults.map((result) => {
+                  const balance = result.totals?.balance || 0;
+                  const isPaid = result.status === 'paid' || balance <= 0.009;
+                  return (
+                    <div key={result.id} className={`rounded-3xl border p-4 ${isPaid ? 'border-emerald-400/20 bg-emerald-400/10' : 'border-rose-400/20 bg-rose-400/10'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-base font-black">{result.customerName}</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-white/45">
+                            Comanda {result.tableNumber} • {result.cpfMasked}
+                          </p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-white/35">
+                            Celular {result.phone || 'não informado'}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest ${isPaid ? 'bg-emerald-400 text-black' : 'bg-rose-500 text-white'}`}>
+                          {isPaid ? 'Liberado' : 'Pendente'}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-2xl bg-black/20 p-3">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Consumo</p>
+                          <p className="text-sm font-black">{formatCurrency(result.totals?.orders || 0)}</p>
+                        </div>
+                        <div className="rounded-2xl bg-black/20 p-3">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Pago</p>
+                          <p className="text-sm font-black">{formatCurrency(result.totals?.payments || 0)}</p>
+                        </div>
+                        <div className="rounded-2xl bg-black/20 p-3">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Saldo</p>
+                          <p className={`text-sm font-black ${balance > 0 ? 'text-rose-300' : 'text-emerald-300'}`}>{formatCurrency(balance)}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => finalizeCustomerTab(result)}
+                        disabled={!canCloseBill || !isPaid || isFinalizingCustomerTab === result.id}
+                        className="mt-3 w-full rounded-2xl border border-white/10 bg-white/[0.06] py-3 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-40"
+                      >
+                        {isFinalizingCustomerTab === result.id ? 'Finalizando...' : isPaid ? 'Finalizar e desvincular CPF' : 'Precisa pagar antes'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {/* SOLICITAÇÕES DE SERVIÇO */}
           {visibleRequests.length > 0 && (
             <div className="flex-1 flex flex-col min-h-0 border-b border-white/5 relative z-10">

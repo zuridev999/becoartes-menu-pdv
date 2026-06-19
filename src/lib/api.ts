@@ -1,4 +1,4 @@
-import type { Category, ClosedBill, CounterSaleInput, Coupon, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
+import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
 
@@ -164,6 +164,50 @@ const hydrateServiceRequest = (request: UpdateOrderStatusResult['request']) => {
     ...request,
     createdAt: new Date(request.createdAt),
   } as ServiceRequest;
+};
+
+const hydrateCustomerTab = (tab: CustomerTab) => ({
+  ...tab,
+  openedAt: tab.openedAt ? new Date(tab.openedAt) : tab.openedAt,
+  paidAt: tab.paidAt ? new Date(tab.paidAt) : tab.paidAt,
+  closedAt: tab.closedAt ? new Date(tab.closedAt) : tab.closedAt,
+});
+
+export const CustomerTabApi = {
+  open(input: { customerName: string; phone: string; cpf: string }) {
+    return postJson<{ tab: CustomerTab }>('/api/customer-tabs/open', { ...input, origin: 'qr' })
+      .then(result => ({ tab: hydrateCustomerTab(result.tab) }));
+  },
+
+  recover(cpf: string) {
+    return postJson<{ tab: CustomerTab }>('/api/customer-tabs/recover', { cpf, origin: 'qr' })
+      .then(result => ({ tab: hydrateCustomerTab(result.tab) }));
+  },
+
+  lookup(query: string) {
+    const q = encodeURIComponent(query);
+    return getJson<{ tabs: CustomerTab[] }>(`/api/customer-tabs/lookup?q=${q}`)
+      .then(result => ({ tabs: result.tabs.map(hydrateCustomerTab) }));
+  },
+
+  finalize(tabId: string) {
+    return postJson<{ tab: CustomerTab }>('/api/customer-tabs/finalize', { tabId })
+      .then(result => ({ tab: hydrateCustomerTab(result.tab) }));
+  },
+
+  createPaymentLink(input: {
+    tabId: string;
+    method: 'pix' | 'credit' | 'debit';
+    returnUrl?: string;
+  }) {
+    return postJson<{
+      checkoutUrl: string | null;
+      externalId: string | null;
+      status: string;
+      amount: number;
+      provider: string;
+    }>('/api/customer-tabs/payment-link', input);
+  },
 };
 
 export const OperationalApi = {
@@ -535,6 +579,7 @@ const hydrateSnapshot = (snapshot: any) => ({
   })),
   tables: (snapshot.tables || []).map((table: any) => ({
     ...table,
+    customerTab: table.customerTab ? hydrateCustomerTab(table.customerTab) : null,
     payments: (table.payments || []).map((payment: any) => ({
       ...payment,
       createdAt: payment.createdAt ? new Date(payment.createdAt) : new Date(),

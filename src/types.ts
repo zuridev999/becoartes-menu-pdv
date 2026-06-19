@@ -48,6 +48,7 @@ export interface Product {
   categoryName?: string; // Para compatibilidade e facilidade
   image: string;
   visible: boolean;
+  sortOrder: number;
   schedule?: ScheduleConfig;
   modifierGroups: ModifierGroup[];
   erpCode?: string;
@@ -80,9 +81,29 @@ export interface Table {
   orders: OrderItem[];
   cart: OrderItem[];
   payments?: TablePayment[];
+  customerTab?: CustomerTab | null;
   capacity?: number;
   lastActivity?: Date;
   currentSellerId?: string;
+}
+
+export interface CustomerTab {
+  id: string;
+  customerName: string;
+  phone: string;
+  cpfMasked: string;
+  cpfLast4: string;
+  tableId: string;
+  tableNumber: number;
+  status: 'open' | 'paid' | 'closed' | 'cancelled';
+  openedAt?: Date | string;
+  paidAt?: Date | string | null;
+  closedAt?: Date | string | null;
+  totals?: {
+    orders: number;
+    payments: number;
+    balance: number;
+  };
 }
 
 export interface KitchenOrder {
@@ -206,6 +227,7 @@ export interface AppSettings {
   unitName: string;
   currency: string;
   serviceTax: number;
+  qrMode?: 'mesa' | 'comanda';
   pdv?: {
     tickerEnabled?: boolean;
     tickerText?: string;

@@ -19,7 +19,7 @@ export const initDB = async () => {
       // Categorias
       "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, schedule_config TEXT, sort_order INTEGER DEFAULT 0, visible INTEGER DEFAULT 1)",
       // Menu
-      "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0, FOREIGN KEY (category_id) REFERENCES categories(id))",
+      "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0, sort_order INTEGER DEFAULT 0, FOREIGN KEY (category_id) REFERENCES categories(id))",
       // Opcionais
       "CREATE TABLE IF NOT EXISTS modifier_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, min_choices INTEGER DEFAULT 0, max_choices INTEGER DEFAULT 1, is_required INTEGER DEFAULT 0, status TEXT DEFAULT 'active')",
       "CREATE TABLE IF NOT EXISTS modifiers (id TEXT PRIMARY KEY, group_id TEXT, name TEXT NOT NULL, price REAL NOT NULL, status TEXT DEFAULT 'active', sort_order INTEGER DEFAULT 0, FOREIGN KEY(group_id) REFERENCES modifier_groups(id))",
@@ -45,6 +45,7 @@ export const initDB = async () => {
       "ALTER TABLE menu ADD COLUMN category_id TEXT",
       "ALTER TABLE menu ADD COLUMN schedule_config TEXT",
       "ALTER TABLE menu ADD COLUMN cost REAL DEFAULT 0",
+      "ALTER TABLE menu ADD COLUMN sort_order INTEGER DEFAULT 0",
       "ALTER TABLE categories ADD COLUMN visible INTEGER DEFAULT 1",
       "ALTER TABLE categories ADD COLUMN schedule_config TEXT",
       "ALTER TABLE sellers ADD COLUMN permission TEXT DEFAULT 'standard'",
@@ -105,6 +106,7 @@ export const initDB = async () => {
       "CREATE INDEX IF NOT EXISTS idx_pdv_coupons_status_valid_until ON pdv_coupons(status, valid_until)",
       "CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)",
       "CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id)",
+      "CREATE INDEX IF NOT EXISTS idx_menu_category_sort ON menu(category_id, sort_order)",
       "CREATE INDEX IF NOT EXISTS idx_stock_empresa_nome ON estoque_produtos(empresa_id, ativo, nome)",
       "CREATE INDEX IF NOT EXISTS idx_stock_mov_empresa_created ON estoque_movimentacoes(empresa_id, created_at)",
       "CREATE INDEX IF NOT EXISTS idx_notif_empresa_created ON notificacoes(empresa_id, created_at)",

@@ -569,12 +569,13 @@ const getSessionFromRequest = (req) => {
 const ensureDatabase = async () => {
   await db.batch([
     "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, schedule_config TEXT, sort_order INTEGER DEFAULT 0, visible INTEGER DEFAULT 1)",
-    "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0, sort_order INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS modifier_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, min_choices INTEGER DEFAULT 0, max_choices INTEGER DEFAULT 1, is_required INTEGER DEFAULT 0, status TEXT DEFAULT 'active')",
     "CREATE TABLE IF NOT EXISTS modifiers (id TEXT PRIMARY KEY, group_id TEXT, name TEXT NOT NULL, price REAL NOT NULL, status TEXT DEFAULT 'active', sort_order INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS product_modifier_groups (product_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(product_id, group_id))",
     "CREATE TABLE IF NOT EXISTS category_modifier_groups (category_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(category_id, group_id))",
     "CREATE TABLE IF NOT EXISTS tables (id TEXT PRIMARY KEY, number TEXT NOT NULL, status TEXT NOT NULL, last_activity DATETIME DEFAULT CURRENT_TIMESTAMP, current_seller_id TEXT)",
+    "CREATE TABLE IF NOT EXISTS customer_tabs (id TEXT PRIMARY KEY, cpf TEXT NOT NULL, cpf_hash TEXT, cpf_last4 TEXT, customer_name TEXT NOT NULL, phone TEXT NOT NULL, table_id TEXT NOT NULL, table_number INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'open', opened_at DATETIME DEFAULT CURRENT_TIMESTAMP, paid_at DATETIME, closed_at DATETIME, closed_by_id TEXT, closed_by_name TEXT)",
     "CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, table_id TEXT, total REAL NOT NULL, status TEXT NOT NULL, origin TEXT DEFAULT 'pdv', created_by_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, payment_method TEXT)",
     "CREATE TABLE IF NOT EXISTS order_items (id TEXT PRIMARY KEY, order_id TEXT, product_id TEXT, quantity INTEGER NOT NULL, price_at_time REAL NOT NULL, selected_modifiers TEXT, notes TEXT)",
     "CREATE TABLE IF NOT EXISTS production_tickets (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, station TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -606,6 +607,7 @@ const ensureDatabase = async () => {
     "ALTER TABLE menu ADD COLUMN category_id TEXT",
     "ALTER TABLE menu ADD COLUMN schedule_config TEXT",
     "ALTER TABLE menu ADD COLUMN cost REAL DEFAULT 0",
+    "ALTER TABLE menu ADD COLUMN sort_order INTEGER DEFAULT 0",
     "ALTER TABLE categories ADD COLUMN visible INTEGER DEFAULT 1",
     "ALTER TABLE categories ADD COLUMN schedule_config TEXT",
     "ALTER TABLE sellers ADD COLUMN permission TEXT DEFAULT 'standard'",
@@ -620,6 +622,12 @@ const ensureDatabase = async () => {
     "ALTER TABLE category_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
     "ALTER TABLE service_requests ADD COLUMN message TEXT",
     "ALTER TABLE tables ADD COLUMN current_seller_id TEXT",
+    "ALTER TABLE customer_tabs ADD COLUMN cpf_hash TEXT",
+    "ALTER TABLE customer_tabs ADD COLUMN cpf_last4 TEXT",
+    "ALTER TABLE customer_tabs ADD COLUMN paid_at DATETIME",
+    "ALTER TABLE customer_tabs ADD COLUMN closed_at DATETIME",
+    "ALTER TABLE customer_tabs ADD COLUMN closed_by_id TEXT",
+    "ALTER TABLE customer_tabs ADD COLUMN closed_by_name TEXT",
     "ALTER TABLE closed_bills ADD COLUMN table_id TEXT",
     "ALTER TABLE closed_bills ADD COLUMN coupon_code TEXT",
     "ALTER TABLE closed_bills ADD COLUMN coupon_amount REAL DEFAULT 0",
@@ -691,6 +699,7 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_production_tickets_order ON production_tickets(order_id, station, status)",
     "CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)",
     "CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id)",
+    "CREATE INDEX IF NOT EXISTS idx_menu_category_sort ON menu(category_id, sort_order)",
     "CREATE INDEX IF NOT EXISTS idx_stock_empresa_nome ON estoque_produtos(empresa_id, ativo, nome)",
     "CREATE INDEX IF NOT EXISTS idx_stock_mov_empresa_created ON estoque_movimentacoes(empresa_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_notif_empresa_created ON notificacoes(empresa_id, created_at)",
@@ -705,6 +714,11 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_service_requests_status_created ON service_requests(status, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_closed_bills_closed_at ON closed_bills(closed_at)",
     "CREATE INDEX IF NOT EXISTS idx_table_payments_table_status ON table_payments(table_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_customer_tabs_status_cpf ON customer_tabs(status, cpf)",
+    "CREATE INDEX IF NOT EXISTS idx_customer_tabs_table_status ON customer_tabs(table_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_customer_tabs_lookup ON customer_tabs(cpf, phone, customer_name)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_tabs_active_cpf_unique ON customer_tabs(cpf) WHERE status IN ('open', 'paid')",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_tabs_active_table_unique ON customer_tabs(table_id) WHERE status IN ('open', 'paid')",
     "CREATE INDEX IF NOT EXISTS idx_pdv_coupons_code_status ON pdv_coupons(code, status)",
     "CREATE INDEX IF NOT EXISTS idx_pdv_coupons_campaign_phone ON pdv_coupons(campaign_name, phone)",
     "CREATE INDEX IF NOT EXISTS idx_pdv_coupons_status_valid_until ON pdv_coupons(status, valid_until)",
@@ -939,11 +953,13 @@ const getMenu = async () => {
     SELECT
       m.*,
       c.name as category_name,
+      c.sort_order as category_sort_order,
       ep.quantidade_atual as stock_quantity,
       ep.estoque_minimo as stock_minimum
     FROM menu m
     LEFT JOIN categories c ON m.category_id = c.id
     LEFT JOIN estoque_produtos ep ON ep.id = m.remote_stock_id AND ep.ativo = 1
+    ORDER BY COALESCE(c.sort_order, 0) ASC, COALESCE(m.sort_order, 0) ASC, m.rowid ASC
   `);
   return res.rows.map((row) => ({
     id: row.id,
@@ -954,6 +970,7 @@ const getMenu = async () => {
     categoryName: row.category_name || '',
     image: row.image || '',
     visible: row.visible === 1,
+    sortOrder: Number(row.sort_order || 0),
     schedule: parseJsonObject(row.schedule_config),
     erpCode: row.erp_code || '',
     remoteStockId: row.remote_stock_id || '',
@@ -1927,23 +1944,110 @@ const getActiveOrdersByTable = async () => {
   return ordersByTable;
 };
 
-const getTables = async () => {
-  let tableRes = await db.execute("SELECT * FROM tables ORDER BY CAST(number AS INTEGER) ASC");
-  if (tableRes.rows.length < 50) {
-    const values = [];
-    const placeholders = [];
-    for (let i = tableRes.rows.length + 1; i <= 50; i++) {
-      placeholders.push('(?, ?, ?)');
-      values.push(String(i), String(i), 'available');
-    }
-    if (placeholders.length > 0) {
-      await db.execute({
-        sql: `INSERT OR IGNORE INTO tables (id, number, status) VALUES ${placeholders.join(', ')}`,
-        args: values,
-      });
-      tableRes = await db.execute("SELECT * FROM tables ORDER BY CAST(number AS INTEGER) ASC");
-    }
+const normalizeCpf = (cpf = '') => String(cpf || '').replace(/\D/g, '').slice(0, 11);
+
+const isValidCpf = (cpf = '') => {
+  const digits = normalizeCpf(cpf);
+  if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) return false;
+  const calcDigit = (base) => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) sum += Number(base[i]) * (base.length + 1 - i);
+    const remainder = (sum * 10) % 11;
+    return remainder === 10 ? 0 : remainder;
+  };
+  return calcDigit(digits.slice(0, 9)) === Number(digits[9])
+    && calcDigit(digits.slice(0, 10)) === Number(digits[10]);
+};
+
+const maskCpf = (cpf = '') => {
+  const digits = normalizeCpf(cpf);
+  if (digits.length !== 11) return 'CPF não informado';
+  return `${digits.slice(0, 3)}******${digits.slice(-2)}`;
+};
+
+const getCpfHash = (cpf = '') => createHash('sha256').update(`beco-cpf:${normalizeCpf(cpf)}`).digest('hex');
+
+const ensureTablesUpTo = async (count = 50) => {
+  const current = await db.execute("SELECT number FROM tables ORDER BY CAST(number AS INTEGER) ASC");
+  const existingNumbers = new Set(current.rows.map((row) => Number(row.number || 0)));
+  const placeholders = [];
+  const values = [];
+  for (let i = 1; i <= count; i++) {
+    if (existingNumbers.has(i)) continue;
+    placeholders.push('(?, ?, ?)');
+    values.push(String(i), String(i), 'available');
   }
+  if (placeholders.length > 0) {
+    await db.execute({
+      sql: `INSERT OR IGNORE INTO tables (id, number, status) VALUES ${placeholders.join(', ')}`,
+      args: values,
+    });
+  }
+};
+
+const getCustomerTabTotalsByTable = async (tableIds = []) => {
+  const uniqueTableIds = [...new Set(tableIds.filter(Boolean).map(String))];
+  if (!uniqueTableIds.length) return {};
+  const placeholders = uniqueTableIds.map(() => '?').join(',');
+  const [ordersRes, paymentsRes] = await Promise.all([
+    db.execute({
+      sql: `
+        SELECT table_id, COALESCE(SUM(total), 0) AS total
+        FROM orders
+        WHERE table_id IN (${placeholders}) AND status != 'closed'
+        GROUP BY table_id
+      `,
+      args: uniqueTableIds,
+    }),
+    db.execute({
+      sql: `
+        SELECT table_id, COALESCE(SUM(amount), 0) AS total
+        FROM table_payments
+        WHERE table_id IN (${placeholders}) AND status = 'active'
+        GROUP BY table_id
+      `,
+      args: uniqueTableIds,
+    }),
+  ]);
+  const totals = {};
+  uniqueTableIds.forEach((id) => { totals[id] = { orders: 0, payments: 0, balance: 0 }; });
+  ordersRes.rows.forEach((row) => {
+    const tableId = String(row.table_id || '');
+    totals[tableId] = totals[tableId] || { orders: 0, payments: 0, balance: 0 };
+    totals[tableId].orders = Number(row.total || 0);
+  });
+  paymentsRes.rows.forEach((row) => {
+    const tableId = String(row.table_id || '');
+    totals[tableId] = totals[tableId] || { orders: 0, payments: 0, balance: 0 };
+    totals[tableId].payments = Number(row.total || 0);
+  });
+  Object.values(totals).forEach((total) => {
+    total.balance = Number(Math.max(0, total.orders - total.payments).toFixed(2));
+  });
+  return totals;
+};
+
+const sanitizeCustomerTab = (row, totals = null) => {
+  if (!row) return null;
+  return {
+    id: String(row.id || ''),
+    customerName: String(row.customer_name || ''),
+    phone: String(row.phone || ''),
+    cpfMasked: maskCpf(row.cpf || ''),
+    cpfLast4: String(row.cpf_last4 || normalizeCpf(row.cpf || '').slice(-4)),
+    tableId: String(row.table_id || ''),
+    tableNumber: Number(row.table_number || 0),
+    status: String(row.status || 'open'),
+    openedAt: row.opened_at || null,
+    paidAt: row.paid_at || null,
+    closedAt: row.closed_at || null,
+    totals: totals || { orders: 0, payments: 0, balance: 0 },
+  };
+};
+
+const getTables = async () => {
+  await ensureTablesUpTo(200);
+  const tableRes = await db.execute("SELECT * FROM tables ORDER BY CAST(number AS INTEGER) ASC");
 
   const ordersByTable = await getActiveOrdersByTable();
   const paymentsRes = await db.execute(`
@@ -1968,12 +2072,26 @@ const getTables = async () => {
     });
   });
 
+  const tabsRes = await db.execute(`
+    SELECT *
+    FROM customer_tabs
+    WHERE status IN ('open', 'paid')
+    ORDER BY opened_at ASC
+  `);
+  const tabTotals = await getCustomerTabTotalsByTable(tabsRes.rows.map((row) => row.table_id));
+  const tabsByTable = {};
+  tabsRes.rows.forEach((row) => {
+    const tableId = String(row.table_id || '');
+    tabsByTable[tableId] = sanitizeCustomerTab(row, tabTotals[tableId]);
+  });
+
   return tableRes.rows.map((row) => ({
     id: row.id,
     number: Number(row.number),
     status: row.status,
     orders: ordersByTable[row.id] || [],
     payments: paymentsByTable[row.id] || [],
+    customerTab: tabsByTable[row.id] || null,
     cart: [],
     lastActivity: row.last_activity || new Date().toISOString(),
     currentSellerId: row.current_seller_id || '',
@@ -3293,6 +3411,63 @@ const createPagBankCheckoutPayload = ({ orderId, customer, items, totals }) => {
   return payload;
 };
 
+const createPagBankCustomerTabPayload = ({ referenceId, customer, items, amount, paymentMethod, returnUrl }) => {
+  const methodMap = {
+    pix: [{ type: 'PIX' }],
+    credit: [{ type: 'CREDIT_CARD' }],
+    debit: [{ type: 'DEBIT_CARD' }],
+  };
+  const phone = splitBrazilianPhone(customer.phone);
+  const itemTotalCents = items.reduce((sum, item) => {
+    return sum + Math.round(Number(item.price || 0) * 100) * Number(item.quantity || 1);
+  }, 0);
+  const amountCents = Math.round(Number(amount || 0) * 100);
+  const payload = {
+    reference_id: referenceId.slice(0, 64),
+    customer: {
+      name: customer.name,
+      phones: phone.areaCode && phone.number ? [{
+        country: phone.countryCode,
+        area: phone.areaCode,
+        number: phone.number,
+        type: 'MOBILE',
+      }] : [],
+    },
+    customer_modifiable: true,
+    items: items.length > 0 ? items.map((item) => ({
+      reference_id: String(item.productId || item.id).slice(0, 64),
+      name: String(item.name || 'Item').slice(0, 100),
+      quantity: Number(item.quantity || 1),
+      unit_amount: Math.round(Number(item.price || 0) * 100),
+    })) : [{
+      reference_id: referenceId.slice(0, 64),
+      name: 'Comanda Becoartes',
+      quantity: 1,
+      unit_amount: Math.round(Number(amount || 0) * 100),
+    }],
+    payment_methods: methodMap[paymentMethod] || [{ type: 'PIX' }, { type: 'CREDIT_CARD' }, { type: 'DEBIT_CARD' }],
+    soft_descriptor: 'BECOARTES',
+  };
+
+  if (itemTotalCents > amountCents) {
+    payload.discount_amount = itemTotalCents - amountCents;
+  }
+
+  const notificationUrls = PAGBANK_NOTIFICATION_URL ? [PAGBANK_NOTIFICATION_URL] : [];
+  if (notificationUrls.length > 0) {
+    payload.notification_urls = notificationUrls;
+    payload.payment_notification_urls = notificationUrls;
+  }
+
+  const safeReturnUrl = String(returnUrl || PAGBANK_REDIRECT_URL || '').trim();
+  if (safeReturnUrl) {
+    payload.redirect_url = safeReturnUrl;
+    payload.return_url = safeReturnUrl;
+  }
+
+  return payload;
+};
+
 const prepareDeliveryPayment = async ({ orderId, customer, items, totals }) => {
   if (DELIVERY_PAYMENT_PROVIDER === 'disabled') {
     return { status: 'disabled', provider: 'disabled', externalId: null, checkoutUrl: null, payload: null };
@@ -3324,7 +3499,13 @@ const prepareDeliveryPayment = async ({ orderId, customer, items, totals }) => {
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(result?.message || `PagBank recusou checkout (${response.status}).`);
+    const pagBankError = result?.error_messages?.[0];
+    const code = pagBankError?.error || '';
+    const description = pagBankError?.description || result?.message || '';
+    const allowlistMessage = code === 'allowlist_access_required'
+      ? 'PagBank ainda não liberou esta conta para criar checkouts por API. Peça a homologação/liberação da API Checkout em produção.'
+      : '';
+    const error = new Error(allowlistMessage || description || `PagBank recusou checkout (${response.status}).`);
     error.statusCode = 502;
     throw error;
   }
@@ -4255,6 +4436,34 @@ const getPagBankWebhookReferenceId = (body = {}) => (
   || ''
 );
 
+const getPagBankWebhookAmount = (body = {}) => {
+  const candidates = [
+    body.amount?.value,
+    body.amount,
+    body.charges?.[0]?.amount?.value,
+    body.charges?.[0]?.paid_amount?.value,
+    body.charges?.[0]?.summary?.paid,
+  ];
+  const value = candidates.find((candidate) => Number.isFinite(Number(candidate)) && Number(candidate) > 0);
+  if (!value) return 0;
+  const numeric = Number(value);
+  return numeric > 1000 ? centsToMoney(numeric) : numeric;
+};
+
+const getPagBankWebhookPaymentMethod = (body = {}) => {
+  const raw = String(
+    body.payment_method?.type
+    || body.paymentMethod?.type
+    || body.charges?.[0]?.payment_method?.type
+    || body.charges?.[0]?.paymentMethod?.type
+    || ''
+  ).toUpperCase();
+  if (raw.includes('CREDIT')) return 'credit';
+  if (raw.includes('DEBIT')) return 'debit';
+  if (raw.includes('PIX')) return 'pix';
+  return 'pix';
+};
+
 const isPagBankAuthenticityTokenValid = ({ headers, rawBody }) => {
   const authenticityToken = getHeaderValue(headers, 'x-authenticity-token').trim();
   if (!authenticityToken || !PAGBANK_TOKEN || !String(rawBody || '').trim()) return false;
@@ -4280,6 +4489,10 @@ const handlePagBankDeliveryWebhook = async (body, context = {}) => {
   const referenceId = requireString(getPagBankWebhookReferenceId(body), 'reference_id');
   const status = getPagBankWebhookStatus(body);
   const paidAt = status === 'paid' ? new Date().toISOString() : null;
+
+  if (String(referenceId).startsWith('customer_tab_')) {
+    return handlePagBankCustomerTabWebhook({ referenceId, status, body });
+  }
 
   const orderRes = await db.execute({
     sql: "SELECT id FROM delivery_orders WHERE id = ? OR payment_external_id = ? LIMIT 1",
@@ -4308,6 +4521,65 @@ const handlePagBankDeliveryWebhook = async (body, context = {}) => {
     : { dispatched: false, reason: status };
 
   return { orderId: deliveryOrderId, status, dispatch };
+};
+
+const handlePagBankCustomerTabWebhook = async ({ referenceId, status, body }) => {
+  const match = String(referenceId || '').match(/^customer_tab_(.+)_\d+$/);
+  const tabId = match?.[1] || '';
+  if (!tabId) return null;
+
+  const tabRes = await db.execute({ sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1", args: [tabId] });
+  const row = tabRes.rows[0];
+  if (!row) {
+    const error = new Error('Comanda do webhook não encontrada.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const balance = await getCustomerTabPayableBalance(row.table_id);
+  const paidAt = new Date().toISOString();
+  const paymentId = `pagbank_${String(body.id || referenceId).slice(0, 80)}`;
+  const amount = getPagBankWebhookAmount(body) || balance;
+  const method = getPagBankWebhookPaymentMethod(body);
+
+  if (status !== 'paid') {
+    await db.execute({
+      sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, 'customer_tab_payment_webhook', ?, ?, 'pagbank', 'PagBank', ?)",
+      args: [
+        createId(),
+        JSON.stringify({ tabId, referenceId, status, externalId: body.id || null }),
+        String(row.table_number),
+        paidAt,
+      ],
+    });
+    return { tabId, status, applied: false };
+  }
+
+  await db.batch([
+    {
+      sql: `
+        INSERT OR IGNORE INTO table_payments
+          (id, table_id, table_number, seller_id, seller_name, method, amount, status, created_at)
+        VALUES (?, ?, ?, 'pagbank', 'PagBank', ?, ?, 'active', ?)
+      `,
+      args: [paymentId, row.table_id, Number(row.table_number || 0), method, amount, paidAt],
+    },
+    {
+      sql: "UPDATE customer_tabs SET status = 'paid', paid_at = COALESCE(paid_at, ?) WHERE id = ? AND status = 'open'",
+      args: [paidAt, tabId],
+    },
+    {
+      sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, 'customer_tab_payment_registered', ?, ?, 'pagbank', 'PagBank', ?)",
+      args: [
+        createId(),
+        JSON.stringify({ tabId, referenceId, paymentId, method, amount, externalId: body.id || null }),
+        String(row.table_number),
+        paidAt,
+      ],
+    },
+  ], 'write');
+
+  return { tabId, status, applied: true, paymentId };
 };
 
 const createDeliveryCheckout = async ({ orderId, customer, items }) => {
@@ -4632,7 +4904,7 @@ const upsertProduct = async ({ product }, session = null) => {
   const productId = requireString(p.id, 'product.id');
   const settings = await getSettings();
   const existing = await db.execute({
-    sql: "SELECT name, description, price, cost, category_id, image, visible, erp_code, remote_stock_id, schedule_config FROM menu WHERE id = ? LIMIT 1",
+    sql: "SELECT name, description, price, cost, category_id, image, visible, erp_code, remote_stock_id, schedule_config, sort_order FROM menu WHERE id = ? LIMIT 1",
     args: [productId],
   });
   const currentProduct = existing.rows[0] || null;
@@ -4650,6 +4922,7 @@ const upsertProduct = async ({ product }, session = null) => {
       || String(currentProduct.erp_code || '') !== String(p.erpCode || '')
       || String(currentProduct.remote_stock_id || '') !== String(p.remoteStockId || '')
       || String(currentProduct.schedule_config || '') !== String(nextSchedule || '')
+      || Number(currentProduct.sort_order || 0) !== Number(p.sortOrder || 0)
       || Array.isArray(p.modifierGroups)
     );
     if (productDataChanged) {
@@ -4675,7 +4948,7 @@ const upsertProduct = async ({ product }, session = null) => {
   }
 
   await db.execute({
-    sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category, category_id, image, visible, erp_code, remote_stock_id, schedule_config, cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category, category_id, image, visible, erp_code, remote_stock_id, schedule_config, cost, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     args: [
       productId,
       requireString(p.name, 'product.name'),
@@ -4689,6 +4962,7 @@ const upsertProduct = async ({ product }, session = null) => {
       p.remoteStockId || null,
       p.schedule ? JSON.stringify(p.schedule) : null,
       Number(p.cost || 0),
+      Number(p.sortOrder || 0),
     ],
   });
 
@@ -6322,6 +6596,10 @@ const closeBillWithInventorySync = async (data, session = null) => {
         sql: "UPDATE table_payments SET status = 'applied', applied_closed_bill_id = ? WHERE table_id = ? AND status = 'active'",
         args: [integrationId, tableId],
       },
+      {
+        sql: "UPDATE customer_tabs SET status = 'paid', paid_at = ? WHERE table_id = ? AND status = 'open'",
+        args: [closedAt.toISOString(), tableId],
+      },
     );
 
     if (couponRow && data.couponCode) {
@@ -6658,6 +6936,315 @@ const closeCounterSaleWithInventorySync = async (data, session = null) => {
   }
 };
 
+const findCustomerTabByCpf = async (cpf, statuses = ['open', 'paid']) => {
+  const normalizedCpf = normalizeCpf(cpf);
+  const placeholders = statuses.map(() => '?').join(',');
+  const res = await db.execute({
+    sql: `
+      SELECT *
+      FROM customer_tabs
+      WHERE cpf = ? AND status IN (${placeholders})
+      ORDER BY opened_at DESC
+      LIMIT 1
+    `,
+    args: [normalizedCpf, ...statuses],
+  });
+  const row = res.rows[0] || null;
+  if (!row) return null;
+  const totals = await getCustomerTabTotalsByTable([row.table_id]);
+  return sanitizeCustomerTab(row, totals[row.table_id]);
+};
+
+const findAvailableCustomerTabTable = async () => {
+  await ensureTablesUpTo(200);
+  const res = await db.execute(`
+    SELECT t.id, t.number
+    FROM tables t
+    LEFT JOIN customer_tabs ct
+      ON ct.table_id = t.id
+      AND ct.status IN ('open', 'paid')
+    WHERE CAST(t.number AS INTEGER) BETWEEN 1 AND 200
+      AND ct.id IS NULL
+    ORDER BY CAST(t.number AS INTEGER) ASC
+    LIMIT 1
+  `);
+  const table = res.rows[0];
+  if (!table) throw new Error('Todas as comandas técnicas estão ocupadas.');
+  return { id: String(table.id), number: Number(table.number) };
+};
+
+const openCustomerTab = async ({ customerName, phone, cpf }) => {
+  const normalizedCpf = normalizeCpf(cpf);
+  if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
+  const safeName = requireString(customerName, 'customerName').trim().slice(0, 120);
+  const safePhone = requireString(phone, 'phone').trim().slice(0, 40);
+
+  const existing = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
+  if (existing) return { tab: existing, recovered: true };
+
+  let lastError = null;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const table = await findAvailableCustomerTabTable();
+    const id = createId();
+    const openedAt = new Date().toISOString();
+    try {
+      await db.batch([
+        {
+          sql: `
+            INSERT INTO customer_tabs (
+              id, cpf, cpf_hash, cpf_last4, customer_name, phone, table_id, table_number, status, opened_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+          `,
+          args: [id, normalizedCpf, getCpfHash(normalizedCpf), normalizedCpf.slice(-4), safeName, safePhone, table.id, table.number, openedAt],
+        },
+        {
+          sql: "UPDATE tables SET status = 'ordering', last_activity = ?, current_seller_id = NULL WHERE id = ?",
+          args: [openedAt, table.id],
+        },
+        {
+          sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, 'customer_tab_opened', ?, ?, 'qr', 'Cliente QR', ?)",
+          args: [
+            createId(),
+            JSON.stringify({ customerName: safeName, phone: safePhone, cpfLast4: normalizedCpf.slice(-4), tableId: table.id }),
+            String(table.number),
+            openedAt,
+          ],
+        },
+      ], 'write');
+
+      const tab = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
+      return { tab, recovered: false };
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/constraint|unique/i.test(message)) throw error;
+      const racedExisting = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
+      if (racedExisting) return { tab: racedExisting, recovered: true };
+      // Duas pessoas podem clicar no mesmo instante e disputar a mesma mesa técnica.
+      // O índice único protege a base; este retry avança para a próxima comanda livre.
+    }
+  }
+
+  throw lastError || new Error('Não foi possível abrir a comanda agora. Tente novamente.');
+};
+
+const recoverCustomerTab = async ({ cpf }) => {
+  const normalizedCpf = normalizeCpf(cpf);
+  if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
+  const tab = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
+  if (!tab) throw new Error('Nenhuma comanda aberta para este CPF.');
+  return { tab };
+};
+
+const getCustomerTabOrderItems = async (tableId) => {
+  const res = await db.execute({
+    sql: `
+      SELECT
+        oi.id,
+        oi.order_id,
+        oi.product_id,
+        oi.quantity,
+        oi.price_at_time,
+        oi.selected_modifiers,
+        oi.notes,
+        m.name
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      LEFT JOIN menu m ON oi.product_id = m.id
+      WHERE o.table_id = ? AND o.status != 'closed'
+      ORDER BY o.created_at ASC, oi.rowid ASC
+    `,
+    args: [tableId],
+  });
+  return res.rows.map((row) => {
+    const modifiers = parseJsonArray(row.selected_modifiers);
+    const modifiersTotal = modifiers.reduce((sum, modifier) => sum + Number(modifier?.price || 0), 0);
+    return {
+      id: String(row.id || ''),
+      orderId: String(row.order_id || ''),
+      productId: String(row.product_id || ''),
+      name: String(row.name || 'Item Becoartes'),
+      quantity: Number(row.quantity || 1),
+      price: Number(row.price_at_time || 0) + modifiersTotal,
+      selectedModifiers: modifiers,
+      notes: row.notes || '',
+    };
+  });
+};
+
+const getCustomerTabPayableBalance = async (tableId, items = null) => {
+  const orderItems = Array.isArray(items) ? items : await getCustomerTabOrderItems(tableId);
+  const subtotal = orderItems.reduce((sum, item) => {
+    return sum + Number(item.price || 0) * Number(item.quantity || 1);
+  }, 0);
+  const settings = await getSettings();
+  const serviceFeePercent = clampServiceFeePercent(Number(settings?.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
+  const serviceFee = subtotal * (serviceFeePercent / 100);
+  const paymentsRes = await db.execute({
+    sql: `
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM table_payments
+      WHERE table_id = ? AND status = 'active'
+    `,
+    args: [tableId],
+  });
+  const paid = Number(paymentsRes.rows[0]?.total || 0);
+  return Number(Math.max(0, subtotal + serviceFee - paid).toFixed(2));
+};
+
+const createCustomerTabPaymentLink = async ({ tabId, method = 'pix', returnUrl = '' }) => {
+  await ensureDatabaseReady();
+  const safeTabId = requireString(tabId, 'tabId');
+  const safeMethod = String(method || 'pix');
+  if (!['pix', 'credit', 'debit'].includes(safeMethod)) throw new Error('Forma de pagamento inválida.');
+
+  const tabRes = await db.execute({ sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1", args: [safeTabId] });
+  const row = tabRes.rows[0];
+  if (!row) throw new Error('Comanda não encontrada.');
+  if (!['open', 'paid'].includes(String(row.status))) throw new Error('Esta comanda não está aberta para pagamento.');
+
+  const items = await getCustomerTabOrderItems(row.table_id);
+  const balance = await getCustomerTabPayableBalance(row.table_id, items);
+  if (balance <= 0.009) throw new Error('Esta comanda não tem saldo em aberto.');
+  if (!PAGBANK_TOKEN) {
+    const error = new Error('PagBank não está configurado neste ambiente.');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const referenceId = `customer_tab_${safeTabId}_${Date.now()}`;
+  const payload = createPagBankCustomerTabPayload({
+    referenceId,
+    customer: {
+      name: row.customer_name,
+      phone: row.phone,
+    },
+    items,
+    amount: balance,
+    paymentMethod: safeMethod,
+    returnUrl,
+  });
+
+  const response = await fetch(`${PAGBANK_API_BASE_URL}/checkouts`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${PAGBANK_TOKEN}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const pagBankError = result?.error_messages?.[0];
+    const code = pagBankError?.error || '';
+    const description = pagBankError?.description || result?.message || '';
+    const allowlistMessage = code === 'allowlist_access_required'
+      ? 'PagBank ainda não liberou esta conta para criar checkouts por API. Peça a homologação/liberação da API Checkout em produção.'
+      : '';
+    const error = new Error(allowlistMessage || description || `PagBank recusou checkout (${response.status}).`);
+    error.statusCode = 502;
+    throw error;
+  }
+
+  const checkoutUrl = Array.isArray(result.links)
+    ? result.links.find((link) => link?.rel === 'PAY' || link?.media === 'text/html')?.href || null
+    : null;
+  if (!checkoutUrl) throw new Error('PagBank não retornou link de pagamento.');
+
+  await db.execute({
+    sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, 'customer_tab_payment_link_created', ?, ?, 'qr', 'Cliente QR', ?)",
+    args: [
+      createId(),
+      JSON.stringify({
+        tabId: safeTabId,
+        referenceId,
+        paymentExternalId: result.id || null,
+        method: safeMethod,
+        amount: balance,
+      }),
+      String(row.table_number),
+      new Date().toISOString(),
+    ],
+  });
+
+  return {
+    checkoutUrl,
+    externalId: result.id || null,
+    status: 'payment_pending',
+    amount: balance,
+    provider: 'pagbank',
+  };
+};
+
+const lookupCustomerTabs = async ({ query = '' }) => {
+  const rawQuery = String(query || '').trim();
+  const normalizedCpf = normalizeCpf(rawQuery);
+  const digitsQuery = rawQuery.replace(/\D/g, '');
+  const like = `%${rawQuery.toLowerCase()}%`;
+  const args = [];
+  const where = ["status IN ('open', 'paid')"];
+  if (rawQuery) {
+    where.push(`(
+      cpf = ?
+      OR phone LIKE ?
+      OR replace(replace(replace(replace(phone, ' ', ''), '-', ''), '(', ''), ')', '') LIKE ?
+      OR lower(customer_name) LIKE ?
+      OR cpf_last4 = ?
+    )`);
+    args.push(normalizedCpf, `%${rawQuery}%`, `%${digitsQuery}%`, like, normalizedCpf.slice(-4));
+  }
+  const res = await db.execute({
+    sql: `
+      SELECT *
+      FROM customer_tabs
+      WHERE ${where.join(' AND ')}
+      ORDER BY
+        CASE status WHEN 'open' THEN 0 WHEN 'paid' THEN 1 ELSE 2 END,
+        opened_at DESC
+      LIMIT 40
+    `,
+    args,
+  });
+  const totals = await getCustomerTabTotalsByTable(res.rows.map((row) => row.table_id));
+  return { tabs: res.rows.map((row) => sanitizeCustomerTab(row, totals[row.table_id])) };
+};
+
+const finalizeCustomerTab = async ({ tabId }, session) => {
+  requireString(tabId, 'tabId');
+  const res = await db.execute({ sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1", args: [tabId] });
+  const row = res.rows[0];
+  if (!row) throw new Error('Comanda não encontrada.');
+  const totals = await getCustomerTabTotalsByTable([row.table_id]);
+  const balance = totals[row.table_id]?.balance || 0;
+  if (balance > 0.009 && row.status !== 'paid') {
+    throw new Error(`Comanda ainda tem saldo em aberto: ${formatMoneyBRL(balance)}.`);
+  }
+  const now = new Date().toISOString();
+  await db.batch([
+    {
+      sql: "UPDATE customer_tabs SET status = 'closed', closed_at = ?, closed_by_id = ?, closed_by_name = ? WHERE id = ?",
+      args: [now, session?.id || '', session?.name || 'Sistema', tabId],
+    },
+    {
+      sql: "UPDATE tables SET status = 'available', current_seller_id = NULL, last_activity = ? WHERE id = ?",
+      args: [now, row.table_id],
+    },
+    {
+      sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'customer_tab_finalized', ?, ?, 'pdv', ?, ?, ?)",
+      args: [
+        createId(),
+        JSON.stringify({ tabId, customerName: row.customer_name, cpfLast4: row.cpf_last4 || normalizeCpf(row.cpf).slice(-4) }),
+        String(row.table_number),
+        session?.id || '',
+        session?.name || 'Sistema',
+        now,
+      ],
+    },
+  ], 'write');
+  const updated = await db.execute({ sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1", args: [tabId] });
+  return { tab: sanitizeCustomerTab(updated.rows[0], totals[row.table_id]) };
+};
+
 const requireSession = (session) => {
   if (!session) {
     const error = new Error('Sessão obrigatória.');
@@ -6683,13 +7270,14 @@ const isPublicCustomerRoute = (routeKey, body) => {
   if (routeKey === 'POST /api/delivery/quote') return true;
   if (routeKey === 'POST /api/delivery/postal-code') return true;
   if (routeKey === 'POST /api/delivery/geocode') return true;
-  if (routeKey === 'POST /api/delivery/webhooks/pagbank') return true;
+  if (routeKey === 'POST /api/delivery/webhooks/pagbank' || routeKey === 'POST /api/webhooks/pagbank') return true;
   if (routeKey.startsWith('POST /api/delivery/customer/')) return true;
   if (routeKey === 'GET /api/delivery/order') return true;
   if (routeKey === 'GET /api/delivery/customer/session') return true;
   if (routeKey === 'GET /api/delivery/customer/orders') return true;
   if (routeKey === 'GET /api/delivery/config') return true;
   if (routeKey === 'POST /api/service-requests' || routeKey === 'POST /api/tables/request-bill') return true;
+  if (routeKey === 'POST /api/customer-tabs/open' || routeKey === 'POST /api/customer-tabs/recover' || routeKey === 'POST /api/customer-tabs/payment-link') return true;
   if (routeKey === 'POST /api/orders/send-to-kitchen' || routeKey === 'POST /api/orders/status') {
     return allowPublicOperationalOrigin(body);
   }
@@ -6804,6 +7392,8 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'GET /api/coupons/list': 'manageCoupons',
     'GET /api/delivery/orders': 'viewSalesTotals',
     'GET /api/delivery/order-detail': 'viewSalesTotals',
+    'GET /api/customer-tabs/lookup': 'viewSalesTotals',
+    'POST /api/customer-tabs/finalize': 'closeBill',
   };
 
   const requiredPermission = permissionByRoute[routeKey];
@@ -6848,11 +7438,17 @@ const handlers = {
   'POST /api/delivery/checkout': async (body) => createDeliveryCheckout(body),
   'POST /api/delivery/checkout/mock': async (body) => createDeliveryCheckout(body),
   'POST /api/delivery/webhooks/pagbank': async (body, context) => handlePagBankDeliveryWebhook(body, context),
+  'POST /api/webhooks/pagbank': async (body, context) => handlePagBankDeliveryWebhook(body, context),
   'POST /api/delivery/customer/register': async (body) => createDeliveryCustomerAccount(body),
   'POST /api/delivery/customer/login': async (body) => loginDeliveryCustomer(body),
   'POST /api/delivery/customer/forgot-password': async (body) => requestDeliveryPasswordReset(body),
   'POST /api/delivery/customer/reset-password': async (body) => resetDeliveryCustomerPassword(body),
   'POST /api/delivery/customer/verify-code': async (body) => verifyDeliveryCustomerCode(body),
+  'POST /api/customer-tabs/open': async (body) => openCustomerTab(body),
+  'POST /api/customer-tabs/recover': async (body) => recoverCustomerTab(body),
+  'POST /api/customer-tabs/payment-link': async (body) => createCustomerTabPaymentLink(body),
+  'GET /api/customer-tabs/lookup': async (_body, context) => lookupCustomerTabs({ query: context.url.searchParams.get('q') || '' }),
+  'POST /api/customer-tabs/finalize': async (body, context) => finalizeCustomerTab(body, context.session),
   'GET /api/delivery/customer/session': async (_body, context) => getDeliveryCustomerSession({ token: context.req?.headers['x-beco-delivery-session'] || '' }),
   'GET /api/delivery/customer/orders': async (_body, context) => listDeliveryCustomerOrders({ token: context.req?.headers['x-beco-delivery-session'] || '' }),
   'GET /api/delivery/order': async (_body, context) => getDeliveryOrder({ orderId: context.url.searchParams.get('orderId') || '' }),
@@ -6914,6 +7510,7 @@ const handleApi = async (req, res, url) => {
   }
 
   try {
+    await ensureDatabaseReady();
     assertSameOrigin(req);
     const routeKey = `${req.method} ${url.pathname}`;
     const handler = handlers[routeKey];

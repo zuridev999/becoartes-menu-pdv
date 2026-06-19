@@ -75,6 +75,20 @@ const attachModifierGroupsToMenu = (
   });
 };
 
+const sortProductsByCatalogOrder = (menuItems: Product[], categories: Category[]) => {
+  const categoryOrder = new Map(categories.map((category, index) => [category.id, Number(category.sortOrder ?? index)]));
+  return menuItems
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const categoryDiff = (categoryOrder.get(a.item.categoryId) ?? 9999) - (categoryOrder.get(b.item.categoryId) ?? 9999);
+      if (categoryDiff !== 0) return categoryDiff;
+      const orderDiff = Number(a.item.sortOrder ?? 0) - Number(b.item.sortOrder ?? 0);
+      if (orderDiff !== 0) return orderDiff;
+      return a.index - b.index;
+    })
+    .map(({ item }) => item);
+};
+
 
 export interface AppState {
   menu: Product[];
@@ -111,6 +125,7 @@ export interface AppState {
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
+  reorderProducts: (categoryId: string, products: Product[]) => Promise<void>;
 
   currentSeller: Seller | null;
   login: (pin: string, sellerId?: string) => Promise<boolean>;
@@ -194,6 +209,7 @@ export const useStore = create<AppState>((set, get) => ({
     mode: 'demo',
     currency: 'BRL',
     serviceTax: 13,
+    qrMode: 'mesa',
     qrCodes: {
       tableRevisions: {},
       lastRotatedAt: {}
@@ -385,7 +401,10 @@ export const useStore = create<AppState>((set, get) => ({
       const { orders: kitchenOrders, serverNow } = snapshot.kitchenData;
       const serverTimeOffset = serverNow.getTime() - new Date().getTime();
 
-      const menuWithModifierGroups = attachModifierGroupsToMenu(menuItems, modifierGroups, productMapping, categoryMapping);
+      const menuWithModifierGroups = sortProductsByCatalogOrder(
+        attachModifierGroupsToMenu(menuItems, modifierGroups, productMapping, categoryMapping),
+        categories
+      );
       lastCatalogSyncAt = Date.now();
       lastCatalogVersion = catalogVersion;
 
@@ -517,23 +536,28 @@ export const useStore = create<AppState>((set, get) => ({
   },
   updateProduct: async (id, data) => {
     try {
-      const category = get().categories.find(c => c.id === data.categoryId);
+      const currentProduct = get().menu.find(p => p.id === id);
+      const categoryId = data.categoryId ?? currentProduct?.categoryId ?? '';
+      const category = get().categories.find(c => c.id === categoryId);
       // Limpeza profunda para evitar nulos em campos obrigatórios do schema
       const cleanData = {
+        ...currentProduct,
         ...data,
-        description: data.description || "",
-        erpCode: data.erpCode || "",
-        remoteStockId: data.remoteStockId || "",
-        image: data.image || "",
-        cost: Number(data.cost) || 0,
-        price: Number(data.price) || 0
+        description: data.description ?? currentProduct?.description ?? "",
+        erpCode: data.erpCode ?? currentProduct?.erpCode ?? "",
+        remoteStockId: data.remoteStockId ?? currentProduct?.remoteStockId ?? "",
+        image: data.image ?? currentProduct?.image ?? "",
+        cost: Number(data.cost ?? currentProduct?.cost ?? 0) || 0,
+        price: Number(data.price ?? currentProduct?.price ?? 0) || 0,
+        categoryId,
+        sortOrder: Number(data.sortOrder ?? currentProduct?.sortOrder ?? 0)
       };
 
       const validated = ProductSchema.parse({ ...cleanData, id, categoryName: category?.name });
       const result = await CatalogApi.upsertProduct(validated as Product);
       lastCatalogVersion = result.catalogVersion;
       set((state) => ({
-        menu: state.menu.map(p => p.id === id ? validated as Product : p)
+        menu: sortProductsByCatalogOrder(state.menu.map(p => p.id === id ? validated as Product : p), state.categories)
       }));
       get().addNotification(`Produto "${validated.name}" atualizado com sucesso!`, 'info');
     } catch (e: any) {
@@ -548,6 +572,12 @@ export const useStore = create<AppState>((set, get) => ({
   addProduct: async (product) => {
     try {
       const category = get().categories.find(c => c.id === product.categoryId);
+      const nextSortOrder = Math.max(
+        -1,
+        ...get().menu
+          .filter(item => item.categoryId === product.categoryId)
+          .map(item => Number(item.sortOrder ?? 0))
+      ) + 1;
       const cleanData = {
         ...product,
         description: product.description || "",
@@ -555,13 +585,14 @@ export const useStore = create<AppState>((set, get) => ({
         remoteStockId: product.remoteStockId || "",
         image: product.image || "",
         cost: Number(product.cost) || 0,
-        price: Number(product.price) || 0
+        price: Number(product.price) || 0,
+        sortOrder: Number(product.sortOrder ?? nextSortOrder)
       };
 
       const validated = ProductSchema.parse({ ...cleanData, categoryName: category?.name });
       const result = await CatalogApi.upsertProduct(validated as Product);
       lastCatalogVersion = result.catalogVersion;
-      set((state) => ({ menu: [...state.menu, validated as Product] }));
+      set((state) => ({ menu: sortProductsByCatalogOrder([...state.menu, validated as Product], state.categories) }));
       get().addNotification(`Produto "${validated.name}" adicionado!`, 'info');
     } catch (e: any) {
       console.error("❌ Erro ao adicionar produto:", e);
@@ -582,6 +613,34 @@ export const useStore = create<AppState>((set, get) => ({
       // Se houver erro de constraint (pedido vinculado), apenas ocultamos
       await get().toggleProductVisibility(id);
       get().addNotification("Produto possui histórico e não pode ser deletado. Ele foi ocultado do cardápio.", 'info');
+    }
+  },
+
+  reorderProducts: async (categoryId, products) => {
+    const orderedProducts = products
+      .filter(product => product.categoryId === categoryId)
+      .map((product, index) => ({ ...product, sortOrder: index }));
+    set((state) => ({
+      menu: sortProductsByCatalogOrder(
+        state.menu.map(product => {
+          const reordered = orderedProducts.find(item => item.id === product.id);
+          return reordered || product;
+        }),
+        state.categories
+      )
+    }));
+
+    try {
+      for (const product of orderedProducts) {
+        const result = await CatalogApi.upsertProduct(product);
+        lastCatalogVersion = result.catalogVersion;
+      }
+      get().addNotification('Ordem dos produtos sincronizada com Tablet, QR e Delivery.', 'info');
+    } catch (error: any) {
+      console.error('❌ Erro ao reordenar produtos:', error);
+      get().addNotification(error.message || 'Falha ao salvar ordem dos produtos.', 'error');
+      await get().syncData({ includeCatalog: true });
+      throw error;
     }
   },
 
@@ -621,7 +680,10 @@ export const useStore = create<AppState>((set, get) => ({
               lastCatalogVersion = snapshot.catalogData.catalogVersion;
               return {
                 categories: snapshot.catalogData.categories,
-                menu: attachModifierGroupsToMenu(snapshot.catalogData.menuItems, snapshot.catalogData.modifierGroups, snapshot.catalogData.productMapping, snapshot.catalogData.categoryMapping),
+                menu: sortProductsByCatalogOrder(
+                  attachModifierGroupsToMenu(snapshot.catalogData.menuItems, snapshot.catalogData.modifierGroups, snapshot.catalogData.productMapping, snapshot.catalogData.categoryMapping),
+                  snapshot.catalogData.categories
+                ),
                 modifierGroups: snapshot.catalogData.modifierGroups,
                 productModifierMapping: snapshot.catalogData.productMapping,
                 categoryModifierMapping: snapshot.catalogData.categoryMapping

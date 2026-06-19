@@ -14,13 +14,20 @@ interface MenuCatalogProps {
 
 export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', footerContent }: MenuCatalogProps) {
   const { menu, categories: dbCategories } = useStore();
-  const availableCategories = useMemo(() => dbCategories.filter(c => {
-    if (c.visible === false) return false;
-    const { available } = isItemAvailable(c.schedule);
-    if (!available && c.schedule?.hideTotally) return false;
-    return true;
-  }), [dbCategories]);
+  const availableCategories = useMemo(() => dbCategories
+    .filter(c => {
+      if (c.visible === false) return false;
+      const { available } = isItemAvailable(c.schedule);
+      if (!available && c.schedule?.hideTotally) return false;
+      return true;
+    })
+    .sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0)),
+  [dbCategories]);
   const availableCategoryNames = useMemo(() => availableCategories.map(c => c.name), [availableCategories]);
+  const categoryOrder = useMemo(
+    () => new Map(availableCategories.map((category, index) => [category.id, Number(category.sortOrder ?? index)])),
+    [availableCategories]
+  );
 
   const [selectedCategory, setSelectedCategory] = useState(availableCategoryNames[0] || '');
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,23 +62,34 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
     return counts;
   }, [dbCategories, menu]);
 
-  const visibleMenu = menu.filter(p => {
-    if (!p.visible) return false;
-    if (p.remoteStockId && typeof p.stockQuantity === 'number' && p.stockQuantity <= 0) return false;
-    
-    // Check Category Schedule
-    const cat = dbCategories.find(c => c.id === p.categoryId);
-    if (cat) {
-      const { available: catAvailable } = isItemAvailable(cat.schedule);
-      if (!catAvailable && cat.schedule?.hideTotally) return false;
-    }
+  const visibleMenu = useMemo(() => menu
+    .filter(p => {
+      if (!p.visible) return false;
+      if (p.remoteStockId && typeof p.stockQuantity === 'number' && p.stockQuantity <= 0) return false;
+      
+      // Check Category Schedule
+      const cat = dbCategories.find(c => c.id === p.categoryId);
+      if (cat) {
+        const { available: catAvailable } = isItemAvailable(cat.schedule);
+        if (!catAvailable && cat.schedule?.hideTotally) return false;
+      }
 
-    // Check Product Schedule
-    const { available } = isItemAvailable(p.schedule);
-    if (!available && p.schedule?.hideTotally) return false;
+      // Check Product Schedule
+      const { available } = isItemAvailable(p.schedule);
+      if (!available && p.schedule?.hideTotally) return false;
 
-    return p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.description || '').toLowerCase().includes(searchQuery.toLowerCase());
-  });
+      return p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.description || '').toLowerCase().includes(searchQuery.toLowerCase());
+    })
+    .map((product, index) => ({ product, index }))
+    .sort((a, b) => {
+      const categoryDiff = (categoryOrder.get(a.product.categoryId) ?? 9999) - (categoryOrder.get(b.product.categoryId) ?? 9999);
+      if (categoryDiff !== 0) return categoryDiff;
+      const orderDiff = Number(a.product.sortOrder ?? 0) - Number(b.product.sortOrder ?? 0);
+      if (orderDiff !== 0) return orderDiff;
+      return a.index - b.index;
+    })
+    .map(({ product }) => product),
+  [categoryOrder, dbCategories, menu, searchQuery]);
 
   const filteredMenu = visibleMenu.filter(p => p.categoryName === selectedCategory);
   const menuByCategory = useMemo(() => {
