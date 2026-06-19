@@ -66,6 +66,7 @@ export function PDVView() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [showProductMenu, setShowProductMenu] = useState(false);
   const [showCounterSale, setShowCounterSale] = useState(false);
+  const [showSalesBreakdown, setShowSalesBreakdown] = useState(false);
   const [showManualLog, setShowManualLog] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(categories[0]?.id || null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -291,6 +292,26 @@ export function PDVView() {
     });
   const totalToday = todayBills
     .reduce((acc, bill) => acc + bill.total, 0);
+  const salesBreakdown = todayBills.reduce((acc, bill) => {
+    (bill.payments || []).forEach((payment) => {
+      if (!acc[payment.method]) acc[payment.method] = { total: 0, count: 0 };
+      acc[payment.method].total += Number(payment.amount || 0);
+      acc[payment.method].count += 1;
+    });
+    return acc;
+  }, {
+    credit: { total: 0, count: 0 },
+    debit: { total: 0, count: 0 },
+    cash: { total: 0, count: 0 },
+    pix: { total: 0, count: 0 },
+  } as Record<'credit' | 'debit' | 'cash' | 'pix', { total: number; count: number }>);
+  const totalTodayByPayments = Object.values(salesBreakdown).reduce((sum, item) => sum + item.total, 0);
+  const salesBreakdownItems = [
+    { method: 'credit' as const, label: 'Crédito', tone: 'text-violet-300', bg: 'bg-violet-500/10', border: 'border-violet-400/20' },
+    { method: 'debit' as const, label: 'Débito', tone: 'text-sky-300', bg: 'bg-sky-500/10', border: 'border-sky-400/20' },
+    { method: 'cash' as const, label: 'Dinheiro', tone: 'text-emerald-300', bg: 'bg-emerald-500/10', border: 'border-emerald-400/20' },
+    { method: 'pix' as const, label: 'Pix', tone: 'text-amber-300', bg: 'bg-amber-500/10', border: 'border-amber-400/20' },
+  ];
   const isCashOpen = Boolean(cashState?.isOpen);
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides, userPermissionOverrides);
   const canCancelTableItem = can(currentSeller, 'cancelTableItem', permissionOverrides, userPermissionOverrides);
@@ -526,10 +547,15 @@ export function PDVView() {
 
         <div className="flex flex-wrap gap-3 sm:gap-4 xl:gap-6 w-full xl:w-auto">
           {canViewSalesTotals && (
-            <div className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[150px] xl:flex-none">
+            <button
+              type="button"
+              onClick={() => setShowSalesBreakdown(true)}
+              className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[150px] xl:flex-none hover:border-emerald-400/35 hover:bg-emerald-400/5 transition-all text-left"
+              title="Ver vendas de hoje por forma de pagamento"
+            >
               <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Vendas Hoje</span>
-              <span className="text-2xl font-black text-emerald-400">R$ {totalToday.toFixed(2)}</span>
-            </div>
+              <span className="text-2xl font-black text-emerald-400">{formatCurrency(totalToday)}</span>
+            </button>
           )}
           <div className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[130px] xl:flex-none">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Mesas Ativas</span>
@@ -1299,6 +1325,81 @@ export function PDVView() {
             canLaunchPayment={canLaunchPayment}
             canCloseBill={canCloseBill}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSalesBreakdown && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 20 }}
+              className="glass-card w-full max-w-3xl border-emerald-400/20 p-5 sm:p-8 shadow-2xl shadow-black/40"
+            >
+              <div className="flex items-start justify-between gap-6 mb-7">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-300 mb-2">Vendas de hoje</p>
+                  <h3 className="text-3xl sm:text-4xl font-black tracking-tight">Resumo por pagamento</h3>
+                  <p className="mt-2 text-xs sm:text-sm font-bold text-zinc-500">
+                    {todayBills.length} mesa(s) fechada(s) hoje, separadas por forma lançada no PDV.
+                  </p>
+                </div>
+                <button onClick={() => setShowSalesBreakdown(false)} className="glass p-3 rounded-2xl text-zinc-400 hover:text-white">
+                  <X size={22} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {salesBreakdownItems.map((item) => {
+                  const data = salesBreakdown[item.method];
+                  const percent = totalTodayByPayments > 0 ? (data.total / totalTodayByPayments) * 100 : 0;
+                  return (
+                    <div key={item.method} className={`rounded-3xl border ${item.border} ${item.bg} p-5`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500">{item.label}</p>
+                          <p className={`mt-2 text-2xl sm:text-3xl font-black ${item.tone}`}>{formatCurrency(data.total)}</p>
+                        </div>
+                        <div className="rounded-2xl bg-black/25 border border-white/10 px-3 py-2 text-right">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Lanç.</p>
+                          <p className="text-lg font-black text-white">{data.count}</p>
+                        </div>
+                      </div>
+                      <div className="mt-5 h-2 rounded-full bg-white/10 overflow-hidden">
+                        <div className={`h-full rounded-full ${item.method === 'cash' ? 'bg-emerald-300' : item.method === 'pix' ? 'bg-amber-300' : item.method === 'debit' ? 'bg-sky-300' : 'bg-violet-300'}`} style={{ width: `${Math.min(percent, 100)}%` }} />
+                      </div>
+                      <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-zinc-600">
+                        {percent.toFixed(1)}% dos pagamentos lançados
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500">Total fechado</p>
+                  <p className="text-2xl font-black text-white">{formatCurrency(totalToday)}</p>
+                </div>
+                <div className="sm:text-right">
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500">Total lançado por pagamento</p>
+                  <p className="text-2xl font-black text-emerald-300">{formatCurrency(totalTodayByPayments)}</p>
+                </div>
+              </div>
+
+              {Math.abs(totalToday - totalTodayByPayments) > 0.01 && (
+                <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-5 py-4 text-xs font-black uppercase tracking-widest text-amber-200">
+                  Atenção: total fechado e total por pagamentos têm diferença de {formatCurrency(totalToday - totalTodayByPayments)}.
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 

@@ -270,16 +270,17 @@ function ComandaQRExperience() {
 
   if (!tab || !currentTable) {
     return (
-      <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-5">
-        <div className="w-full max-w-md glass-card border-primary/30 p-7 shadow-2xl shadow-primary/10">
-          <div className="w-16 h-16 rounded-3xl bg-primary/20 text-primary flex items-center justify-center mb-6">
-            <BadgeCheck size={30} />
+      <div className="h-[100dvh] overflow-y-auto custom-scrollbar overscroll-contain bg-[#0a0a0c] text-white font-['Outfit'] px-4 py-[calc(env(safe-area-inset-top)+1rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <div className="mx-auto flex min-h-full w-full max-w-md items-start sm:items-center">
+        <div className="w-full glass-card border-primary/30 p-5 sm:p-7 shadow-2xl shadow-primary/10">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-primary/20 text-primary flex items-center justify-center mb-5 sm:mb-6">
+            <BadgeCheck size={26} />
           </div>
           <p className="text-[10px] font-black uppercase tracking-[0.32em] text-primary mb-3">Modo comanda</p>
-          <h1 className="text-4xl font-black italic tracking-tighter mb-3">
+          <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter mb-3">
             {recoverMode ? 'Voltar para minha comanda' : 'Abrir minha comanda'}
           </h1>
-          <p className="text-sm font-bold text-zinc-400 leading-relaxed mb-7">
+          <p className="text-xs sm:text-sm font-bold text-zinc-400 leading-relaxed mb-5 sm:mb-7">
             Use seu CPF para manter seus pedidos juntos, mesmo se trocar de celular. Na saída, a equipe confere por esse CPF.
           </p>
 
@@ -289,21 +290,21 @@ function ComandaQRExperience() {
             </div>
           )}
 
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {!recoverMode && (
               <>
                 <label className="block">
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Nome</span>
                   <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
                     <UserRound size={18} className="text-primary" />
-                    <input value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-transparent py-5 outline-none font-black" placeholder="Seu nome" />
+                    <input value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="Seu nome" />
                   </div>
                 </label>
                 <label className="block">
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Telefone</span>
                   <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
                     <Phone size={18} className="text-primary" />
-                    <input value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" className="w-full bg-transparent py-5 outline-none font-black" placeholder="WhatsApp" />
+                    <input value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="WhatsApp" />
                   </div>
                 </label>
               </>
@@ -314,7 +315,7 @@ function ComandaQRExperience() {
                 value={cpf}
                 onChange={e => setCpf(normalizeCpfInput(e.target.value))}
                 inputMode="numeric"
-                className="mt-2 w-full rounded-3xl border border-white/10 bg-white/[0.04] px-5 py-5 outline-none text-2xl font-black tracking-[0.16em] focus:border-primary/70"
+                className="mt-2 w-full rounded-3xl border border-white/10 bg-white/[0.04] px-5 py-4 sm:py-5 outline-none text-xl sm:text-2xl font-black tracking-[0.16em] focus:border-primary/70"
                 placeholder="00000000000"
               />
             </label>
@@ -323,7 +324,7 @@ function ComandaQRExperience() {
           <button
             onClick={submit}
             disabled={isSubmitting || cpf.length < 11 || (!recoverMode && (!customerName.trim() || !phone.trim()))}
-            className="mt-7 w-full btn-beco btn-beco-purple py-5 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40 disabled:grayscale"
+            className="mt-5 sm:mt-7 w-full btn-beco btn-beco-purple py-4 sm:py-5 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40 disabled:grayscale"
           >
             {isSubmitting ? 'Validando...' : recoverMode ? 'Entrar na minha comanda' : 'Abrir comanda'}
           </button>
@@ -333,10 +334,11 @@ function ComandaQRExperience() {
               setRecoverMode(!recoverMode);
               setError('');
             }}
-            className="mt-4 w-full rounded-2xl border border-white/10 bg-white/[0.03] py-4 text-xs font-black uppercase tracking-widest text-zinc-400"
+            className="mt-3 sm:mt-4 w-full rounded-2xl border border-white/10 bg-white/[0.03] py-4 text-xs font-black uppercase tracking-widest text-zinc-400"
           >
             {recoverMode ? 'Criar nova comanda' : 'Já tenho comanda'}
           </button>
+        </div>
         </div>
       </div>
     );

@@ -1,7 +1,7 @@
 {
   "name": "becoartes-menu-pdv",
   "private": true,
-  "version": "1.4.59",
+  "version": "1.4.60",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,7 @@
     "start": "node server/bff.mjs",
     "deploy:delivery:dry-run": "node scripts/delivery_deploy_dry_run.mjs",
     "deploy:delivery:release": "node scripts/delivery_deploy_release.mjs",
+    "pagbank:sandbox:evidence": "node scripts/pagbank_sandbox_evidence.mjs",
     "preflight:delivery": "node scripts/delivery_preflight.mjs",
     "preflight:delivery:vps": "node scripts/delivery_vps_preflight.mjs",
     "postdeploy:delivery": "node scripts/delivery_post_deploy_check.mjs",
