@@ -151,6 +151,7 @@ export interface AppState {
   addToCart: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
   removeOrderItem: (itemId: string, context?: { tableId?: string; tableNumber: number; itemName: string; quantity: number; sellerName?: string; sellerPermission?: Seller['permission']; reasonCode?: string; reasonLabel?: string; reasonNotes?: string }) => Promise<void>;
   removeFromCart: (itemId: string) => void;
+  updateCartItemQuantity: (itemId: string, quantity: number) => void;
   sendToKitchen: (tableId: string, origin?: 'tablet' | 'pdv' | 'qr', sellerId?: string) => Promise<void>;
   requestBill: (tableId: string) => void;
   requestService: (tableId: string, type: string, message?: string) => void;
@@ -792,6 +793,25 @@ export const useStore = create<AppState>((set, get) => ({
     if (!currentTableId) return;
     set((state) => ({
       tables: state.tables.map(t => t.id === currentTableId ? { ...t, cart: t.cart.filter(i => i.id !== itemId) } : t)
+    }));
+  },
+
+  updateCartItemQuantity: (itemId, quantity) => {
+    const { currentTableId } = get();
+    if (!currentTableId) return;
+
+    const nextQuantity = Math.max(0, Math.floor(Number(quantity) || 0));
+    set((state) => ({
+      tables: state.tables.map(t => {
+        if (t.id !== currentTableId) return t;
+        if (nextQuantity <= 0) {
+          return { ...t, cart: t.cart.filter(i => i.id !== itemId) };
+        }
+        return {
+          ...t,
+          cart: t.cart.map(i => i.id === itemId ? { ...i, quantity: nextQuantity } : i)
+        };
+      })
     }));
   },
 

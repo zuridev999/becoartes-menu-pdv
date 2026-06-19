@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, 
   Plus, 
+  Minus,
   X,
   PlusCircle,
   LayoutDashboard,
@@ -40,6 +41,8 @@ export function PDVView() {
     addAuditLog,
     addToCart,
     removeOrderItem,
+    removeFromCart,
+    updateCartItemQuantity,
     setCurrentTableId,
     sendToKitchen,
     serviceRequests,
@@ -1138,7 +1141,74 @@ export function PDVView() {
                </div>
             </div>
 
-            <div className="mt-4 sm:mt-8 xl:mt-12 pt-4 sm:pt-8 xl:pt-12 border-t border-white/10 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 shrink-0">
+            {cart.length > 0 && (
+              <div className="mt-4 sm:mt-6 rounded-[2rem] border border-white/10 bg-black/35 overflow-hidden shrink-0">
+                <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-white/10">
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-[0.28em] text-primary">Pedido antes de enviar</p>
+                    <p className="text-[11px] font-bold text-zinc-500">Toque em +, - ou lixeira para corrigir sem refazer o lançamento.</p>
+                  </div>
+                  <span className="text-xs font-black uppercase tracking-widest text-zinc-400 whitespace-nowrap">
+                    {cart.reduce((acc, item) => acc + item.quantity, 0)} un.
+                  </span>
+                </div>
+
+                <div className="max-h-40 sm:max-h-48 overflow-y-auto custom-scrollbar divide-y divide-white/5">
+                  {cart.map((item) => (
+                    <div key={item.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 sm:px-6 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm sm:text-base font-black italic tracking-tight text-white truncate">{item.name}</p>
+                        {item.selectedModifiers?.length > 0 && (
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-primary truncate">
+                            {item.selectedModifiers.map(modifier => modifier.name).join(', ')}
+                          </p>
+                        )}
+                        {item.notes && (
+                          <p className="text-[10px] font-bold text-zinc-500 truncate">{item.notes}</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                        <div className="flex items-center rounded-2xl border border-white/10 bg-[#121214] p-1">
+                          <button
+                            type="button"
+                            onClick={() => updateCartItemQuantity(item.id, item.quantity - 1)}
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
+                            aria-label={`Diminuir ${item.name}`}
+                          >
+                            <Minus size={16} />
+                          </button>
+                          <span className="w-10 text-center text-sm font-black text-white">{item.quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateCartItemQuantity(item.id, item.quantity + 1)}
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
+                            aria-label={`Aumentar ${item.name}`}
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+
+                        <span className="w-24 text-right text-sm sm:text-base font-black italic text-emerald-400">
+                          R$ {getOrderItemTotal(item).toFixed(2)}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => removeFromCart(item.id)}
+                          className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-300 hover:bg-rose-500 hover:text-white transition-colors flex items-center justify-center"
+                          aria-label={`Remover ${item.name}`}
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-white/10 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 shrink-0">
               <div className="flex gap-6 sm:gap-8">
                  <div>
                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1">Itens no Pedido</span>
