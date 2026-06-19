@@ -2225,6 +2225,9 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
     getCatalogVersion(),
     needsOperationalPanel ? getCashState() : Promise.resolve(null),
   ]);
+  const visibleTables = savedSettings?.qrMode === 'comanda'
+    ? tables
+    : tables.filter((table) => Number(table.number || 0) <= 50);
 
   return filterSnapshotForContext({
     catalogData,
@@ -2235,7 +2238,7 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
     closedBills,
     savedSettings,
     cashState,
-    tables,
+    tables: visibleTables,
     auditLogs,
   }, { view, session });
 };
