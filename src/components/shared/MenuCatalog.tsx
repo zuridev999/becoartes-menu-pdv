@@ -108,11 +108,18 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
     }
   };
 
+  const isContinuousMenu = navigationMode === 'continuous';
   const gridClassName = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 pb-4";
+  const productCardClassName = isContinuousMenu
+    ? "glass-card flex flex-col p-3.5 sm:p-4 md:p-6 border-white/5 hover:border-primary/30 group transition-all text-left active:scale-[0.98]"
+    : "glass-card flex flex-col p-4 md:p-6 border-white/5 hover:border-primary/30 group transition-all text-left active:scale-[0.98]";
+  const productImageClassName = isContinuousMenu
+    ? "relative aspect-[4/3] sm:aspect-auto sm:h-48 md:h-64 mb-4 md:mb-6 rounded-2xl md:rounded-3xl overflow-hidden bg-zinc-950"
+    : "relative h-40 sm:h-48 md:h-64 mb-4 md:mb-6 rounded-2xl md:rounded-3xl overflow-hidden";
   const renderGridProduct = (p: Product) => (
-    <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className="glass-card flex flex-col p-4 md:p-6 border-white/5 hover:border-primary/30 group transition-all text-left active:scale-[0.98]">
-      <div className="relative h-40 sm:h-48 md:h-64 mb-4 md:mb-6 rounded-2xl md:rounded-3xl overflow-hidden">
-        <img src={getImageSrc(p.image)} onError={applyImageFallback} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" />
+    <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className={productCardClassName}>
+      <div className={productImageClassName}>
+        <img src={getImageSrc(p.image)} onError={applyImageFallback} className="w-full h-full object-cover object-center group-hover:scale-110 transition-all duration-500" />
         <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-black/60 backdrop-blur-xl px-3 md:px-4 py-2 rounded-xl font-black text-accent border border-white/10 text-sm md:text-base">R$ {p.price.toFixed(2)}</div>
       </div>
       <h4 className="font-black text-xl md:text-2xl mb-2 italic tracking-tighter leading-none">{p.name}</h4>
