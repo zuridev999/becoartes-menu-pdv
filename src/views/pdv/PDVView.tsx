@@ -338,6 +338,7 @@ export function PDVView() {
   const canUseQrModeSwitch = Boolean(currentSeller);
   const canInspectCustomerTabs = canViewSalesTotals;
   const isAdminProfile = currentSeller.permission === 'admin';
+  const canPreviewTablesWithClosedCash = isAdminProfile;
   const isComandaMode = settings.qrMode === 'comanda';
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
   const canAccessTable = (table: TableType) => (
@@ -653,7 +654,7 @@ export function PDVView() {
         </button>
       )}
 
-      {!isCashOpen && (
+      {!isCashOpen && !canPreviewTablesWithClosedCash && (
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -684,7 +685,7 @@ export function PDVView() {
       )}
 
       <div className={`grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-8 min-h-[calc(100vh-220px)] xl:h-[calc(100vh-200px)] transition-all duration-300 ${
-        isCashOpen ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
+        isCashOpen || canPreviewTablesWithClosedCash ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
       }`}>
         {/* LEFT: MAPA DE MESAS */}
         <div className="xl:col-span-8 flex flex-col gap-5 xl:gap-6 xl:overflow-y-auto xl:pr-4 custom-scrollbar min-w-0">
