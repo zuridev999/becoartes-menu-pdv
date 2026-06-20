@@ -5737,12 +5737,55 @@ const updateTableStatus = async ({ tableId, status }, session) => {
   const allowed = new Set(['available', 'ordering', 'waiting', 'paid', 'bill_requested']);
   if (!allowed.has(status)) throw new Error('Status de mesa inválido.');
   await ensureTableAccess(tableId, session);
+  let closedCustomerTabs = 0;
+  if (status === 'available') {
+    const activeTabs = await db.execute({
+      sql: "SELECT id, customer_name, cpf, table_number FROM customer_tabs WHERE table_id = ? AND status IN ('open', 'paid')",
+      args: [tableId],
+    });
+    if (activeTabs.rows.length > 0) {
+      const totals = await getCustomerTabTotalsByTable([tableId]);
+      const balance = Number(totals[tableId]?.balance || 0);
+      if (balance > 0.009) {
+        throw new Error(`Mesa ainda tem comanda com saldo em aberto: ${formatMoneyBRL(balance)}.`);
+      }
+      const now = new Date().toISOString();
+      const closeCommands = activeTabs.rows.map((tab) => ({
+        sql: "UPDATE customer_tabs SET status = 'closed', closed_at = COALESCE(closed_at, ?), closed_by_id = ?, closed_by_name = ? WHERE id = ? AND status IN ('open', 'paid')",
+        args: [now, session?.id || '', session?.name || 'Sistema', tab.id],
+      }));
+      await db.batch([
+        ...closeCommands,
+        {
+          sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, 'table_status_closed_empty_customer_tabs', ?, ?, 'pdv', ?, ?, ?)",
+          args: [
+            createId(),
+            JSON.stringify({
+              tableId,
+              status,
+              closedCustomerTabs: activeTabs.rows.length,
+              customers: activeTabs.rows.map((tab) => ({
+                id: tab.id,
+                name: tab.customer_name,
+                cpfLast4: tab.cpf ? normalizeCpf(tab.cpf).slice(-4) : '',
+              })),
+            }),
+            String(activeTabs.rows[0]?.table_number || tableId),
+            session?.id || '',
+            session?.name || 'Sistema',
+            now,
+          ],
+        },
+      ], 'write');
+      closedCustomerTabs = activeTabs.rows.length;
+    }
+  }
   const clearsOwner = status === 'available' || status === 'paid';
   await db.execute({
     sql: `UPDATE tables SET status = ?, current_seller_id = ${clearsOwner ? 'NULL' : 'current_seller_id'} WHERE id = ?`,
     args: [status, tableId],
   });
-  return { status };
+  return { status, closedCustomerTabs };
 };
 
 const openTable = async ({ tableId, wasAvailable }, session) => {

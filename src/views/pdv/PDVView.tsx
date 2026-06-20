@@ -1059,10 +1059,10 @@ export function PDVView() {
                     </button>
                     {getOrderItemsTotal(managedTable?.orders || []) === 0 ? (
                       <button 
-                        onClick={() => {
+                        onClick={async () => {
                           if (!canUpdateTableStatus) return;
-                          updateTableStatus(managedTable.id, 'available');
-                          setSelectedTable(null);
+                          const cleaned = await updateTableStatus(managedTable.id, 'available');
+                          if (cleaned) setSelectedTable(null);
                         }}
                         disabled={!canUpdateTableStatus}
                         className={`btn-beco py-6 rounded-2xl font-black text-sm ${

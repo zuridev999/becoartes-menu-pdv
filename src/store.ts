@@ -159,7 +159,7 @@ export interface AppState {
   clearServiceRequest: (requestId: string) => Promise<void>;
   closeBill: (data: Omit<ClosedBill, 'id' | 'closedAt'>) => Promise<boolean>;
   closeCounterSale: (data: CounterSaleInput) => Promise<boolean>;
-  updateTableStatus: (tableId: string, status: Table['status']) => void;
+  updateTableStatus: (tableId: string, status: Table['status']) => Promise<boolean>;
   updateKitchenOrderStatus: (orderId: string, status: KitchenOrder['status']) => void;
   addNotification: (message: string, type?: 'info' | 'error' | 'order' | 'service', tableId?: string) => void;
   clearNotification: (id: string) => void;
@@ -1234,14 +1234,24 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   updateTableStatus: async (tableId, status) => {
-    await OpsApi.updateTableStatus(tableId, status);
-    set((state) => ({
-      tables: state.tables.map(t => t.id === tableId ? {
-        ...t,
-        status,
-        currentSellerId: status === 'available' || status === 'paid' ? '' : t.currentSellerId
-      } : t)
-    }));
+    try {
+      await OpsApi.updateTableStatus(tableId, status);
+      set((state) => ({
+        tables: state.tables.map(t => t.id === tableId ? {
+          ...t,
+          status,
+          currentSellerId: status === 'available' || status === 'paid' ? '' : t.currentSellerId,
+          customerTab: status === 'available' ? undefined : t.customerTab,
+          orders: status === 'available' ? [] : t.orders,
+          payments: status === 'available' ? [] : t.payments,
+        } : t)
+      }));
+      return true;
+    } catch (error) {
+      const message = getErrorMessage(error);
+      get().addNotification(message ? `Não foi possível limpar a mesa: ${message}` : 'Não foi possível limpar a mesa.', 'error');
+      return false;
+    }
   },
 
   // CRUD VENDEDORES
