@@ -609,6 +609,21 @@ export const AppApi = {
     return postJson<{ auditLogs: any[] }>('/api/audit-logs/list', { limit, ...filters });
   },
 
+  fetchClosedBills(filters: { from?: string; to?: string; limit?: number } = {}) {
+    const params = new URLSearchParams();
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+    if (filters.limit) params.set('limit', String(filters.limit));
+    const query = params.toString();
+    return getJson<{ closedBills: any[] }>(`/api/closed-bills${query ? `?${query}` : ''}`)
+      .then(result => ({
+        closedBills: (result.closedBills || []).map((bill: any) => ({
+          ...bill,
+          closedAt: new Date(bill.closedAt),
+        })),
+      }));
+  },
+
   getPdvLockState() {
     return getJson<PdvLockState>('/api/pdv-lock/status');
   },

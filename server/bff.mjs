@@ -1759,10 +1759,30 @@ const getServiceRequests = async () => {
   }));
 };
 
-const getClosedBills = async (limit = 200) => {
+const getClosedBills = async (limit = 200, filters = {}) => {
+  const where = [];
+  const args = [];
+  if (filters.from) {
+    where.push('closed_at >= ?');
+    args.push(filters.from);
+  }
+  if (filters.to) {
+    where.push('closed_at <= ?');
+    args.push(filters.to);
+  }
+  const maxLimit = filters.extended ? 10000 : CLOSED_BILLS_LIMIT;
+  const cappedLimit = Math.min(Math.max(Number(limit) || CLOSED_BILLS_LIMIT, 1), maxLimit);
+  args.push(cappedLimit);
+
   const res = await db.execute({
-    sql: "SELECT id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, coupon_code, coupon_amount, coupon_benefit, total, payments, strftime('%Y-%m-%dT%H:%M:%SZ', closed_at) as closed_at FROM closed_bills ORDER BY closed_at DESC LIMIT ?",
-    args: [Math.min(Number(limit) || CLOSED_BILLS_LIMIT, CLOSED_BILLS_LIMIT)],
+    sql: `
+      SELECT id, table_id, table_number, seller_id, seller_name, subtotal, service_fee, discount, discount_reason, coupon_code, coupon_amount, coupon_benefit, total, payments, strftime('%Y-%m-%dT%H:%M:%SZ', closed_at) as closed_at
+      FROM closed_bills
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY closed_at DESC
+      LIMIT ?
+    `,
+    args,
   });
   const bills = res.rows.map((row) => ({
     id: row.id,
@@ -7529,6 +7549,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'GET /api/coupons/list': 'manageCoupons',
     'GET /api/delivery/orders': 'viewSalesTotals',
     'GET /api/delivery/order-detail': 'viewSalesTotals',
+    'GET /api/closed-bills': 'viewSalesTotals',
     'GET /api/customer-tabs/lookup': 'viewSalesTotals',
     'POST /api/customer-tabs/finalize': 'closeBill',
   };
@@ -7629,6 +7650,13 @@ const handlers = {
   'POST /api/cash/close': async (body, context) => closeCash(body, context.session),
   'POST /api/shifts/open': async (body) => openShift(body),
   'POST /api/shifts/close': async (body) => closeShift(body),
+  'GET /api/closed-bills': async (_body, context) => ({
+    closedBills: await getClosedBills(Number(context.url.searchParams.get('limit') || 5000), {
+      from: context.url.searchParams.get('from') || '',
+      to: context.url.searchParams.get('to') || '',
+      extended: true,
+    }),
+  }),
   'POST /api/sellers': async (body, context) => addSeller(body, context.session),
   'POST /api/sellers/update': async (body, context) => updateSeller(body, context.session),
   'POST /api/sellers/pin': async (body) => updateSellerPin(body),

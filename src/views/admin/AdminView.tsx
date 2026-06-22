@@ -561,6 +561,9 @@ export function AdminView() {
   const [financeDateTo, setFinanceDateTo] = useState('');
   const [financeSellerFilter, setFinanceSellerFilter] = useState('all');
   const [financePaymentFilter, setFinancePaymentFilter] = useState('all');
+  const [financeClosedBills, setFinanceClosedBills] = useState<ClosedBill[]>(closedBills);
+  const [isFinanceLoading, setIsFinanceLoading] = useState(false);
+  const [financeLoadError, setFinanceLoadError] = useState('');
   const [pdvLockState, setPdvLockState] = useState<{ locked: boolean; message: string } | null>(null);
   const [isPdvLockSaving, setIsPdvLockSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -678,6 +681,44 @@ export function AdminView() {
       void fetchDeliveryOrders();
     }
   }, [activeTab, fetchDeliveryOrders]);
+
+  useEffect(() => {
+    if (activeTab !== 'finance') return;
+    if (!currentSeller) return;
+    const permissionOverrides = settings.pdvPermissions;
+    const userPermissionOverrides = settings.pdvUserPermissions as UserPermissionMatrix | undefined;
+    const canLoadFinance = currentSeller.permission === 'admin' && can(currentSeller, 'viewSalesTotals', permissionOverrides, userPermissionOverrides);
+    if (!canLoadFinance) return;
+
+    let cancelled = false;
+    const start = parseDateStart(financeDateFrom);
+    const end = parseDateEnd(financeDateTo);
+    setIsFinanceLoading(true);
+    setFinanceLoadError('');
+
+    AppApi.fetchClosedBills({
+      from: start ? start.toISOString() : undefined,
+      to: end ? end.toISOString() : undefined,
+      limit: 10000,
+    })
+      .then((result) => {
+        if (!cancelled) setFinanceClosedBills(result.closedBills as ClosedBill[]);
+      })
+      .catch((error) => {
+        console.error('Erro ao carregar fechamentos:', error);
+        if (!cancelled) {
+          setFinanceLoadError('Não foi possível carregar todos os fechamentos do período.');
+          setFinanceClosedBills(closedBills);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsFinanceLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, currentSeller, settings.pdvPermissions, settings.pdvUserPermissions, financeDateFrom, financeDateTo, closedBills]);
 
   useEffect(() => {
     if (!showAddSellerModal) return;
@@ -867,13 +908,13 @@ export function AdminView() {
   const financeStartDate = parseDateStart(financeDateFrom);
   const financeEndDate = parseDateEnd(financeDateTo);
   const financeSellerOptions = Array.from(new Map(
-    closedBills.map((bill) => {
+    financeClosedBills.map((bill) => {
       const sellerKey = String(bill.sellerId || '') || `name:${bill.sellerName || 'Sem vendedor'}`;
       return [sellerKey, bill.sellerName || 'Sem vendedor'] as const;
     })
   ).entries()).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
 
-  const filteredClosedBills = closedBills.filter((bill) => {
+  const filteredClosedBills = financeClosedBills.filter((bill) => {
     const closedAt = new Date(bill.closedAt);
     const billSellerKey = String(bill.sellerId || '') || `name:${bill.sellerName || 'Sem vendedor'}`;
     const matchesStart = !financeStartDate || closedAt >= financeStartDate;
@@ -2462,8 +2503,13 @@ export function AdminView() {
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">Filtros de fechamento</p>
                 <h3 className="text-2xl font-black tracking-tighter">Período, vendedor e forma de pagamento</h3>
                 <p className="text-xs font-bold text-zinc-500 mt-1">
-                  Exibindo {filteredClosedBills.length} de {closedBills.length} fechamento(s). Os cards abaixo seguem estes filtros.
+                  {isFinanceLoading
+                    ? 'Carregando fechamentos completos do banco...'
+                    : `Exibindo ${filteredClosedBills.length} de ${financeClosedBills.length} fechamento(s). Os cards abaixo seguem estes filtros.`}
                 </p>
+                {financeLoadError && (
+                  <p className="text-xs font-black text-rose-400 mt-2">{financeLoadError}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 w-full 2xl:w-auto">
