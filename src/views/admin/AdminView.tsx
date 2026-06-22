@@ -566,6 +566,7 @@ export function AdminView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
   const productImageInputRef = useRef<HTMLInputElement | null>(null);
+  const productEditorRef = useRef<HTMLDivElement | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -588,6 +589,13 @@ export function AdminView() {
     if (currentIndex < 0 || nextIndex < 0 || nextIndex >= categoryProducts.length) return;
     await reorderProducts(categoryId, arrayMove(categoryProducts, currentIndex, nextIndex));
   };
+
+  const openProductEditor = useCallback((product: Product) => {
+    setEditingProduct(product);
+    window.setTimeout(() => {
+      productEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  }, []);
 
   const refreshPdvLockState = useCallback(async () => {
     try {
@@ -1789,7 +1797,7 @@ export function AdminView() {
                 </div>
               </div>
               {canAddProduct && (
-                <button onClick={() => setEditingProduct({ id: createId(), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, sortOrder: 0, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
+                <button onClick={() => openProductEditor({ id: createId(), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, sortOrder: 0, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
               )}
             </div>
             <div className="mb-3 px-2 sm:px-4 text-[10px] font-black uppercase tracking-[0.22em] text-gray-500">
@@ -1857,7 +1865,14 @@ export function AdminView() {
                               {canEditProduct && (
                                 <button onClick={() => setSchedulingItem({ type: 'product', id: p.id, name: p.name, config: p.schedule })} className={`p-3 sm:p-4 glass rounded-2xl ${p.schedule?.enabled ? 'text-accent' : 'text-gray-500'}`}><Clock size={20}/></button>
                               )}
-                              <button onClick={() => setEditingProduct(p)} className="p-3 sm:p-4 glass rounded-2xl text-primary"><Settings size={20}/></button>
+                              <button
+                                onClick={() => openProductEditor(p)}
+                                className="p-3 sm:p-4 glass rounded-2xl text-primary"
+                                title="Editar produto"
+                                aria-label={`Editar ${p.name}`}
+                              >
+                                <Settings size={20}/>
+                              </button>
                             </>
                           )}
                         </div>
@@ -1871,7 +1886,7 @@ export function AdminView() {
 
           <AnimatePresence>
             {editingProduct && (
-              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-5 sm:p-8 lg:p-12 border-primary/20 lg:sticky lg:top-12 h-fit max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar shadow-2xl shadow-primary/10">
+              <motion.div ref={productEditorRef} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-5 sm:p-8 lg:p-12 border-primary/20 lg:sticky lg:top-12 h-fit max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar shadow-2xl shadow-primary/10">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-5 mb-8 sm:mb-10">
                   <div className="flex flex-col gap-1">
                     <h3 className="text-3xl font-black">
