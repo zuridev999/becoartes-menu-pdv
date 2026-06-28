@@ -7,6 +7,10 @@ const outputPath = process.env.PAGBANK_EVIDENCE_OUTPUT || `_reports/pagbank-sand
 const notificationUrl = process.env.PAGBANK_SANDBOX_NOTIFICATION_URL || 'https://delivery.becoartes.com/api/delivery/webhooks/pagbank';
 const amountInCents = Number(process.env.PAGBANK_EVIDENCE_AMOUNT_CENTS || 500);
 const createdAt = new Date().toISOString();
+const selectedMethodIds = (process.env.PAGBANK_EVIDENCE_METHODS || '')
+  .split(',')
+  .map((method) => method.trim().toLowerCase())
+  .filter(Boolean);
 
 const required = (name) => {
   const value = process.env[name];
@@ -14,14 +18,20 @@ const required = (name) => {
   return value;
 };
 
-const optionalJson = (name, fallback = null) => {
+const optionalJson = (name) => {
   const raw = process.env[name];
-  if (!raw) return fallback;
+  if (!raw) return undefined;
   try {
     return JSON.parse(raw);
   } catch (error) {
     throw new Error(`${name} precisa ser JSON valido: ${error.message}`);
   }
+};
+
+const requiredJson = (name) => {
+  const value = optionalJson(name);
+  if (!value) throw new Error(`Configure ${name} com JSON valido.`);
+  return value;
 };
 
 const loadOverrideRequest = async (methodId) => {
@@ -120,7 +130,7 @@ const debitCardRequest = () => ({
         name: process.env.PAGBANK_EVIDENCE_CARD_HOLDER_NAME || 'Jose da Silva',
         tax_id: process.env.PAGBANK_EVIDENCE_CARD_HOLDER_TAX_ID || '65544332211',
       },
-      authentication_method: optionalJson('PAGBANK_SANDBOX_DEBIT_3DS_AUTHENTICATION_METHOD', undefined),
+      authentication_method: requiredJson('PAGBANK_SANDBOX_DEBIT_3DS_AUTHENTICATION_METHOD'),
     }),
   ],
 });
@@ -141,12 +151,15 @@ const googlePayRequest = () => ({
   ...baseOrder('google_pay'),
   charges: [
     charge('google_pay', {
-      type: 'GOOGLE_PAY',
+      type: 'CREDIT_CARD',
       installments: 1,
       capture: true,
-      google_pay: optionalJson('PAGBANK_SANDBOX_GOOGLE_PAY_DATA', {
-        encrypted: required('PAGBANK_SANDBOX_GOOGLE_PAY_ENCRYPTED'),
-      }),
+      card: {
+        wallet: {
+          type: 'GOOGLE_PAY',
+          key: process.env.PAGBANK_SANDBOX_GOOGLE_PAY_KEY || required('PAGBANK_SANDBOX_GOOGLE_PAY_ENCRYPTED'),
+        },
+      },
     }),
   ],
 });
@@ -155,23 +168,82 @@ const applePayRequest = () => ({
   ...baseOrder('apple_pay'),
   charges: [
     charge('apple_pay', {
-      type: 'APPLE_PAY',
+      type: 'CREDIT_CARD',
       installments: 1,
       capture: true,
-      apple_pay: optionalJson('PAGBANK_SANDBOX_APPLE_PAY_DATA', {
-        payment_data: required('PAGBANK_SANDBOX_APPLE_PAY_PAYMENT_DATA'),
-      }),
+      card: {
+        wallet: {
+          type: 'APPLE_PAY',
+          key: process.env.PAGBANK_SANDBOX_APPLE_PAY_KEY || required('PAGBANK_SANDBOX_APPLE_PAY_PAYMENT_DATA'),
+        },
+      },
     }),
   ],
 });
 
-const methods = [
+const allMethods = [
   ['credit_card', 'Cartao de credito', creditCardRequest],
   ['debit_card', 'Cartao de debito', debitCardRequest],
   ['pix', 'Pix', pixRequest],
   ['google_pay', 'Google Pay', googlePayRequest],
   ['apple_pay', 'Apple Pay', applePayRequest],
 ];
+
+const methods = selectedMethodIds.length
+  ? allMethods.filter(([methodId]) => selectedMethodIds.includes(methodId))
+  : allMethods;
+
+if (selectedMethodIds.length && methods.length !== selectedMethodIds.length) {
+  const known = allMethods.map(([methodId]) => methodId).join(', ');
+  throw new Error(`PAGBANK_EVIDENCE_METHODS contem metodo desconhecido. Use: ${known}.`);
+}
+
+const autoEncryptTestCards = async () => {
+  if (process.env.PAGBANK_SANDBOX_AUTO_ENCRYPT_TEST_CARDS !== '1') return;
+  const needsCredit = methods.some(([methodId]) => methodId === 'credit_card') && !process.env.PAGBANK_SANDBOX_CREDIT_CARD_ENCRYPTED;
+  const needsDebit = methods.some(([methodId]) => methodId === 'debit_card') && !process.env.PAGBANK_SANDBOX_DEBIT_CARD_ENCRYPTED;
+  if (!needsCredit && !needsDebit) return;
+
+  const publicKeyResponse = await fetch(`${sandboxBaseUrl}/public-keys/card`, {
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${sandboxToken}`,
+    },
+  });
+  const publicKeyPayload = await publicKeyResponse.json().catch(() => ({}));
+  const publicKey = publicKeyPayload.public_key || publicKeyPayload.publicKey;
+  if (!publicKeyResponse.ok || !publicKey) {
+    throw new Error(`Nao foi possivel consultar public key Sandbox (${publicKeyResponse.status}).`);
+  }
+
+  const sdkResponse = await fetch('https://assets.pagseguro.com.br/checkout-sdk-js/rc/dist/browser/pagseguro.min.js');
+  const sdk = await sdkResponse.text();
+  const PagSeguro = new Function(`${sdk}; return PagSeguro;`)();
+  if (needsCredit) {
+    const card = PagSeguro.encryptCard({
+      publicKey,
+      holder: process.env.PAGBANK_EVIDENCE_CARD_HOLDER_NAME || 'Jose da Silva',
+      number: process.env.PAGBANK_SANDBOX_CREDIT_CARD_NUMBER || '4111111111111111',
+      expMonth: process.env.PAGBANK_SANDBOX_CREDIT_CARD_EXP_MONTH || '12',
+      expYear: process.env.PAGBANK_SANDBOX_CREDIT_CARD_EXP_YEAR || '2030',
+      securityCode: process.env.PAGBANK_SANDBOX_CREDIT_CARD_SECURITY_CODE || '123',
+    });
+    if (card.hasErrors || !card.encryptedCard) throw new Error(`Falha ao criptografar cartao credito: ${JSON.stringify(card.errors || [])}`);
+    process.env.PAGBANK_SANDBOX_CREDIT_CARD_ENCRYPTED = card.encryptedCard;
+  }
+  if (needsDebit) {
+    const card = PagSeguro.encryptCard({
+      publicKey,
+      holder: process.env.PAGBANK_EVIDENCE_CARD_HOLDER_NAME || 'Jose da Silva',
+      number: process.env.PAGBANK_SANDBOX_DEBIT_CARD_NUMBER || '6550000000000001',
+      expMonth: process.env.PAGBANK_SANDBOX_DEBIT_CARD_EXP_MONTH || '12',
+      expYear: process.env.PAGBANK_SANDBOX_DEBIT_CARD_EXP_YEAR || '2030',
+      securityCode: process.env.PAGBANK_SANDBOX_DEBIT_CARD_SECURITY_CODE || '123',
+    });
+    if (card.hasErrors || !card.encryptedCard) throw new Error(`Falha ao criptografar cartao debito: ${JSON.stringify(card.errors || [])}`);
+    process.env.PAGBANK_SANDBOX_DEBIT_CARD_ENCRYPTED = card.encryptedCard;
+  }
+};
 
 const postPagBank = async (request) => {
   const response = await fetch(`${sandboxBaseUrl}/orders`, {
@@ -207,6 +279,8 @@ const block = (title, value) => [
 if (!sandboxToken) {
   throw new Error('Configure PAGBANK_SANDBOX_TOKEN para gerar evidence real de Sandbox.');
 }
+
+await autoEncryptTestCards();
 
 const sections = [];
 

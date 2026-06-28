@@ -12,7 +12,7 @@ export function PdvTicker({ enabled = true, text }: PdvTickerProps) {
     return null;
   }
 
-  const durationSeconds = Math.min(90, Math.max(36, Math.round(message.length / 2.4)));
+  const durationSeconds = Math.round(Math.min(90, Math.max(36, message.length / 2.4)) * 0.8);
   const tickerStyle = {
     '--pdv-ticker-duration': `${durationSeconds}s`,
   } as CSSProperties;

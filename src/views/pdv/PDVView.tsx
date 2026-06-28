@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, 
@@ -8,7 +8,7 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag, ShieldCheck, Search
+  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag, Search
 } from 'lucide-react';
 import { useStore, type OrderItem, type Product, type Table as TableType } from '../../store';
 import type { CustomerTab } from '../../types';
@@ -29,6 +29,93 @@ const CANCEL_REASONS = [
   { code: 'correcao_administrativa', label: 'Correção administrativa' },
   { code: 'outro', label: 'Outro motivo' },
 ];
+
+const DAILY_GOALS_BY_WEEKDAY: Record<number, number> = {
+  0: 6000,
+  1: 3000,
+  2: 2000,
+  3: 2000,
+  4: 2800,
+  5: 4000,
+  6: 7500,
+};
+
+const DAILY_GOAL_EXCEPTIONS: Record<string, number> = {
+  '2026-06-24': 3000,
+};
+
+const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function getLocalDateKey(date = new Date()) {
+  return date.toLocaleDateString('en-CA');
+}
+
+function getDailyGoal(date = new Date()) {
+  const dateKey = getLocalDateKey(date);
+  return DAILY_GOAL_EXCEPTIONS[dateKey] ?? DAILY_GOALS_BY_WEEKDAY[date.getDay()] ?? 0;
+}
+
+function getGoalMessage(percent: number) {
+  if (percent >= 100) return 'Parabéns, alcançamos a meta diária!';
+  if (percent >= 80) return 'Já foram 80%, falta pouco, acreditem!';
+  if (percent >= 50) return 'Já passamos da metade, vamos focar.';
+  return 'Foco nas vendas, pessoal.';
+}
+
+const GOAL_TICKER_MESSAGE = 'Foco nas vendas. Aumentar o som para que se escute da rua e não sejamos engolidos por sons de outros lugares. Manter playlist Becoartes que é estudada há 6 anos para atrair nosso público alvo. Aqui não é lugar de fofoca. Nós ganhamos por hora, então faça sua hora valer.';
+
+function PdvGoalTicker({ totalToday }: { totalToday: number }) {
+  const goal = getDailyGoal();
+  if (goal <= 0) return null;
+
+  const percent = Math.min(999, (totalToday / goal) * 100);
+  const message = getGoalMessage(percent);
+  const durationSeconds = Math.round(Math.min(96, Math.max(44, GOAL_TICKER_MESSAGE.length / 2.2)) * 0.8);
+  const tickerStyle = {
+    '--pdv-ticker-duration': `${durationSeconds}s`,
+  } as CSSProperties;
+
+  return (
+    <section className="mb-6 -mt-3 overflow-hidden rounded-[1.75rem] border border-emerald-200/45 bg-gradient-to-r from-emerald-950 via-emerald-800 to-emerald-950 px-4 py-3.5 shadow-2xl shadow-emerald-950/35">
+      <div className="pdv-ticker-track flex w-max items-center gap-10 whitespace-nowrap" style={tickerStyle}>
+        {[0, 1, 2].map((item) => (
+          <span key={item} className="inline-flex items-center gap-10 text-xs sm:text-sm font-black uppercase tracking-[0.14em] text-yellow-200 drop-shadow">
+            {message} {GOAL_TICKER_MESSAGE}
+            <span className="h-2.5 w-2.5 rounded-full bg-yellow-300 shadow-lg shadow-yellow-300/40" />
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PdvGoalCards({ totalToday }: { totalToday: number }) {
+  const goal = getDailyGoal();
+  if (goal <= 0) return null;
+
+  const missing = Math.max(0, goal - totalToday);
+
+  return (
+    <>
+      <div className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[150px] xl:flex-none">
+        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Meta do dia</span>
+        <span className="text-2xl font-black text-emerald-400">{formatCurrency(goal)}</span>
+      </div>
+      <div className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[150px] xl:flex-none">
+        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Faltam</span>
+        <span className="text-2xl font-black text-yellow-300">{formatCurrency(missing)}</span>
+      </div>
+    </>
+  );
+}
+
+function setSettingsFromQrModeResult(settingsResult: unknown, fallbackMode: 'mesa' | 'comanda') {
+  const currentSettings = useStore.getState().settings;
+  const nextSettings = settingsResult && typeof settingsResult === 'object'
+    ? { ...currentSettings, ...(settingsResult as Record<string, unknown>) }
+    : { ...currentSettings, qrMode: fallbackMode };
+  useStore.setState({ settings: nextSettings });
+}
 
 export function PDVView() {
   const { 
@@ -361,14 +448,13 @@ export function PDVView() {
     return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
-  const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
   const submitQrModeSwitch = async (authorizationPin?: string) => {
     if (isSwitchingQrMode) return;
     setIsSwitchingQrMode(true);
     const nextMode = isComandaMode ? 'mesa' : 'comanda';
     try {
-      await AdminApi.setQrMode(nextMode, authorizationPin);
+      const result = await AdminApi.setQrMode(nextMode, authorizationPin);
+      setSettingsFromQrModeResult(result.settings, nextMode);
       addNotification(nextMode === 'comanda' ? 'Modo comanda ativado no QR.' : 'Modo mesa ativado no QR.', 'info');
       setShowQrModePinDialog(false);
       await syncData({ includeCatalog: false });
@@ -528,6 +614,7 @@ export function PDVView() {
 
       {/* HEADER */}
       <PdvTicker enabled={settings.pdv?.tickerEnabled !== false} text={settings.pdv?.tickerText} />
+      <PdvGoalTicker totalToday={totalToday} />
       <header className="flex flex-col xl:flex-row xl:justify-between xl:items-center gap-6 mb-8 xl:mb-12">
         <div className="min-w-0">
           <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter flex flex-wrap items-center gap-x-3 gap-y-1 leading-none">
@@ -548,15 +635,18 @@ export function PDVView() {
 
         <div className="flex flex-wrap gap-3 sm:gap-4 xl:gap-6 w-full xl:w-auto">
           {canViewSalesTotals && (
-            <button
-              type="button"
-              onClick={() => setShowSalesBreakdown(true)}
-              className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[150px] xl:flex-none hover:border-emerald-400/35 hover:bg-emerald-400/5 transition-all text-left"
-              title="Ver vendas de hoje por forma de pagamento"
-            >
-              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Vendas Hoje</span>
-              <span className="text-2xl font-black text-emerald-400">{formatCurrency(totalToday)}</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setShowSalesBreakdown(true)}
+                className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[150px] xl:flex-none hover:border-emerald-400/35 hover:bg-emerald-400/5 transition-all text-left"
+                title="Ver vendas de hoje por forma de pagamento"
+              >
+                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Vendas Hoje</span>
+                <span className="text-2xl font-black text-emerald-400">{formatCurrency(totalToday)}</span>
+              </button>
+              <PdvGoalCards totalToday={totalToday} />
+            </>
           )}
           <div className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[130px] xl:flex-none">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Mesas Ativas</span>
@@ -565,18 +655,33 @@ export function PDVView() {
           <button
             onClick={switchQrMode}
             disabled={!canUseQrModeSwitch || isSwitchingQrMode}
-            className={`glass-card px-6 py-4 flex items-center gap-3 transition-all border-white/5 ${
+            className={`glass-card px-5 sm:px-6 py-4 flex items-center gap-4 transition-all ${
               canUseQrModeSwitch
-                ? (isComandaMode ? 'bg-amber-400/10 text-amber-300 hover:bg-amber-400/20' : 'hover:bg-primary/10 hover:text-primary')
+                ? (isComandaMode
+                  ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20'
+                  : 'border-rose-400/35 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20')
                 : 'opacity-40 cursor-not-allowed text-zinc-600'
             }`}
-            title="Alternar modo do QR"
+            title="Modo comanda desligado = modo mesa. Modo comanda ligado = comandas."
           >
-            <ShieldCheck size={22} />
+            <span className={`relative h-8 w-16 shrink-0 rounded-full border p-1 transition-colors ${
+              isComandaMode ? 'border-emerald-300/50 bg-emerald-400/25' : 'border-rose-300/50 bg-rose-500/25'
+            }`}>
+              <span className={`block h-6 w-6 rounded-full shadow-lg transition-transform ${
+                isComandaMode ? 'translate-x-7 bg-emerald-200 shadow-emerald-900/40' : 'translate-x-0 bg-rose-200 shadow-rose-900/40'
+              }`} />
+            </span>
             <div className="text-left">
               <span className="block text-[10px] font-black uppercase tracking-[0.18em]">
-                {isSwitchingQrMode ? 'Salvando...' : isComandaMode ? 'Modo Comanda' : 'Modo Mesa'}
+                {isSwitchingQrMode ? 'Salvando...' : 'Modo comanda'}
               </span>
+              {!isSwitchingQrMode && (
+                <span className={`block text-[10px] font-black uppercase tracking-[0.18em] ${
+                  isComandaMode ? 'text-emerald-200' : 'text-rose-200'
+                }`}>
+                  {isComandaMode ? 'Ligado' : 'Desligado'}
+                </span>
+              )}
               <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-white/35">
                 QR {isComandaMode ? '200 comandas' : '50 mesas'}
               </span>

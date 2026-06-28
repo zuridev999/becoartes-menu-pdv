@@ -726,6 +726,7 @@ export const useStore = create<AppState>((set, get) => ({
           kitchenOrders,
           serviceRequests: snapshot.serviceRequests,
           closedBills: snapshot.closedBills,
+          settings: snapshot.savedSettings ? { ...get().settings, ...snapshot.savedSettings } : get().settings,
           cashState: snapshot.cashState || get().cashState,
           tables: finalTables.sort((a, b) => a.number - b.number),
           serverTimeOffset
