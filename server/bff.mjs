@@ -1,15 +1,18 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { createReadStream, existsSync } from 'node:fs';
-import { extname, join, normalize } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@libsql/client';
+import { sendJson } from './http.mjs';
+import { runSchemaMigrations } from './migrations/schema.mjs';
+import { createApiHandler } from './routes/api-router.mjs';
+import { createStaticHandler } from './static-files.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
 const distDir = join(rootDir, 'dist');
 const port = Number(process.env.PORT || 80);
+const startedAt = Date.now();
 
 const tursoUrl = process.env.TURSO_DATABASE_URL || process.env.VITE_TURSO_DATABASE_URL;
 const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || process.env.VITE_TURSO_AUTH_TOKEN;
@@ -21,10 +24,15 @@ const DELIVERY_OS_CRM_SYNC = process.env.DELIVERY_OS_CRM_SYNC || 'disabled';
 const DELIVERY_OS_CRM_URL = process.env.DELIVERY_OS_CRM_URL || 'https://os.becoartes.com/api/delivery/clientes';
 const DELIVERY_OS_SYNC_SECRET = process.env.DELIVERY_OS_SYNC_SECRET || '';
 const BOOTSTRAP_ADMIN_PIN = process.env.BOOTSTRAP_ADMIN_PIN || process.env.VITE_BOOTSTRAP_ADMIN_PIN || '';
-const DEFAULT_MANAGER_PIN = process.env.DEFAULT_MANAGER_PIN || process.env.VITE_DEFAULT_MANAGER_PIN || '2020';
-const DEFAULT_OPERATOR_PIN = process.env.DEFAULT_OPERATOR_PIN || process.env.VITE_DEFAULT_OPERATOR_PIN || '0040';
-const TABLET_SETUP_PIN = process.env.TABLET_SETUP_PIN || process.env.VITE_TABLET_SETUP_PIN || '0040';
-const ADMIN_BYPASS_PIN = process.env.ADMIN_BYPASS_PIN || '0719';
+const requireRuntimeSecret = (name, value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) throw new Error(`Missing required runtime secret: ${name}`);
+  return normalized;
+};
+const DEFAULT_MANAGER_PIN = requireRuntimeSecret('DEFAULT_MANAGER_PIN', process.env.DEFAULT_MANAGER_PIN);
+const DEFAULT_OPERATOR_PIN = requireRuntimeSecret('DEFAULT_OPERATOR_PIN', process.env.DEFAULT_OPERATOR_PIN);
+const TABLET_SETUP_PIN = requireRuntimeSecret('TABLET_SETUP_PIN', process.env.TABLET_SETUP_PIN);
+const ADMIN_BYPASS_PIN = String(process.env.ADMIN_BYPASS_PIN || '').trim();
 const ALLOWED_OPERATION_IPS = (process.env.ALLOWED_OPERATION_IPS || '')
   .split(',')
   .map((ip) => ip.trim())
@@ -33,8 +41,11 @@ const ALLOWED_WEB_ORIGINS = (process.env.ALLOWED_WEB_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
-const SESSION_SECRET = process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET || tursoAuthToken || (isLocalLibsqlUrl ? 'local-delivery-session-secret' : undefined);
+const SESSION_SECRET = isLocalLibsqlUrl
+  ? (process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET || 'local-delivery-session-secret')
+  : requireRuntimeSecret('BFF_SESSION_SECRET', process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET);
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const TABLET_TABLE_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PROCESSING_STALE_MS = 10 * 60 * 1000;
 const SERVICE_REQUEST_LIMIT = Number(process.env.SERVICE_REQUEST_LIMIT || 150);
 const CLOSED_BILLS_LIMIT = Number(process.env.CLOSED_BILLS_LIMIT || 200);
@@ -73,6 +84,9 @@ const DELIVERY_CLUB_REWARD_LABEL = process.env.DELIVERY_CLUB_REWARD_LABEL || '1 
 const DELIVERY_DEFAULT_COUPONS = [
   { code: 'BECO10', type: 'percent', value: 10, maxDiscount: 30, minSubtotal: 0, label: '10% de desconto' },
 ];
+const APP_VERSION = process.env.APP_VERSION || process.env.VITE_APP_VERSION || 'unknown';
+const APP_COMMIT = process.env.APP_COMMIT || process.env.VITE_APP_COMMIT || 'unknown';
+const HEALTH_DB_TIMEOUT_MS = Math.max(250, Number(process.env.HEALTH_DB_TIMEOUT_MS || 3000));
 
 if (!tursoUrl || (!tursoAuthToken && !isLocalLibsqlUrl)) {
   throw new Error('Missing Turso configuration for BFF runtime.');
@@ -82,14 +96,6 @@ const db = createClient({
   url: tursoUrl,
   ...(tursoAuthToken ? { authToken: tursoAuthToken } : {}),
 });
-
-const jsonHeaders = {
-  'content-type': 'application/json; charset=utf-8',
-  'x-content-type-options': 'nosniff',
-  'referrer-policy': 'strict-origin-when-cross-origin',
-  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
-  'cache-control': 'no-store',
-};
 
 const securityHeaders = {
   'x-content-type-options': 'nosniff',
@@ -519,6 +525,22 @@ const createSessionToken = (seller) => {
   return `${payload}.${signSessionPayload(payload)}`;
 };
 
+const createSignedToken = (payload) => {
+  const encoded = base64UrlJson(payload);
+  return `${encoded}.${signSessionPayload(encoded)}`;
+};
+
+const decodeSignedToken = (token = '') => {
+  if (!String(token).includes('.')) return null;
+  const [payload, signature] = String(token).split('.');
+  if (!payload || !signature || !safeEqual(signature, signSessionPayload(payload))) return null;
+  try {
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+};
+
 const safeEqual = (left, right) => {
   const leftBuffer = Buffer.from(String(left));
   const rightBuffer = Buffer.from(String(right));
@@ -566,6 +588,91 @@ const getSessionFromRequest = (req) => {
   }
 };
 
+const getTableById = async (tableId) => {
+  const tableRes = await db.execute({
+    sql: "SELECT id, number FROM tables WHERE id = ? LIMIT 1",
+    args: [String(tableId || '')],
+  });
+  return tableRes.rows[0] || null;
+};
+
+const getTableByNumber = async (tableNumber) => {
+  const safeTableNumber = Math.trunc(Number(tableNumber || 0));
+  if (!Number.isFinite(safeTableNumber) || safeTableNumber <= 0) return null;
+  const tableRes = await db.execute({
+    sql: "SELECT id, number FROM tables WHERE number = ? LIMIT 1",
+    args: [String(safeTableNumber)],
+  });
+  return tableRes.rows[0] || null;
+};
+
+const createPublicTableToken = ({ source, tableId, tableNumber, revision = '', expiresAt = 0 }) => createSignedToken({
+  typ: 'public_table_access',
+  source,
+  tableId: String(tableId || ''),
+  tableNumber: Number(tableNumber || 0),
+  revision: String(revision || ''),
+  exp: expiresAt ? Number(expiresAt) : 0,
+  iat: Date.now(),
+});
+
+const verifyPublicTableToken = async ({ token, source, tableId = '', tableNumber = '' }) => {
+  const decoded = decodeSignedToken(token);
+  if (!decoded || decoded.typ !== 'public_table_access') return null;
+  if (decoded.source !== source) return null;
+  if (decoded.exp && Number(decoded.exp) < Date.now()) return null;
+
+  const table = tableId ? await getTableById(tableId) : await getTableByNumber(tableNumber || decoded.tableNumber);
+  if (!table) return null;
+  if (String(decoded.tableId) !== String(table.id)) return null;
+  if (Number(decoded.tableNumber || 0) !== Number(table.number || 0)) return null;
+  if (tableNumber && Number(tableNumber) !== Number(table.number || 0)) return null;
+
+  if (source === 'qr') {
+    const settings = await getSettings();
+    const revision = settings?.qrCodes?.tableRevisions?.[String(table.number)] || '';
+    if (String(decoded.revision || '') !== String(revision || '')) return null;
+  }
+
+  return {
+    source,
+    tableId: String(table.id),
+    tableNumber: Number(table.number || 0),
+  };
+};
+
+const createTableAccessToken = async ({ origin, tableId = '', tableNumber = '' }, session = null) => {
+  const source = origin === 'tablet' ? 'tablet' : origin === 'qr' ? 'qr' : '';
+  if (!source) throw new Error('Origem inválida para token de mesa.');
+
+  if (source === 'tablet' && !session?.stationAccess && !isAdminSession(session)) {
+    const error = new Error('Sessão do tablet inválida para vincular mesa.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const table = tableId ? await getTableById(tableId) : await getTableByNumber(tableNumber);
+  if (!table) throw new Error('Mesa não encontrada para token público.');
+
+  const settings = await getSettings();
+  const revision = source === 'qr' ? (settings?.qrCodes?.tableRevisions?.[String(table.number)] || '') : '';
+  const expiresAt = source === 'tablet' ? Date.now() + TABLET_TABLE_TOKEN_TTL_MS : 0;
+
+  return {
+    tableId: String(table.id),
+    tableNumber: Number(table.number || 0),
+    origin: source,
+    token: createPublicTableToken({
+      source,
+      tableId: table.id,
+      tableNumber: table.number,
+      revision,
+      expiresAt,
+    }),
+    expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+  };
+};
+
 const ensureDatabase = async () => {
   await db.batch([
     "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, schedule_config TEXT, sort_order INTEGER DEFAULT 0, visible INTEGER DEFAULT 1)",
@@ -591,7 +698,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS delivery_events (id TEXT PRIMARY KEY, delivery_order_id TEXT NOT NULL, type TEXT NOT NULL, status TEXT NOT NULL, provider TEXT, external_id TEXT, payload TEXT, error TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS delivery_customer_sessions (token_hash TEXT PRIMARY KEY, customer_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME NOT NULL)",
     "CREATE TABLE IF NOT EXISTS delivery_notifications (id TEXT PRIMARY KEY, delivery_order_id TEXT, customer_id TEXT, channel TEXT NOT NULL, type TEXT NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL, destination TEXT, payload TEXT, error TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-    "CREATE TABLE IF NOT EXISTS estoque_produtos (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, categoria TEXT, ativo INTEGER DEFAULT 1, quantidade_atual REAL DEFAULT 0, estoque_minimo REAL DEFAULT 0, created_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS estoque_produtos (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, categoria TEXT, ativo INTEGER DEFAULT 1, quantidade_atual REAL DEFAULT 0, estoque_minimo REAL DEFAULT 0, status TEXT DEFAULT 'Saudável', created_at INTEGER, updated_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS estoque_movimentacoes (id TEXT PRIMARY KEY, empresa_id TEXT, produto_id TEXT, tipo_movimentacao TEXT, quantidade REAL, quantidade_anterior REAL, quantidade_nova REAL, motivo TEXT, responsavel_id TEXT, created_at INTEGER, closed_bill_id TEXT, order_id TEXT, order_item_id TEXT, origem TEXT, integration_event_id TEXT, source_item_id TEXT, source_item_kind TEXT)",
     "CREATE TABLE IF NOT EXISTS notificacoes (id TEXT PRIMARY KEY, empresa_id TEXT, usuario_id TEXT, titulo TEXT, mensagem TEXT, tipo TEXT, lida INTEGER DEFAULT 0, link TEXT, created_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, email TEXT, role TEXT, funcao TEXT, ativo INTEGER DEFAULT 1, pin TEXT, is_operador INTEGER DEFAULT 1, permitir_acesso_remoto INTEGER DEFAULT 0, tipo_vinculo TEXT, pdv_sell_enabled INTEGER DEFAULT 0, created_at INTEGER)",
@@ -603,96 +710,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS pdv_cash_sandbox (id TEXT PRIMARY KEY, empresa_id TEXT NOT NULL, data TEXT NOT NULL, saldo_inicial REAL NOT NULL DEFAULT 0, entradas_dinheiro REAL NOT NULL DEFAULT 0, saidas_dinheiro REAL NOT NULL DEFAULT 0, valor_caixa_final REAL NOT NULL DEFAULT 0, valor_envelopes REAL NOT NULL DEFAULT 0, total_na_casa REAL NOT NULL DEFAULT 0, responsavel_id TEXT NOT NULL, observacoes TEXT, status TEXT NOT NULL DEFAULT 'Aberto', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
   ], 'write');
 
-  const migrations = [
-    "ALTER TABLE menu ADD COLUMN category_id TEXT",
-    "ALTER TABLE menu ADD COLUMN schedule_config TEXT",
-    "ALTER TABLE menu ADD COLUMN cost REAL DEFAULT 0",
-    "ALTER TABLE menu ADD COLUMN sort_order INTEGER DEFAULT 0",
-    "ALTER TABLE categories ADD COLUMN visible INTEGER DEFAULT 1",
-    "ALTER TABLE categories ADD COLUMN schedule_config TEXT",
-    "ALTER TABLE sellers ADD COLUMN permission TEXT DEFAULT 'standard'",
-    "ALTER TABLE sellers ADD COLUMN pin TEXT DEFAULT '1234'",
-    "ALTER TABLE sellers ADD COLUMN tipo_vinculo TEXT DEFAULT 'fixo'",
-    "ALTER TABLE orders ADD COLUMN origin TEXT DEFAULT 'pdv'",
-    "ALTER TABLE order_items ADD COLUMN notes TEXT",
-    "ALTER TABLE modifier_groups ADD COLUMN status TEXT DEFAULT 'active'",
-    "ALTER TABLE modifiers ADD COLUMN status TEXT DEFAULT 'active'",
-    "ALTER TABLE modifiers ADD COLUMN sort_order INTEGER DEFAULT 0",
-    "ALTER TABLE product_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
-    "ALTER TABLE category_modifier_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
-    "ALTER TABLE service_requests ADD COLUMN message TEXT",
-    "ALTER TABLE tables ADD COLUMN current_seller_id TEXT",
-    "ALTER TABLE customer_tabs ADD COLUMN cpf_hash TEXT",
-    "ALTER TABLE customer_tabs ADD COLUMN cpf_last4 TEXT",
-    "ALTER TABLE customer_tabs ADD COLUMN paid_at DATETIME",
-    "ALTER TABLE customer_tabs ADD COLUMN closed_at DATETIME",
-    "ALTER TABLE customer_tabs ADD COLUMN closed_by_id TEXT",
-    "ALTER TABLE customer_tabs ADD COLUMN closed_by_name TEXT",
-    "ALTER TABLE closed_bills ADD COLUMN table_id TEXT",
-    "ALTER TABLE closed_bills ADD COLUMN coupon_code TEXT",
-    "ALTER TABLE closed_bills ADD COLUMN coupon_amount REAL DEFAULT 0",
-    "ALTER TABLE closed_bills ADD COLUMN coupon_benefit TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN customer_id TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN customer_name TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN phone TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN campaign_name TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN valid_until DATETIME",
-    "ALTER TABLE pdv_coupons ADD COLUMN min_order_value REAL DEFAULT 0",
-    "ALTER TABLE pdv_coupons ADD COLUMN selected_benefit TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN used_by_employee_id TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN used_by_employee TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN table_number INTEGER",
-    "ALTER TABLE pdv_coupons ADD COLUMN order_id TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN whatsapp_message TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN sent_at DATETIME",
-    "ALTER TABLE pdv_coupons ADD COLUMN benefit_type TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN discount_type TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN target_category TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN target_product_id TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN target_product_name TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN free_item_name TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN benefit_label TEXT",
-    "ALTER TABLE pdv_coupons ADD COLUMN rule_json TEXT",
-    "ALTER TABLE delivery_orders ADD COLUMN payment_provider TEXT",
-    "ALTER TABLE delivery_orders ADD COLUMN payment_external_id TEXT",
-    "ALTER TABLE delivery_orders ADD COLUMN checkout_url TEXT",
-    "ALTER TABLE delivery_orders ADD COLUMN production_order_id TEXT",
-    "ALTER TABLE delivery_customers ADD COLUMN city TEXT",
-    "ALTER TABLE delivery_customers ADD COLUMN state TEXT",
-    "ALTER TABLE delivery_customers ADD COLUMN postal_code TEXT",
-    "ALTER TABLE delivery_customers ADD COLUMN reference TEXT",
-    "ALTER TABLE delivery_customers ADD COLUMN latitude REAL",
-    "ALTER TABLE delivery_customers ADD COLUMN longitude REAL",
-    "ALTER TABLE delivery_customers ADD COLUMN password_hash TEXT",
-    "ALTER TABLE delivery_customers ADD COLUMN email_verified INTEGER DEFAULT 0",
-    "ALTER TABLE delivery_customers ADD COLUMN phone_verified INTEGER DEFAULT 0",
-    "ALTER TABLE delivery_customers ADD COLUMN verification_code_hash TEXT",
-    "ALTER TABLE delivery_customers ADD COLUMN verification_code_expires_at DATETIME",
-    "ALTER TABLE delivery_customers ADD COLUMN reset_code_hash TEXT",
-    "ALTER TABLE delivery_customers ADD COLUMN reset_code_expires_at DATETIME",
-    "ALTER TABLE delivery_customers ADD COLUMN last_login_at DATETIME",
-    "ALTER TABLE estoque_produtos ADD COLUMN estoque_minimo REAL DEFAULT 0",
-    "ALTER TABLE estoque_movimentacoes ADD COLUMN closed_bill_id TEXT",
-    "ALTER TABLE estoque_movimentacoes ADD COLUMN order_id TEXT",
-    "ALTER TABLE estoque_movimentacoes ADD COLUMN order_item_id TEXT",
-    "ALTER TABLE estoque_movimentacoes ADD COLUMN origem TEXT",
-    "ALTER TABLE estoque_movimentacoes ADD COLUMN integration_event_id TEXT",
-    "ALTER TABLE estoque_movimentacoes ADD COLUMN source_item_id TEXT",
-    "ALTER TABLE estoque_movimentacoes ADD COLUMN source_item_kind TEXT",
-    "ALTER TABLE users ADD COLUMN nome TEXT",
-    "ALTER TABLE users ADD COLUMN email TEXT",
-    "ALTER TABLE users ADD COLUMN funcao TEXT",
-    "ALTER TABLE users ADD COLUMN ativo INTEGER DEFAULT 1",
-    "ALTER TABLE users ADD COLUMN pin TEXT",
-    "ALTER TABLE users ADD COLUMN is_operador INTEGER DEFAULT 1",
-    "ALTER TABLE users ADD COLUMN permitir_acesso_remoto INTEGER DEFAULT 0",
-    "ALTER TABLE users ADD COLUMN tipo_vinculo TEXT",
-    "ALTER TABLE users ADD COLUMN pdv_sell_enabled INTEGER DEFAULT 0",
-  ];
-
-  for (const sql of migrations) {
-    try { await db.execute(sql); } catch {}
-  }
+  await runSchemaMigrations(db);
 
   const indexes = [
     "CREATE INDEX IF NOT EXISTS idx_orders_table_status ON orders(table_id, status)",
@@ -746,32 +764,6 @@ const ensureDatabaseReady = () => {
     });
   }
   return databaseReadyPromise;
-};
-
-const readJsonBody = async (req) => {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const raw = Buffer.concat(chunks).toString('utf8');
-  req.rawBody = raw;
-  if (!raw.trim()) return {};
-  return JSON.parse(raw);
-};
-
-const sendJson = (res, status, body) => {
-  res.writeHead(status, jsonHeaders);
-  res.end(JSON.stringify(body));
-};
-
-const assertSameOrigin = (req) => {
-  const origin = req.headers.origin;
-  if (!origin) return;
-  const host = req.headers.host;
-  if (!host) throw new Error('Host ausente.');
-  const expectedHttp = `http://${host}`;
-  const expectedHttps = `https://${host}`;
-  if (origin !== expectedHttp && origin !== expectedHttps && !ALLOWED_WEB_ORIGINS.includes(origin)) {
-    throw new Error('Origem não autorizada.');
-  }
 };
 
 const pinAttemptBuckets = new Map();
@@ -2954,7 +2946,7 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
           SET quantidade_atual = quantidade_atual - ?,
               status = CASE WHEN quantidade_atual - ? <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
               updated_at = ?
-          WHERE id = ? AND empresa_id = ? AND ativo = 1
+          WHERE id = ? AND empresa_id = ? AND ativo = 1 AND changes() > 0
         `,
         args: [movement.requestedQuantity, movement.requestedQuantity, now, movement.stockId, empresaId],
       },
@@ -5440,6 +5432,33 @@ const formatTablePayment = (row) => ({
   createdAt: row.created_at || new Date().toISOString(),
 });
 
+const getActiveTablePaymentBalance = async (tableId) => {
+  const [items, settings, paymentsRes] = await Promise.all([
+    getActiveOrderItemsForTable(tableId),
+    getSettings(),
+    db.execute({
+      sql: "SELECT COALESCE(SUM(amount), 0) AS total FROM table_payments WHERE table_id = ? AND status = 'active'",
+      args: [tableId],
+    }),
+  ]);
+  const subtotalCents = items.reduce((sum, item) => sum + moneyToCents(getOrderItemLineTotal(item), 'table.subtotal'), 0);
+  const serviceFeePercent = clampServiceFeePercent(Number(settings?.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
+  const serviceFeeCents = Math.round(subtotalCents * (serviceFeePercent / 100));
+  const paidCents = moneyToCents(paymentsRes.rows[0]?.total || 0, 'tablePayments.total');
+  return {
+    subtotalCents,
+    serviceFeeCents,
+    paidCents,
+    balanceCents: Math.max(0, subtotalCents + serviceFeeCents - paidCents),
+  };
+};
+
+const isSameTablePayment = (row, { tableId, method, amountCents }) => (
+  String(row.table_id || '') === String(tableId || '')
+  && String(row.method || '') === String(method || '')
+  && moneyToCents(row.amount || 0, 'existingPayment.amount') === amountCents
+);
+
 const createTablePayment = async (data, session) => {
   requirePermission(session, 'launchPayment', await getSettings());
   const tableId = requireString(data.tableId, 'tableId');
@@ -5459,10 +5478,29 @@ const createTablePayment = async (data, session) => {
   const sellerId = session?.id || String(data.sellerId || '');
   const sellerName = session?.name || String(data.sellerName || 'Sistema');
 
+  const existingRes = await db.execute({
+    sql: "SELECT id, table_id, table_number, seller_id, seller_name, method, amount, status, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at FROM table_payments WHERE id = ? LIMIT 1",
+    args: [id],
+  });
+  const existingPayment = existingRes.rows[0];
+  if (existingPayment) {
+    if (!isSameTablePayment(existingPayment, { tableId, method, amountCents })) {
+      const error = new Error('ID de pagamento já existe com dados diferentes.');
+      error.statusCode = 409;
+      throw error;
+    }
+    return { payment: formatTablePayment(existingPayment), idempotent: true };
+  }
+
+  const { balanceCents } = await getActiveTablePaymentBalance(tableId);
+  if (amountCents > balanceCents) {
+    throw new Error(`Pagamento parcial maior que o saldo aberto da mesa (${formatMoneyBRL(centsToMoney(balanceCents))}).`);
+  }
+
   await db.batch([
     {
       sql: `
-        INSERT OR IGNORE INTO table_payments
+        INSERT INTO table_payments
           (id, table_id, table_number, seller_id, seller_name, method, amount, status, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
       `,
@@ -6644,7 +6682,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
             SET quantidade_atual = quantidade_atual - ?,
                 status = CASE WHEN quantidade_atual - ? <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
                 updated_at = ?
-            WHERE id = ? AND empresa_id = ? AND ativo = 1
+            WHERE id = ? AND empresa_id = ? AND ativo = 1 AND changes() > 0
           `,
           args: [movement.requestedQuantity, movement.requestedQuantity, now, movement.stockId, empresaId],
         },
@@ -7418,9 +7456,25 @@ const requirePermission = (session, permission, settings = null) => {
   }
 };
 
-const allowPublicOperationalOrigin = (body) => body?.origin === 'tablet' || body?.origin === 'qr';
+const isPublicOperationalOrigin = (body) => body?.origin === 'tablet' || body?.origin === 'qr';
 
-const isPublicCustomerRoute = (routeKey, body) => {
+const requirePublicTableAccess = async (body) => {
+  if (!isPublicOperationalOrigin(body)) return false;
+  const access = await verifyPublicTableToken({
+    token: body?.publicAccessToken,
+    source: body.origin,
+    tableId: body?.tableId || '',
+    tableNumber: body?.tableNumber || '',
+  });
+  if (!access) {
+    const error = new Error('Token público da mesa inválido ou ausente.');
+    error.statusCode = 401;
+    throw error;
+  }
+  return true;
+};
+
+const isPublicCustomerRoute = (routeKey) => {
   if (routeKey === 'POST /api/delivery/checkout') return true;
   if (routeKey === 'POST /api/delivery/checkout/mock') return true;
   if (routeKey === 'POST /api/delivery/quote') return true;
@@ -7432,12 +7486,7 @@ const isPublicCustomerRoute = (routeKey, body) => {
   if (routeKey === 'GET /api/delivery/customer/session') return true;
   if (routeKey === 'GET /api/delivery/customer/orders') return true;
   if (routeKey === 'GET /api/delivery/config') return true;
-  if (routeKey === 'POST /api/service-requests' || routeKey === 'POST /api/tables/request-bill') return true;
   if (routeKey === 'POST /api/customer-tabs/open' || routeKey === 'POST /api/customer-tabs/recover' || routeKey === 'POST /api/customer-tabs/payment-link') return true;
-  if (routeKey === 'POST /api/orders/send-to-kitchen' || routeKey === 'POST /api/orders/status') {
-    return allowPublicOperationalOrigin(body);
-  }
-  if (routeKey === 'POST /api/audit-logs') return allowPublicOperationalOrigin(body);
   return false;
 };
 
@@ -7447,12 +7496,23 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     || routeKey === 'POST /api/app/sync'
     || routeKey === 'POST /api/auth/login'
     || routeKey === 'POST /api/tablet/setup-login'
+    || routeKey === 'POST /api/table-access-token'
   ) {
     return;
   }
 
-  if (isPublicCustomerRoute(routeKey, body)) {
+  if (isPublicCustomerRoute(routeKey)) {
     return;
+  }
+
+  if (
+    routeKey === 'POST /api/orders/send-to-kitchen'
+    || routeKey === 'POST /api/orders/status'
+    || routeKey === 'POST /api/audit-logs'
+    || routeKey === 'POST /api/service-requests'
+    || routeKey === 'POST /api/tables/request-bill'
+  ) {
+    if (await requirePublicTableAccess(body)) return;
   }
 
   if (!operationAccessAllowed && !canAccessOutsideOperationIp(session)) {
@@ -7460,7 +7520,6 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
   }
 
   if (routeKey === 'POST /api/orders/send-to-kitchen') {
-    if (allowPublicOperationalOrigin(body)) return;
     const settings = await getSettings();
     requirePermission(session, 'addOrderItem', settings);
     requirePermission(session, 'sendOrderToProduction', settings);
@@ -7489,18 +7548,18 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     return;
   }
 
-  if (routeKey === 'POST /api/service-requests' || routeKey === 'POST /api/tables/request-bill') {
-    return;
-  }
-
   if (routeKey === 'POST /api/orders/status') {
-    if (allowPublicOperationalOrigin(body)) return;
     if (session?.stationAccess && body?.status === 'ready') return;
     requirePermission(session, 'sendOrderToProduction', await getSettings());
     return;
   }
 
   if (routeKey === 'POST /api/audit-logs') {
+    requireSession(session);
+    return;
+  }
+
+  if (routeKey === 'POST /api/service-requests' || routeKey === 'POST /api/tables/request-bill') {
     requireSession(session);
     return;
   }
@@ -7579,6 +7638,7 @@ const handlers = {
   }),
   'POST /api/auth/login': async (body, context) => login(body, context),
   'POST /api/tablet/setup-login': async (body, context) => validateTabletSetupPin(body, context),
+  'POST /api/table-access-token': async (body, context) => createTableAccessToken(body, context.session),
   'POST /api/audit-logs/list': async (body) => ({
     auditLogs: await getAuditLogs({
       limit: Number(body.limit || 100),
@@ -7668,85 +7728,27 @@ const handlers = {
   'POST /api/inventory/sync-open-orders': async () => syncOpenOrdersInventory(),
 };
 
-const handleApi = async (req, res, url) => {
-  if (url.pathname === '/api/health') {
-    sendJson(res, 200, { ok: true, version: process.env.VITE_APP_VERSION || process.env.APP_VERSION || 'unknown' });
-    return;
-  }
+const handleApi = createApiHandler({
+  db,
+  startedAt,
+  appVersion: APP_VERSION,
+  appCommit: APP_COMMIT,
+  healthDbTimeoutMs: HEALTH_DB_TIMEOUT_MS,
+  allowedWebOrigins: ALLOWED_WEB_ORIGINS,
+  ensureDatabaseReady,
+  handlers,
+  isPinRateLimited,
+  getSessionFromRequest,
+  isOperationIpAllowed,
+  isAdminSession,
+  enforceRouteAccess,
+});
 
-  try {
-    await ensureDatabaseReady();
-    assertSameOrigin(req);
-    const routeKey = `${req.method} ${url.pathname}`;
-    const handler = handlers[routeKey];
-    if (!handler) {
-      sendJson(res, 404, { ok: false, error: 'API route not found' });
-      return;
-    }
-
-    if (isPinRateLimited(req, url.pathname)) {
-      sendJson(res, 429, { ok: false, error: 'Muitas tentativas de PIN. Aguarde 1 minuto.' });
-      return;
-    }
-
-    if (req.method !== 'GET' && !String(req.headers['content-type'] || '').includes('application/json')) {
-      sendJson(res, 415, { ok: false, error: 'Content-Type precisa ser application/json' });
-      return;
-    }
-
-    const body = req.method === 'GET' ? {} : await readJsonBody(req);
-    const session = getSessionFromRequest(req);
-    const isLoginRoute = routeKey === 'POST /api/auth/login' || routeKey === 'POST /api/tablet/setup-login';
-    // Login por PIN nunca deve herdar permissão de uma sessão antiga. Isso evita
-    // que um token admin salvo no navegador libere PIN de colaborador fora da rede.
-    const operationAccessAllowed = isOperationIpAllowed(req) || (!isLoginRoute && isAdminSession(session));
-    await enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
-    const data = await handler(body, { req, url, session, operationAccessAllowed, rawBody: req.rawBody || '' });
-    sendJson(res, 200, { ok: true, data });
-  } catch (error) {
-    console.error('BFF error:', error);
-    sendJson(res, error.statusCode || 400, { ok: false, error: error instanceof Error ? error.message : 'Erro interno' });
-  }
-};
-
-const serveStatic = async (req, res, url) => {
-  let pathname = decodeURIComponent(url.pathname);
-  if (pathname === '/') pathname = '/index.html';
-
-  const normalized = normalize(pathname).replace(/^(\.\.[/\\])+/, '');
-  let filePath = join(distDir, normalized);
-
-  if (!existsSync(filePath) || normalized.endsWith('/')) {
-    filePath = join(distDir, 'index.html');
-  }
-
-  const ext = extname(filePath);
-  const headers = {
-    ...securityHeaders,
-    'content-type': mimeTypes[ext] || 'application/octet-stream',
-  };
-
-  if (filePath.endsWith('index.html')) {
-    headers['cache-control'] = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0';
-  } else {
-    headers['cache-control'] = 'public, max-age=31536000, immutable';
-  }
-
-  try {
-    if (req.method === 'HEAD') {
-      res.writeHead(200, headers);
-      res.end();
-      return;
-    }
-
-    res.writeHead(200, headers);
-    createReadStream(filePath).pipe(res);
-  } catch {
-    const fallback = await readFile(join(distDir, 'index.html'));
-    res.writeHead(200, { ...securityHeaders, 'content-type': mimeTypes['.html'] });
-    res.end(fallback);
-  }
-};
+const serveStatic = createStaticHandler({
+  distDir,
+  securityHeaders,
+  mimeTypes,
+});
 
 createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);

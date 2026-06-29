@@ -9,7 +9,7 @@ import { CustomerAccountModal } from '../../components/modals/CustomerAccountMod
 import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
 import { getOrderItemsTotal } from '../../lib/totals';
-import { CustomerTabApi } from '../../lib/api';
+import { AppApi, CustomerTabApi, setPublicTableAccess } from '../../lib/api';
 
 const CUSTOMER_TAB_CPF_KEY = 'becoartes_customer_tab_cpf';
 
@@ -22,6 +22,7 @@ export function QRView() {
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
   const [routeTableNumber, setRouteTableNumber] = useState<number | null>(null);
+  const [isTableAccessReady, setIsTableAccessReady] = useState(false);
   const isCouponRulesPage = window.location.pathname.includes('regulamento-cupom');
 
   useEffect(() => {
@@ -40,6 +41,28 @@ export function QRView() {
       setCurrentTableId(table.id);
     }
   }, [currentTableId, setCurrentTableId, settings.qrMode, tables]);
+
+  useEffect(() => {
+    if (settings.qrMode === 'comanda' || !routeTableNumber) return;
+    const table = tables.find(t => t.number === routeTableNumber);
+    if (!table) return;
+
+    let cancelled = false;
+    setIsTableAccessReady(false);
+    AppApi.createTableAccessToken({ origin: 'qr', tableId: table.id, tableNumber: table.number })
+      .then((access) => {
+        if (cancelled) return;
+        setPublicTableAccess(access);
+        setIsTableAccessReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setIsTableAccessReady(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routeTableNumber, settings.qrMode, tables]);
 
   const routeTable = routeTableNumber ? tables.find(t => t.number === routeTableNumber) : null;
   const currentTable = routeTableNumber ? routeTable : tables.find(t => t.id === currentTableId);
@@ -90,6 +113,18 @@ export function QRView() {
           <p className="text-sm font-bold text-gray-400">
             Este QR Code não encontrou uma mesa ativa. Chame a equipe para conferir o cadastro.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (routeTableNumber && currentTable && !isTableAccessReady) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-8 text-center">
+        <div className="glass-card max-w-md p-8 border-primary/30">
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">Validando acesso</p>
+          <h1 className="text-4xl font-black tracking-tighter mb-3">Mesa {routeTableNumber}</h1>
+          <p className="text-sm font-bold text-gray-400">Estamos liberando o cardápio seguro desta mesa.</p>
         </div>
       </div>
     );

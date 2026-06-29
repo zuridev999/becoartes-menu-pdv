@@ -42,6 +42,8 @@ ssh root@72.60.252.50 "cd /root/becoartes-operational-release && VITE_APP_VERSIO
 npm run postdeploy:delivery
 ```
 
+O pós-deploy valida `/api/health` em produção. Esse endpoint precisa retornar `status: "healthy"`, versão, commit, uptime e `db.ok: true` com latência do banco. Se retornar `degraded`, o deploy não deve ser considerado validado.
+
 Ou, apos todos os preflights e com autorizacao explicita:
 
 ```bash
@@ -77,4 +79,5 @@ Antes de ativar `delivery.becoartes.com`, confirmar:
 - Validar lint: `npm run lint`
 - Validar compose: `docker compose config`
 - Validar domínios existentes antes e depois: `pdv`, `tablet`, `coz`, `bar`, `qr`.
+- Validar `/api/health`: versão/commit esperados, uptime presente, banco `ok` e latência preenchida, sem erro bruto ou segredo na resposta.
 - Validar `delivery` por último com `npm run postdeploy:delivery`.

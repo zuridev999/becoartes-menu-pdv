@@ -7,6 +7,7 @@ const execFileAsync = promisify(execFile);
 const strict = process.env.DELIVERY_POST_DEPLOY_STRICT === '1';
 const expectedIp = process.env.DELIVERY_POST_DEPLOY_EXPECTED_IP || '72.60.252.50';
 const deliveryConfigUrl = process.env.DELIVERY_POST_DEPLOY_CONFIG_URL || 'https://delivery.becoartes.com/api/delivery/config';
+const healthUrl = process.env.DELIVERY_POST_DEPLOY_HEALTH_URL || 'https://pdv.becoartes.com/api/health';
 const checkVps = process.env.DELIVERY_POST_DEPLOY_CHECK_VPS !== '0';
 const vpsHost = process.env.DELIVERY_VPS_HOST || '72.60.252.50';
 const vpsUser = process.env.DELIVERY_VPS_USER || 'root';
@@ -139,6 +140,28 @@ const checkDeliveryConfig = async () => {
   }
 };
 
+const checkHealth = async () => {
+  try {
+    const response = await fetch(healthUrl, { signal: AbortSignal.timeout(8000) });
+    const payload = await response.json().catch(() => null);
+    const serialized = JSON.stringify(payload || {});
+    return {
+      ok: response.ok && payload?.status === 'healthy' && payload?.db?.ok === true,
+      status: response.status,
+      appStatus: payload?.status || null,
+      version: payload?.version || null,
+      commit: payload?.commit || null,
+      uptimeSeconds: Number.isFinite(Number(payload?.uptimeSeconds)) ? Number(payload.uptimeSeconds) : null,
+      dbOk: payload?.db?.ok ?? null,
+      dbLatencyMs: payload?.db?.latencyMs ?? null,
+      dbError: payload?.db?.error || null,
+      exposesSecretHints: forbiddenHints.filter((hint) => serialized.includes(hint)),
+    };
+  } catch (error) {
+    return { ok: false, status: 0, error: error.cause?.code || error.message };
+  }
+};
+
 const checkRemote = async () => {
   if (!checkVps) return { checked: false };
   const command = `
@@ -179,9 +202,10 @@ const checkRemote = async () => {
   };
 };
 
-const [domainResults, config, remote] = await Promise.all([
+const [domainResults, config, health, remote] = await Promise.all([
   Promise.all(domains.map(checkDomain)),
   checkDeliveryConfig(),
+  checkHealth(),
   checkRemote(),
 ]);
 
@@ -204,6 +228,8 @@ if (brokenDeliveryNameservers.length > 0) {
 
 if (!config.ok) failures.push(`config delivery indisponivel (${config.status})`);
 if (config.exposesSecretHints?.length) failures.push(`config delivery expõe hints sensiveis: ${config.exposesSecretHints.join(', ')}`);
+if (!health.ok) failures.push(`healthcheck degradado (${health.status || 0}, app=${health.appStatus || 'unknown'}, db=${health.dbOk})`);
+if (health.exposesSecretHints?.length) failures.push(`healthcheck expõe hints sensiveis: ${health.exposesSecretHints.join(', ')}`);
 if (remote.checked && !remote.ok) failures.push('release remoto ainda nao contem delivery completo');
 
 const report = {
@@ -211,8 +237,10 @@ const report = {
   strict,
   expectedIp,
   deliveryConfigUrl,
+  healthUrl,
   domains: domainResults,
   config,
+  health,
   remote,
   failures,
 };

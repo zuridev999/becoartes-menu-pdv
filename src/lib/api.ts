@@ -1,6 +1,7 @@
 import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
+const TABLE_ACCESS_TOKEN_STORAGE_KEY = 'beco_public_table_access';
 
 type ApiEnvelope<T> = {
   ok: boolean;
@@ -78,6 +79,14 @@ export type SellerCandidate = {
   hasPin: boolean;
 };
 
+type PublicTableAccess = {
+  token: string;
+  tableId: string;
+  tableNumber: number;
+  origin: 'tablet' | 'qr';
+  expiresAt?: string | null;
+};
+
 const getSessionToken = () => {
   if (typeof localStorage === 'undefined') return '';
   return localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || '';
@@ -89,6 +98,47 @@ export const setApiSessionToken = (token: string | null) => {
   if (typeof localStorage === 'undefined') return;
   if (token) localStorage.setItem(SESSION_TOKEN_STORAGE_KEY, token);
   else localStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
+};
+
+const getPublicTableAccess = (): PublicTableAccess | null => {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(TABLE_ACCESS_TOKEN_STORAGE_KEY) || 'null') as PublicTableAccess | null;
+    if (!parsed?.token || !parsed.tableId || !parsed.origin) return null;
+    if (parsed.expiresAt && Date.parse(parsed.expiresAt) < Date.now()) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+export const setPublicTableAccess = (access: PublicTableAccess | null) => {
+  if (typeof localStorage === 'undefined') return;
+  if (access?.token) localStorage.setItem(TABLE_ACCESS_TOKEN_STORAGE_KEY, JSON.stringify(access));
+  else localStorage.removeItem(TABLE_ACCESS_TOKEN_STORAGE_KEY);
+};
+
+export const hasPublicTableAccess = (tableId: string, origin?: 'tablet' | 'qr') => {
+  const access = getPublicTableAccess();
+  return Boolean(access && access.tableId === tableId && (!origin || access.origin === origin));
+};
+
+const getPublicTableAccessToken = (tableId?: string, origin?: 'tablet' | 'qr') => {
+  const access = getPublicTableAccess();
+  if (!access) return '';
+  if (tableId && access.tableId !== tableId) return '';
+  if (origin && access.origin !== origin) return '';
+  return access.token;
+};
+
+const getPublicTableAccessPayload = (tableId?: string) => {
+  const access = getPublicTableAccess();
+  if (!access) return {};
+  if (tableId && access.tableId !== tableId) return {};
+  return {
+    origin: access.origin,
+    publicAccessToken: access.token,
+  };
 };
 
 const getAuthHeaders = () => {
@@ -219,7 +269,10 @@ export const OperationalApi = {
     sellerId: string | null;
     items: OrderItem[];
   }) {
-    return postJson<SendToKitchenResult>('/api/orders/send-to-kitchen', input);
+    return postJson<SendToKitchenResult>('/api/orders/send-to-kitchen', {
+      ...input,
+      publicAccessToken: input.origin === 'pdv' ? undefined : getPublicTableAccessToken(input.tableId, input.origin),
+    });
   },
 
   updateOrderStatus(orderId: string, status: 'pending' | 'preparing' | 'ready' | 'closed') {
@@ -605,6 +658,10 @@ export const AppApi = {
     return postJson<{ valid: boolean; sessionToken?: string | null; seller?: any | null }>('/api/tablet/setup-login', { pin });
   },
 
+  createTableAccessToken(input: { origin: 'tablet' | 'qr'; tableId?: string; tableNumber?: number }) {
+    return postJson<PublicTableAccess>('/api/table-access-token', input);
+  },
+
   fetchAuditLogs(limit = 100, filters: { startDate?: string; endDate?: string; author?: string; action?: string } = {}) {
     return postJson<{ auditLogs: any[] }>('/api/audit-logs/list', { limit, ...filters });
   },
@@ -776,11 +833,18 @@ export const OpsApi = {
     authorName?: string;
     timestamp?: string;
   }) {
-    return postJson<{ log: any }>('/api/audit-logs', log);
+    const origin = log.origin === 'tablet' || log.origin === 'qr' ? log.origin : undefined;
+    return postJson<{ log: any }>('/api/audit-logs', {
+      ...log,
+      publicAccessToken: origin ? getPublicTableAccessToken(undefined, origin) : undefined,
+    });
   },
 
   createServiceRequest(input: { id?: string; tableId: string; type: string; message?: string }) {
-    return postJson<{ request: Omit<ServiceRequest, 'createdAt'> & { createdAt: string } }>('/api/service-requests', input)
+    return postJson<{ request: Omit<ServiceRequest, 'createdAt'> & { createdAt: string } }>('/api/service-requests', {
+      ...input,
+      ...getPublicTableAccessPayload(input.tableId),
+    })
       .then(result => ({
         request: {
           ...result.request,
@@ -804,7 +868,10 @@ export const OpsApi = {
   },
 
   requestBill(tableId: string) {
-    return postJson<{ status: 'bill_requested' }>('/api/tables/request-bill', { tableId });
+    return postJson<{ status: 'bill_requested' }>('/api/tables/request-bill', {
+      tableId,
+      ...getPublicTableAccessPayload(tableId),
+    });
   },
 
   updateTableStatus(tableId: string, status: string) {

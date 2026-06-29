@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Tablet as TabletIcon } from 'lucide-react';
 import { useStore } from '../../store';
-import { AppApi, setApiSessionToken } from '../../lib/api';
+import { AppApi, hasPublicTableAccess, setApiSessionToken, setPublicTableAccess } from '../../lib/api';
 
 interface TabletEntryProps {
   onUnlock: () => void;
@@ -18,7 +18,7 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
     // Se já tiver uma mesa salva no localStorage, pula o PIN (opcional, ou trava)
     // Mas o usuário pediu PIN -> Mesa -> Trava.
     const savedTableId = localStorage.getItem('beco_tablet_table_id') || localStorage.getItem('becoartes_tablet_table_id');
-    if (savedTableId && !currentTableId) {
+    if (savedTableId && hasPublicTableAccess(savedTableId, 'tablet') && !currentTableId) {
        setCurrentTableId(savedTableId);
        onUnlock();
     }
@@ -50,9 +50,15 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
     }
   };
 
-  const handleTableSelect = (tableId: string) => {
-    setCurrentTableId(tableId);
-    onUnlock();
+  const handleTableSelect = async (tableId: string) => {
+    try {
+      const access = await AppApi.createTableAccessToken({ origin: 'tablet', tableId });
+      setPublicTableAccess(access);
+      setCurrentTableId(tableId);
+      onUnlock();
+    } catch {
+      setError('MESA NÃO AUTORIZADA');
+    }
   };
 
   if (isPinCorrect) {
@@ -69,7 +75,7 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
             {tables.map(table => (
               <button 
                 key={table.id} 
-                onClick={() => handleTableSelect(table.id)} 
+                onClick={() => void handleTableSelect(table.id)}
                 className="h-20 rounded-2xl glass border-white/5 font-black text-xl hover:bg-primary hover:text-white transition-all transform hover:scale-110 active:scale-95"
               >
                 {table.number}

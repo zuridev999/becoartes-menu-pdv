@@ -38,4 +38,24 @@ export default defineConfig([
       'no-empty': 'off',
     },
   },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          {
+            group: [
+              '**/lib/db',
+              '**/lib/db.ts',
+              '**/lib/repository',
+              '**/lib/repository.ts',
+              '@/lib/db',
+              '@/lib/repository',
+            ],
+            message: 'Acesso direto ao banco pelo frontend foi removido. Use src/lib/api.ts e rotas do BFF.',
+          },
+        ],
+      }],
+    },
+  },
 ])

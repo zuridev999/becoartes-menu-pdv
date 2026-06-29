@@ -28,3 +28,4 @@ check_*.cjs
 test_*.cjs
 local-delivery.db
 local-delivery.db-*
+_reports/

@@ -2,7 +2,7 @@ import { createClient } from '@libsql/client';
 
 const baseUrl = process.env.DELIVERY_SMOKE_BASE_URL || 'http://127.0.0.1:18080';
 const dbUrl = process.env.DELIVERY_SMOKE_DB_URL || process.env.TURSO_DATABASE_URL || 'file:local-delivery.db';
-const adminPin = process.env.DELIVERY_SMOKE_ADMIN_PIN || process.env.ADMIN_BYPASS_PIN || '0719';
+const adminPin = process.env.DELIVERY_SMOKE_ADMIN_PIN || process.env.ADMIN_BYPASS_PIN;
 const orderId = `delivery_admin_list_${Date.now()}`;
 
 const fail = (message, details = null) => {
@@ -10,6 +10,10 @@ const fail = (message, details = null) => {
   if (details) console.error(JSON.stringify(details, null, 2));
   process.exit(1);
 };
+
+if (!adminPin) {
+  fail('Missing DELIVERY_SMOKE_ADMIN_PIN or ADMIN_BYPASS_PIN for delivery admin smoke.');
+}
 
 const requestJson = async (path, options = {}) => {
   const response = await fetch(`${baseUrl}${path}`, {
