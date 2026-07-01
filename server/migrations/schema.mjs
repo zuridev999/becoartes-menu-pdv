@@ -100,6 +100,13 @@ export const SCHEMA_MIGRATIONS = [
       addColumn('users', 'pdv_sell_enabled', 'INTEGER DEFAULT 0'),
     ],
   },
+  {
+    id: '20260701_0001_freelancer_operational_access',
+    description: 'Add temporary operational access payload for approved freelancer shifts.',
+    steps: [
+      addColumn('users', 'freelancer_operational_access', 'TEXT'),
+    ],
+  },
 ];
 
 const quoteIdentifier = (value) => {

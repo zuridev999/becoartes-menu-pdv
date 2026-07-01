@@ -276,6 +276,39 @@ const mapOperationalRoleLabel = (role, funcao = '') => {
   if (safeRole === 'colaborador' || safeRole === 'operacional' || safeFuncao.includes('atend')) return 'atendente';
   return 'outro';
 };
+const normalizeOperationalView = (view) => {
+  const safeView = String(view || '').trim().toLowerCase();
+  if (safeView === 'coz' || safeView === 'cozinha' || safeView === 'kitchen') return 'kitchen';
+  if (safeView === 'bar' || safeView === 'bartender') return 'bar';
+  if (safeView === 'pdv' || safeView === 'atendimento') return 'pdv';
+  return '';
+};
+const isFreelancerUserRow = (row) => {
+  const role = normalizeText(row?.role).toLowerCase();
+  const employmentType = normalizeText(row?.tipo_vinculo).toLowerCase();
+  return role === 'freelancer' || employmentType === 'freelancer';
+};
+const parseFreelancerOperationalAccess = (value) => {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return null;
+  }
+};
+const getValidFreelancerOperationalAccess = (row, view) => {
+  const station = normalizeOperationalView(view);
+  if (!station || !isFreelancerUserRow(row)) return null;
+  const access = parseFreelancerOperationalAccess(row?.freelancer_operational_access);
+  if (!access || normalizeOperationalView(access.station) !== station) return null;
+  const startsAt = Date.parse(access.startsAt || '');
+  const endsAt = Date.parse(access.endsAt || '');
+  const now = Date.now();
+  if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt)) return null;
+  if (now < startsAt || now >= endsAt) return null;
+  return access;
+};
 const canAccessOutsideOperationIp = (session) => Boolean(
   session && (normalizePermission(session.permission) === 'admin' || session.allowRemote)
 );
@@ -701,7 +734,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS estoque_produtos (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, categoria TEXT, ativo INTEGER DEFAULT 1, quantidade_atual REAL DEFAULT 0, estoque_minimo REAL DEFAULT 0, status TEXT DEFAULT 'Saudável', created_at INTEGER, updated_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS estoque_movimentacoes (id TEXT PRIMARY KEY, empresa_id TEXT, produto_id TEXT, tipo_movimentacao TEXT, quantidade REAL, quantidade_anterior REAL, quantidade_nova REAL, motivo TEXT, responsavel_id TEXT, created_at INTEGER, closed_bill_id TEXT, order_id TEXT, order_item_id TEXT, origem TEXT, integration_event_id TEXT, source_item_id TEXT, source_item_kind TEXT)",
     "CREATE TABLE IF NOT EXISTS notificacoes (id TEXT PRIMARY KEY, empresa_id TEXT, usuario_id TEXT, titulo TEXT, mensagem TEXT, tipo TEXT, lida INTEGER DEFAULT 0, link TEXT, created_at INTEGER)",
-    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, email TEXT, role TEXT, funcao TEXT, ativo INTEGER DEFAULT 1, pin TEXT, is_operador INTEGER DEFAULT 1, permitir_acesso_remoto INTEGER DEFAULT 0, tipo_vinculo TEXT, pdv_sell_enabled INTEGER DEFAULT 0, created_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, email TEXT, role TEXT, funcao TEXT, ativo INTEGER DEFAULT 1, pin TEXT, is_operador INTEGER DEFAULT 1, permitir_acesso_remoto INTEGER DEFAULT 0, tipo_vinculo TEXT, pdv_sell_enabled INTEGER DEFAULT 0, freelancer_operational_access TEXT, created_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS fichas_tecnicas (id TEXT PRIMARY KEY, empresa_id TEXT, nome_prato TEXT, status TEXT DEFAULT 'active')",
     "CREATE TABLE IF NOT EXISTS ficha_ingredientes (id TEXT PRIMARY KEY, ficha_tecnica_id TEXT, estoque_produto_id TEXT, nome_exibicao TEXT, nome_ingrediente TEXT, quantidade_usada REAL, quantidade_estoque_baixa REAL, unidade_medida TEXT, unidade_estoque_baixa TEXT)",
     "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -1193,21 +1226,14 @@ const getCashState = async () => {
   };
 };
 
-const getOperationalUsers = async ({ includePins = false } = {}) => {
+const getOperationalUsers = async ({ includePins = false, view = '' } = {}) => {
   const res = await db.execute({
     sql: `
-      SELECT id, nome, email, role, funcao, ativo, pin, is_operador, permitir_acesso_remoto, tipo_vinculo, pdv_sell_enabled
+      SELECT id, nome, email, role, funcao, ativo, pin, is_operador, permitir_acesso_remoto, tipo_vinculo, pdv_sell_enabled, freelancer_operational_access
       FROM users
       WHERE empresa_id = ?
         AND COALESCE(ativo, 1) = 1
-        AND (COALESCE(is_operador, 1) = 1 OR COALESCE(pdv_sell_enabled, 0) = 1)
-        AND (
-          (
-            lower(trim(COALESCE(role, ''))) != 'freelancer'
-            AND lower(trim(COALESCE(tipo_vinculo, ''))) != 'freelancer'
-          )
-          OR COALESCE(pdv_sell_enabled, 0) = 1
-        )
+        AND (COALESCE(is_operador, 1) = 1 OR COALESCE(pdv_sell_enabled, 0) = 1 OR freelancer_operational_access IS NOT NULL)
       ORDER BY nome COLLATE NOCASE ASC
     `,
     args: [OS_EMPRESA_ID],
@@ -1216,18 +1242,31 @@ const getOperationalUsers = async ({ includePins = false } = {}) => {
   return res.rows
     .filter((row) => normalizeText(row.nome))
     .map((row) => ({
-      id: row.id,
-      name: normalizeText(row.nome),
-      nickname: normalizeText(row.nome).split(' ')[0] || '',
-      status: Number(row.ativo || 0) === 1 ? 'active' : 'inactive',
-      role: mapOperationalRoleLabel(row.role, row.funcao),
-      permission: mapOperationalPermission(row.role, row.funcao),
-      pin: includePins ? String(row.pin || '') : '',
-      allowRemote: Boolean(Number(row.permitir_acesso_remoto || 0)),
-      canSellInPdv: Boolean(Number(row.pdv_sell_enabled || 0)),
-      employmentType: row.tipo_vinculo || '',
+      row,
+      temporaryAccess: getValidFreelancerOperationalAccess(row, view),
+    }))
+    .filter(({ row, temporaryAccess }) => {
+      const isFreelancer = isFreelancerUserRow(row);
+      if (!isFreelancer) {
+        return Boolean(Number(row.is_operador || 0)) || Boolean(Number(row.pdv_sell_enabled || 0));
+      }
+      return Boolean(Number(row.pdv_sell_enabled || 0)) || Boolean(temporaryAccess);
+    })
+    .map((row) => ({
+      id: row.row.id,
+      name: normalizeText(row.row.nome),
+      nickname: normalizeText(row.row.nome).split(' ')[0] || '',
+      status: Number(row.row.ativo || 0) === 1 ? 'active' : 'inactive',
+      role: mapOperationalRoleLabel(row.row.role, row.row.funcao),
+      permission: row.temporaryAccess ? 'operator' : mapOperationalPermission(row.row.role, row.row.funcao),
+      pin: includePins ? String(row.row.pin || '') : '',
+      allowRemote: Boolean(Number(row.row.permitir_acesso_remoto || 0)),
+      canSellInPdv: Boolean(Number(row.row.pdv_sell_enabled || 0)),
+      employmentType: row.row.tipo_vinculo || '',
+      temporaryOperationalAccess: row.temporaryAccess,
+      stationAccess: row.temporaryAccess?.station || null,
       source: 'os',
-      email: row.email || '',
+      email: row.row.email || '',
     }));
 };
 
@@ -1470,9 +1509,9 @@ const syncOperationalUsersToSellers = async () => {
   }
 };
 
-const getAuthSellers = async ({ includePins = false } = {}) => {
+const getAuthSellers = async ({ includePins = false, view = '' } = {}) => {
   const [operationalUsers, pdvUsers] = await Promise.all([
-    getOperationalUsers({ includePins }),
+    getOperationalUsers({ includePins, view }),
     getSellers({ includePins }),
   ]);
   const seenIds = new Set();
@@ -2289,12 +2328,13 @@ const createProductionStationSession = () => {
   };
 };
 
-const login = async ({ pin, sellerId }, { operationAccessAllowed = true, req = null } = {}) => {
+const login = async ({ pin, sellerId, view }, { operationAccessAllowed = true, req = null } = {}) => {
   await ensureDatabaseReady();
   await ensureDefaultSellersReady();
   const safePin = String(pin || '');
+  const safeView = normalizeOperationalView(view);
 
-  const activeSellers = (await getAuthSellers({ includePins: true }))
+  const activeSellers = (await getAuthSellers({ includePins: true, view: safeView }))
     .filter((seller) => seller.status === 'active' && (!sellerId || seller.id === sellerId));
   let blockedNonAdminMatch = false;
 

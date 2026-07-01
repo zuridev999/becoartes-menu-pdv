@@ -651,7 +651,7 @@ export const AppApi = {
   },
 
   login(pin: string, sellerId?: string) {
-    return postJson<{ seller: any | null; sessionToken?: string; accessRestricted?: boolean }>('/api/auth/login', { pin, sellerId });
+    return postJson<{ seller: any | null; sessionToken?: string; accessRestricted?: boolean }>('/api/auth/login', { pin, sellerId, view: getCurrentView() });
   },
 
   validateTabletSetupPin(pin: string) {
