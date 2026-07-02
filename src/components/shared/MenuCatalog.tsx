@@ -9,10 +9,11 @@ interface MenuCatalogProps {
   onProductSelect: (product: Product) => void;
   viewMode?: 'grid' | 'list';
   navigationMode?: 'sidebar' | 'menu' | 'continuous';
+  surface?: 'default' | 'delivery';
   footerContent?: ReactNode;
 }
 
-export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', footerContent }: MenuCatalogProps) {
+export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', surface = 'default', footerContent }: MenuCatalogProps) {
   const { menu, categories: dbCategories } = useStore();
   const availableCategories = useMemo(() => dbCategories
     .filter(c => {
@@ -47,6 +48,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
     const counts = new Map<string, number>();
     for (const product of menu) {
       if (!product.visible) continue;
+      if (surface === 'delivery' && product.deliveryVisible === false) continue;
       if (product.remoteStockId && typeof product.stockQuantity === 'number' && product.stockQuantity <= 0) continue;
       const cat = dbCategories.find(c => c.id === product.categoryId);
       if (cat) {
@@ -60,11 +62,12 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       counts.set(categoryName, (counts.get(categoryName) || 0) + 1);
     }
     return counts;
-  }, [dbCategories, menu]);
+  }, [dbCategories, menu, surface]);
 
   const visibleMenu = useMemo(() => menu
     .filter(p => {
       if (!p.visible) return false;
+      if (surface === 'delivery' && p.deliveryVisible === false) return false;
       if (p.remoteStockId && typeof p.stockQuantity === 'number' && p.stockQuantity <= 0) return false;
       
       // Check Category Schedule
@@ -89,7 +92,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       return a.index - b.index;
     })
     .map(({ product }) => product),
-  [categoryOrder, dbCategories, menu, searchQuery]);
+  [categoryOrder, dbCategories, menu, searchQuery, surface]);
 
   const filteredMenu = visibleMenu.filter(p => p.categoryName === selectedCategory);
   const menuByCategory = useMemo(() => {
@@ -170,8 +173,8 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
               <h3 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter italic leading-none truncate">{navigationMode === 'continuous' ? 'Cardápio' : selectedCategory}</h3>
               <p className="text-primary font-black uppercase tracking-[0.28em] md:tracking-[0.5em] text-[9px] md:text-[10px] mt-2">
                 {navigationMode === 'continuous'
-                  ? `${visibleMenu.length} item${visibleMenu.length === 1 ? '' : 's'} em todas as categorias`
-                  : `${filteredMenu.length} item${filteredMenu.length === 1 ? '' : 's'} nesta categoria`}
+                  ? `${visibleMenu.length} ${visibleMenu.length === 1 ? 'item' : 'itens'} em todas as categorias`
+                  : `${filteredMenu.length} ${filteredMenu.length === 1 ? 'item' : 'itens'} nesta categoria`}
               </p>
             </div>
             <div className="relative w-full md:w-96">

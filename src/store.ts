@@ -121,6 +121,7 @@ export interface AppState {
   init: () => Promise<void>;
   setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | 'delivery', tab?: AdminTab, mode?: 'menu' | 'settings') => void;
   toggleProductVisibility: (id: string) => void;
+  toggleProductDeliveryVisibility: (id: string) => void;
   toggleCategoryVisibility: (id: string) => void;
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
@@ -514,6 +515,27 @@ export const useStore = create<AppState>((set, get) => ({
       get().addNotification("Falha na rede ao ocultar produto. Tente novamente.", "error");
     }
   },
+  toggleProductDeliveryVisibility: async (id) => {
+    const product = get().menu.find(p => p.id === id);
+    if (!product) return;
+    const currentVisible = product.deliveryVisible !== false;
+    const newVisible = !currentVisible;
+
+    set((state) => ({
+      menu: state.menu.map(p => p.id === id ? { ...p, deliveryVisible: newVisible } : p)
+    }));
+
+    try {
+      const result = await CatalogApi.toggleProductDeliveryVisibility(id, newVisible);
+      lastCatalogVersion = result.catalogVersion;
+    } catch (e) {
+      console.error("❌ Falha ao sincronizar delivery do produto:", e);
+      set((state) => ({
+        menu: state.menu.map(p => p.id === id ? { ...p, deliveryVisible: currentVisible } : p)
+      }));
+      get().addNotification("Falha na rede ao alterar produto no delivery.", "error");
+    }
+  },
   toggleCategoryVisibility: async (id) => {
     const category = get().categories.find(c => c.id === id);
     if (!category) return;
@@ -551,6 +573,7 @@ export const useStore = create<AppState>((set, get) => ({
         cost: Number(data.cost ?? currentProduct?.cost ?? 0) || 0,
         price: Number(data.price ?? currentProduct?.price ?? 0) || 0,
         categoryId,
+        deliveryVisible: data.deliveryVisible ?? currentProduct?.deliveryVisible ?? true,
         sortOrder: Number(data.sortOrder ?? currentProduct?.sortOrder ?? 0)
       };
 
@@ -587,6 +610,7 @@ export const useStore = create<AppState>((set, get) => ({
         image: product.image || "",
         cost: Number(product.cost) || 0,
         price: Number(product.price) || 0,
+        deliveryVisible: product.deliveryVisible ?? true,
         sortOrder: Number(product.sortOrder ?? nextSortOrder)
       };
 

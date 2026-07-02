@@ -48,6 +48,7 @@ export interface Product {
   categoryName?: string; // Para compatibilidade e facilidade
   image: string;
   visible: boolean;
+  deliveryVisible: boolean;
   sortOrder: number;
   schedule?: ScheduleConfig;
   modifierGroups: ModifierGroup[];

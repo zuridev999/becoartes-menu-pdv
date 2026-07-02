@@ -709,7 +709,7 @@ const createTableAccessToken = async ({ origin, tableId = '', tableNumber = '' }
 const ensureDatabase = async () => {
   await db.batch([
     "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, schedule_config TEXT, sort_order INTEGER DEFAULT 0, visible INTEGER DEFAULT 1)",
-    "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0, sort_order INTEGER DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, delivery_visible INTEGER DEFAULT 1, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0, sort_order INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS modifier_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, min_choices INTEGER DEFAULT 0, max_choices INTEGER DEFAULT 1, is_required INTEGER DEFAULT 0, status TEXT DEFAULT 'active')",
     "CREATE TABLE IF NOT EXISTS modifiers (id TEXT PRIMARY KEY, group_id TEXT, name TEXT NOT NULL, price REAL NOT NULL, status TEXT DEFAULT 'active', sort_order INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS product_modifier_groups (product_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(product_id, group_id))",
@@ -995,6 +995,7 @@ const getMenu = async () => {
     categoryName: row.category_name || '',
     image: row.image || '',
     visible: row.visible === 1,
+    deliveryVisible: row.delivery_visible !== 0,
     sortOrder: Number(row.sort_order || 0),
     schedule: parseJsonObject(row.schedule_config),
     erpCode: row.erp_code || '',
@@ -3062,6 +3063,7 @@ const validateOrderItemsAvailability = async ({ items, session, settings, isPubl
         m.id,
         m.name,
         m.visible,
+        m.delivery_visible,
         m.remote_stock_id,
         ep.quantidade_atual as stock_quantity
       FROM menu m
@@ -3080,6 +3082,12 @@ const validateOrderItemsAvailability = async ({ items, session, settings, isPubl
     const isVisible = Number(product.visible || 0) === 1;
     if (!isVisible && !canSellUnavailable) {
       const error = new Error(`${productName} está invisível no PDV.`);
+      error.statusCode = 403;
+      throw error;
+    }
+    const isDeliveryVisible = Number(product.delivery_visible ?? 1) === 1;
+    if (isPublicOrigin === 'delivery' && !isDeliveryVisible) {
+      const error = new Error(`${productName} está indisponível no delivery.`);
       error.statusCode = 403;
       throw error;
     }
@@ -3246,6 +3254,7 @@ const normalizeDeliveryCustomer = (customer = {}) => ({
   name: normalizeText(customer.name),
   phone: normalizeText(customer.phone),
   email: normalizeText(customer.email).toLowerCase(),
+  taxId: normalizeText(customer.taxId || customer.tax_id).replace(/\D/g, ''),
   street: normalizeText(customer.street),
   number: normalizeText(customer.number),
   neighborhood: normalizeText(customer.neighborhood),
@@ -3260,7 +3269,9 @@ const normalizeDeliveryCustomer = (customer = {}) => ({
   quoteExpiresAt: normalizeText(customer.quoteExpiresAt),
   notes: normalizeText(customer.notes),
   fulfillment: customer.fulfillment === 'pickup' ? 'pickup' : 'delivery',
-  paymentMethod: ['pagbank', 'pix'].includes(customer.paymentMethod) ? customer.paymentMethod : 'pagbank',
+  paymentMethod: customer.paymentMethod === 'pagbank'
+    ? 'pix'
+    : (['pix', 'credit', 'debit'].includes(customer.paymentMethod) ? customer.paymentMethod : 'pix'),
   coupon: normalizeText(customer.coupon).toUpperCase(),
   joinClub: customer.joinClub !== false,
 });
@@ -3566,9 +3577,179 @@ const createPagBankCustomerTabPayload = ({ referenceId, customer, items, amount,
   return payload;
 };
 
-const prepareDeliveryPayment = async ({ orderId, customer, items, totals }) => {
+const getPagBankPublicKey = async () => {
+  if (!PAGBANK_TOKEN) {
+    return { status: 'missing_credentials', provider: 'pagbank', publicKey: null };
+  }
+  const response = await fetch(`${PAGBANK_API_BASE_URL}/public-keys`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      authorization: `Bearer ${PAGBANK_TOKEN}`,
+    },
+    body: JSON.stringify({ type: 'card' }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const pagBankError = payload?.error_messages?.[0];
+    const error = new Error(pagBankError?.description || payload?.message || `PagBank recusou chave pública (${response.status}).`);
+    error.statusCode = 502;
+    throw error;
+  }
+  const publicKey = payload.public_key || payload.publicKey;
+  if (!publicKey) {
+    const error = new Error('PagBank não retornou chave pública.');
+    error.statusCode = 502;
+    throw error;
+  }
+  return { status: 'ready', provider: 'pagbank', publicKey, createdAt: payload.created_at || null };
+};
+
+const createPagBankDeliveryOrderItems = ({ items, totals }) => {
+  const totalCents = moneyToCents(totals.total, 'delivery.total');
+  if (totals.discount > 0) {
+    return [{
+      reference_id: 'becoartes_delivery_total',
+      name: 'Pedido Becoartes Delivery',
+      quantity: 1,
+      unit_amount: totalCents,
+    }];
+  }
+  const orderItems = items.map((item) => ({
+    reference_id: String(item.productId || item.id).slice(0, 64),
+    name: String(item.name || 'Item').slice(0, 100),
+    quantity: Number(item.quantity || 1),
+    unit_amount: moneyToCents(Number(item.price || 0), 'delivery.item.price'),
+  }));
+  if (totals.deliveryFee > 0) {
+    orderItems.push({
+      reference_id: 'becoartes_delivery_fee',
+      name: 'Taxa de entrega',
+      quantity: 1,
+      unit_amount: moneyToCents(totals.deliveryFee, 'delivery.deliveryFee'),
+    });
+  }
+  return orderItems.length > 0 ? orderItems : [{
+    reference_id: 'becoartes_delivery_total',
+    name: 'Pedido Becoartes Delivery',
+    quantity: 1,
+    unit_amount: totalCents,
+  }];
+};
+
+const createPagBankDeliveryOrderPayload = ({ orderId, customer, items, totals, payment = {} }) => {
+  const totalCents = moneyToCents(totals.total, 'delivery.total');
+  const phone = splitBrazilianPhone(customer.phone);
+  const notificationUrls = PAGBANK_NOTIFICATION_URL ? [PAGBANK_NOTIFICATION_URL] : [];
+  const basePayload = {
+    reference_id: orderId.slice(0, 64),
+    customer: {
+      name: customer.name,
+      email: customer.email,
+      tax_id: customer.taxId,
+      phones: phone.areaCode && phone.number ? [{
+        country: phone.countryCode,
+        area: phone.areaCode,
+        number: phone.number,
+        type: 'MOBILE',
+      }] : [],
+    },
+    items: createPagBankDeliveryOrderItems({ items, totals }),
+  };
+  if (notificationUrls.length > 0) basePayload.notification_urls = notificationUrls;
+
+  if (customer.paymentMethod === 'pix') {
+    return {
+      ...basePayload,
+      qr_codes: [{
+        amount: { value: totalCents },
+        expiration_date: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      }],
+    };
+  }
+
+  const paymentType = customer.paymentMethod === 'debit' ? 'DEBIT_CARD' : 'CREDIT_CARD';
+  const card = payment?.card || {};
+  const encryptedCard = normalizeText(card.encrypted);
+  requireString(encryptedCard, 'payment.card.encrypted');
+  const holderName = normalizeText(card.holderName || customer.name);
+  const holderTaxId = normalizeText(card.holderTaxId || customer.taxId).replace(/\D/g, '');
+  requireString(holderName, 'payment.card.holderName');
+  requireString(holderTaxId, 'payment.card.holderTaxId');
+
+  const paymentMethod = {
+    type: paymentType,
+    installments: Math.max(1, Number(card.installments || 1)),
+    capture: true,
+    card: {
+      encrypted: encryptedCard,
+      store: false,
+    },
+    holder: {
+      name: holderName,
+      tax_id: holderTaxId,
+    },
+  };
+  if (customer.paymentMethod === 'debit' && card.authenticationMethod) {
+    paymentMethod.authentication_method = card.authenticationMethod;
+  }
+
+  return {
+    ...basePayload,
+    charges: [{
+      reference_id: `${orderId.slice(0, 48)}_charge`,
+      description: 'Becoartes Delivery',
+      amount: {
+        value: totalCents,
+        currency: 'BRL',
+      },
+      payment_method: paymentMethod,
+    }],
+  };
+};
+
+const getPagBankPaymentStatusFromOrder = (method, result = {}) => {
+  if (method === 'pix') return 'payment_pending';
+  const statuses = [
+    result.charges?.[0]?.status,
+    result.charges?.[0]?.payment_response?.status,
+  ].filter(Boolean).map((value) => String(value).toUpperCase());
+  if (statuses.some((status) => ['PAID', 'AUTHORIZED', 'APPROVED'].includes(status))) return 'paid';
+  if (statuses.some((status) => ['DECLINED', 'CANCELED', 'CANCELLED'].includes(status))) return 'payment_failed';
+  return 'payment_pending';
+};
+
+const createPagBankPaymentInstructions = (method, result = {}) => {
+  if (method === 'pix') {
+    const qrCode = Array.isArray(result.qr_codes) ? result.qr_codes[0] : null;
+    const imageLink = Array.isArray(qrCode?.links) ? qrCode.links.find((link) => link.rel === 'QRCODE.PNG' || link.media === 'image/png') : null;
+    return {
+      type: 'pix',
+      status: 'payment_pending',
+      qrCodeText: qrCode?.text || '',
+      qrCodeImage: imageLink?.href || null,
+      expiresAt: qrCode?.expiration_date || null,
+      message: 'Pague o Pix para acionar cozinha e entrega.',
+    };
+  }
+  const charge = Array.isArray(result.charges) ? result.charges[0] : null;
+  const status = getPagBankPaymentStatusFromOrder(method, result);
+  return {
+    type: method,
+    status,
+    chargeStatus: charge?.status || null,
+    message: status === 'paid'
+      ? 'Pagamento aprovado.'
+      : status === 'payment_failed'
+        ? (charge?.payment_response?.message || 'Pagamento recusado.')
+        : 'Aguardando confirmação do pagamento.',
+  };
+};
+
+const prepareDeliveryPayment = async ({ orderId, customer, items, totals, payment }) => {
   if (DELIVERY_PAYMENT_PROVIDER === 'disabled') {
-    return { status: 'disabled', provider: 'disabled', externalId: null, checkoutUrl: null, payload: null };
+    return { status: 'disabled', provider: 'disabled', externalId: null, checkoutUrl: null, payload: null, instructions: null };
   }
 
   if (DELIVERY_PAYMENT_PROVIDER !== 'pagbank') {
@@ -3578,18 +3759,20 @@ const prepareDeliveryPayment = async ({ orderId, customer, items, totals }) => {
       externalId: `pagbank_mock_${createId()}`,
       checkoutUrl: null,
       payload: { total: totals.total, paymentMethod: customer.paymentMethod },
+      instructions: { type: customer.paymentMethod, status: 'paid_mock', message: 'Pagamento mock aprovado.' },
     };
   }
 
-  const payload = createPagBankCheckoutPayload({ orderId, customer, items, totals });
+  const payload = createPagBankDeliveryOrderPayload({ orderId, customer, items, totals, payment });
   if (!PAGBANK_TOKEN) {
-    return { status: 'missing_credentials', provider: 'pagbank', externalId: null, checkoutUrl: null, payload };
+    return { status: 'missing_credentials', provider: 'pagbank', externalId: null, checkoutUrl: null, payload, instructions: null };
   }
 
   // Chamada real mantida atras de env explicito. Em producao, o webhook confirma o pagamento.
-  const response = await fetch(`${PAGBANK_API_BASE_URL}/checkouts`, {
+  const response = await fetch(`${PAGBANK_API_BASE_URL}/orders`, {
     method: 'POST',
     headers: {
+      accept: 'application/json',
       'content-type': 'application/json',
       authorization: `Bearer ${PAGBANK_TOKEN}`,
     },
@@ -3601,23 +3784,20 @@ const prepareDeliveryPayment = async ({ orderId, customer, items, totals }) => {
     const code = pagBankError?.error || '';
     const description = pagBankError?.description || result?.message || '';
     const allowlistMessage = code === 'allowlist_access_required'
-      ? 'PagBank ainda não liberou esta conta para criar checkouts por API. Peça a homologação/liberação da API Checkout em produção.'
+      ? 'PagBank ainda não liberou esta conta para criar pedidos por API Orders em produção.'
       : '';
-    const error = new Error(allowlistMessage || description || `PagBank recusou checkout (${response.status}).`);
+    const error = new Error(allowlistMessage || description || `PagBank recusou pagamento (${response.status}).`);
     error.statusCode = 502;
     throw error;
   }
 
-  const checkoutUrl = Array.isArray(result.links)
-    ? result.links.find((link) => link?.rel === 'PAY' || link?.media === 'text/html')?.href || null
-    : null;
-
   return {
-    status: 'payment_pending',
+    status: getPagBankPaymentStatusFromOrder(customer.paymentMethod, result),
     provider: 'pagbank',
     externalId: result.id || null,
-    checkoutUrl,
+    checkoutUrl: null,
     payload,
+    instructions: createPagBankPaymentInstructions(customer.paymentMethod, result),
   };
 };
 
@@ -4281,7 +4461,7 @@ const requestDeliveryLogistics = async ({ orderId, customer, items, totals, paym
   };
 };
 
-const rowToDeliveryOrder = (row, items = [], club = null) => {
+const rowToDeliveryOrder = (row, items = [], club = null, paymentInstructions = null) => {
   if (!row) return null;
   return {
     id: row.id,
@@ -4298,6 +4478,7 @@ const rowToDeliveryOrder = (row, items = [], club = null) => {
     paymentProvider: row.payment_provider || null,
     paymentExternalId: row.payment_external_id || null,
     checkoutUrl: row.checkout_url || null,
+    paymentInstructions,
     kitchenStatus: row.kitchen_status,
     deliveryStatus: row.delivery_status,
     kitchenSentAt: row.kitchen_sent_at || null,
@@ -4336,7 +4517,12 @@ const getDeliveryOrder = async ({ orderId, includeEvents = false } = {}) => {
     notes: item.notes || '',
   }));
   const club = await getDeliveryClubSummary(row.customer_id);
-  const order = rowToDeliveryOrder(row, items, club);
+  const paymentEventRes = await db.execute({
+    sql: "SELECT payload FROM delivery_events WHERE delivery_order_id = ? AND type = 'payment' ORDER BY created_at DESC LIMIT 1",
+    args: [safeOrderId],
+  });
+  const paymentPayload = parseJsonObject(paymentEventRes.rows[0]?.payload) || {};
+  const order = rowToDeliveryOrder(row, items, club, paymentPayload.instructions || null);
   if (!includeEvents) return { order };
 
   const eventsRes = await db.execute({
@@ -4680,12 +4866,15 @@ const handlePagBankCustomerTabWebhook = async ({ referenceId, status, body }) =>
   return { tabId, status, applied: true, paymentId };
 };
 
-const createDeliveryCheckout = async ({ orderId, customer, items }) => {
+const createDeliveryCheckout = async ({ orderId, customer, items, payment }) => {
   await ensureDatabaseReady();
   const safeCustomer = normalizeDeliveryCustomer(customer);
   requireString(safeCustomer.name, 'customer.name');
   requireString(safeCustomer.phone, 'customer.phone');
   requireString(safeCustomer.email, 'customer.email');
+  if (['credit', 'debit'].includes(safeCustomer.paymentMethod)) {
+    requireString(safeCustomer.taxId, 'customer.taxId');
+  }
   if (safeCustomer.fulfillment === 'delivery') {
     requireString(safeCustomer.street, 'customer.street');
     requireString(safeCustomer.number, 'customer.number');
@@ -4701,7 +4890,7 @@ const createDeliveryCheckout = async ({ orderId, customer, items }) => {
     items: safeItems,
     session: null,
     settings: await getSettings(),
-    isPublicOrigin: true,
+    isPublicOrigin: 'delivery',
   });
 
   const deliveryOrderId = String(orderId || `delivery_${createId()}`);
@@ -4712,9 +4901,9 @@ const createDeliveryCheckout = async ({ orderId, customer, items }) => {
   const now = new Date().toISOString();
   const totals = calculateDeliveryTotals({ items: safeItems, customer: safeCustomer });
   const { subtotal, deliveryFee, discount, total } = totals;
-  const payment = await prepareDeliveryPayment({ orderId: deliveryOrderId, customer: safeCustomer, items: safeItems, totals });
-  const logistics = await requestDeliveryLogistics({ orderId: deliveryOrderId, customer: safeCustomer, items: safeItems, totals, paymentStatus: payment.status });
-  const isPaid = String(payment.status).startsWith('paid');
+  const paymentResult = await prepareDeliveryPayment({ orderId: deliveryOrderId, customer: safeCustomer, items: safeItems, totals, payment });
+  const logistics = await requestDeliveryLogistics({ orderId: deliveryOrderId, customer: safeCustomer, items: safeItems, totals, paymentStatus: paymentResult.status });
+  const isPaid = String(paymentResult.status).startsWith('paid');
   const paidAt = isPaid ? now : null;
   const productionOrderId = isPaid && DELIVERY_KITCHEN_DISPATCH_MODE === 'production' ? `delivery_prod_${deliveryOrderId}` : null;
   const kitchenStatus = isPaid ? (productionOrderId ? 'sent_production' : 'sent_mock') : 'waiting_payment';
@@ -4761,7 +4950,7 @@ const createDeliveryCheckout = async ({ orderId, customer, items }) => {
       `,
       args: [
         deliveryOrderId, customerId, subtotal, deliveryFee, discount, total, safeCustomer.coupon, safeCustomer.fulfillment, safeCustomer.paymentMethod,
-        payment.status, payment.provider, payment.externalId, payment.checkoutUrl, kitchenStatus, logistics.status, logistics.provider, logistics.externalId, productionOrderId, customerSnapshot, safeCustomer.notes, paidAt, kitchenSentAt, deliveryRequestedAt,
+        paymentResult.status, paymentResult.provider, paymentResult.externalId, paymentResult.checkoutUrl, kitchenStatus, logistics.status, logistics.provider, logistics.externalId, productionOrderId, customerSnapshot, safeCustomer.notes, paidAt, kitchenSentAt, deliveryRequestedAt,
       ],
     },
     ...persistedItems.map((item) => ({
@@ -4779,7 +4968,10 @@ const createDeliveryCheckout = async ({ orderId, customer, items }) => {
     })),
     {
       sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, provider, external_id, payload) VALUES (?, ?, 'payment', ?, ?, ?, ?)",
-      args: [createId(), deliveryOrderId, payment.status, payment.provider, payment.externalId, JSON.stringify(payment.payload || { paymentMethod: safeCustomer.paymentMethod, total })],
+      args: [createId(), deliveryOrderId, paymentResult.status, paymentResult.provider, paymentResult.externalId, JSON.stringify({
+        request: paymentResult.payload || { paymentMethod: safeCustomer.paymentMethod, total },
+        instructions: paymentResult.instructions || null,
+      })],
     },
     {
       sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, payload) VALUES (?, ?, 'kitchen', ?, ?)",
@@ -4841,10 +5033,11 @@ const createDeliveryCheckout = async ({ orderId, customer, items }) => {
       couponCode: safeCustomer.coupon,
       customer: safeCustomer,
       items: persistedItems,
-      paymentStatus: payment.status,
-      paymentProvider: payment.provider,
-      paymentExternalId: payment.externalId,
-      checkoutUrl: payment.checkoutUrl,
+      paymentStatus: paymentResult.status,
+      paymentProvider: paymentResult.provider,
+      paymentExternalId: paymentResult.externalId,
+      checkoutUrl: paymentResult.checkoutUrl,
+      paymentInstructions: paymentResult.instructions || null,
       kitchenStatus,
       deliveryStatus: logistics.status,
       kitchenSentAt,
@@ -5002,7 +5195,7 @@ const upsertProduct = async ({ product }, session = null) => {
   const productId = requireString(p.id, 'product.id');
   const settings = await getSettings();
   const existing = await db.execute({
-    sql: "SELECT name, description, price, cost, category_id, image, visible, erp_code, remote_stock_id, schedule_config, sort_order FROM menu WHERE id = ? LIMIT 1",
+    sql: "SELECT name, description, price, cost, category_id, image, visible, delivery_visible, erp_code, remote_stock_id, schedule_config, sort_order FROM menu WHERE id = ? LIMIT 1",
     args: [productId],
   });
   const currentProduct = existing.rows[0] || null;
@@ -5043,10 +5236,15 @@ const upsertProduct = async ({ product }, session = null) => {
     if (currentVisible !== Boolean(p.visible)) {
       requirePermission(session, 'toggleProductVisibility', settings);
     }
+
+    const currentDeliveryVisible = Number(currentProduct.delivery_visible ?? 1) === 1;
+    if (currentDeliveryVisible !== (p.deliveryVisible !== false)) {
+      requirePermission(session, 'toggleProductVisibility', settings);
+    }
   }
 
   await db.execute({
-    sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category, category_id, image, visible, erp_code, remote_stock_id, schedule_config, cost, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category, category_id, image, visible, delivery_visible, erp_code, remote_stock_id, schedule_config, cost, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     args: [
       productId,
       requireString(p.name, 'product.name'),
@@ -5056,6 +5254,7 @@ const upsertProduct = async ({ product }, session = null) => {
       p.categoryId || '',
       p.image || '',
       p.visible ? 1 : 0,
+      p.deliveryVisible === false ? 0 : 1,
       p.erpCode || null,
       p.remoteStockId || null,
       p.schedule ? JSON.stringify(p.schedule) : null,
@@ -5089,6 +5288,15 @@ const toggleProductVisibility = async ({ id, visible }) => {
   await db.execute({
     sql: "UPDATE menu SET visible = ? WHERE id = ?",
     args: [visible ? 1 : 0, id],
+  });
+  return { catalogVersion: await bumpCatalogVersion() };
+};
+
+const toggleProductDeliveryVisibility = async ({ id, deliveryVisible }) => {
+  requireString(id, 'id');
+  await db.execute({
+    sql: "UPDATE menu SET delivery_visible = ? WHERE id = ?",
+    args: [deliveryVisible ? 1 : 0, id],
   });
   return { catalogVersion: await bumpCatalogVersion() };
 };
@@ -7526,6 +7734,7 @@ const isPublicCustomerRoute = (routeKey) => {
   if (routeKey === 'GET /api/delivery/customer/session') return true;
   if (routeKey === 'GET /api/delivery/customer/orders') return true;
   if (routeKey === 'GET /api/delivery/config') return true;
+  if (routeKey === 'GET /api/delivery/pagbank/public-key') return true;
   if (routeKey === 'POST /api/customer-tabs/open' || routeKey === 'POST /api/customer-tabs/recover' || routeKey === 'POST /api/customer-tabs/payment-link') return true;
   return false;
 };
@@ -7617,6 +7826,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/catalog/category/visibility': 'manageCategories',
     'POST /api/catalog/product/delete': 'deleteProduct',
     'POST /api/catalog/product/visibility': 'toggleProductVisibility',
+    'POST /api/catalog/product/delivery-visibility': 'toggleProductVisibility',
     'POST /api/catalog/modifier-group': 'manageOptionals',
     'POST /api/catalog/modifier-group/delete': 'manageOptionals',
     'POST /api/catalog/modifier-group/link': 'manageOptionals',
@@ -7711,6 +7921,7 @@ const handlers = {
   'GET /api/delivery/order': async (_body, context) => getDeliveryOrder({ orderId: context.url.searchParams.get('orderId') || '' }),
   'GET /api/delivery/order-detail': async (_body, context) => getDeliveryOrder({ orderId: context.url.searchParams.get('orderId') || '', includeEvents: true }),
   'GET /api/delivery/config': async () => getDeliveryPublicConfig(),
+  'GET /api/delivery/pagbank/public-key': async () => getPagBankPublicKey(),
   'GET /api/delivery/orders': async (_body, context) => listDeliveryOrders({ limit: context.url.searchParams.get('limit') || 50 }),
   'POST /api/orders/status': async (body) => updateOrderStatus(body),
   'POST /api/order-items/delete': async (body, context) => deleteOrderItem(body, context.session),
@@ -7727,6 +7938,7 @@ const handlers = {
   'POST /api/catalog/product': async (body, context) => upsertProduct(body, context.session),
   'POST /api/catalog/product/delete': async (body) => deleteProduct(body),
   'POST /api/catalog/product/visibility': async (body) => toggleProductVisibility(body),
+  'POST /api/catalog/product/delivery-visibility': async (body) => toggleProductDeliveryVisibility(body),
   'POST /api/catalog/modifier-group': async (body) => saveModifierGroup(body),
   'POST /api/catalog/modifier-group/delete': async (body) => deleteModifierGroup(body),
   'POST /api/catalog/modifier-group/link': async (body) => linkModifierGroup(body),

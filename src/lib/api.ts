@@ -383,6 +383,7 @@ export type DeliveryCheckoutInput = {
     name: string;
     phone: string;
     email: string;
+    taxId?: string;
     street: string;
     number: string;
     neighborhood: string;
@@ -397,11 +398,20 @@ export type DeliveryCheckoutInput = {
     quoteExpiresAt?: string;
     notes: string;
     fulfillment: 'delivery' | 'pickup';
-    paymentMethod: 'pagbank' | 'pix';
+    paymentMethod: 'pagbank' | 'pix' | 'credit' | 'debit';
     coupon: string;
     joinClub: boolean;
   };
   items: OrderItem[];
+  payment?: {
+    card?: {
+      encrypted: string;
+      holderName: string;
+      holderTaxId: string;
+      installments?: number;
+      authenticationMethod?: unknown;
+    };
+  };
 };
 
 export type DeliveryQuoteResult = {
@@ -475,6 +485,15 @@ export type DeliveryOrderSummary = {
   paymentProvider?: string | null;
   paymentExternalId?: string | null;
   checkoutUrl?: string | null;
+  paymentInstructions?: {
+    type: string;
+    status: string;
+    qrCodeText?: string;
+    qrCodeImage?: string | null;
+    expiresAt?: string | null;
+    chargeStatus?: string | null;
+    message?: string;
+  } | null;
   kitchenStatus: string;
   deliveryStatus: string;
   kitchenSentAt: string | null;
@@ -524,6 +543,10 @@ export const DeliveryApi = {
     }>('/api/delivery/config');
   },
 
+  pagbankPublicKey() {
+    return getJson<{ status: string; provider: string; publicKey: string | null; createdAt?: string | null }>('/api/delivery/pagbank/public-key');
+  },
+
   quote(input: Pick<DeliveryCheckoutInput, 'customer' | 'items'>) {
     return postJson<DeliveryQuoteResult>('/api/delivery/quote', input);
   },
@@ -549,6 +572,7 @@ export const DeliveryApi = {
         paymentProvider?: string;
         paymentExternalId?: string | null;
         checkoutUrl?: string | null;
+        paymentInstructions?: DeliveryOrderSummary['paymentInstructions'];
         kitchenStatus: string;
         deliveryStatus: string;
         kitchenSentAt: string | null;
@@ -713,6 +737,10 @@ export const CatalogApi = {
 
   toggleProductVisibility(id: string, visible: boolean) {
     return postJson<{ catalogVersion: string }>('/api/catalog/product/visibility', { id, visible });
+  },
+
+  toggleProductDeliveryVisibility(id: string, deliveryVisible: boolean) {
+    return postJson<{ catalogVersion: string }>('/api/catalog/product/delivery-visibility', { id, deliveryVisible });
   },
 
   saveModifierGroup(group: ModifierGroup) {

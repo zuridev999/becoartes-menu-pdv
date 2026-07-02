@@ -10,6 +10,7 @@ export const ProductSchema = z.object({
   image: z.string().nullish().default(''),
   cost: z.number().nullish().default(0),
   visible: z.boolean().default(true),
+  deliveryVisible: z.boolean().default(true),
   sortOrder: z.number().default(0),
   modifierGroups: z.array(z.any()).default([]),
   erpCode: z.string().nullish(),

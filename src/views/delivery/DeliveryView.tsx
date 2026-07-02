@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bike, CheckCircle2, CreditCard, MapPin, RefreshCw, Send, ShoppingBag, Trash2, UserRound, X } from 'lucide-react';
+import { Bike, CheckCircle2, Copy, CreditCard, Landmark, MapPin, QrCode, RefreshCw, Send, ShoppingBag, Trash2, UserRound, X } from 'lucide-react';
 import { useStore, type Modifier, type OrderItem, type Product } from '../../store';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
 import { ProductModal } from '../../components/modals/ProductModal';
@@ -12,6 +12,7 @@ type DeliveryCustomer = {
   name: string;
   phone: string;
   email: string;
+  taxId: string;
   street: string;
   number: string;
   neighborhood: string;
@@ -26,7 +27,7 @@ type DeliveryCustomer = {
   quoteExpiresAt?: string;
   notes: string;
   fulfillment: 'delivery' | 'pickup';
-  paymentMethod: 'pagbank' | 'pix';
+  paymentMethod: 'pix' | 'credit' | 'debit';
   coupon: string;
   joinClub: boolean;
 };
@@ -42,6 +43,15 @@ type DeliveryEvent = {
   paymentProvider?: string;
   paymentExternalId?: string | null;
   checkoutUrl?: string | null;
+  paymentInstructions?: {
+    type: string;
+    status: string;
+    qrCodeText?: string;
+    qrCodeImage?: string | null;
+    expiresAt?: string | null;
+    chargeStatus?: string | null;
+    message?: string;
+  } | null;
   kitchenStatus: string;
   deliveryStatus: string;
   kitchenSentAt: string | null;
@@ -88,15 +98,41 @@ const STATUS_LABELS: Record<string, string> = {
   waiting_payment: 'Aguardando pagamento',
 };
 
-const PAYMENT_METHODS: Array<{ id: DeliveryCustomer['paymentMethod']; label: string; description: string }> = [
-  { id: 'pagbank', label: 'Cartão ou PIX online', description: 'Checkout seguro PagBank' },
-  { id: 'pix', label: 'PIX online', description: 'Pagamento instantâneo' },
+type DeliveryCardDraft = {
+  holderName: string;
+  holderTaxId: string;
+  number: string;
+  expiry: string;
+  securityCode: string;
+  installments: string;
+};
+
+declare global {
+  interface Window {
+    PagSeguro?: {
+      encryptCard: (input: {
+        publicKey: string;
+        holder: string;
+        number: string;
+        expMonth: string;
+        expYear: string;
+        securityCode: string;
+      }) => { encryptedCard?: string; hasErrors?: boolean; errors?: unknown[] };
+    };
+  }
+}
+
+const PAYMENT_METHODS: Array<{ id: DeliveryCustomer['paymentMethod']; label: string; description: string; icon: typeof QrCode }> = [
+  { id: 'pix', label: 'Pix', description: 'QR Code e copia e cola no nosso checkout', icon: QrCode },
+  { id: 'credit', label: 'Crédito', description: 'Cartão criptografado pela chave pública PagBank', icon: CreditCard },
+  { id: 'debit', label: 'Débito', description: 'Cartão de débito via Orders API', icon: Landmark },
 ];
 
 const emptyCustomer: DeliveryCustomer = {
   name: '',
   phone: '',
   email: '',
+  taxId: '',
   street: '',
   number: '',
   neighborhood: '',
@@ -107,7 +143,7 @@ const emptyCustomer: DeliveryCustomer = {
   reference: '',
   notes: '',
   fulfillment: 'delivery',
-  paymentMethod: 'pagbank',
+  paymentMethod: 'pix',
   coupon: '',
   joinClub: true,
 };
@@ -124,6 +160,37 @@ const saveMockOrder = (order: DeliveryEvent) => {
 const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const getStatusLabel = (status: string) => STATUS_LABELS[status] || status.replaceAll('_', ' ');
+
+const digitsOnly = (value: string) => value.replace(/\D/g, '');
+
+const loadPagBankSdk = async () => {
+  if (window.PagSeguro?.encryptCard) return window.PagSeguro;
+  await new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-pagbank-sdk="true"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('SDK PagBank indisponível.')), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://assets.pagseguro.com.br/checkout-sdk-js/rc/dist/browser/pagseguro.min.js';
+    script.async = true;
+    script.dataset.pagbankSdk = 'true';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('SDK PagBank indisponível.'));
+    document.head.appendChild(script);
+  });
+  if (!window.PagSeguro?.encryptCard) throw new Error('SDK PagBank não carregou.');
+  return window.PagSeguro;
+};
+
+const parseCardExpiry = (value: string) => {
+  const digits = digitsOnly(value);
+  const month = digits.slice(0, 2);
+  const year = digits.slice(2, 6);
+  const fullYear = year.length === 2 ? `20${year}` : year;
+  return { month, year: fullYear };
+};
 
 const calculateCouponDiscount = (subtotal: number, couponCode: string, coupons: DeliveryCouponConfig[]) => {
   const normalizedCode = couponCode.trim().toUpperCase();
@@ -150,6 +217,14 @@ export function DeliveryView() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [customer, setCustomer] = useState<DeliveryCustomer>(emptyCustomer);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [cardDraft, setCardDraft] = useState<DeliveryCardDraft>({
+    holderName: '',
+    holderTaxId: '',
+    number: '',
+    expiry: '',
+    securityCode: '',
+    installments: '1',
+  });
   const [isPaying, setIsPaying] = useState(false);
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [deliveryCoupons, setDeliveryCoupons] = useState<DeliveryCouponConfig[]>(DEFAULT_DELIVERY_COUPONS);
@@ -247,6 +322,7 @@ export function DeliveryView() {
     if (!customer.name.trim()) nextErrors.name = 'Informe seu nome.';
     if (!customer.phone.trim()) nextErrors.phone = 'Informe seu telefone.';
     if (!customer.email.trim()) nextErrors.email = 'Informe seu e-mail.';
+    if (digitsOnly(customer.taxId).length < 11) nextErrors.taxId = 'Informe o CPF.';
     if (!account && !password.trim()) nextErrors.password = 'Crie uma senha.';
     if (!account && password.trim().length < 6) nextErrors.password = 'Senha com pelo menos 6 caracteres.';
     if (customer.fulfillment === 'delivery') {
@@ -257,8 +333,40 @@ export function DeliveryView() {
       if (!customer.state.trim()) nextErrors.state = 'Informe o UF.';
       if (!customer.postalCode.trim()) nextErrors.postalCode = 'Informe o CEP.';
     }
+    if (['credit', 'debit'].includes(customer.paymentMethod)) {
+      if (!cardDraft.holderName.trim()) nextErrors.cardHolderName = 'Informe o nome do cartão.';
+      if (digitsOnly(cardDraft.holderTaxId || customer.taxId).length < 11) nextErrors.cardHolderTaxId = 'Informe o CPF do titular.';
+      if (digitsOnly(cardDraft.number).length < 13) nextErrors.cardNumber = 'Informe o número do cartão.';
+      const expiry = parseCardExpiry(cardDraft.expiry);
+      if (expiry.month.length !== 2 || expiry.year.length !== 4) nextErrors.cardExpiry = 'Informe MM/AA.';
+      if (digitsOnly(cardDraft.securityCode).length < 3) nextErrors.cardSecurityCode = 'Informe o CVV.';
+    }
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
+  };
+
+  const encryptDeliveryCard = async () => {
+    const publicKeyResult = await DeliveryApi.pagbankPublicKey();
+    if (!publicKeyResult.publicKey) throw new Error('Chave pública PagBank indisponível.');
+    const sdk = await loadPagBankSdk();
+    const expiry = parseCardExpiry(cardDraft.expiry);
+    const encrypted = sdk.encryptCard({
+      publicKey: publicKeyResult.publicKey,
+      holder: cardDraft.holderName.trim(),
+      number: digitsOnly(cardDraft.number),
+      expMonth: expiry.month,
+      expYear: expiry.year,
+      securityCode: digitsOnly(cardDraft.securityCode),
+    });
+    if (encrypted.hasErrors || !encrypted.encryptedCard) {
+      throw new Error('Não foi possível validar o cartão. Confira os dados.');
+    }
+    return {
+      encrypted: encrypted.encryptedCard,
+      holderName: cardDraft.holderName.trim(),
+      holderTaxId: digitsOnly(cardDraft.holderTaxId || customer.taxId),
+      installments: Math.max(1, Number(cardDraft.installments || 1)),
+    };
   };
 
   const quoteDelivery = async () => {
@@ -356,25 +464,35 @@ export function DeliveryView() {
         setAuthMessage(created.verification?.code ? `Codigo de confirmacao: ${created.verification.code}` : 'Cadastro criado.');
         setAuthMode('verify');
       }
+      const encryptedCard = ['credit', 'debit'].includes(customer.paymentMethod)
+        ? await encryptDeliveryCard()
+        : null;
       const result = await DeliveryApi.checkout({
         orderId,
         customer: {
           ...customer,
+          taxId: digitsOnly(customer.taxId),
           quoteId: deliveryQuote?.quoteId || '',
           quoteExpiresAt: deliveryQuote?.expiresAt || '',
         },
         items: cart,
+        payment: encryptedCard ? { card: encryptedCard } : undefined,
       });
       const persistedOrder = {
         ...fallbackOrder,
         ...result.order,
         createdAt: result.order.createdAt,
-        customer: result.order.customer,
+        customer: {
+          ...result.order.customer,
+          taxId: result.order.customer.taxId || customer.taxId || '',
+          paymentMethod: result.order.customer.paymentMethod === 'pagbank' ? 'pix' : result.order.customer.paymentMethod,
+        },
         items: result.order.items,
         paymentStatus: result.order.paymentStatus,
         paymentProvider: result.order.paymentProvider,
         paymentExternalId: result.order.paymentExternalId,
         checkoutUrl: result.order.checkoutUrl,
+        paymentInstructions: result.order.paymentInstructions,
         kitchenStatus: result.order.kitchenStatus,
         deliveryStatus: result.order.deliveryStatus,
         kitchenSentAt: result.order.kitchenSentAt,
@@ -389,12 +507,15 @@ export function DeliveryView() {
       setCart([]);
       setIsCheckoutOpen(false);
       setPassword('');
+      setCardDraft({ holderName: '', holderTaxId: '', number: '', expiry: '', securityCode: '', installments: '1' });
       setCustomer((current) => account ? current : emptyCustomer);
       const message = result.order.checkoutUrl
         ? 'Checkout PagBank criado. Finalize o pagamento para acionar operação.'
         : isPaymentApproved(result.order.paymentStatus)
           ? 'Delivery pago: cozinha e motoboy registrados no BFF.'
-          : 'Delivery registrado aguardando integração de pagamento.';
+          : customer.paymentMethod === 'pix'
+            ? 'Pix gerado. A operação será acionada após o pagamento.'
+            : 'Pagamento enviado. A operação será acionada após confirmação.';
       addNotification(message, isPaymentApproved(result.order.paymentStatus) ? 'order' : 'info');
     } catch (error) {
       console.warn('Checkout delivery indisponível:', error);
@@ -540,7 +661,7 @@ export function DeliveryView() {
       </div>
 
       <div className="h-full pt-16 sm:pt-20 pb-[6.5rem] sm:pb-28">
-        <MenuCatalog onProductSelect={setSelectedProduct} viewMode="grid" />
+        <MenuCatalog onProductSelect={setSelectedProduct} viewMode="grid" surface="delivery" />
       </div>
 
       <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50">
@@ -551,7 +672,7 @@ export function DeliveryView() {
         >
           <Send size={20} className="text-red-300" />
           <div className="text-left">
-            <p className="text-[8px] font-black uppercase text-gray-500">{cartCount || 0} item{cartCount === 1 ? '' : 's'} no delivery</p>
+            <p className="text-[8px] font-black uppercase text-gray-500">{cartCount || 0} {cartCount === 1 ? 'item' : 'itens'} no delivery</p>
             <p className="text-lg font-black text-white leading-none">Checkout - {formatCurrency(total)}</p>
           </div>
         </button>
@@ -590,6 +711,11 @@ export function DeliveryView() {
             account={account}
             password={password}
             onPasswordChange={setPassword}
+            cardDraft={cardDraft}
+            onCardDraftChange={(key, value) => {
+              setCardDraft((current) => ({ ...current, [key]: value }));
+              if (errors[key]) setErrors((current) => ({ ...current, [key]: '' }));
+            }}
             couponHint={deliveryCoupons[0]?.code || ''}
             isLookingUpPostalCode={isLookingUpPostalCode}
             onLookupPostalCode={lookupPostalCode}
@@ -688,6 +814,8 @@ function DeliveryCheckout({
   account,
   password,
   onPasswordChange,
+  cardDraft,
+  onCardDraftChange,
   couponHint,
   isLookingUpPostalCode,
   onLookupPostalCode,
@@ -710,6 +838,8 @@ function DeliveryCheckout({
   account: DeliveryCustomerAccount | null;
   password: string;
   onPasswordChange: (value: string) => void;
+  cardDraft: DeliveryCardDraft;
+  onCardDraftChange: (key: keyof DeliveryCardDraft, value: string) => void;
   couponHint: string;
   isLookingUpPostalCode: boolean;
   onLookupPostalCode: () => void;
@@ -724,7 +854,7 @@ function DeliveryCheckout({
             </div>
             <div className="min-w-0">
               <h2 className="text-3xl sm:text-5xl font-black italic tracking-tighter leading-none">Checkout</h2>
-              <p className="text-gray-500 font-black uppercase tracking-widest text-[9px] sm:text-xs">Pagamento local simulado</p>
+              <p className="text-gray-500 font-black uppercase tracking-widest text-[9px] sm:text-xs">Pix, crédito ou débito</p>
             </div>
           </div>
           <button onClick={onClose} className="p-3 glass rounded-full hover:bg-rose-500/20 text-rose-500 transition-all shrink-0">
@@ -743,6 +873,7 @@ function DeliveryCheckout({
                 <Field label="Nome" value={customer.name} error={errors.name} onChange={(value) => onCustomerChange('name', value)} />
                 <Field label="Telefone" value={customer.phone} error={errors.phone} onChange={(value) => onCustomerChange('phone', value)} />
                 <Field label="E-mail" type="email" value={customer.email} error={errors.email} onChange={(value) => onCustomerChange('email', value)} />
+                <Field label="CPF" value={customer.taxId} error={errors.taxId} onChange={(value) => onCustomerChange('taxId', value)} />
                 <Field label="Cupom" value={customer.coupon} onChange={(value) => onCustomerChange('coupon', value)} placeholder={couponHint} />
               </div>
               <label className="flex items-center gap-3 glass rounded-2xl border border-white/10 p-4">
@@ -817,17 +948,42 @@ function DeliveryCheckout({
                 <h3 className="text-xl font-black uppercase tracking-tight">Pagamento</h3>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {PAYMENT_METHODS.map((method) => (
-                  <button
-                    key={method.id}
-                    onClick={() => onCustomerChange('paymentMethod', method.id)}
-                    className={`rounded-2xl border p-4 text-left transition-all ${customer.paymentMethod === method.id ? 'border-primary bg-primary/20 text-white' : 'border-white/10 glass text-gray-400'}`}
-                  >
-                    <span className="block text-xs font-black uppercase tracking-widest">{method.label}</span>
-                    <span className="mt-2 block text-[11px] font-bold text-gray-500">{method.description}</span>
-                  </button>
-                ))}
+                {PAYMENT_METHODS.map((method) => {
+                  const Icon = method.icon;
+                  return (
+                    <button
+                      key={method.id}
+                      onClick={() => onCustomerChange('paymentMethod', method.id)}
+                      className={`rounded-2xl border p-4 text-left transition-all ${customer.paymentMethod === method.id ? 'border-primary bg-primary/20 text-white' : 'border-white/10 glass text-gray-400'}`}
+                    >
+                      <span className="flex items-center gap-2 text-xs font-black uppercase tracking-widest">
+                        <Icon size={16} />
+                        {method.label}
+                      </span>
+                      <span className="mt-2 block text-[11px] font-bold text-gray-500">{method.description}</span>
+                    </button>
+                  );
+                })}
               </div>
+              {['credit', 'debit'].includes(customer.paymentMethod) && (
+                <div className="glass rounded-2xl border border-white/10 p-4 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Field label="Nome no cartão" value={cardDraft.holderName} error={errors.cardHolderName} onChange={(value) => onCardDraftChange('holderName', value)} />
+                    <Field label="CPF do titular" value={cardDraft.holderTaxId || customer.taxId} error={errors.cardHolderTaxId} onChange={(value) => onCardDraftChange('holderTaxId', value)} />
+                    <Field label="Número do cartão" value={cardDraft.number} error={errors.cardNumber} onChange={(value) => onCardDraftChange('number', value)} />
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Validade" value={cardDraft.expiry} error={errors.cardExpiry} onChange={(value) => onCardDraftChange('expiry', value)} placeholder="MM/AA" />
+                      <Field label="CVV" value={cardDraft.securityCode} error={errors.cardSecurityCode} onChange={(value) => onCardDraftChange('securityCode', value)} />
+                    </div>
+                    {customer.paymentMethod === 'credit' && (
+                      <Field label="Parcelas" value={cardDraft.installments} onChange={(value) => onCardDraftChange('installments', value.replace(/\D/g, '').slice(0, 2) || '1')} />
+                    )}
+                  </div>
+                  <p className="text-[11px] font-bold text-zinc-500">
+                    O cartão é criptografado no navegador pela chave pública PagBank antes de sair desta tela.
+                  </p>
+                </div>
+              )}
             </section>
           </div>
 
@@ -857,7 +1013,7 @@ function DeliveryCheckout({
             </div>
             <button onClick={onPay} disabled={isPaying || cart.length === 0} className="w-full btn-beco btn-beco-purple py-5 rounded-3xl font-black tracking-[0.18em] uppercase flex items-center justify-center gap-3 disabled:opacity-30">
               <CreditCard size={20} />
-              {isPaying ? 'Processando...' : 'Pagar e enviar'}
+              {isPaying ? 'Processando...' : customer.paymentMethod === 'pix' ? 'Gerar Pix' : 'Pagar e enviar'}
             </button>
           </aside>
         </div>
@@ -876,6 +1032,7 @@ function DeliverySuccess({
   onClose: () => void;
 }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [copiedPix, setCopiedPix] = useState(false);
 
   const refreshOrder = useCallback(async () => {
     if (!order.orderId || isRefreshing) return;
@@ -930,6 +1087,41 @@ function DeliverySuccess({
         <p className="text-[10px] font-black uppercase tracking-widest opacity-70">Pedido</p>
         <p className="text-sm sm:text-base font-black break-all">{order.orderId}</p>
       </div>
+
+      {order.paymentInstructions?.type === 'pix' && order.paymentInstructions.qrCodeText && !isPaymentApproved(order.paymentStatus) && (
+        <div className="mt-4 bg-black/15 rounded-2xl px-5 py-4 max-w-4xl w-full text-left">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-70">Pix copia e cola</p>
+              <p className="mt-1 text-sm font-bold opacity-90">{order.paymentInstructions.message || 'Pague para enviar o pedido para operação.'}</p>
+            </div>
+            {order.paymentInstructions.qrCodeImage && (
+              <img src={order.paymentInstructions.qrCodeImage} alt="QR Code Pix" className="w-20 h-20 rounded-xl bg-white p-1 object-contain" />
+            )}
+          </div>
+          <div className="mt-4 rounded-xl bg-black/20 p-3 text-xs font-mono break-all max-h-28 overflow-y-auto">
+            {order.paymentInstructions.qrCodeText}
+          </div>
+          <button
+            onClick={async () => {
+              await navigator.clipboard.writeText(order.paymentInstructions?.qrCodeText || '');
+              setCopiedPix(true);
+              window.setTimeout(() => setCopiedPix(false), 1800);
+            }}
+            className="mt-3 px-5 py-3 bg-white text-emerald-700 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center gap-2"
+          >
+            <Copy size={16} />
+            {copiedPix ? 'Copiado' : 'Copiar Pix'}
+          </button>
+        </div>
+      )}
+
+      {order.paymentInstructions?.type !== 'pix' && order.paymentInstructions?.message && (
+        <div className="mt-4 bg-black/15 rounded-2xl px-5 py-4 max-w-4xl w-full text-left">
+          <p className="text-[10px] font-black uppercase tracking-widest opacity-70">Pagamento</p>
+          <p className="text-sm sm:text-base font-black">{order.paymentInstructions.message}</p>
+        </div>
+      )}
 
       {order.club?.enrolled && (
         <div className="mt-3 bg-black/15 rounded-2xl px-5 py-4 max-w-4xl w-full text-left">

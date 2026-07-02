@@ -22,13 +22,32 @@ O build é único para múltiplas frentes. O nome da frente é resolvido dinamic
 **Regra operacional atual:** usar `/root/becoartes-operational-release` como diretório de release.
 Não usar `git pull` às cegas em `/root/becoartes-operational`, porque esse caminho já teve alterações sujas antigas.
 
+**Pendência manual obrigatória:** antes de qualquer `rsync --delete` ou rebuild, avisar explicitamente:
+
+> Pendente: criar backup novo e limpar backups acima da retenção.
+
+O backup e a limpeza de excedentes só devem ser executados quando houver ordem direta do Gui. Isso evita gastar tempo/tokens em todo deploy pequeno. Quando autorizado, usar o backup padronizado conforme `/root/becoartes-backups/bin`.
+
+```bash
+ssh root@72.60.252.50 \
+  "/root/becoartes-backups/bin/becoartes-backup.sh operational release && /root/becoartes-backups/bin/becoartes-backup.sh operational database && /root/becoartes-backups/bin/becoartes-prune-backups.sh --apply"
+```
+
+Backups novos não devem ser criados em `/root/backups`, `/root/deploy-backups`, `/tmp` ou dentro do diretório vivo do app.
+
 ### Fluxo Seguro Atual:
 ```bash
 APP_COMMIT=$(git rev-parse --short HEAD)
 APP_VERSION=v1.x.x
 
+# Avisar antes: pendente backup novo + limpeza de excedentes.
+# Executar somente se houver OK explicito do Gui:
+# ssh root@72.60.252.50 \
+#   "/root/becoartes-backups/bin/becoartes-backup.sh operational release && /root/becoartes-backups/bin/becoartes-backup.sh operational database && /root/becoartes-backups/bin/becoartes-prune-backups.sh --apply"
+
 rsync -az --delete \
   --exclude ".git" \
+  --exclude ".DS_Store" \
   --exclude "node_modules" \
   --exclude "dist" \
   --exclude ".env" \
@@ -78,6 +97,11 @@ Antes de ativar `delivery.becoartes.com`, confirmar:
 - Validar build: `npm run build` ou `tsc -b`
 - Validar lint: `npm run lint`
 - Validar compose: `docker compose config`
+- Avisar: `Pendente backup novo + limpeza de excedentes`.
+- Criar backup padronizado `operational release` somente com OK explicito.
+- Criar backup padronizado `operational database` somente com OK explicito.
+- Conferir `manifest.json` e `sha256.txt` quando o backup for autorizado.
 - Validar domínios existentes antes e depois: `pdv`, `tablet`, `coz`, `bar`, `qr`.
 - Validar `/api/health`: versão/commit esperados, uptime presente, banco `ok` e latência preenchida, sem erro bruto ou segredo na resposta.
 - Validar `delivery` por último com `npm run postdeploy:delivery`.
+- Rodar `/root/becoartes-backups/bin/becoartes-backup-audit.sh` após o deploy quando houver backup autorizado neste ciclo.

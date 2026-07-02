@@ -499,7 +499,7 @@ export function AdminView() {
     settings, updateSettings,
     tables, sellers, addSeller, updateSeller, toggleSellerStatus, deleteSeller,
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
-    adminTab, setAdminTab, adminMode, toggleProductVisibility, deleteCategory, reorderCategories, reorderProducts, toggleCategoryVisibility,
+    adminTab, setAdminTab, adminMode, toggleProductVisibility, toggleProductDeliveryVisibility, deleteCategory, reorderCategories, reorderProducts, toggleCategoryVisibility,
     linkGroupToCategory, linkGroupToProduct, currentSeller, closedBills, addNotification,
     productModifierMapping, categoryModifierMapping
   } = useStore();
@@ -594,7 +594,7 @@ export function AdminView() {
   };
 
   const openProductEditor = useCallback((product: Product) => {
-    setEditingProduct(product);
+    setEditingProduct({ ...product, deliveryVisible: product.deliveryVisible !== false });
     window.setTimeout(() => {
       productEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
@@ -1838,7 +1838,7 @@ export function AdminView() {
                 </div>
               </div>
               {canAddProduct && (
-                <button onClick={() => openProductEditor({ id: createId(), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, sortOrder: 0, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
+                <button onClick={() => openProductEditor({ id: createId(), name: '', price: 0, categoryId: categories[0]?.id || '', image: '', visible: true, deliveryVisible: true, sortOrder: 0, modifierGroups: [] })} className="p-3 bg-primary text-white rounded-xl hover:scale-105 transition-all"><Plus size={20}/></button>
               )}
             </div>
             <div className="mb-3 px-2 sm:px-4 text-[10px] font-black uppercase tracking-[0.22em] text-gray-500">
@@ -1868,6 +1868,7 @@ export function AdminView() {
                             <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1">
                               <span className="text-xs font-black text-gray-400">R$ {typeof p.price === 'number' ? p.price.toFixed(2) : p.price}</span>
                               {p.cost > 0 && <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 rounded text-[9px] font-black uppercase">Lucro R$ {(p.price - p.cost).toFixed(2)}</span>}
+                              {p.deliveryVisible === false && <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 rounded text-[9px] font-black uppercase">Delivery off</span>}
                             </div>
                           </div>
                         </div>
@@ -1893,13 +1894,23 @@ export function AdminView() {
                             </div>
                           )}
                           {canToggleVisibility && (
-                            <button
-                              onClick={() => toggleProductVisibility(p.id)}
-                              className={`p-3 sm:p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
-                              title={p.visible ? 'Ocultar do Cardápio' : 'Mostrar no Cardápio'}
-                            >
-                              {p.visible ? <Eye size={20}/> : <EyeOff size={20}/>}
-                            </button>
+                            <>
+                              <button
+                                onClick={() => toggleProductDeliveryVisibility(p.id)}
+                                className={`p-3 sm:p-4 glass rounded-2xl transition-all ${p.deliveryVisible !== false ? 'text-sky-400' : 'text-rose-500'}`}
+                                title={p.deliveryVisible !== false ? 'Inativar Delivery' : 'Ativar Delivery'}
+                                aria-label={`${p.deliveryVisible !== false ? 'Inativar' : 'Ativar'} delivery de ${p.name}`}
+                              >
+                                <Bike size={20}/>
+                              </button>
+                              <button
+                                onClick={() => toggleProductVisibility(p.id)}
+                                className={`p-3 sm:p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
+                                title={p.visible ? 'Ocultar do Cardápio' : 'Mostrar no Cardápio'}
+                              >
+                                {p.visible ? <Eye size={20}/> : <EyeOff size={20}/>}
+                              </button>
+                            </>
                           )}
                           {(canEditProduct || canEditProductPrice) && (
                             <>
@@ -1952,6 +1963,7 @@ export function AdminView() {
                               description: editingProduct.description || '',
                               image: editingProduct.image || '',
                               visible: false,
+                              deliveryVisible: editingProduct.deliveryVisible !== false,
                               erpCode: '',
                               remoteStockId: '',
                               sortOrder: Math.max(-1, ...menu.filter(product => product.categoryId === editingProduct.categoryId).map(product => Number(product.sortOrder ?? 0))) + 1,
@@ -1983,6 +1995,21 @@ export function AdminView() {
                         className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
                       >
                         {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
+                      </button>
+                    )}
+                    {canToggleVisibility && (
+                      <button
+                        onClick={async () => {
+                          const nextVisible = editingProduct.deliveryVisible === false;
+                          if (menu.some(p => p.id === editingProduct.id)) {
+                            await toggleProductDeliveryVisibility(editingProduct.id);
+                          }
+                          setEditingProduct({ ...editingProduct, deliveryVisible: nextVisible });
+                        }}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.deliveryVisible !== false ? 'bg-sky-500/10 text-sky-400' : 'bg-rose-500/10 text-rose-500'}`}
+                        title={editingProduct.deliveryVisible !== false ? 'Inativar Delivery' : 'Ativar Delivery'}
+                      >
+                        <Bike size={14}/> {editingProduct.deliveryVisible !== false ? 'Ativo Delivery' : 'Inativo Delivery'}
                       </button>
                     )}
                     <button

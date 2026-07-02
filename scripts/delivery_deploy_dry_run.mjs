@@ -15,6 +15,7 @@ const rsyncArgs = [
   '--itemize-changes',
   '--filter', 'protect .env*',
   '--exclude', '.git',
+  '--exclude', '.DS_Store',
   '--exclude', 'node_modules',
   '--exclude', 'dist',
   '--exclude', '.env*',

@@ -107,6 +107,13 @@ export const SCHEMA_MIGRATIONS = [
       addColumn('users', 'freelancer_operational_access', 'TEXT'),
     ],
   },
+  {
+    id: '20260702_0001_delivery_product_visibility',
+    description: 'Add per-product delivery visibility flag.',
+    steps: [
+      addColumn('menu', 'delivery_visible', 'INTEGER DEFAULT 1'),
+    ],
+  },
 ];
 
 const quoteIdentifier = (value) => {
