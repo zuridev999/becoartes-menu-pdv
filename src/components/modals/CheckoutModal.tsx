@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Plus, Menu } from 'lucide-react';
+import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Plus, Menu, Printer } from 'lucide-react';
 import { useStore, type Seller, type Table as TableType } from '../../store';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
 import { can } from '../../lib/permissions';
 import { AdminApi, OperationalApi, hasApiSessionToken, setApiSessionToken, type SellerCandidate } from '../../lib/api';
 import { ActionDialog } from '../common/ActionDialog';
+import { printThermalReceipt } from '../../lib/receiptPrint';
 
 interface Payment {
   id?: string;
@@ -75,6 +76,21 @@ const isEligibleSellerCandidate = (candidate: SellerCandidate) => {
   return true;
 };
 
+const formatCpfCnpj = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 14);
+  if (digits.length <= 11) {
+    return digits
+      .replace(/^(\d{3})(\d)/, '$1.$2')
+      .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/\.(\d{3})(\d)/, '.$1-$2');
+  }
+  return digits
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2');
+};
+
 type ValidatedCoupon = {
   code: string;
   amount: number;
@@ -117,6 +133,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const [activatingSellerCandidateId, setActivatingSellerCandidateId] = useState<string | null>(null);
   const [isCreatingOsSeller, setIsCreatingOsSeller] = useState(false);
   const [showSellerDirectory, setShowSellerDirectory] = useState(false);
+  const [showCustomerDocument, setShowCustomerDocument] = useState(false);
+  const [customerDocument, setCustomerDocument] = useState('');
   const rawSellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
@@ -414,6 +432,32 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     }
   };
 
+  const handlePrintReceipt = () => {
+    try {
+      printThermalReceipt({
+        title: `Mesa ${table.number}`,
+        subtitle: payments.length > 0 ? 'CONTA COM PAGAMENTOS' : 'CONTA ABERTA',
+        tableNumber: table.number,
+        sellerName: selectedSeller?.name,
+        customerDocument: customerDocument.trim(),
+        items: table.orders,
+        subtotal,
+        serviceFee: feeValue,
+        serviceFeePercent,
+        discount: discountAmountValue,
+        couponCode: coupon?.code,
+        couponAmount: couponAmountValue,
+        total: totalFinal,
+        payments,
+        paidTotal,
+        remaining,
+        change,
+      });
+    } catch (error) {
+      addNotification(error instanceof Error ? error.message : 'Não foi possível abrir a impressão.', 'error');
+    }
+  };
+
   const handleFinish = async () => {
     if (hasInvalidOverpayment || hasPendingCouponChoice || remaining > 0 || !selectedSeller || !canLaunchPayment || !canCloseBill) return;
     const success = await closeBill({
@@ -524,8 +568,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                    <span>- R$ {couponAmountValue.toFixed(2)}</span>
                  </div>
                  <div className="flex justify-between text-3xl font-black text-accent pt-3 border-t border-white/5 italic tracking-tighter"><span>Total</span><span>R$ {totalFinal.toFixed(2)}</span></div>
-              </div>
-           </div>
+                </div>
+             </div>
 
            {/* Direita: Pagamento */}
            <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-10 flex flex-col bg-[#0d0d0f] overflow-y-auto custom-scrollbar">
@@ -579,6 +623,31 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                        </button>
                     </div>
                  </div>
+              </div>
+
+              <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h4 className="text-[9px] font-black uppercase tracking-widest text-gray-500">CPF/CNPJ na conta</h4>
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-gray-600">Opcional para impressão do cliente.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomerDocument((value) => !value)}
+                    className="rounded-xl border border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-zinc-200 transition-all hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                  >
+                    {showCustomerDocument ? 'Ocultar CPF/CNPJ' : 'Add CPF/CNPJ'}
+                  </button>
+                </div>
+                {showCustomerDocument && (
+                  <input
+                    value={customerDocument}
+                    onChange={(event) => setCustomerDocument(formatCpfCnpj(event.target.value))}
+                    inputMode="numeric"
+                    className="mt-3 w-full glass px-3 py-3 rounded-lg border-white/10 outline-none font-black tracking-widest text-sm"
+                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                  />
+                )}
               </div>
 
               <div className="rounded-xl border border-amber-400/15 bg-amber-400/[0.03] p-3 mb-4">
@@ -789,14 +858,24 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                  </div>
               </div>
 
-              <button 
-                 disabled={remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill}
-                 onClick={handleFinish}
-                 className="w-full btn-beco btn-beco-purple py-4 sm:py-5 text-base sm:text-2xl font-black mt-5 sm:mt-6 shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-4 group rounded-2xl"
-              >
-                 FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={26}/>
-              </button>
-              {(remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill) && (
+              <div className="mt-5 sm:mt-6 flex items-stretch gap-3">
+                <button
+                  disabled={remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill}
+                  onClick={handleFinish}
+                  className="flex-1 btn-beco btn-beco-purple py-4 sm:py-5 text-base sm:text-2xl font-black shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-4 group rounded-2xl"
+                >
+                  FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={26}/>
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintReceipt}
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-200 transition-all hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                  title={payments.length > 0 ? 'Imprimir recibo da conta' : 'Imprimir conta antes do pagamento'}
+                >
+                  <Printer size={18} />
+                </button>
+              </div>
+                {(remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill) && (
                 <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-rose-500 mt-3 animate-pulse">
                   {!canCloseBill ? 'Sem permissão para fechar conta' : !canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSeller ? 'Selecione o vendedor responsável' : hasPendingCouponChoice ? 'Escolha o benefício do cupom' : hasInvalidOverpayment ? 'Troco só pode existir em pagamento em dinheiro' : `Falta receber R$ ${remaining.toFixed(2)}`}
                 </p>

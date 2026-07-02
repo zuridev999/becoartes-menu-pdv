@@ -8,7 +8,7 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag, Search
+  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag, Search, Printer
 } from 'lucide-react';
 import { useStore, type OrderItem, type Product, type Table as TableType } from '../../store';
 import type { CustomerTab } from '../../types';
@@ -20,6 +20,7 @@ import { PdvTicker } from '../../components/pdv/PdvTicker';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { AdminApi, AppApi, CustomerTabApi, type PdvLockState } from '../../lib/api';
+import { printThermalReceipt } from '../../lib/receiptPrint';
 
 const CANCEL_REASONS = [
   { code: 'cliente_desistiu', label: 'Cliente desistiu' },
@@ -369,6 +370,24 @@ export function PDVView() {
   const currentTable = tables.find(t => t.id === selectedTable?.id);
   const managedTable = currentTable || selectedTable;
   const cart = currentTable?.cart || [];
+
+  const handlePrintOpenTableReceipt = (table: TableType) => {
+    const subtotal = getOrderItemsTotal(table.orders || []);
+    try {
+      printThermalReceipt({
+        title: `Mesa ${table.number}`,
+        subtitle: 'CONTA ABERTA',
+        tableNumber: table.number,
+        sellerName: currentSeller?.name,
+        items: table.orders || [],
+        subtotal,
+        serviceFee: 0,
+        total: subtotal,
+      });
+    } catch (error) {
+      addNotification(error instanceof Error ? error.message : 'Não foi possível abrir a impressão.', 'error');
+    }
+  };
 
   // Stats
   const todayStr = new Date().toLocaleDateString('pt-BR');
@@ -1137,17 +1156,27 @@ export function PDVView() {
                         R$ {getOrderItemsTotal(managedTable?.orders || []).toFixed(2)}
                       </p>
                     </div>
-                    <button
-                      onClick={() => canCloseBill && setShowCheckout(true)}
-                      disabled={!canCloseBill}
-                      className={`glass px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest border-amber-500/20 ${
-                        canCloseBill
-                          ? 'text-amber-400 hover:bg-amber-500/10'
-                          : 'text-zinc-600 opacity-50 cursor-not-allowed'
-                      }`}
-                    >
-                      Solicitar Conta
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handlePrintOpenTableReceipt(managedTable)}
+                        className="p-3 glass rounded-xl text-emerald-300 hover:bg-emerald-500/10 transition-all"
+                        title="Imprimir conta aberta"
+                      >
+                        <Printer size={16} />
+                      </button>
+                      <button
+                        onClick={() => canCloseBill && setShowCheckout(true)}
+                        disabled={!canCloseBill}
+                        className={`glass px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest border-amber-500/20 ${
+                          canCloseBill
+                            ? 'text-amber-400 hover:bg-amber-500/10'
+                            : 'text-zinc-600 opacity-50 cursor-not-allowed'
+                        }`}
+                      >
+                        Solicitar Conta
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

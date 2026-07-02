@@ -3476,50 +3476,6 @@ const getDeliveryPublicConfig = () => ({
   },
 });
 
-const createPagBankCheckoutPayload = ({ orderId, customer, items, totals }) => {
-  const amountInCents = Math.round(totals.total * 100);
-  const phone = splitBrazilianPhone(customer.phone);
-  const notificationUrls = PAGBANK_NOTIFICATION_URL ? [PAGBANK_NOTIFICATION_URL] : [];
-  const paymentMethods = customer.paymentMethod === 'pix'
-    ? [{ type: 'PIX' }]
-    : [{ type: 'CREDIT_CARD' }, { type: 'DEBIT_CARD' }, { type: 'PIX' }];
-  const payload = {
-    reference_id: orderId.slice(0, 64),
-    customer: {
-      name: customer.name,
-      email: customer.email,
-      phones: phone.areaCode && phone.number ? [{
-        country: phone.countryCode,
-        area: phone.areaCode,
-        number: phone.number,
-        type: 'MOBILE',
-      }] : [],
-    },
-    customer_modifiable: true,
-    items: items.map((item) => ({
-      reference_id: String(item.productId || item.id).slice(0, 64),
-      name: String(item.name || 'Item').slice(0, 100),
-      quantity: Number(item.quantity || 1),
-      unit_amount: Math.round(Number(item.price || 0) * 100),
-    })),
-    additional_amount: Math.round(totals.deliveryFee * 100),
-    discount_amount: Math.round(totals.discount * 100),
-    payment_methods: paymentMethods,
-    soft_descriptor: 'BECOARTES',
-  };
-
-  if (notificationUrls.length > 0) {
-    payload.notification_urls = notificationUrls;
-    payload.payment_notification_urls = notificationUrls;
-  }
-  if (PAGBANK_REDIRECT_URL) {
-    payload.redirect_url = PAGBANK_REDIRECT_URL;
-    payload.return_url = PAGBANK_REDIRECT_URL;
-  }
-  if (amountInCents <= 0) payload.payment_methods = [{ type: 'PIX' }];
-  return payload;
-};
-
 const createPagBankCustomerTabPayload = ({ referenceId, customer, items, amount, paymentMethod, returnUrl }) => {
   const methodMap = {
     pix: [{ type: 'PIX' }],
