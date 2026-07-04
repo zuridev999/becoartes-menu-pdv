@@ -77,7 +77,7 @@ function PdvGoalTicker({ totalToday }: { totalToday: number }) {
   } as CSSProperties;
 
   return (
-    <section className="mb-6 -mt-3 overflow-hidden rounded-[1.75rem] border border-emerald-200/45 bg-gradient-to-r from-emerald-950 via-emerald-800 to-emerald-950 px-4 py-3.5 shadow-2xl shadow-emerald-950/35">
+    <section className="mb-3 -mt-1 overflow-hidden rounded-xl border border-emerald-200/25 bg-gradient-to-r from-emerald-950 via-emerald-800 to-emerald-950 px-4 py-2">
       <div className="pdv-ticker-track flex w-max items-center gap-10 whitespace-nowrap" style={tickerStyle}>
         {[0, 1, 2].map((item) => (
           <span key={item} className="inline-flex items-center gap-10 text-xs sm:text-sm font-black uppercase tracking-[0.14em] text-yellow-200 drop-shadow">
@@ -87,26 +87,6 @@ function PdvGoalTicker({ totalToday }: { totalToday: number }) {
         ))}
       </div>
     </section>
-  );
-}
-
-function PdvGoalCards({ totalToday }: { totalToday: number }) {
-  const goal = getDailyGoal();
-  if (goal <= 0) return null;
-
-  const missing = Math.max(0, goal - totalToday);
-
-  return (
-    <>
-      <div className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[150px] xl:flex-none">
-        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Meta do dia</span>
-        <span className="text-2xl font-black text-emerald-400">{formatCurrency(goal)}</span>
-      </div>
-      <div className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[150px] xl:flex-none">
-        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Faltam</span>
-        <span className="text-2xl font-black text-yellow-300">{formatCurrency(missing)}</span>
-      </div>
-    </>
   );
 }
 
@@ -634,139 +614,172 @@ export function PDVView() {
       {/* HEADER */}
       <PdvTicker enabled={settings.pdv?.tickerEnabled !== false} text={settings.pdv?.tickerText} />
       <PdvGoalTicker totalToday={totalToday} />
-      <header className="flex flex-col xl:flex-row xl:justify-between xl:items-center gap-6 mb-8 xl:mb-12">
-        <div className="min-w-0">
-          <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter flex flex-wrap items-center gap-x-3 gap-y-1 leading-none">
-            CENTRAL <span className="text-primary">OPERACIONAL</span>
-          </h1>
-          <p className="text-zinc-500 text-xs sm:text-sm font-bold uppercase tracking-[0.2em] sm:tracking-widest mt-2">Becoartes • PDV Management</p>
-          <p className="mt-4 text-lg font-black tracking-tight text-white">
-            Bem-vindo, <span className="text-primary">{currentSeller.nickname || currentSeller.name}</span>
-          </p>
-          <div className={`mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-2xl border text-[10px] font-black uppercase tracking-[0.18em] ${
-            isCashOpen ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${isCashOpen ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-            {isCashOpen ? 'Caixa aberto' : 'Caixa fechado'}
-            {cashState?.sandbox && <span className="text-white/35">Sandbox</span>}
+      {/* Barra de comando: status do caixa + operador + ações rápidas em UMA linha. */}
+      <header className="mb-3 flex flex-wrap items-center justify-between gap-3 py-1">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${isCashOpen ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isCashOpen ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-base font-black leading-tight">
+              PDV <span className="text-primary">Becoartes</span>
+            </p>
+            <p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
+              {isCashOpen ? 'Caixa aberto' : 'Caixa fechado'}
+              {cashState?.sandbox && ' · sandbox'}
+              {' · '}{currentSeller.nickname || currentSeller.name}
+              {' · '}{getPermissionLabel(currentSeller)}
+            </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-3 sm:gap-4 xl:gap-6 w-full xl:w-auto">
-          {canViewSalesTotals && (
-            <>
-              <button
-                type="button"
-                onClick={() => setShowSalesBreakdown(true)}
-                className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[150px] xl:flex-none hover:border-emerald-400/35 hover:bg-emerald-400/5 transition-all text-left"
-                title="Ver vendas de hoje por forma de pagamento"
-              >
-                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Vendas Hoje</span>
-                <span className="text-2xl font-black text-emerald-400">{formatCurrency(totalToday)}</span>
-              </button>
-              <PdvGoalCards totalToday={totalToday} />
-            </>
-          )}
-          <div className="glass-card px-5 sm:px-8 py-4 flex flex-col items-start xl:items-end border-white/5 flex-1 min-w-[130px] xl:flex-none">
-            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Mesas Ativas</span>
-            <span className="text-2xl font-black text-purple-400">{activeTablesCount}</span>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={switchQrMode}
-            disabled={!canUseQrModeSwitch || isSwitchingQrMode}
-            className={`glass-card px-5 sm:px-6 py-4 flex items-center gap-4 transition-all ${
-              canUseQrModeSwitch
-                ? (isComandaMode
-                  ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20'
-                  : 'border-rose-400/35 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20')
-                : 'opacity-40 cursor-not-allowed text-zinc-600'
-            }`}
-            title="Modo comanda desligado = modo mesa. Modo comanda ligado = comandas."
-          >
-            <span className={`relative h-8 w-16 shrink-0 rounded-full border p-1 transition-colors ${
-              isComandaMode ? 'border-emerald-300/50 bg-emerald-400/25' : 'border-rose-300/50 bg-rose-500/25'
-            }`}>
-              <span className={`block h-6 w-6 rounded-full shadow-lg transition-transform ${
-                isComandaMode ? 'translate-x-7 bg-emerald-200 shadow-emerald-900/40' : 'translate-x-0 bg-rose-200 shadow-rose-900/40'
-              }`} />
-            </span>
-            <div className="text-left">
-              <span className="block text-[10px] font-black uppercase tracking-[0.18em]">
-                {isSwitchingQrMode ? 'Salvando...' : 'Modo comanda'}
-              </span>
-              {!isSwitchingQrMode && (
-                <span className={`block text-[10px] font-black uppercase tracking-[0.18em] ${
-                  isComandaMode ? 'text-emerald-200' : 'text-rose-200'
-                }`}>
-                  {isComandaMode ? 'Ligado' : 'Desligado'}
-                </span>
-              )}
-              <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-white/35">
-                QR {isComandaMode ? '200 comandas' : '50 mesas'}
-              </span>
-            </div>
-          </button>
-          <button
-            onClick={() => setShowCounterSale(true)}
-            disabled={!isCashOpen || !canAddOrderItem || !canLaunchPayment || !canCloseBill}
-            className={`glass-card px-6 py-4 flex items-center gap-3 transition-all border-white/5 ${
-              isCashOpen && canAddOrderItem && canLaunchPayment && canCloseBill
-                ? 'hover:bg-amber-400/10 hover:text-amber-300'
-                : 'opacity-40 cursor-not-allowed text-zinc-600'
-            }`}
-            title="Venda balcão"
-          >
-            <ShoppingBag size={22} />
-            <span className="text-[10px] font-black uppercase tracking-[0.18em]">Venda balcão</span>
-          </button>
-          <button 
-            onClick={() => useStore.getState().setActiveView('admin', 'products', 'menu')} 
-            className="glass-card p-4 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all border-white/5"
+            onClick={() => useStore.getState().setActiveView('admin', 'products', 'menu')}
+            className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-emerald-400/40 hover:text-emerald-400"
             title="Gestão de Cardápio"
           >
-            <Soup size={24} />
+            <Soup size={18} />
           </button>
           {isAdminProfile && canViewSalesTotals && (
-            <button 
-              onClick={() => useStore.getState().setActiveView('admin', 'finance', 'settings')} 
-              className="glass-card p-4 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all border-white/5"
+            <button
+              onClick={() => useStore.getState().setActiveView('admin', 'finance', 'settings')}
+              className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-emerald-400/40 hover:text-emerald-400"
               title="Fechamentos e pagamentos"
             >
-              <Wallet size={24} />
+              <Wallet size={18} />
+            </button>
+          )}
+          {can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides) && (
+            <button
+              onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')}
+              className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-primary/40 hover:text-primary"
+              title="Configurações Gerais"
+            >
+              <Settings size={18} />
             </button>
           )}
           <button
-            onClick={() => canUseCashAction && setCashDialog(isCashOpen ? 'close' : 'open')}
-            disabled={!canUseCashAction}
-            className={`glass-card px-6 py-4 flex items-center gap-3 transition-all border-white/5 ${
-              canUseCashAction
-                ? (isCashOpen ? 'hover:bg-rose-500/10 hover:text-rose-400' : 'hover:bg-emerald-500/10 hover:text-emerald-400')
-                : 'opacity-40 cursor-not-allowed text-zinc-600'
-            }`}
-            title={cashActionLabel}
+            onClick={logout}
+            className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-rose-400/40 hover:text-rose-400"
+            title="Sair"
           >
-            <Wallet size={22} />
-            <span className="text-[10px] font-black uppercase tracking-[0.18em]">{cashActionLabel}</span>
-          </button>
-          {can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides) && (
-            <button 
-              onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')} 
-              className="glass-card p-4 hover:bg-primary/10 hover:text-primary transition-all border-white/5"
-              title="Configurações Gerais"
-            >
-              <Settings size={24} />
-            </button>
-          )}
-          <div className="glass-card px-5 py-4 flex flex-col items-start xl:items-end border-white/5 min-w-[160px]">
-            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Perfil</span>
-            <span className="text-sm font-black text-white">{currentSeller.name}</span>
-            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mt-1">{getPermissionLabel(currentSeller)}</span>
-          </div>
-          <button onClick={logout} className="glass-card p-4 hover:bg-rose-500/10 hover:text-rose-500 transition-all border-white/5">
-            <LogOut size={24} />
+            <LogOut size={18} />
           </button>
         </div>
       </header>
+
+      {/* Faixa única de indicadores + progresso da meta. */}
+      {(() => {
+        const dailyGoal = getDailyGoal();
+        const missingToday = Math.max(0, dailyGoal - totalToday);
+        const goalPercent = dailyGoal > 0 ? Math.min(100, Math.round((totalToday / dailyGoal) * 100)) : 0;
+        return (
+          <section className="mb-3 overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.03] backdrop-blur-xl">
+            <div className={`grid ${canViewSalesTotals && dailyGoal > 0 ? 'grid-cols-2 md:grid-cols-4' : canViewSalesTotals ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {canViewSalesTotals && (
+                <button
+                  type="button"
+                  onClick={() => setShowSalesBreakdown(true)}
+                  className="px-4 py-3 text-left transition-colors hover:bg-emerald-400/[0.06]"
+                  title="Ver vendas de produtos de hoje por forma de pagamento"
+                >
+                  <span className="block truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">Vendas de produtos · hoje</span>
+                  <span className="mt-0.5 block truncate text-lg font-black tabular-nums leading-tight text-emerald-400">{formatCurrency(totalToday)}</span>
+                </button>
+              )}
+              {canViewSalesTotals && dailyGoal > 0 && (
+                <>
+                  <div className="border-l border-white/10 px-4 py-3 max-md:border-l-0 max-md:border-t md:border-t-0">
+                    <span className="block truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">Meta do dia</span>
+                    <span className="mt-0.5 block truncate text-lg font-black tabular-nums leading-tight">{formatCurrency(dailyGoal)}</span>
+                  </div>
+                  <div className="border-l border-white/10 px-4 py-3 max-md:border-l-0 max-md:border-t">
+                    <span className="block truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">Faltam</span>
+                    <span className={`mt-0.5 block truncate text-lg font-black tabular-nums leading-tight ${missingToday > 0 ? 'text-yellow-300' : 'text-emerald-400'}`}>
+                      {missingToday > 0 ? formatCurrency(missingToday) : 'Meta batida'}
+                    </span>
+                  </div>
+                </>
+              )}
+              <div className={`${canViewSalesTotals ? 'border-l border-white/10 max-md:border-t' : ''} px-4 py-3`}>
+                <span className="block truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">Mesas ativas</span>
+                <span className="mt-0.5 block truncate text-lg font-black tabular-nums leading-tight text-primary">{activeTablesCount}</span>
+              </div>
+            </div>
+            {canViewSalesTotals && dailyGoal > 0 && (
+              <div className="flex items-center gap-3 border-t border-white/10 px-4 py-2">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={`h-full rounded-full ${goalPercent >= 100 ? 'bg-gradient-to-r from-primary to-yellow-300' : 'bg-primary'}`}
+                    style={{ width: `${goalPercent}%` }}
+                  />
+                </div>
+                <span className="whitespace-nowrap text-[10px] font-black tabular-nums uppercase tracking-[0.14em] text-zinc-500">
+                  {goalPercent}% da meta
+                </span>
+              </div>
+            )}
+          </section>
+        );
+      })()}
+
+      {/* Fileira de ações operacionais. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          onClick={switchQrMode}
+          disabled={!canUseQrModeSwitch || isSwitchingQrMode}
+          className={`flex h-11 items-center gap-2.5 rounded-xl border px-3.5 transition-colors ${
+            canUseQrModeSwitch
+              ? (isComandaMode
+                ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/15'
+                : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20')
+              : 'cursor-not-allowed border-white/5 opacity-40 text-zinc-600'
+          }`}
+          title="Modo comanda desligado = modo mesa. Modo comanda ligado = comandas."
+        >
+          <span className={`relative h-5 w-10 shrink-0 rounded-full border p-0.5 transition-colors ${
+            isComandaMode ? 'border-emerald-300/50 bg-emerald-400/25' : 'border-white/20 bg-white/10'
+          }`}>
+            <span className={`block h-3.5 w-3.5 rounded-full transition-transform ${
+              isComandaMode ? 'translate-x-5 bg-emerald-200' : 'translate-x-0 bg-zinc-400'
+            }`} />
+          </span>
+          <span className="text-[10px] font-black uppercase tracking-[0.14em]">
+            {isSwitchingQrMode ? 'Salvando...' : `Comanda ${isComandaMode ? 'ligada' : 'desligada'}`}
+            <span className="ml-1.5 text-white/35">QR {isComandaMode ? '200' : '50'}</span>
+          </span>
+        </button>
+        <button
+          onClick={() => setShowCounterSale(true)}
+          disabled={!isCashOpen || !canAddOrderItem || !canLaunchPayment || !canCloseBill}
+          className={`flex h-11 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-[0.14em] transition-colors ${
+            isCashOpen && canAddOrderItem && canLaunchPayment && canCloseBill
+              ? 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-yellow-300/40 hover:text-yellow-300'
+              : 'cursor-not-allowed border-white/5 opacity-40 text-zinc-600'
+          }`}
+          title="Venda balcão"
+        >
+          <ShoppingBag size={16} />
+          Venda balcão
+        </button>
+        <button
+          onClick={() => canUseCashAction && setCashDialog(isCashOpen ? 'close' : 'open')}
+          disabled={!canUseCashAction}
+          className={`flex h-11 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-[0.14em] transition-colors ${
+            canUseCashAction
+              ? (isCashOpen
+                ? 'border-rose-400/25 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15'
+                : 'border-emerald-400/25 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15')
+              : 'cursor-not-allowed border-white/5 opacity-40 text-zinc-600'
+          }`}
+          title={cashActionLabel}
+        >
+          <Wallet size={16} />
+          {cashActionLabel}
+        </button>
+      </div>
 
       {isEmbedded && (
         <button
@@ -814,8 +827,8 @@ export function PDVView() {
         {/* LEFT: MAPA DE MESAS */}
         <div className="xl:col-span-8 flex flex-col gap-5 xl:gap-6 xl:overflow-y-auto xl:pr-4 custom-scrollbar min-w-0">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <h2 className="text-xl font-black italic tracking-tight uppercase flex items-center gap-3">
-              <LayoutDashboard size={20} className="text-primary" /> Mapa de Mesas
+            <h2 className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
+              <LayoutDashboard size={14} className="text-primary" /> Mapa de Mesas
             </h2>
             <div className="flex flex-wrap gap-3 sm:gap-4">
               <button 
@@ -845,37 +858,33 @@ export function PDVView() {
               .map((table) => (
               <motion.button
                 key={table.id}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                whileTap={{ scale: 0.97 }}
                 onClick={() => handleTableClick(table)}
-                className={`h-32 sm:h-40 rounded-[2rem] sm:rounded-[2.5rem] border-2 p-4 sm:p-6 flex flex-col justify-between transition-all relative overflow-hidden group ${getStatusColor(table)}`}
+                className={`h-24 sm:h-28 rounded-2xl border p-3.5 flex flex-col justify-between transition-colors relative overflow-hidden group ${getStatusColor(table)}`}
               >
                 <div className="flex justify-between items-start relative z-10">
-                  <span className="text-3xl font-black italic tracking-tighter">{table.number}</span>
+                  <span className="text-2xl font-black tabular-nums tracking-tight leading-none">{table.number}</span>
                   {table.status !== 'available' && (
-                    <Users size={20} className="opacity-40" />
+                    <Users size={16} className="opacity-40" />
                   )}
                 </div>
-                
-                <div className="relative z-10">
+
+                <div className="relative z-10 text-left">
                   {table.status === 'available' ? (
-                    <span className="text-[10px] font-black uppercase tracking-widest opacity-40 group-hover:opacity-100 transition-opacity">Iniciar</span>
+                    <span className="text-[9px] font-black uppercase tracking-[0.16em] opacity-50 group-hover:opacity-100 transition-opacity">Iniciar</span>
                   ) : (
                     <div className="flex flex-col items-start">
-                      <span className="text-[10px] font-black uppercase tracking-widest opacity-60">Total</span>
-                      <span className="text-base sm:text-lg font-black italic tracking-tighter">
+                      <span className="text-sm sm:text-base font-black tabular-nums tracking-tight leading-tight">
                         R$ {getOrderItemsTotal(table.orders).toFixed(2)}
                       </span>
                       {table.customerTab && (
-                        <span className="mt-1 max-w-full truncate text-[9px] font-black uppercase tracking-widest text-white/55">
+                        <span className="mt-0.5 max-w-full truncate text-[9px] font-black uppercase tracking-[0.12em] text-white/55">
                           {table.customerTab.customerName}
                         </span>
                       )}
                     </div>
                   )}
                 </div>
-
-                <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-white/5 rounded-full blur-2xl group-hover:bg-white/10 transition-all" />
               </motion.button>
             ))}
           </div>

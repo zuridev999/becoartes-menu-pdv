@@ -1,4 +1,4 @@
-const CACHE_NAME = 'becoartes-kiosk-v1';
+const CACHE_NAME = 'becoartes-kiosk-v1.4.73';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -23,7 +23,13 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       );
-    })
+    }).then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
+      .then((clients) => Promise.all(
+        clients.map((client) => {
+          if ('navigate' in client) return client.navigate(client.url);
+          return client.postMessage({ type: 'BECOARTES_APP_UPDATED', version: CACHE_NAME });
+        })
+      ))
   );
   self.clients.claim();
 });
