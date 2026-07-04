@@ -3091,11 +3091,6 @@ const validateOrderItemsAvailability = async ({ items, session, settings, isPubl
       error.statusCode = 403;
       throw error;
     }
-    if (product.remote_stock_id && Number(product.stock_quantity || 0) <= 0 && !canSellUnavailable) {
-      const error = new Error(`${productName} está sem estoque disponível.`);
-      error.statusCode = 403;
-      throw error;
-    }
   }
 };
 

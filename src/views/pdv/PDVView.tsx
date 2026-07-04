@@ -412,7 +412,6 @@ export function PDVView() {
   const canAddOrderItem = can(currentSeller, 'addOrderItem', permissionOverrides, userPermissionOverrides);
   const canSendOrderToProduction = can(currentSeller, 'sendOrderToProduction', permissionOverrides, userPermissionOverrides);
   const canSellUnavailableProduct = can(currentSeller, 'sellUnavailableProduct', permissionOverrides, userPermissionOverrides);
-  const canViewZeroStockProducts = can(currentSeller, 'viewZeroStockProducts', permissionOverrides, userPermissionOverrides);
   const canAddItems = canAddOrderItem && canSendOrderToProduction;
   const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides, userPermissionOverrides);
   const currentSellerPermission = currentSeller?.permission === 'admin'
@@ -1276,7 +1275,6 @@ export function PDVView() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                     {menu
                       .filter(p => p.visible || canSellUnavailableProduct)
-                      .filter(p => canViewZeroStockProducts || !(p.remoteStockId && typeof p.stockQuantity === 'number' && p.stockQuantity <= 0))
                       .filter(p => !activeCategory || p.categoryId === activeCategory)
                       .map(product => (
                       <motion.button
@@ -1463,7 +1461,6 @@ export function PDVView() {
             onClose={() => setShowCounterSale(false)}
             canAddOrderItem={canAddOrderItem}
             canSellUnavailableProduct={canSellUnavailableProduct}
-            canViewZeroStockProducts={canViewZeroStockProducts}
             canChangeItemQuantity={can(currentSeller, 'changeItemQuantity', permissionOverrides, userPermissionOverrides)}
             canEditItemNotes={can(currentSeller, 'editItemNotes', permissionOverrides, userPermissionOverrides)}
             canLaunchPayment={canLaunchPayment}

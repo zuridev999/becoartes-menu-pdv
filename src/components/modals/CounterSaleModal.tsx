@@ -44,7 +44,6 @@ export function CounterSaleModal({
   onClose,
   canAddOrderItem,
   canSellUnavailableProduct,
-  canViewZeroStockProducts,
   canChangeItemQuantity,
   canEditItemNotes,
   canLaunchPayment,
@@ -53,7 +52,6 @@ export function CounterSaleModal({
   onClose: () => void;
   canAddOrderItem: boolean;
   canSellUnavailableProduct: boolean;
-  canViewZeroStockProducts: boolean;
   canChangeItemQuantity: boolean;
   canEditItemNotes: boolean;
   canLaunchPayment: boolean;
@@ -81,7 +79,6 @@ export function CounterSaleModal({
   const normalizedQuery = query.trim().toLowerCase();
   const visibleProducts = menu
     .filter((product) => product.visible || canSellUnavailableProduct)
-    .filter((product) => canViewZeroStockProducts || !(product.remoteStockId && typeof product.stockQuantity === 'number' && product.stockQuantity <= 0))
     .filter((product) => !activeCategory || product.categoryId === activeCategory)
     .filter((product) => !normalizedQuery || `${product.name} ${product.categoryName || ''}`.toLowerCase().includes(normalizedQuery));
 

@@ -49,7 +49,6 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
     for (const product of menu) {
       if (!product.visible) continue;
       if (surface === 'delivery' && product.deliveryVisible === false) continue;
-      if (product.remoteStockId && typeof product.stockQuantity === 'number' && product.stockQuantity <= 0) continue;
       const cat = dbCategories.find(c => c.id === product.categoryId);
       if (cat) {
         const { available: catAvailable } = isItemAvailable(cat.schedule);
@@ -68,7 +67,6 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
     .filter(p => {
       if (!p.visible) return false;
       if (surface === 'delivery' && p.deliveryVisible === false) return false;
-      if (p.remoteStockId && typeof p.stockQuantity === 'number' && p.stockQuantity <= 0) return false;
       
       // Check Category Schedule
       const cat = dbCategories.find(c => c.id === p.categoryId);
