@@ -20,11 +20,11 @@ export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => voi
     if (hasLoaded && !isLoading) {
       onComplete();
     } else if (!isLoading) {
-      // Se terminou de carregar os dados, esperamos um pouco mais para o slideshow brilhar
+      // Breve o suficiente para operação, mantendo só um respiro visual na primeira carga.
       const timer = setTimeout(() => {
         sessionStorage.setItem('beco_loaded', 'true');
         onComplete();
-      }, 3000); // 3 segundos de "show" na primeira carga
+      }, 700);
       return () => clearTimeout(timer);
     }
   }, [onComplete, isLoading]);

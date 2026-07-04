@@ -22,6 +22,7 @@ let lastCatalogSyncAt = 0;
 let lastCatalogVersion = '0';
 const CATALOG_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const RECENT_PUBLIC_ORDER_PROTECTION_MS = 120_000;
+const sendingOrderKeys = new Map<string, Promise<void>>();
 const modifierGroupSaveTimers = new Map<string, number>();
 const MODIFIER_GROUP_SAVE_DEBOUNCE_MS = 550;
 
@@ -995,7 +996,11 @@ export const useStore = create<AppState>((set, get) => ({
     const table = get().tables.find(t => t.id === tableId);
     if (!table || table.cart.length === 0) return;
 
-    try {
+    const sendKey = `${origin}:${tableId}`;
+    const inFlight = sendingOrderKeys.get(sendKey);
+    if (inFlight) return inFlight;
+
+    const sendPromise = (async () => {
       const orderId = createId();
       const total = getOrderItemsTotal(table.cart);
       const persistedItems: OrderItem[] = table.cart.map(item => ({
@@ -1073,6 +1078,12 @@ export const useStore = create<AppState>((set, get) => ({
       if (sendResult.inventorySync?.movementCount || sendResult.inventorySync?.catalogVersion) {
         await get().syncData({ includeCatalog: true });
       }
+    })();
+
+    sendingOrderKeys.set(sendKey, sendPromise);
+
+    try {
+      await sendPromise;
     } catch (error) {
       console.error("Erro ao enviar pedido para a cozinha:", error);
       if (isSessionExpiredError(error)) {
@@ -1090,6 +1101,10 @@ export const useStore = create<AppState>((set, get) => ({
       const message = getErrorMessage(error);
       get().addNotification(message ? `Erro ao enviar pedido: ${message}` : "Erro ao enviar pedido. Tente novamente.", "error", tableId);
       throw error;
+    } finally {
+      if (sendingOrderKeys.get(sendKey) === sendPromise) {
+        sendingOrderKeys.delete(sendKey);
+      }
     }
   },
 

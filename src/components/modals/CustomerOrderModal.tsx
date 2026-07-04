@@ -30,6 +30,7 @@ export function CustomerOrderModal({
   };
 
   const handleSendOrder = async () => {
+    if (isSending || isSent) return;
     setIsSending(true);
     try {
       await sendToKitchen(table.id, origin);
