@@ -76,7 +76,7 @@ function App() {
         )}
       </AnimatePresence>
 
-      <div className="min-h-screen bg-[#0a0a0c]">
+      <div className="min-h-screen bg-transparent">
         <NotificationDisplay />
         {activeView === 'pdv' && <ChecklistAlertDisplay />}
         {/* Roteamento de Views com Hostname Fallback */}

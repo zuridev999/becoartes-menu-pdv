@@ -8,7 +8,7 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag, Search, Printer
+  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag, Search, Printer, Sun, Moon
 } from 'lucide-react';
 import { useStore, type OrderItem, type Product, type Table as TableType } from '../../store';
 import type { CustomerTab } from '../../types';
@@ -87,6 +87,33 @@ function PdvGoalTicker({ totalToday }: { totalToday: number }) {
         ))}
       </div>
     </section>
+  );
+}
+
+// Toggle claro/escuro do PDV — persiste em localStorage, aplica classe no <html>.
+function useThemeToggle() {
+  const [isLight, setIsLight] = useState(() =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+  );
+  const toggleTheme = () => {
+    const next = !isLight;
+    document.documentElement.classList.toggle('light', next);
+    try { localStorage.setItem('pdv-theme', next ? 'light' : 'dark'); } catch { /* noop */ }
+    setIsLight(next);
+  };
+  return { isLight, toggleTheme };
+}
+
+function ThemeToggleButton() {
+  const { isLight, toggleTheme } = useThemeToggle();
+  return (
+    <button
+      onClick={toggleTheme}
+      className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-accent/50 hover:text-accent"
+      title={isLight ? 'Mudar para tema escuro' : 'Mudar para tema claro'}
+    >
+      {isLight ? <Moon size={18} /> : <Sun size={18} />}
+    </button>
   );
 }
 
@@ -307,7 +334,7 @@ export function PDVView() {
 
   if (!currentSeller) {
     return (
-      <div className="min-h-screen bg-[#09090b] flex items-center justify-center font-['Outfit'] p-8">
+      <div className="min-h-screen bg-transparent flex items-center justify-center font-['Outfit'] p-8">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -433,6 +460,15 @@ export function PDVView() {
     .filter(table => (isComandaMode ? table.number <= 200 : table.number <= 50))
     .filter(canAccessTable);
   const activeTablesCount = visibleTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested' || t.customerTab).length;
+  const openTablesAmount = visibleTables.reduce((sum, table) => {
+    const ordersTotal = getOrderItemsTotal(table.orders || []);
+    const paymentsTotal = (table.payments || []).reduce((acc, payment) => acc + Number(payment.amount || 0), 0);
+    const customerBalance = Number(table.customerTab?.totals?.balance ?? NaN);
+    const balance = Number.isFinite(customerBalance)
+      ? customerBalance
+      : Math.max(0, ordersTotal - paymentsTotal);
+    return sum + Math.max(0, balance);
+  }, 0);
 
   const parseMoneyValue = (value: string) => {
     const digits = value.replace(/\D/g, '');
@@ -567,7 +603,7 @@ export function PDVView() {
 
   return (
     <div 
-      className="h-[100dvh] min-h-screen bg-[#09090b] text-white font-['Outfit'] p-4 sm:p-6 xl:p-8 relative overflow-x-hidden overflow-y-auto custom-scrollbar"
+      className="h-[100dvh] min-h-screen bg-transparent text-white font-['Outfit'] p-4 sm:p-6 xl:p-8 relative overflow-x-hidden overflow-y-auto custom-scrollbar"
       onClick={() => {
         if (hasPanicAlert) {
           setHasPanicAlert(false);
@@ -582,7 +618,7 @@ export function PDVView() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[1400] flex flex-col items-center justify-center bg-[#0b4dff] p-8 text-center"
+            className="solid-panel fixed inset-0 z-[1400] flex flex-col items-center justify-center bg-[#0b4dff] p-8 text-center"
           >
             <LockKeyhole size={92} className="mb-8 text-white" />
             <h1 className="text-5xl sm:text-7xl xl:text-8xl font-black italic tracking-tighter text-white">
@@ -598,7 +634,7 @@ export function PDVView() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[999] bg-rose-600/95 backdrop-blur-2xl flex flex-col items-center justify-center"
+            className="solid-panel fixed inset-0 z-[999] bg-rose-600/95 backdrop-blur-2xl flex flex-col items-center justify-center"
           >
             <div className="animate-pulse flex flex-col items-center text-center p-12">
                <AlertTriangle size={120} className="text-white mb-8 animate-bounce" />
@@ -659,6 +695,7 @@ export function PDVView() {
               <Settings size={18} />
             </button>
           )}
+          <ThemeToggleButton />
           <button
             onClick={logout}
             className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-rose-400/40 hover:text-rose-400"
@@ -675,8 +712,8 @@ export function PDVView() {
         const missingToday = Math.max(0, dailyGoal - totalToday);
         const goalPercent = dailyGoal > 0 ? Math.min(100, Math.round((totalToday / dailyGoal) * 100)) : 0;
         return (
-          <section className="mb-3 overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.03] backdrop-blur-xl">
-            <div className={`grid ${canViewSalesTotals && dailyGoal > 0 ? 'grid-cols-2 md:grid-cols-4' : canViewSalesTotals ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <section className="metal-surface metal-flow mb-3 rounded-[1.25rem]">
+            <div className={`grid ${canViewSalesTotals && dailyGoal > 0 ? 'grid-cols-2 md:grid-cols-5' : canViewSalesTotals ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-2'}`}>
               {canViewSalesTotals && (
                 <button
                   type="button"
@@ -705,6 +742,10 @@ export function PDVView() {
               <div className={`${canViewSalesTotals ? 'border-l border-white/10 max-md:border-t' : ''} px-4 py-3`}>
                 <span className="block truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">Mesas ativas</span>
                 <span className="mt-0.5 block truncate text-lg font-black tabular-nums leading-tight text-primary">{activeTablesCount}</span>
+              </div>
+              <div className="border-l border-white/10 px-4 py-3 max-md:border-l-0 max-md:border-t">
+                <span className="block truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">Mesas em aberto</span>
+                <span className="mt-0.5 block truncate text-lg font-black tabular-nums leading-tight text-amber-300">{formatCurrency(openTablesAmount)}</span>
               </div>
             </div>
             {canViewSalesTotals && dailyGoal > 0 && (
@@ -751,19 +792,6 @@ export function PDVView() {
           </span>
         </button>
         <button
-          onClick={() => setShowCounterSale(true)}
-          disabled={!isCashOpen || !canAddOrderItem || !canLaunchPayment || !canCloseBill}
-          className={`flex h-11 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-[0.14em] transition-colors ${
-            isCashOpen && canAddOrderItem && canLaunchPayment && canCloseBill
-              ? 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-yellow-300/40 hover:text-yellow-300'
-              : 'cursor-not-allowed border-white/5 opacity-40 text-zinc-600'
-          }`}
-          title="Venda balcão"
-        >
-          <ShoppingBag size={16} />
-          Venda balcão
-        </button>
-        <button
           onClick={() => canUseCashAction && setCashDialog(isCashOpen ? 'close' : 'open')}
           disabled={!canUseCashAction}
           className={`flex h-11 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-[0.14em] transition-colors ${
@@ -777,6 +805,20 @@ export function PDVView() {
         >
           <Wallet size={16} />
           {cashActionLabel}
+        </button>
+        {/* Venda balcão: ação principal do turno — destaque amarelo, canto direito. */}
+        <button
+          onClick={() => setShowCounterSale(true)}
+          disabled={!isCashOpen || !canAddOrderItem || !canLaunchPayment || !canCloseBill}
+          className={`ml-auto flex h-12 items-center gap-2.5 rounded-xl px-6 text-[11px] font-black uppercase tracking-[0.16em] transition-all ${
+            isCashOpen && canAddOrderItem && canLaunchPayment && canCloseBill
+              ? 'bg-gradient-to-b from-yellow-300 to-amber-400 text-black shadow-lg shadow-amber-400/30 hover:brightness-105 hover:shadow-amber-400/45 active:scale-[0.98]'
+              : 'cursor-not-allowed border border-white/5 bg-white/[0.02] opacity-40 text-zinc-600'
+          }`}
+          title="Venda balcão"
+        >
+          <ShoppingBag size={18} />
+          Venda balcão
         </button>
       </div>
 
@@ -970,7 +1012,7 @@ export function PDVView() {
           )}
           {/* SOLICITAÇÕES DE SERVIÇO */}
           {visibleRequests.length > 0 && (
-            <div className="flex-1 flex flex-col min-h-0 border-b border-white/5 relative z-10">
+            <div className="solid-panel flex-1 flex flex-col min-h-0 border-b border-white/5 relative z-10">
               <div className={`p-5 sm:p-8 border-b border-white/20 flex justify-between items-center ${visibleRequests.some(r => r.status !== 'resolved') ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'} shrink-0`}>
                 <h3 className="text-xs sm:text-sm font-black uppercase tracking-[0.16em] sm:tracking-[0.2em] flex items-center gap-3 text-white">
                   <Bell size={16} className={visibleRequests.some(r => r.status !== 'resolved') ? 'animate-bounce' : ''} /> 
@@ -1243,7 +1285,7 @@ export function PDVView() {
             initial={{ opacity: 0, scale: 1.1 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.1 }}
-            className="fixed inset-0 z-[500] glass-card m-0 sm:m-6 xl:m-12 bg-[#09090b]/95 border-white/10 flex flex-col overflow-hidden p-4 sm:p-8 xl:p-12"
+            className="fixed inset-0 z-[500] glass-card m-0 sm:m-6 xl:m-12 bg-transparent/95 border-white/10 flex flex-col overflow-hidden p-4 sm:p-8 xl:p-12"
           >
             <div className="flex justify-between items-start gap-4 mb-6 xl:mb-12">
                <div>

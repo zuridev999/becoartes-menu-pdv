@@ -10,6 +10,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Becoartes PDV</title>
     <script>
+      // Restaura o tema salvo antes do React montar (evita flash).
+      try {
+        if (localStorage.getItem('pdv-theme') === 'light') {
+          document.documentElement.classList.add('light');
+        }
+      } catch (e) { /* noop */ }
+
       const becoHost = window.location.hostname;
       if (becoHost.startsWith('qr.')) {
         document.title = 'Becoartes Pedidos';

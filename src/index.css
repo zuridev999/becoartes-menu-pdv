@@ -16,6 +16,13 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Superfícies metálicas (grafite escovado) — tema escuro padrão. */
+  --metal-surface: linear-gradient(165deg, rgba(255, 255, 255, 0.055) 0%, rgba(255, 255, 255, 0.02) 45%, rgba(255, 255, 255, 0.045) 100%);
+  --metal-highlight: rgba(255, 255, 255, 0.14);
+  --metal-border: rgba(255, 255, 255, 0.09);
+  --metal-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --metal-sheen: rgba(255, 255, 255, 0.06);
 }
 
 html, body {
@@ -27,7 +34,11 @@ html, body {
   overflow: hidden !important;
   position: fixed !important;
   display: flex;
-  background: radial-gradient(circle at top right, #1a0a2e, #050505); /* Fundo Roxo Profundo */
+  /* Grafite metálico com wash roxo/âmbar — fundo escuro padrão. */
+  background:
+    radial-gradient(circle at 85% -5%, rgba(250, 204, 21, 0.05), transparent 26rem),
+    radial-gradient(circle at 10% 0%, rgba(139, 92, 246, 0.16), transparent 32rem),
+    linear-gradient(170deg, #17141d 0%, #0a090d 55%, #0d0b12 100%);
   touch-action: none; /* Bloqueia TUDO por padrão */
   user-select: none;
   -webkit-user-select: none;
@@ -35,6 +46,72 @@ html, body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none !important;
   overscroll-behavior-x: none !important;
+}
+
+/*
+ * TEMA CLARO — "prata escovada".
+ * Tailwind v4 resolve utilities via CSS vars, então remapear a paleta
+ * aqui retematiza o app inteiro (text-white, bg-zinc-900, border-white/10...)
+ * sem tocar componente por componente.
+ */
+html.light {
+  color-scheme: light;
+  color: #17131e;
+  background-color: #eceaf1;
+
+  --metal-surface: linear-gradient(165deg, rgba(255, 255, 255, 0.92) 0%, rgba(244, 242, 248, 0.85) 45%, rgba(255, 255, 255, 0.9) 100%);
+  --metal-highlight: rgba(255, 255, 255, 0.95);
+  --metal-border: rgba(35, 25, 52, 0.13);
+  --metal-shadow: 0 10px 26px rgba(46, 32, 66, 0.12);
+  --metal-sheen: rgba(139, 92, 246, 0.08);
+
+  /* Inversão da paleta neutra. */
+  --color-white: #17131e;
+  --color-black: #ffffff;
+  --color-zinc-50: #1a1523;
+  --color-zinc-100: #241d30;
+  --color-zinc-200: #38304a;
+  --color-zinc-300: #4e4563;
+  --color-zinc-400: #5d5570;
+  --color-zinc-500: #6f6880;
+  --color-zinc-600: #8c869c;
+  --color-zinc-700: #b9b4c6;
+  --color-zinc-800: #d9d5e3;
+  --color-zinc-900: #eae7f0;
+  --color-zinc-950: #f6f4f9;
+
+  --color-background: #eceaf1;
+  --color-foreground: #17131e;
+  --color-card: rgba(23, 19, 30, 0.04);
+
+  /* Tons pastel (calibrados p/ dark) escurecem no claro para manter contraste. */
+  --color-rose-200: #be123c;
+  --color-rose-300: #be123c;
+  --color-emerald-200: #047857;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #059669;
+  --color-amber-200: #92400e;
+  --color-amber-300: #b45309;
+  --color-yellow-200: #854d0e;
+  --color-yellow-300: #ca8a04;
+  --color-purple-300: #7c3aed;
+  --color-purple-400: #7c3aed;
+  --color-violet-300: #6d28d9;
+
+  /* Roxo mais profundo para contraste sobre prata. */
+  --color-primary: #6d28d9;
+  --color-primary-glow: rgba(109, 40, 217, 0.35);
+  --color-accent: #d4a017;
+  --color-accent-glow: rgba(212, 160, 23, 0.4);
+}
+
+html.light body {
+  color: #17131e;
+  /* Prata escovada com wash lilás/dourado. */
+  background:
+    radial-gradient(circle at 85% -5%, rgba(212, 160, 23, 0.09), transparent 26rem),
+    radial-gradient(circle at 10% 0%, rgba(139, 92, 246, 0.12), transparent 32rem),
+    linear-gradient(170deg, #f7f6fa 0%, #e8e5ee 55%, #efedf3 100%);
 }
 
 /* Permitir scroll apenas em áreas específicas */
@@ -75,18 +152,55 @@ html, body {
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.03);
+  position: relative;
+  background: var(--metal-surface);
   backdrop-filter: blur(12px);
   border-radius: 1.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  border: 1px solid var(--metal-border);
+  /* Highlight de topo = leitura de metal escovado. */
+  box-shadow: inset 0 1px 0 var(--metal-highlight), var(--metal-shadow);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .glass-card:hover {
-  background: rgba(255, 255, 255, 0.05);
   border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
-  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.12);
+  box-shadow: inset 0 1px 0 var(--metal-highlight), 0 8px 24px var(--color-primary-glow);
   transform: translateY(-2px);
+}
+
+/* Painéis de cor sólida (alertas, overlays): texto branco fixo nos dois temas.
+   A cascata de vars devolve o branco para toda a subárvore. */
+.solid-panel {
+  --color-white: #ffffff;
+}
+
+/* Superfície metálica plana (sem hover flutuante) — para faixas de KPI e headers. */
+.metal-surface {
+  position: relative;
+  background: var(--metal-surface);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--metal-border);
+  box-shadow: inset 0 1px 0 var(--metal-highlight), var(--metal-shadow);
+  overflow: hidden;
+}
+
+/* Sheen: reflexo diagonal que atravessa a superfície lentamente (flow). */
+.metal-flow::after {
+  content: "";
+  position: absolute;
+  inset: -150% -60%;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 42%, var(--metal-sheen) 50%, transparent 58%);
+  animation: metal-flow-sweep 9s ease-in-out infinite;
+}
+
+@keyframes metal-flow-sweep {
+  0%, 55% { transform: translateX(-38%); }
+  85%, 100% { transform: translateX(38%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metal-flow::after { animation: none; }
 }
 
 .glow-primary {
