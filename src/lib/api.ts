@@ -739,6 +739,10 @@ export const CatalogApi = {
     return postJson<{ catalogVersion: string }>('/api/catalog/product/visibility', { id, visible });
   },
 
+  reorderProducts(items: Array<{ id: string; sortOrder: number }>) {
+    return postJson<{ catalogVersion: string }>('/api/catalog/products/reorder', { items });
+  },
+
   toggleProductDeliveryVisibility(id: string, deliveryVisible: boolean) {
     return postJson<{ catalogVersion: string }>('/api/catalog/product/delivery-visibility', { id, deliveryVisible });
   },

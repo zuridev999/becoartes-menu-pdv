@@ -5252,6 +5252,30 @@ const toggleProductDeliveryVisibility = async ({ id, deliveryVisible }) => {
   return { catalogVersion: await bumpCatalogVersion() };
 };
 
+// Reordena produtos em lote: uma transação, um bump de versão de catálogo.
+// Substitui o fluxo antigo de um upsert completo por produto a cada passo de ordenação.
+const reorderCatalogProducts = async ({ items }, session = null) => {
+  const settings = await getSettings();
+  requirePermission(session, 'editProduct', settings);
+
+  const safeItems = (Array.isArray(items) ? items : []).map((item) => ({
+    id: requireString(item?.id, 'item.id'),
+    sortOrder: requireNumber(item?.sortOrder, 'item.sortOrder'),
+  }));
+
+  if (safeItems.length > 0) {
+    await db.batch(
+      safeItems.map((item) => ({
+        sql: "UPDATE menu SET sort_order = ? WHERE id = ?",
+        args: [item.sortOrder, item.id],
+      })),
+      'write'
+    );
+  }
+
+  return { catalogVersion: await bumpCatalogVersion() };
+};
+
 const saveModifierGroup = async ({ group }) => {
   const safeGroup = group || {};
   const groupId = requireString(safeGroup.id, 'group.id');
@@ -7778,6 +7802,7 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/catalog/product/delete': 'deleteProduct',
     'POST /api/catalog/product/visibility': 'toggleProductVisibility',
     'POST /api/catalog/product/delivery-visibility': 'toggleProductVisibility',
+    'POST /api/catalog/products/reorder': 'editProduct',
     'POST /api/catalog/modifier-group': 'manageOptionals',
     'POST /api/catalog/modifier-group/delete': 'manageOptionals',
     'POST /api/catalog/modifier-group/link': 'manageOptionals',
@@ -7890,6 +7915,7 @@ const handlers = {
   'POST /api/catalog/product/delete': async (body) => deleteProduct(body),
   'POST /api/catalog/product/visibility': async (body) => toggleProductVisibility(body),
   'POST /api/catalog/product/delivery-visibility': async (body) => toggleProductDeliveryVisibility(body),
+  'POST /api/catalog/products/reorder': async (body, context) => reorderCatalogProducts(body, context.session),
   'POST /api/catalog/modifier-group': async (body) => saveModifierGroup(body),
   'POST /api/catalog/modifier-group/delete': async (body) => deleteModifierGroup(body),
   'POST /api/catalog/modifier-group/link': async (body) => linkModifierGroup(body),

@@ -643,9 +643,19 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   reorderProducts: async (categoryId, products) => {
+    const menuBefore = get().menu;
     const orderedProducts = products
       .filter(product => product.categoryId === categoryId)
       .map((product, index) => ({ ...product, sortOrder: index }));
+
+    // Persistimos apenas o que mudou de posição, em UMA chamada batch.
+    const changedItems = orderedProducts
+      .filter(product => {
+        const before = menuBefore.find(item => item.id === product.id);
+        return !before || Number(before.sortOrder ?? 0) !== product.sortOrder;
+      })
+      .map(({ id, sortOrder }) => ({ id, sortOrder }));
+
     set((state) => ({
       menu: sortProductsByCatalogOrder(
         state.menu.map(product => {
@@ -656,12 +666,12 @@ export const useStore = create<AppState>((set, get) => ({
       )
     }));
 
+    if (changedItems.length === 0) return;
+
     try {
-      for (const product of orderedProducts) {
-        const result = await CatalogApi.upsertProduct(product);
-        lastCatalogVersion = result.catalogVersion;
-      }
-      get().addNotification('Ordem dos produtos sincronizada com Tablet, QR e Delivery.', 'info');
+      const result = await CatalogApi.reorderProducts(changedItems);
+      lastCatalogVersion = result.catalogVersion;
+      get().addNotification('Ordem do catálogo atualizada em QR, Tablet e Delivery.', 'info');
     } catch (error: any) {
       console.error('❌ Erro ao reordenar produtos:', error);
       get().addNotification(error.message || 'Falha ao salvar ordem dos produtos.', 'error');

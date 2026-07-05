@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import {
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
-  ArrowLeft, ArrowDown, ArrowUp, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
+  ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
   GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy,
   QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle, Bike, LockKeyhole
 } from 'lucide-react';
@@ -493,6 +493,36 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
   );
 }
 
+// Linha arrastável de produto — render-prop entrega o handle de drag para o grip.
+function SortableProductRow({
+  id,
+  disabled,
+  className,
+  children,
+}: {
+  id: string;
+  disabled?: boolean;
+  className?: string;
+  children: (handle: { attributes: ReturnType<typeof useSortable>['attributes']; listeners: ReturnType<typeof useSortable>['listeners'] }) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 60 : 1,
+        opacity: isDragging ? 0.55 : 1,
+        position: 'relative',
+      }}
+      className={className}
+    >
+      {children({ attributes, listeners })}
+    </div>
+  );
+}
+
 export function AdminView() {
   const {
     menu, updateProduct, addProduct, deleteProduct,
@@ -585,12 +615,15 @@ export function AdminView() {
     }
   };
 
-  const moveProductInCategory = async (categoryId: string, productId: string, direction: -1 | 1) => {
+  // Drag-and-drop de produtos dentro da categoria: um drop = uma persistência batch.
+  const handleProductDragEnd = (categoryId: string, event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
     const categoryProducts = menu.filter(product => product.categoryId === categoryId);
-    const currentIndex = categoryProducts.findIndex(product => product.id === productId);
-    const nextIndex = currentIndex + direction;
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= categoryProducts.length) return;
-    await reorderProducts(categoryId, arrayMove(categoryProducts, currentIndex, nextIndex));
+    const oldIndex = categoryProducts.findIndex(product => product.id === active.id);
+    const newIndex = categoryProducts.findIndex(product => product.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    void reorderProducts(categoryId, arrayMove(categoryProducts, oldIndex, newIndex));
   };
 
   const openProductEditor = useCallback((product: Product) => {
@@ -1501,35 +1534,33 @@ export function AdminView() {
   };
 
   return (
-    <div className="p-4 sm:p-8 xl:p-16 bg-[#0a0a0c] min-h-screen text-white font-['Outfit'] pb-32 sm:pb-48 overflow-x-hidden overflow-y-auto custom-scrollbar h-screen">
-      <div className="flex flex-col gap-6 sm:gap-8 mb-10 sm:mb-16">
-        <div className="flex items-center gap-4 sm:gap-8 min-w-0">
+    <div className="p-4 sm:p-6 bg-transparent min-h-screen text-white font-['Outfit'] pb-32 sm:pb-48 overflow-x-hidden overflow-y-auto custom-scrollbar h-screen">
+      <div className="flex flex-col gap-3 mb-4">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => useStore.getState().setActiveView('pdv')}
-            className="w-14 h-14 sm:w-16 sm:h-16 glass rounded-2xl flex items-center justify-center text-zinc-500 hover:text-white transition-all border-white/5 shrink-0"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-primary/40 hover:text-white"
+            title="Voltar ao PDV"
           >
-            <ArrowLeft size={28} />
+            <ArrowLeft size={18} />
           </button>
           <div className="min-w-0">
-            <h1 className="text-5xl sm:text-7xl font-black tracking-tighter leading-none">Beco <span className="text-primary">Control</span></h1>
-            <p className="text-gray-500 font-bold uppercase tracking-[0.28em] sm:tracking-[0.4em] text-[9px] sm:text-[10px] mt-3 sm:ml-2 italic break-words">
-              {currentSeller.name} • {getPermissionLabel(currentSeller)}
-            </p>
-            <p className="text-zinc-700 font-black uppercase tracking-[0.2em] sm:tracking-[0.25em] text-[9px] mt-2 sm:ml-2 break-words">
-              {getAppLabel()} {APP_BUILD_LABEL}
+            <p className="truncate text-base font-black leading-tight">Beco <span className="text-primary">Control</span></p>
+            <p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
+              {currentSeller.name} · {getPermissionLabel(currentSeller)} · {getAppLabel()} {APP_BUILD_LABEL}
             </p>
           </div>
           <button
             onClick={togglePdvLock}
             disabled={isPdvLockSaving}
-            className={`ml-auto hidden sm:flex h-14 items-center gap-3 rounded-2xl border px-5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+            className={`ml-auto hidden sm:flex h-10 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
               pdvLockState?.locked
-                ? 'border-rose-400/40 bg-rose-500/15 text-rose-200 shadow-xl shadow-rose-950/20'
-                : 'border-white/10 bg-white/[0.04] text-zinc-400 hover:border-primary/40 hover:text-white'
+                ? 'border-rose-400/40 bg-rose-500/15 text-rose-200'
+                : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-primary/40 hover:text-white'
             }`}
             title={pdvLockState?.locked ? 'Liberar PDV operacional' : 'Bloquear PDV operacional'}
           >
-            <LockKeyhole size={18} />
+            <LockKeyhole size={15} />
             {isPdvLockSaving ? 'Salvando...' : pdvLockState?.locked ? 'Liberar PDV' : 'Travar PDV'}
           </button>
         </div>
@@ -1545,8 +1576,8 @@ export function AdminView() {
           <LockKeyhole size={16} />
           {isPdvLockSaving ? 'Salvando...' : pdvLockState?.locked ? 'Liberar PDV operacional' : 'Travar PDV operacional'}
         </button>
-        <div className="w-full max-w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-2">
-        <div className="flex w-max min-w-full glass p-2 rounded-[2rem] border-white/5">
+        <div className="w-full max-w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
+        <div className="metal-surface flex w-max min-w-full p-1.5 rounded-[1.25rem]">
           {[
             { id: 'config', name: 'Geral', icon: Settings },
             { id: 'categories', name: 'Categorias', icon: LayoutDashboard },
@@ -1562,8 +1593,8 @@ export function AdminView() {
             return allowedTabIds.has(tab.id);
           })
           .map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-4 sm:px-8 py-4 rounded-[1.5rem] flex items-center gap-3 font-black text-[11px] sm:text-xs uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-gray-500 hover:text-white'}`}>
-              <tab.icon size={18}/> {tab.name}
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-3.5 sm:px-5 py-2.5 rounded-[0.9rem] flex items-center gap-2 font-black text-[10px] sm:text-[11px] uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+              <tab.icon size={15}/> {tab.name}
             </button>
           ))}
         </div>
@@ -1856,9 +1887,32 @@ export function AdminView() {
                       <h4 className="text-xs font-black uppercase tracking-widest text-primary">{cat.name}</h4>
                       {!cat.visible && <span className="text-[9px] font-black uppercase text-gray-500 bg-white/5 px-2 py-0.5 rounded">Invisível</span>}
                     </div>
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={(event) => handleProductDragEnd(cat.id, event)}
+                    >
+                    <SortableContext items={filteredItems.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
                     {filteredItems.map((p: any) => (
-                      <div key={p.id} className={`flex items-center justify-between gap-3 p-4 sm:p-8 border-b border-white/5 hover:bg-white/[0.02] transition-all group ${!p.visible ? 'opacity-40 grayscale' : ''}`}>
-                        <div className="flex items-center gap-4 sm:gap-6 min-w-0">
+                      <SortableProductRow
+                        key={p.id}
+                        id={p.id}
+                        disabled={!canEditProduct || Boolean(searchTerm)}
+                        className={`flex items-center justify-between gap-3 p-4 sm:p-6 border-b border-white/5 hover:bg-white/[0.02] transition-colors group ${!p.visible ? 'opacity-40 grayscale' : ''}`}
+                      >
+                        {({ attributes, listeners }) => (
+                        <>
+                        <div className="flex items-center gap-3 sm:gap-5 min-w-0">
+                          {canEditProduct && (
+                            <div
+                              {...attributes}
+                              {...listeners}
+                              className={`shrink-0 p-2 rounded-lg transition-all text-gray-600 hover:text-primary hover:bg-white/5 ${searchTerm ? 'opacity-30 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}`}
+                              title={searchTerm ? 'Limpe a busca para reordenar' : 'Arraste para reordenar'}
+                            >
+                              <GripVertical size={18} />
+                            </div>
+                          )}
                           <div className="relative">
                             <img src={getImageSrc(p.image)} onError={applyImageFallback} className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
                             {!p.visible && <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center"><EyeOff size={20} className="text-white/40" /></div>}
@@ -1873,26 +1927,6 @@ export function AdminView() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 sm:gap-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
-                          {canEditProduct && (
-                            <div className="flex flex-col gap-1">
-                              <button
-                                onClick={() => moveProductInCategory(cat.id, p.id, -1)}
-                                disabled={items.findIndex(item => item.id === p.id) === 0}
-                                className="p-2 glass rounded-xl text-gray-400 disabled:opacity-20 disabled:cursor-not-allowed hover:text-primary transition-all"
-                                title="Subir produto"
-                              >
-                                <ArrowUp size={14}/>
-                              </button>
-                              <button
-                                onClick={() => moveProductInCategory(cat.id, p.id, 1)}
-                                disabled={items.findIndex(item => item.id === p.id) === items.length - 1}
-                                className="p-2 glass rounded-xl text-gray-400 disabled:opacity-20 disabled:cursor-not-allowed hover:text-primary transition-all"
-                                title="Descer produto"
-                              >
-                                <ArrowDown size={14}/>
-                              </button>
-                            </div>
-                          )}
                           {canToggleVisibility && (
                             <>
                               <button
@@ -1928,8 +1962,12 @@ export function AdminView() {
                             </>
                           )}
                         </div>
-                      </div>
+                        </>
+                        )}
+                      </SortableProductRow>
                     ))}
+                    </SortableContext>
+                    </DndContext>
                   </div>
                 );
               })}
@@ -2564,7 +2602,7 @@ export function AdminView() {
                     type="date"
                     value={financeDateFrom}
                     onChange={(event) => setFinanceDateFrom(event.target.value)}
-                    className="w-full bg-[#121214] border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
+                    className="w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
                   />
                 </label>
 
@@ -2574,7 +2612,7 @@ export function AdminView() {
                     type="date"
                     value={financeDateTo}
                     onChange={(event) => setFinanceDateTo(event.target.value)}
-                    className="w-full bg-[#121214] border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
+                    className="w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
                   />
                 </label>
 
@@ -2586,7 +2624,7 @@ export function AdminView() {
                       setFinanceSellerFilter(event.target.value);
                       setSelectedSellerPerformanceKey('all');
                     }}
-                    className="w-full bg-[#121214] border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
+                    className="w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
                   >
                     <option value="all">Todos</option>
                     {financeSellerOptions.map(([sellerKey, sellerName]) => (
@@ -2600,7 +2638,7 @@ export function AdminView() {
                   <select
                     value={financePaymentFilter}
                     onChange={(event) => setFinancePaymentFilter(event.target.value)}
-                    className="w-full bg-[#121214] border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
+                    className="w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-3 text-sm font-black text-white outline-none focus:border-primary/60"
                   >
                     <option value="all">Todos</option>
                     {Object.entries(paymentLabels).map(([method, label]) => (

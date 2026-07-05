@@ -28,6 +28,13 @@ export type ReceiptData = {
   printedAt?: Date;
 };
 
+export type ReceiptPaperWidth = 58 | 80;
+
+export type ReceiptHtmlOptions = {
+  paperWidth?: ReceiptPaperWidth;
+  autoPrint?: boolean;
+};
+
 const paymentMethodLabels: Record<ReceiptPaymentMethod, string> = {
   credit: 'Credito',
   debit: 'Debito',
@@ -59,7 +66,30 @@ const itemUnitTotal = (item: OrderItem) => (
   Number(item.price || 0) + (item.selectedModifiers || []).reduce((sum, modifier) => sum + Number(modifier.price || 0), 0)
 );
 
-const buildReceiptHtml = (data: ReceiptData) => {
+export const buildReceiptHtml = (data: ReceiptData, options: ReceiptHtmlOptions = {}) => {
+  const paperWidth = options.paperWidth || 58;
+  const pageMargin = paperWidth === 58 ? 2 : 3;
+  const bodyWidth = paperWidth === 58 ? 52 : 74;
+  const textSize = paperWidth === 58 ? 9 : 11;
+  const lineHeight = paperWidth === 58 ? 1.2 : 1.25;
+  const brandSize = paperWidth === 58 ? 13 : 16;
+  const companySize = paperWidth === 58 ? 7 : 9;
+  const subtitleSize = paperWidth === 58 ? 8 : 10;
+  const mutedSize = paperWidth === 58 ? 8 : 10;
+  const itemNameWidth = paperWidth === 58 ? 34 : 48;
+  const itemValueWidth = paperWidth === 58 ? 15 : 22;
+  const itemSize = paperWidth === 58 ? 9 : 11;
+  const metaSize = paperWidth === 58 ? 7 : 9;
+  const sectionSize = paperWidth === 58 ? 8 : 10;
+  const strongSize = paperWidth === 58 ? 10 : 12;
+  const totalSize = paperWidth === 58 ? 12 : 15;
+  const autoPrintScript = options.autoPrint ? `
+  <script>
+    window.addEventListener('load', () => {
+      window.focus();
+      setTimeout(() => window.print(), 150);
+    });
+  </script>` : '';
   const printedAt = data.printedAt || new Date();
   const payments = data.payments || [];
   const hasPayments = payments.length > 0;
@@ -117,51 +147,78 @@ const buildReceiptHtml = (data: ReceiptData) => {
   <meta charset="utf-8" />
   <title>${title}</title>
   <style>
-    @page { size: 80mm auto; margin: 3mm; }
+    @page { size: ${paperWidth}mm auto; margin: ${pageMargin}mm; }
     * { box-sizing: border-box; }
     body {
-      width: 74mm;
+      width: ${bodyWidth}mm;
       margin: 0 auto;
       background: #fff;
       color: #000;
       font-family: "Arial", "Helvetica", sans-serif;
-      font-size: 11px;
-      line-height: 1.25;
+      font-size: ${textSize}px;
+      line-height: ${lineHeight};
     }
-    .receipt { width: 100%; padding: 2mm 0; }
+    .receipt { width: 100%; padding: 1.5mm 0; overflow: hidden; }
     .center { text-align: center; }
-    .brand { font-size: 16px; font-weight: 900; letter-spacing: 0.04em; }
-    .company { margin-top: 3px; font-size: 9px; font-weight: 700; line-height: 1.25; }
-    .subtitle { margin-top: 2px; font-size: 10px; font-weight: 900; letter-spacing: 0.12em; }
-    .muted { color: #333; font-size: 10px; }
-    .rule { border-top: 1px dashed #000; margin: 8px 0; }
+    .brand { font-size: ${brandSize}px; font-weight: 900; letter-spacing: 0.03em; }
+    .company { margin-top: 2px; font-size: ${companySize}px; font-weight: 700; line-height: 1.15; }
+    .subtitle { margin-top: 2px; font-size: ${subtitleSize}px; font-weight: 900; letter-spacing: 0.10em; }
+    .muted { color: #333; font-size: ${mutedSize}px; }
+    .rule { border-top: 1px dashed #000; margin: 5px 0; }
     .line, .item-main {
       display: flex;
       justify-content: space-between;
-      gap: 8px;
+      gap: 4px;
       align-items: flex-start;
     }
-    .line span, .item-main span { max-width: 48mm; }
-    .line strong, .item-main strong { white-space: nowrap; text-align: right; }
-    .item { padding: 5px 0; border-bottom: 1px dotted #999; }
-    .item-main { font-size: 11px; font-weight: 800; }
-    .item-meta, .modifier, .note { margin-top: 2px; color: #333; font-size: 9px; }
+    .line span, .item-main span {
+      max-width: ${itemNameWidth}mm;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .line strong, .item-main strong {
+      flex: 0 0 auto;
+      max-width: ${itemValueWidth}mm;
+      white-space: normal;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+    .document-line {
+      display: block;
+    }
+    .document-line span,
+    .document-line strong {
+      display: block;
+      max-width: 100%;
+      text-align: left;
+    }
+    .document-line strong {
+      max-width: none;
+      margin-top: 1px;
+      font-size: ${paperWidth === 58 ? 8 : 10}px;
+      white-space: nowrap;
+      overflow-wrap: normal;
+    }
+    .item { padding: 4px 0; border-bottom: 1px dotted #999; }
+    .item-main { font-size: ${itemSize}px; font-weight: 800; }
+    .item-meta, .modifier, .note { margin-top: 1px; color: #333; font-size: ${metaSize}px; }
     .note { font-style: italic; }
-    .section-title { margin: 8px 0 4px; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; }
-    .strong { font-size: 12px; font-weight: 900; }
-    .total { font-size: 15px; font-weight: 900; }
+    .section-title { margin: 6px 0 3px; font-size: ${sectionSize}px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.10em; }
+    .strong { font-size: ${strongSize}px; font-weight: 900; }
+    .total { font-size: ${totalSize}px; font-weight: 900; }
     .open-warning {
-      margin-top: 8px;
-      padding: 6px;
+      margin-top: 6px;
+      padding: 4px;
       border: 1px solid #000;
       text-align: center;
-      font-size: 10px;
+      font-size: ${sectionSize}px;
       font-weight: 900;
       text-transform: uppercase;
     }
-    .footer { margin-top: 10px; text-align: center; font-size: 9px; color: #333; }
+    .footer { margin-top: 8px; text-align: center; font-size: ${metaSize}px; color: #333; }
     @media print {
-      html, body { width: 80mm; }
+      html, body { width: ${paperWidth}mm; }
       body { margin: 0; }
     }
   </style>
@@ -181,7 +238,7 @@ const buildReceiptHtml = (data: ReceiptData) => {
     <div class="rule"></div>
     ${data.tableNumber ? `<div class="line strong"><span>Mesa</span><strong>${escapeHtml(data.tableNumber)}</strong></div>` : ''}
     ${data.sellerName ? `<div class="line"><span>Vendedor</span><strong>${escapeHtml(data.sellerName)}</strong></div>` : ''}
-    ${data.customerDocument ? `<div class="line"><span>CPF/CNPJ</span><strong>${escapeHtml(data.customerDocument)}</strong></div>` : ''}
+    ${data.customerDocument ? `<div class="line document-line"><span>CPF/CNPJ</span><strong>${escapeHtml(data.customerDocument)}</strong></div>` : ''}
     <div class="rule"></div>
     <div class="section-title">Itens</div>
     ${itemsHtml || '<div class="muted">Sem itens.</div>'}
@@ -198,22 +255,17 @@ const buildReceiptHtml = (data: ReceiptData) => {
       Documento sem valor fiscal.
     </div>
   </main>
-  <script>
-    window.addEventListener('load', () => {
-      window.focus();
-      setTimeout(() => window.print(), 150);
-    });
-  </script>
+  ${autoPrintScript}
 </body>
 </html>`;
 };
 
-export function printThermalReceipt(data: ReceiptData) {
-  const popup = window.open('', '_blank', 'width=420,height=720');
+export function printThermalReceipt(data: ReceiptData, paperWidth: ReceiptPaperWidth = 58) {
+  const popup = window.open('', '_blank', 'width=320,height=720');
   if (!popup) {
     throw new Error('Pop-up bloqueado. Libere pop-ups para imprimir a conta.');
   }
   popup.document.open();
-  popup.document.write(buildReceiptHtml(data));
+  popup.document.write(buildReceiptHtml(data, { paperWidth, autoPrint: true }));
   popup.document.close();
 }

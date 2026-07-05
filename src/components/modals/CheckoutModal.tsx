@@ -6,7 +6,8 @@ import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, format
 import { can } from '../../lib/permissions';
 import { AdminApi, OperationalApi, hasApiSessionToken, setApiSessionToken, type SellerCandidate } from '../../lib/api';
 import { ActionDialog } from '../common/ActionDialog';
-import { printThermalReceipt } from '../../lib/receiptPrint';
+import { ReceiptPrintModal } from '../common/ReceiptPrintModal';
+import type { ReceiptData } from '../../lib/receiptPrint';
 
 interface Payment {
   id?: string;
@@ -134,7 +135,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const [isCreatingOsSeller, setIsCreatingOsSeller] = useState(false);
   const [showSellerDirectory, setShowSellerDirectory] = useState(false);
   const [showCustomerDocument, setShowCustomerDocument] = useState(false);
+  const [showCouponInput, setShowCouponInput] = useState(false);
   const [customerDocument, setCustomerDocument] = useState('');
+  const [receiptPreview, setReceiptPreview] = useState<ReceiptData | null>(null);
   const rawSellerOptions = sellers.some(s => s.id === currentSeller?.id)
     ? sellers
     : currentSeller ? [currentSeller, ...sellers] : sellers;
@@ -433,29 +436,25 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   };
 
   const handlePrintReceipt = () => {
-    try {
-      printThermalReceipt({
-        title: `Mesa ${table.number}`,
-        subtitle: payments.length > 0 ? 'CONTA COM PAGAMENTOS' : 'CONTA ABERTA',
-        tableNumber: table.number,
-        sellerName: selectedSeller?.name,
-        customerDocument: customerDocument.trim(),
-        items: table.orders,
-        subtotal,
-        serviceFee: feeValue,
-        serviceFeePercent,
-        discount: discountAmountValue,
-        couponCode: coupon?.code,
-        couponAmount: couponAmountValue,
-        total: totalFinal,
-        payments,
-        paidTotal,
-        remaining,
-        change,
-      });
-    } catch (error) {
-      addNotification(error instanceof Error ? error.message : 'Não foi possível abrir a impressão.', 'error');
-    }
+    setReceiptPreview({
+      title: `Mesa ${table.number}`,
+      subtitle: payments.length > 0 ? 'CONTA COM PAGAMENTOS' : 'CONTA ABERTA',
+      tableNumber: table.number,
+      sellerName: selectedSeller?.name,
+      customerDocument: customerDocument.trim(),
+      items: table.orders,
+      subtotal,
+      serviceFee: feeValue,
+      serviceFeePercent,
+      discount: discountAmountValue,
+      couponCode: coupon?.code,
+      couponAmount: couponAmountValue,
+      total: totalFinal,
+      payments,
+      paidTotal,
+      remaining,
+      change,
+    });
   };
 
   const handleFinish = async () => {
@@ -485,9 +484,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/90 backdrop-blur-3xl z-[400]" />
       <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }} className="fixed inset-0 z-[450] flex items-center justify-center p-2 sm:p-6 pointer-events-none font-['Outfit']">
-        <div className="glass-card w-full max-w-7xl h-[calc(100dvh-1rem)] sm:h-[90dvh] lg:h-[85vh] flex flex-col lg:flex-row overflow-hidden pointer-events-auto border-white/10 shadow-2xl">
+        <div className="glass-card w-full max-w-[64rem] h-[calc(100dvh-1rem)] sm:h-[90dvh] lg:h-[85vh] flex flex-col lg:flex-row overflow-hidden pointer-events-auto border-white/10 shadow-2xl">
            {/* Esquerda: Resumo */}
-           <div className="w-full lg:w-1/3 max-h-[38dvh] lg:max-h-none p-4 sm:p-6 lg:p-8 bg-white/5 flex flex-col border-b lg:border-b-0 lg:border-r border-white/5">
+           <div className="w-full lg:w-[36%] max-h-[38dvh] lg:max-h-none p-4 sm:p-6 lg:p-8 bg-white/5 flex flex-col border-b lg:border-b-0 lg:border-r border-white/5">
               <div className="flex justify-between items-center mb-4 lg:mb-6">
                  <h2 className="text-2xl sm:text-3xl font-black italic tracking-tighter">Resumo <span className="text-primary">Mesa {table.number}</span></h2>
                  <button onClick={onClose} className="p-2.5 glass rounded-xl hover:text-rose-500"><X size={20}/></button>
@@ -522,33 +521,34 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
 
               <div className="mt-4 lg:mt-6 space-y-3 pt-4 lg:pt-6 border-t border-white/10 text-sm">
                  <div className="flex justify-between text-gray-400 font-bold"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>
-                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
+	                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
                     <div className="flex justify-between text-gray-200 font-black items-center gap-4">
                        <span className="text-base sm:text-lg">Taxa de serviço ({formatPercent(serviceFeePercent)}%)</span>
                        <span className="text-xl sm:text-2xl text-white">R$ {feeValue.toFixed(2)}</span>
                     </div>
                     {canEditServiceFee ? (
                       <>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {[0, 1, 5, 10, 13].map((percent) => (
-                            <button
-                              key={percent}
-                              onClick={() => setServiceFeePercent(percent)}
-                              className={`px-3 py-2 rounded-xl text-[10px] font-black border transition-all ${serviceFeePercent === percent ? 'bg-primary text-white border-primary' : 'border-white/10 text-gray-400 hover:text-white'}`}
-                            >
-                              {percent}%
-                            </button>
-                          ))}
-                          <input
-                            type="number"
-                            min={0}
-                            max={MAX_SERVICE_FEE_PERCENT}
-                            step={0.01}
-                            value={serviceFeePercent}
-                            onChange={(e) => setServiceFeePercent(clampServiceFeePercent(Number(e.target.value)))}
-                            className="w-20 glass px-3 py-2 rounded-xl border-white/10 outline-none text-right font-black text-primary"
-                          />
-                        </div>
+	                        <div className="flex items-center gap-1.5">
+	                          {[0, 1, 5, 10, 13].map((percent) => (
+	                            <button
+	                              key={percent}
+	                              onClick={() => setServiceFeePercent(percent)}
+	                              className={`h-10 w-10 rounded-xl text-[10px] font-black border transition-all ${serviceFeePercent === percent ? 'bg-primary text-white border-primary' : 'border-white/10 text-gray-400 hover:text-white'}`}
+	                            >
+	                              {percent}%
+	                            </button>
+	                          ))}
+	                          <input
+	                            type="number"
+	                            min={0}
+	                            max={MAX_SERVICE_FEE_PERCENT}
+	                            step={0.01}
+	                            value={serviceFeePercent}
+	                            onChange={(e) => setServiceFeePercent(clampServiceFeePercent(Number(e.target.value)))}
+	                            aria-label="Taxa de serviço personalizada"
+	                            className="h-10 w-10 rounded-xl border border-white/10 bg-white/[0.05] px-1 text-center text-[10px] font-black text-primary outline-none focus:border-primary"
+	                          />
+	                        </div>
                         {serviceFeePercent > 0 && (
                           <button
                             onClick={() => setServiceFeePercent(0)}
@@ -572,16 +572,16 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
              </div>
 
            {/* Direita: Pagamento */}
-           <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-10 flex flex-col bg-[#0d0d0f] overflow-y-auto custom-scrollbar">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 lg:gap-8 mb-6 lg:mb-8">
-                 <div>
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500">Vendedor responsável</h4>
+           <div className="flex-1 min-h-0 bg-[#0d0d0f] p-4 sm:p-5 lg:p-6 flex flex-col overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-[minmax(230px,1fr)_minmax(170px,0.72fr)] lg:items-stretch">
+                 <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <h4 className="text-[9px] font-black uppercase tracking-widest text-gray-500">Vendedor</h4>
                       {canManageSellers && (
                         <button
                           type="button"
                           onClick={openAddSellerModal}
-                          className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-primary transition-all hover:bg-primary hover:text-white"
+                          className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 text-[8px] font-black uppercase tracking-widest text-primary transition-all hover:bg-primary hover:text-white"
                         >
                           <Plus size={12} /> Add vendedor
                         </button>
@@ -590,7 +590,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                     <select 
                        value={selectedSellerId} 
                        onChange={(e) => setSelectedSellerId(e.target.value)}
-                       className="w-full glass p-4 rounded-xl border-white/10 outline-none font-bold text-base bg-transparent"
+                       className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm font-black outline-none"
                     >
                        <option value={SELF_SERVICE_SELLER.id} className="bg-[#0d0d0f]">Cliente pediu sozinho</option>
                        {sellerOptions.map((s: any) => (
@@ -598,123 +598,136 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                        ))}
                     </select>
                  </div>
-                 <div className={canApplyDiscount ? '' : 'opacity-40'}>
-                    <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-3">Desconto Especial</h4>
+                 <div className={`rounded-2xl border border-white/10 bg-white/[0.025] p-3 ${canApplyDiscount ? '' : 'opacity-40'}`}>
+                    <h4 className="mb-2 text-[9px] font-black uppercase tracking-widest text-gray-500">Desconto</h4>
                     {!canApplyDiscount && (
                       <p className="mb-2 text-[9px] font-black uppercase tracking-widest text-rose-300">
                         Desconto bloqueado. Taxa de serviço é controlada separadamente.
                       </p>
                     )}
-                    <div className="flex gap-3">
+                    <div className="grid grid-cols-[minmax(0,1fr)_44px] gap-2">
                        <input 
                          type="number" 
                          value={discountValue} 
                          onChange={(e) => canApplyDiscount && setDiscountValue(Number(e.target.value))}
                          disabled={!canApplyDiscount}
-                         className="flex-1 glass p-4 rounded-xl border-white/10 outline-none font-bold text-base"
+                         className="min-w-0 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm font-black outline-none"
                          placeholder={canApplyDiscount ? 'Valor...' : 'Sem permissão'}
                        />
                        <button 
                          onClick={() => canApplyDiscount && setDiscountType(discountType === 'fixed' ? 'percent' : 'fixed')}
                          disabled={!canApplyDiscount}
-                         className="px-4 glass rounded-xl font-black text-primary text-sm"
+                         className="h-full w-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm font-black text-primary"
                        >
                          {discountType === 'fixed' ? 'R$' : '%'}
                        </button>
                     </div>
                  </div>
-              </div>
-
-              <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h4 className="text-[9px] font-black uppercase tracking-widest text-gray-500">CPF/CNPJ na conta</h4>
-                    <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-gray-600">Opcional para impressão do cliente.</p>
-                  </div>
+                <div className="grid grid-cols-2 gap-2 lg:col-span-2">
                   <button
                     type="button"
                     onClick={() => setShowCustomerDocument((value) => !value)}
-                    className="rounded-xl border border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-zinc-200 transition-all hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                    className={`rounded-2xl border px-3 py-2.5 text-left transition-all ${showCustomerDocument || customerDocument ? 'border-emerald-300/35 bg-emerald-300/10 text-emerald-200' : 'border-white/10 bg-white/[0.025] text-zinc-300 hover:border-emerald-300/30 hover:bg-emerald-300/5'}`}
                   >
-                    {showCustomerDocument ? 'Ocultar CPF/CNPJ' : 'Add CPF/CNPJ'}
+                    <span className="block text-[8px] font-black uppercase tracking-widest text-zinc-500">Cliente</span>
+                    <span className="mt-1 block whitespace-nowrap text-[9px] font-black uppercase tracking-widest">
+                      {customerDocument ? 'CPF OK' : 'CPF/CNPJ'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCouponInput((value) => !value)}
+                    className={`rounded-2xl border px-3 py-2.5 text-left transition-all ${showCouponInput || coupon ? 'border-amber-300/35 bg-amber-300/10 text-amber-200' : 'border-white/10 bg-white/[0.025] text-zinc-300 hover:border-amber-300/30 hover:bg-amber-300/5'}`}
+                  >
+                    <span className="block text-[8px] font-black uppercase tracking-widest text-zinc-500">Benefício</span>
+                    <span className="mt-1 block whitespace-nowrap text-[9px] font-black uppercase tracking-widest">
+                      {coupon ? 'Cupom OK' : 'Cupom'}
+                    </span>
                   </button>
                 </div>
-                {showCustomerDocument && (
-                  <input
-                    value={customerDocument}
-                    onChange={(event) => setCustomerDocument(formatCpfCnpj(event.target.value))}
-                    inputMode="numeric"
-                    className="mt-3 w-full glass px-3 py-3 rounded-lg border-white/10 outline-none font-black tracking-widest text-sm"
-                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
-                  />
-                )}
               </div>
 
-              <div className="rounded-xl border border-amber-400/15 bg-amber-400/[0.03] p-3 mb-4">
-                <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-                  <div className="flex-1">
-                    <h4 className="text-[9px] font-black uppercase tracking-widest text-amber-200/80 mb-2">Cupom</h4>
-                  <input
-                    value={couponInput}
-                    onChange={(event) => {
-                      setCouponInput(event.target.value.toUpperCase());
-                      if (coupon) setCoupon(null);
-                    }}
-                    className="w-full glass px-3 py-3 rounded-lg border-white/10 outline-none font-black uppercase tracking-widest text-sm"
-                    placeholder="Código"
-                  />
-                  </div>
-                  <button
-                    onClick={() => handleApplyCoupon()}
-                    disabled={isApplyingCoupon || !couponInput.trim()}
-                    className="px-5 py-3 rounded-lg bg-amber-300 text-black font-black uppercase tracking-widest text-[10px] disabled:opacity-40"
-                  >
-                    {isApplyingCoupon ? 'Validando...' : 'Aplicar'}
-                  </button>
+              {(showCustomerDocument || showCouponInput || couponMessage || coupon?.requiresBenefitChoice || (coupon && !coupon.requiresBenefitChoice)) && (
+                <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {showCustomerDocument && (
+                    <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.04] p-3">
+                      <h4 className="mb-2 text-[9px] font-black uppercase tracking-widest text-emerald-200">CPF/CNPJ na conta</h4>
+                      <input
+                        value={customerDocument}
+                        onChange={(event) => setCustomerDocument(formatCpfCnpj(event.target.value))}
+                        inputMode="numeric"
+                        className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm font-black tracking-widest outline-none"
+                        placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                      />
+                    </div>
+                  )}
+                  {showCouponInput && (
+                    <div className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.04] p-3">
+                      <h4 className="mb-2 text-[9px] font-black uppercase tracking-widest text-amber-200">Cupom</h4>
+                      <div className="grid grid-cols-[1fr_auto] gap-2">
+                        <input
+                          value={couponInput}
+                          onChange={(event) => {
+                            setCouponInput(event.target.value.toUpperCase());
+                            if (coupon) setCoupon(null);
+                          }}
+                          className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm font-black uppercase tracking-widest outline-none"
+                          placeholder="Código"
+                        />
+                        <button
+                          onClick={() => handleApplyCoupon()}
+                          disabled={isApplyingCoupon || !couponInput.trim()}
+                          className="rounded-xl bg-amber-300 px-5 text-[9px] font-black uppercase tracking-widest text-black disabled:opacity-40"
+                        >
+                          {isApplyingCoupon ? 'Validando...' : 'Aplicar'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {coupon && (
                     <button
                       onClick={() => {
                         setCoupon(null);
                         setCouponMessage('Cupom removido desta conta.');
                       }}
-                      className="px-3 py-3 rounded-lg border border-white/10 text-rose-300 font-black uppercase tracking-widest text-[10px]"
+                      className="rounded-xl border border-rose-300/20 bg-rose-300/[0.04] px-3 py-3 text-[9px] font-black uppercase tracking-widest text-rose-300"
                     >
-                      Remover
+                      Remover cupom
                     </button>
                   )}
+                  {couponMessage && (
+                    <p className={`lg:col-span-2 text-[9px] font-black uppercase tracking-widest ${coupon ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {couponMessage}
+                    </p>
+                  )}
+                  {coupon?.requiresBenefitChoice && (
+                    <div className="lg:col-span-2 mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {(coupon.benefitOptions || []).map((option, index) => (
+                        <button
+                          key={option.id}
+                          onClick={() => handleApplyCoupon(option.id)}
+                          disabled={isApplyingCoupon}
+                          className={`rounded-lg py-2.5 px-3 font-black uppercase tracking-widest text-[10px] disabled:opacity-40 ${index === 0 ? 'bg-emerald-400 text-black' : 'bg-white/10 text-amber-200 border border-amber-300/20'}`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {coupon && !coupon.requiresBenefitChoice && (
+                    <div className="lg:col-span-2 rounded-lg bg-white/[0.04] border border-white/10 p-2 text-[9px] font-bold uppercase tracking-widest text-gray-300">
+                      {coupon.customerName && <p>Cliente: {coupon.customerName}</p>}
+                      {coupon.minOrderValue ? <p>Mínimo: R$ {coupon.minOrderValue.toFixed(2)}</p> : null}
+                      {coupon.benefitLabel && <p>Benefício: {coupon.benefitLabel}</p>}
+                    </div>
+                  )}
                 </div>
-                {couponMessage && (
-                  <p className={`mt-2 text-[9px] font-black uppercase tracking-widest ${coupon ? 'text-emerald-300' : 'text-rose-300'}`}>
-                    {couponMessage}
-                  </p>
-                )}
-                {coupon?.requiresBenefitChoice && (
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {(coupon.benefitOptions || []).map((option, index) => (
-                      <button
-                        key={option.id}
-                        onClick={() => handleApplyCoupon(option.id)}
-                        disabled={isApplyingCoupon}
-                        className={`rounded-lg py-2.5 px-3 font-black uppercase tracking-widest text-[10px] disabled:opacity-40 ${index === 0 ? 'bg-emerald-400 text-black' : 'bg-white/10 text-amber-200 border border-amber-300/20'}`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {coupon && !coupon.requiresBenefitChoice && (
-                  <div className="mt-2 rounded-lg bg-white/[0.04] border border-white/10 p-2 text-[9px] font-bold uppercase tracking-widest text-gray-300">
-                    {coupon.customerName && <p>Cliente: {coupon.customerName}</p>}
-                    {coupon.minOrderValue ? <p>Mínimo: R$ {coupon.minOrderValue.toFixed(2)}</p> : null}
-                    {coupon.benefitLabel && <p>Benefício: {coupon.benefitLabel}</p>}
-                  </div>
-                )}
-              </div>
+              )}
 
-              <div className="flex-1 flex flex-col">
-                 <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-4">Fluxo de Caixa</h4>
+              <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+                 <h4 className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-2">Fluxo de Caixa</h4>
                  
-                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-5 sm:mb-6">
+                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3">
                     {[
                       { id: 'credit', name: 'Crédito', icon: CreditCard },
                       { id: 'debit', name: 'Débito', icon: CreditCard },
@@ -725,10 +738,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                         key={m.id}
                         onClick={() => canChangePaymentMethod && setCurrentMethod(m.id as PaymentMethod)}
                         disabled={!canChangePaymentMethod}
-                        className={`p-4 sm:p-6 rounded-2xl border transition-all flex flex-col items-center gap-3 ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-105' : 'glass border-white/5 opacity-50 hover:opacity-100'} ${!canChangePaymentMethod ? 'cursor-not-allowed grayscale' : ''}`}
+                        className={`min-h-[62px] rounded-2xl border px-4 py-3 transition-all flex flex-col items-center justify-center gap-2 ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-[1.02]' : 'bg-black/20 border-white/10 opacity-75 hover:opacity-100'} ${!canChangePaymentMethod ? 'cursor-not-allowed grayscale' : ''}`}
                       >
-                        <m.icon size={26} />
-                        <span className="font-black uppercase text-[9px] tracking-widest">{m.name}</span>
+                        <m.icon size={20} />
+                        <span className="font-black uppercase text-[8px] tracking-widest">{m.name}</span>
                       </button>
                     ))}
                  </div>
@@ -738,26 +751,26 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                    </p>
                  )}
                  {canChangePaymentMethod && !currentMethod && (
-                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                   <p className="mb-2 text-[9px] font-black uppercase tracking-widest text-amber-300">
                      Selecione a forma exata conferida na maquininha antes de lançar.
                    </p>
                  )}
 
-                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-center mb-5 sm:mb-6">
-                    <div className="flex-1 relative">
-                       <span className="absolute left-5 top-1/2 -translate-y-1/2 font-black text-xl text-gray-500">R$</span>
+                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(190px,280px)_auto] sm:items-center">
+                    <div className="relative">
+                       <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-base text-gray-500">R$</span>
                        <input 
                          type="text"
                          inputMode="numeric"
                          value={currentAmountFormatted}
                          onChange={handleAmountChange}
-                         className="w-full glass py-4 pl-12 pr-6 rounded-2xl text-3xl sm:text-4xl font-black text-accent outline-none border-white/10"
+                         className="w-full rounded-xl border border-white/10 bg-black/20 py-2.5 pl-10 pr-5 text-2xl font-black text-accent outline-none"
                        />
                     </div>
                     <button 
                        onClick={handleAddPayment}
                        disabled={isSavingPayment || !canLaunchPayment || !selectedSeller || !currentMethod || (payments.length >= 1 && !canSplitPayment) || currentPaymentCreatesInvalidChange}
-                       className="w-full sm:w-auto py-4 px-8 btn-beco btn-beco-purple text-base font-black rounded-2xl disabled:opacity-30 disabled:grayscale"
+                       className="h-12 w-full px-7 sm:w-[190px] btn-beco btn-beco-purple text-xs font-black rounded-xl disabled:opacity-30 disabled:grayscale"
                     >
                        {isSavingPayment ? 'Salvando...' : 'Lançar Valor'}
                     </button>
@@ -792,43 +805,43 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                    </div>
                  )}
                  {payments.length > 0 && (
-                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-emerald-300">
+                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-emerald-300">
                      Pagamentos lançados ficam salvos na mesa mesmo se ela continuar aberta.
                    </p>
                  )}
                  {!canLaunchPayment && (
-                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-rose-400">
+                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-rose-400">
                      Seu perfil não pode lançar pagamentos.
                    </p>
                  )}
                  {canLaunchPayment && !selectedSeller && (
-                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-amber-300">
                      Selecione o vendedor responsável antes de lançar qualquer pagamento.
                    </p>
                  )}
                  {canLaunchPayment && payments.length >= 1 && !canSplitPayment && (
-                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-amber-300">
                      Seu perfil não pode dividir pagamento em mais de uma forma.
                    </p>
                  )}
                  {(hasInvalidOverpayment || currentPaymentCreatesInvalidChange) && (
-                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-rose-400">
+                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-rose-400">
                      Valor acima do total só é permitido em dinheiro, porque gera troco.
                    </p>
                  )}
 
                  <div className="space-y-3">
                     {payments.map((p, idx) => (
-                      <div key={idx} className="flex justify-between items-center p-4 glass rounded-xl border-white/5 animate-in slide-in-from-right duration-300">
+                      <div key={idx} className="flex justify-between items-center p-3 glass rounded-xl border-white/5 animate-in slide-in-from-right duration-300">
                          <div className="flex items-center gap-3">
                             <CheckCircle2 className="text-emerald-500" size={20}/>
                             <div>
-                               <p className="font-black text-base uppercase tracking-wider">{paymentMethodLabels[p.method]}</p>
+                               <p className="font-black text-sm uppercase tracking-wider">{paymentMethodLabels[p.method]}</p>
                                <p className="text-[9px] text-gray-500 font-bold uppercase">Confirmado</p>
                             </div>
                          </div>
                          <div className="flex items-center gap-6">
-                            <p className="text-xl font-black text-white">R$ {p.amount.toFixed(2)}</p>
+                            <p className="text-lg font-black text-white">R$ {p.amount.toFixed(2)}</p>
                             <button
                               onClick={() => {
                                 setPaymentCancelReasonCode('');
@@ -847,24 +860,24 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                  </div>
               </div>
 
-              <div className="mt-5 sm:mt-6 pt-5 sm:pt-6 border-t border-white/10 flex items-center justify-between gap-4">
-                 <div className="flex flex-col">
-                    <span className="text-[9px] font-black uppercase text-gray-500 mb-1">Troco a Devolver</span>
-                    <span className="text-2xl sm:text-4xl font-black text-emerald-400">R$ {change.toFixed(2)}</span>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                 <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                    <span className="text-[8px] font-black uppercase tracking-widest text-gray-500">Troco</span>
+                    <span className="mt-1 block text-2xl font-black text-emerald-400">R$ {change.toFixed(2)}</span>
                  </div>
-                 <div className="flex flex-col items-end">
-                    <span className="text-[9px] font-black uppercase text-gray-500 mb-1">Restante</span>
-                    <span className={`text-2xl sm:text-4xl font-black ${remaining > 0 ? 'text-rose-500 animate-pulse' : 'text-emerald-400'}`}>R$ {remaining.toFixed(2)}</span>
+                 <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3 text-right">
+                    <span className="text-[8px] font-black uppercase tracking-widest text-gray-500">Restante</span>
+                    <span className={`mt-1 block text-2xl font-black ${remaining > 0 ? 'text-rose-500 animate-pulse' : 'text-emerald-400'}`}>R$ {remaining.toFixed(2)}</span>
                  </div>
               </div>
 
-              <div className="mt-5 sm:mt-6 flex items-stretch gap-3">
+              <div className="mt-3 flex items-stretch gap-3">
                 <button
                   disabled={remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill}
                   onClick={handleFinish}
-                  className="flex-1 btn-beco btn-beco-purple py-4 sm:py-5 text-base sm:text-2xl font-black shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-4 group rounded-2xl"
+                  className="flex-1 btn-beco btn-beco-purple py-4 text-base font-black shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-3 group rounded-2xl"
                 >
-                  FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={26}/>
+                  FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={22}/>
                 </button>
                 <button
                   type="button"
@@ -1076,6 +1089,10 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
           </ActionDialog>
         )}
       </AnimatePresence>
+      <ReceiptPrintModal
+        data={receiptPreview}
+        onClose={() => setReceiptPreview(null)}
+      />
     </>
   );
 }

@@ -15,12 +15,13 @@ import type { CustomerTab } from '../../types';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
 import { CounterSaleModal } from '../../components/modals/CounterSaleModal';
 import { ActionDialog } from '../../components/common/ActionDialog';
+import { ReceiptPrintModal } from '../../components/common/ReceiptPrintModal';
 import { ProductModal } from '../../components/modals/ProductModal';
 import { PdvTicker } from '../../components/pdv/PdvTicker';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { AdminApi, AppApi, CustomerTabApi, type PdvLockState } from '../../lib/api';
-import { printThermalReceipt } from '../../lib/receiptPrint';
+import type { ReceiptData } from '../../lib/receiptPrint';
 
 const CANCEL_REASONS = [
   { code: 'cliente_desistiu', label: 'Cliente desistiu' },
@@ -77,7 +78,7 @@ function PdvGoalTicker({ totalToday }: { totalToday: number }) {
   } as CSSProperties;
 
   return (
-    <section className="mb-3 -mt-1 overflow-hidden rounded-xl border border-emerald-200/25 bg-gradient-to-r from-emerald-950 via-emerald-800 to-emerald-950 px-4 py-2">
+    <section className="solid-panel mb-3 -mt-1 overflow-hidden rounded-xl border border-emerald-200/25 bg-gradient-to-r from-emerald-950 via-emerald-800 to-emerald-950 px-4 py-2">
       <div className="pdv-ticker-track flex w-max items-center gap-10 whitespace-nowrap" style={tickerStyle}>
         {[0, 1, 2].map((item) => (
           <span key={item} className="inline-flex items-center gap-10 text-xs sm:text-sm font-black uppercase tracking-[0.14em] text-yellow-200 drop-shadow">
@@ -184,6 +185,7 @@ export function PDVView() {
   const [isCashSubmitting, setIsCashSubmitting] = useState(false);
   const [isEmbedded, setIsEmbedded] = useState(false);
   const [pdvLockState, setPdvLockState] = useState<PdvLockState | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<ReceiptData | null>(null);
   const [isSwitchingQrMode, setIsSwitchingQrMode] = useState(false);
   const [showQrModePinDialog, setShowQrModePinDialog] = useState(false);
   const [customerTabSearch, setCustomerTabSearch] = useState('');
@@ -380,20 +382,16 @@ export function PDVView() {
 
   const handlePrintOpenTableReceipt = (table: TableType) => {
     const subtotal = getOrderItemsTotal(table.orders || []);
-    try {
-      printThermalReceipt({
-        title: `Mesa ${table.number}`,
-        subtitle: 'CONTA ABERTA',
-        tableNumber: table.number,
-        sellerName: currentSeller?.name,
-        items: table.orders || [],
-        subtotal,
-        serviceFee: 0,
-        total: subtotal,
-      });
-    } catch (error) {
-      addNotification(error instanceof Error ? error.message : 'Não foi possível abrir a impressão.', 'error');
-    }
+    setReceiptPreview({
+      title: `Mesa ${table.number}`,
+      subtitle: 'CONTA ABERTA',
+      tableNumber: table.number,
+      sellerName: currentSeller?.name,
+      items: table.orders || [],
+      subtotal,
+      serviceFee: 0,
+      total: subtotal,
+    });
   };
 
   // Stats
@@ -1133,9 +1131,9 @@ export function PDVView() {
             initial={{ x: 600 }}
             animate={{ x: 0 }}
             exit={{ x: 600 }}
-            className="fixed inset-y-0 right-0 w-full sm:w-[500px] bg-[#0d0d0f] border-l border-white/10 z-[300] shadow-2xl p-4 sm:p-8 lg:p-12 flex flex-col"
+            className="fixed inset-y-0 right-0 w-full sm:w-[500px] bg-[#0d0d0f] border-l border-white/10 z-[300] shadow-2xl p-4 sm:p-7 lg:p-9 flex flex-col"
           >
-            <div className="flex justify-between items-center mb-8 sm:mb-12">
+            <div className="flex justify-between items-center mb-6 sm:mb-8">
               <h2 className="text-4xl sm:text-5xl font-black italic tracking-tighter">Mesa <span className="text-primary">{selectedTable.number}</span></h2>
               <button onClick={() => setSelectedTable(null)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all"><X size={24}/></button>
             </div>
@@ -1161,64 +1159,80 @@ export function PDVView() {
               </div>
             ) : (
               <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="flex-1 overflow-y-auto space-y-6 pr-4 custom-scrollbar mb-12">
-                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-4">Pedidos Ativos</h4>
+                <div className="flex-1 overflow-y-auto space-y-2.5 pr-3 custom-scrollbar mb-8">
+                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-3">Pedidos Ativos</h4>
                   {(managedTable?.orders || []).map((o, idx) => (
-                    <div key={idx} className="glass-card p-4 sm:p-6 border-white/5 flex justify-between items-center gap-4">
+                    <div key={idx} className="rounded-2xl border border-white/10 bg-white/[0.045] px-3.5 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:border-primary/35 hover:bg-white/[0.06] sm:px-4">
                       <div className="min-w-0">
-                        <p className="font-bold text-lg">{o.quantity}x {o.name}</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="min-w-0 flex-1 text-base font-black leading-tight text-zinc-50">{o.quantity}x {o.name}</p>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <p className="text-sm font-black tabular-nums text-zinc-200">R$ {getOrderItemTotal(o).toFixed(2)}</p>
+                            {canCancelTableItem && (
+                              <button
+                                onClick={() => {
+                                  setCancelReasonCode('');
+                                  setCancelReasonNotes('');
+                                  setCancelItemDialog({ item: o, tableId: managedTable?.id || selectedTable.id, tableNumber: selectedTable.number });
+                                }}
+                                className="rounded-lg border border-white/10 bg-white/[0.04] p-2 text-rose-500 transition-all hover:border-rose-500/30 hover:bg-rose-500/10"
+                                title="Cancelar item da mesa"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
                         {(o.categoryName || o.categoryId) && (
-                          <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mt-1">
+                          <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-zinc-500">
                             {o.categoryName || o.categoryId}
                           </p>
                         )}
-                        <div className="flex gap-2 mt-1">
+                        <div className="mt-1 flex flex-wrap gap-1.5">
                           {(o.selectedModifiers || []).map(m => (
-                            <span key={m.id} className="text-[9px] font-black bg-white/5 px-2 py-0.5 rounded text-zinc-500">+{m.name}</span>
+                            <span key={m.id} className="rounded bg-white/5 px-1.5 py-0.5 text-[8px] font-black text-zinc-500">+{m.name}</span>
                           ))}
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <p className="font-black italic text-zinc-300">R$ {getOrderItemTotal(o).toFixed(2)}</p>
-                        {canCancelTableItem && (
-                          <button
-                            onClick={() => {
-                              setCancelReasonCode('');
-                              setCancelReasonNotes('');
-                              setCancelItemDialog({ item: o, tableId: managedTable?.id || selectedTable.id, tableNumber: selectedTable.number });
-                            }}
-                            className="p-3 glass rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all"
-                            title="Cancelar item da mesa"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <div className="space-y-4 pt-8 border-t border-white/5">
-                  <div className="flex justify-between items-end mb-8">
+                <div className="space-y-4 pt-6 border-t border-white/5">
+                  <div className="flex justify-between items-end mb-6">
                     <div>
                       <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Total Acumulado</span>
                       <p className="text-4xl sm:text-5xl font-black italic tracking-tighter text-emerald-400">
                         R$ {getOrderItemsTotal(managedTable?.orders || []).toFixed(2)}
                       </p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => handlePrintOpenTableReceipt(managedTable)}
-                        className="p-3 glass rounded-xl text-emerald-300 hover:bg-emerald-500/10 transition-all"
-                        title="Imprimir conta aberta"
-                      >
-                        <Printer size={16} />
-                      </button>
+                    <div className="flex w-[142px] flex-col gap-2">
+                      <div className="grid grid-cols-[44px_1fr] gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handlePrintOpenTableReceipt(managedTable)}
+                          className="glass flex h-11 items-center justify-center rounded-xl text-emerald-300 transition-all hover:bg-emerald-500/10"
+                          title="Imprimir conta aberta"
+                        >
+                          <Printer size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => canCloseBill && setShowCheckout(true)}
+                          disabled={!canCloseBill}
+                          className={`glass h-11 rounded-xl border-white/10 px-2 font-black text-[8px] uppercase tracking-widest ${
+                            canCloseBill
+                              ? 'text-emerald-200 hover:bg-emerald-500/10'
+                              : 'text-zinc-600 opacity-50 cursor-not-allowed'
+                          }`}
+                        >
+                          CPF/CNPJ
+                        </button>
+                      </div>
                       <button
                         onClick={() => canCloseBill && setShowCheckout(true)}
                         disabled={!canCloseBill}
-                        className={`glass px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest border-amber-500/20 ${
+                        className={`glass h-14 rounded-2xl border-amber-500/20 px-4 font-black text-[9px] uppercase tracking-widest ${
                           canCloseBill
                             ? 'text-amber-400 hover:bg-amber-500/10'
                             : 'text-zinc-600 opacity-50 cursor-not-allowed'
@@ -1972,6 +1986,10 @@ export function PDVView() {
           </motion.div>
         )}
       </AnimatePresence>
+      <ReceiptPrintModal
+        data={receiptPreview}
+        onClose={() => setReceiptPreview(null)}
+      />
     </div>
   );
 }

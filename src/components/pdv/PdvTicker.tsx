@@ -18,8 +18,8 @@ export function PdvTicker({ enabled = true, text }: PdvTickerProps) {
   } as CSSProperties;
 
   return (
-    <section className="mb-6 overflow-hidden rounded-[1.75rem] border border-yellow-300/40 bg-gradient-to-r from-red-950 via-red-700 to-red-950 shadow-2xl shadow-red-950/30">
-      <div className="flex items-center gap-3 px-4 sm:px-5 py-3.5">
+    <section className="solid-panel mb-3 overflow-hidden rounded-xl border border-yellow-300/30 bg-gradient-to-r from-red-950 via-red-700 to-red-950 shadow-2xl shadow-red-950/30">
+      <div className="flex items-center gap-3 px-4 sm:px-5 py-2">
         <span className="shrink-0 rounded-full bg-yellow-300 text-red-950 px-3.5 py-1.5 text-[10px] sm:text-[11px] font-black uppercase tracking-[0.18em]">
           Operação
         </span>

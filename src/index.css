@@ -168,10 +168,19 @@ html.light body {
   transform: translateY(-2px);
 }
 
-/* Painéis de cor sólida (alertas, overlays): texto branco fixo nos dois temas.
-   A cascata de vars devolve o branco para toda a subárvore. */
+/* Painéis de cor sólida (alertas, tickers, overlays): paleta clara fixa nos
+   dois temas — a cascata de vars devolve branco e pastéis para a subárvore. */
 .solid-panel {
   --color-white: #ffffff;
+  --color-rose-200: #fecdd3;
+  --color-rose-300: #fda4af;
+  --color-emerald-200: #a7f3d0;
+  --color-emerald-300: #6ee7b7;
+  --color-emerald-400: #34d399;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-yellow-200: #fef08a;
+  --color-yellow-300: #fde047;
 }
 
 /* Superfície metálica plana (sem hover flutuante) — para faixas de KPI e headers. */
