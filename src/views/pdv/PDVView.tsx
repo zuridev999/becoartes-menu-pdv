@@ -1299,7 +1299,7 @@ export function PDVView() {
             initial={{ opacity: 0, scale: 1.1 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.1 }}
-            className="fixed inset-0 z-[500] glass-card m-0 sm:m-6 xl:m-12 bg-transparent/95 border-white/10 flex flex-col overflow-hidden p-4 sm:p-8 xl:p-12"
+            className="!fixed inset-0 z-[500] glass-card m-0 sm:m-6 xl:m-12 bg-transparent/95 border-white/10 flex flex-col overflow-hidden p-4 sm:p-8 xl:p-12"
           >
             <div className="flex justify-between items-start gap-4 mb-6 xl:mb-12">
                <div>
