@@ -957,7 +957,7 @@ export function AdminView() {
     return matchesStart && matchesEnd && matchesSeller && matchesPayment;
   });
 
-  const setFinancePeriod = (period: 'all' | 'today' | '7d' | 'month') => {
+  const setFinancePeriod = (period: 'all' | 'today' | 'yesterday' | '7d' | 'month') => {
     if (period === 'all') {
       setFinanceDateFrom('');
       setFinanceDateTo('');
@@ -967,6 +967,12 @@ export function AdminView() {
       const today = getTodayValue();
       setFinanceDateFrom(today);
       setFinanceDateTo(today);
+      return;
+    }
+    if (period === 'yesterday') {
+      const yesterday = getDaysAgoValue(1);
+      setFinanceDateFrom(yesterday);
+      setFinanceDateTo(yesterday);
       return;
     }
     if (period === '7d') {
@@ -2582,6 +2588,7 @@ export function AdminView() {
                   {[
                     { label: 'Tudo', value: 'all' as const },
                     { label: 'Hoje', value: 'today' as const },
+                    { label: 'Ontem', value: 'yesterday' as const },
                     { label: '7 dias', value: '7d' as const },
                     { label: 'Mês atual', value: 'month' as const },
                   ].map((period) => (

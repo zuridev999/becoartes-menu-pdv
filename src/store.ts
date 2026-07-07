@@ -26,6 +26,31 @@ const sendingOrderKeys = new Map<string, Promise<void>>();
 const modifierGroupSaveTimers = new Map<string, number>();
 const MODIFIER_GROUP_SAVE_DEBOUNCE_MS = 550;
 
+const hashSubmissionKey = (value: string) => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+const getCartSubmissionKey = (origin: string, tableId: string, cart: OrderItem[]) => {
+  const payload = cart.map((item) => ({
+    id: item.id,
+    productId: item.productId,
+    quantity: item.quantity,
+    price: item.price,
+    notes: item.notes || '',
+    selectedModifiers: (item.selectedModifiers || []).map((modifier) => ({
+      id: modifier.id,
+      name: modifier.name,
+      price: modifier.price,
+    })),
+  }));
+  return `${origin}:${tableId}:${JSON.stringify(payload)}`;
+};
+
 const toSessionSeller = (seller: Seller): Seller => ({ ...seller, pin: '' });
 
 const clearSellerSession = () => {
@@ -633,12 +658,11 @@ export const useStore = create<AppState>((set, get) => ({
       const result = await CatalogApi.deleteProduct(id);
       lastCatalogVersion = result.catalogVersion;
       set((state) => ({ menu: state.menu.filter(x => x.id !== id) }));
-      get().addNotification("Produto removido definitivamente", 'info');
+      get().addNotification("Produto removido do cardápio. Histórico preservado.", 'info');
     } catch (e: any) {
       console.error("❌ Erro ao deletar produto:", e);
-      // Se houver erro de constraint (pedido vinculado), apenas ocultamos
-      await get().toggleProductVisibility(id);
-      get().addNotification("Produto possui histórico e não pode ser deletado. Ele foi ocultado do cardápio.", 'info');
+      get().addNotification(e?.message || "Erro ao remover produto.", 'error');
+      throw e;
     }
   },
 
@@ -1006,12 +1030,14 @@ export const useStore = create<AppState>((set, get) => ({
     const table = get().tables.find(t => t.id === tableId);
     if (!table || table.cart.length === 0) return;
 
-    const sendKey = `${origin}:${tableId}`;
+    const cartSubmissionKey = getCartSubmissionKey(origin, tableId, table.cart);
+    const clientRequestId = `order_${hashSubmissionKey(cartSubmissionKey)}`;
+    const sendKey = clientRequestId;
     const inFlight = sendingOrderKeys.get(sendKey);
     if (inFlight) return inFlight;
 
     const sendPromise = (async () => {
-      const orderId = createId();
+      const orderId = clientRequestId;
       const total = getOrderItemsTotal(table.cart);
       const persistedItems: OrderItem[] = table.cart.map(item => ({
         ...item,
@@ -1026,6 +1052,7 @@ export const useStore = create<AppState>((set, get) => ({
         total,
         origin,
         sellerId: sellerId || null,
+        clientRequestId,
         items: persistedItems
       });
 

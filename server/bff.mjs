@@ -716,7 +716,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS category_modifier_groups (category_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(category_id, group_id))",
     "CREATE TABLE IF NOT EXISTS tables (id TEXT PRIMARY KEY, number TEXT NOT NULL, status TEXT NOT NULL, last_activity DATETIME DEFAULT CURRENT_TIMESTAMP, current_seller_id TEXT)",
     "CREATE TABLE IF NOT EXISTS customer_tabs (id TEXT PRIMARY KEY, cpf TEXT NOT NULL, cpf_hash TEXT, cpf_last4 TEXT, customer_name TEXT NOT NULL, phone TEXT NOT NULL, table_id TEXT NOT NULL, table_number INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'open', opened_at DATETIME DEFAULT CURRENT_TIMESTAMP, paid_at DATETIME, closed_at DATETIME, closed_by_id TEXT, closed_by_name TEXT)",
-    "CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, table_id TEXT, total REAL NOT NULL, status TEXT NOT NULL, origin TEXT DEFAULT 'pdv', created_by_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, payment_method TEXT)",
+    "CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, table_id TEXT, total REAL NOT NULL, status TEXT NOT NULL, origin TEXT DEFAULT 'pdv', created_by_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, payment_method TEXT, client_request_id TEXT)",
     "CREATE TABLE IF NOT EXISTS order_items (id TEXT PRIMARY KEY, order_id TEXT, product_id TEXT, quantity INTEGER NOT NULL, price_at_time REAL NOT NULL, selected_modifiers TEXT, notes TEXT)",
     "CREATE TABLE IF NOT EXISTS production_tickets (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, station TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS service_requests (id TEXT PRIMARY KEY, table_id TEXT, type TEXT NOT NULL, status TEXT NOT NULL, message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -747,6 +747,7 @@ const ensureDatabase = async () => {
 
   const indexes = [
     "CREATE INDEX IF NOT EXISTS idx_orders_table_status ON orders(table_id, status)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_client_request_id ON orders(client_request_id) WHERE client_request_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_production_tickets_order ON production_tickets(order_id, station, status)",
     "CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)",
     "CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id)",
@@ -3159,10 +3160,45 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
   return { orderId: orderId || null };
 };
 
-const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items }, session = null) => {
+const getExistingOrderSubmission = async (clientRequestId) => {
+  if (!clientRequestId) return null;
+  const result = await db.execute({
+    sql: "SELECT id, table_id FROM orders WHERE client_request_id = ? LIMIT 1",
+    args: [clientRequestId],
+  });
+  return result.rows?.[0] || null;
+};
+
+const orderSubmissionDuplicateResponse = (order, tableId, items = []) => {
+  const orderId = String(order?.id || '');
+  const requestId = `new_order_${orderId}`;
+  return {
+    duplicate: true,
+    orderId,
+    request: {
+      id: requestId,
+      tableId: String(order?.table_id || tableId),
+      type: 'new_order',
+      message: items.map((item) => `${item.quantity}x ${item.name}`).join(', '),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    },
+    inventorySync: null,
+    inventorySyncError: null,
+  };
+};
+
+const isConstraintError = (error) => /constraint|unique|primary key/i.test(String(error?.message || error || ''));
+
+const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, clientRequestId, items }, session = null) => {
   requireString(orderId, 'orderId');
   requireString(tableId, 'tableId');
   const safeOrigin = origin === 'tablet' || origin === 'qr' ? origin : 'pdv';
+  const safeClientRequestId = normalizeText(clientRequestId || orderId).slice(0, 120);
+  const existingSubmission = await getExistingOrderSubmission(safeClientRequestId);
+  if (existingSubmission) {
+    return orderSubmissionDuplicateResponse(existingSubmission, tableId, Array.isArray(items) ? items : []);
+  }
   const settings = await getSettings();
   if (safeOrigin === 'pdv') {
     await ensureTableAccess(tableId, session);
@@ -3179,8 +3215,8 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
 
   const batch = [
     {
-      sql: "INSERT INTO orders (id, table_id, total, status, origin, created_by_id) VALUES (?, ?, ?, ?, ?, ?)",
-      args: [orderId, tableId, requireNumber(total, 'total'), 'pending', safeOrigin, effectiveSellerId],
+      sql: "INSERT INTO orders (id, table_id, total, status, origin, created_by_id, client_request_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      args: [orderId, tableId, requireNumber(total, 'total'), 'pending', safeOrigin, effectiveSellerId, safeClientRequestId],
     },
     ...safeItems.map((item) => ({
       sql: "INSERT INTO order_items (id, order_id, product_id, quantity, price_at_time, selected_modifiers, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -3207,7 +3243,17 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, items 
     args: [requestId, tableId, 'new_order', 'pending', itemsList],
   });
 
-  await db.batch(batch, 'write');
+  try {
+    await db.batch(batch, 'write');
+  } catch (error) {
+    if (safeClientRequestId && isConstraintError(error)) {
+      const duplicateSubmission = await getExistingOrderSubmission(safeClientRequestId);
+      if (duplicateSubmission) {
+        return orderSubmissionDuplicateResponse(duplicateSubmission, tableId, safeItems);
+      }
+    }
+    throw error;
+  }
 
   let inventorySync = null;
   let inventorySyncError = null;
@@ -5228,9 +5274,50 @@ const upsertProduct = async ({ product }, session = null) => {
   return { catalogVersion: await bumpCatalogVersion() };
 };
 
-const deleteProduct = async ({ id }) => {
+const DELETED_PRODUCT_SUFFIX = ' (produto deletado)';
+
+const deleteProduct = async ({ id }, session = null) => {
+  if (normalizePermission(session?.permission) !== 'admin') {
+    const error = new Error('Somente admin full access pode excluir produtos.');
+    error.statusCode = 403;
+    throw error;
+  }
+
   requireString(id, 'id');
-  await db.execute({ sql: "DELETE FROM menu WHERE id = ?", args: [id] });
+
+  const productRes = await db.execute({
+    sql: "SELECT id, name FROM menu WHERE id = ? LIMIT 1",
+    args: [id],
+  });
+  const product = productRes.rows[0];
+  if (!product) {
+    return { catalogVersion: await bumpCatalogVersion(), deleted: false, reason: 'not_found' };
+  }
+
+  const currentName = String(product.name || 'Produto');
+  const archivedName = currentName.endsWith(DELETED_PRODUCT_SUFFIX)
+    ? currentName
+    : `${currentName}${DELETED_PRODUCT_SUFFIX}`;
+
+  await db.batch([
+    {
+      sql: `
+        UPDATE menu
+        SET name = ?, visible = 0, delivery_visible = 0, category_id = NULL, sort_order = 999999
+        WHERE id = ?
+      `,
+      args: [archivedName, id],
+    },
+    {
+      sql: "DELETE FROM product_modifier_groups WHERE product_id = ?",
+      args: [id],
+    },
+    {
+      sql: "UPDATE delivery_order_items SET name = ? WHERE product_id = ?",
+      args: [archivedName, id],
+    },
+  ], 'write');
+
   return { catalogVersion: await bumpCatalogVersion() };
 };
 
@@ -7912,7 +7999,7 @@ const handlers = {
   'POST /api/catalog/category/delete': async (body) => deleteCategory(body),
   'POST /api/catalog/category/visibility': async (body) => toggleCategoryVisibility(body),
   'POST /api/catalog/product': async (body, context) => upsertProduct(body, context.session),
-  'POST /api/catalog/product/delete': async (body) => deleteProduct(body),
+  'POST /api/catalog/product/delete': async (body, context) => deleteProduct(body, context.session),
   'POST /api/catalog/product/visibility': async (body) => toggleProductVisibility(body),
   'POST /api/catalog/product/delivery-visibility': async (body) => toggleProductDeliveryVisibility(body),
   'POST /api/catalog/products/reorder': async (body, context) => reorderCatalogProducts(body, context.session),

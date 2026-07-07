@@ -402,11 +402,16 @@ export function PDVView() {
       return billDate.toLocaleDateString('pt-BR') === todayStr;
     });
   const totalToday = todayBills
-    .reduce((acc, bill) => acc + bill.total, 0);
+    .reduce((acc, bill) => acc + Number(bill.subtotal || 0), 0);
   const salesBreakdown = todayBills.reduce((acc, bill) => {
+    const billSubtotal = Number(bill.subtotal || 0);
+    const billTotal = Number(bill.total || 0);
+    const paymentTotal = (bill.payments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const productRatio = paymentTotal > 0 ? billSubtotal / paymentTotal : billTotal > 0 ? billSubtotal / billTotal : 0;
+
     (bill.payments || []).forEach((payment) => {
       if (!acc[payment.method]) acc[payment.method] = { total: 0, count: 0 };
-      acc[payment.method].total += Number(payment.amount || 0);
+      acc[payment.method].total += Number(payment.amount || 0) * productRatio;
       acc[payment.method].count += 1;
     });
     return acc;
@@ -1739,6 +1744,7 @@ export function PDVView() {
             tone="danger"
             title="Cancelar item?"
             description={`Remover ${cancelItemDialog.item.quantity}x ${cancelItemDialog.item.name} da Mesa ${cancelItemDialog.tableNumber}. O total do pedido será recalculado.`}
+            cancelLabel="Voltar"
             confirmLabel="Cancelar item"
             confirmDisabled={!cancelReasonCode || cancelReasonNotes.trim().length < 3}
             onClose={() => {
@@ -1777,7 +1783,7 @@ export function PDVView() {
               }
             }}
           >
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {CANCEL_REASONS.map((reason) => (
                   <button
@@ -1798,7 +1804,7 @@ export function PDVView() {
                 value={cancelReasonNotes}
                 onChange={(event) => setCancelReasonNotes(event.target.value)}
                 placeholder="Justificativa obrigatória. Ex: cliente desistiu depois de pedir, item lançado em duplicidade..."
-                className="w-full min-h-24 glass rounded-2xl border-white/10 p-4 text-sm font-bold outline-none focus:border-rose-400/50"
+                className="w-full min-h-20 glass rounded-2xl border-white/10 p-4 text-sm font-bold outline-none focus:border-rose-400/50"
               />
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-rose-200/80">
                 Selecione um motivo e escreva a justificativa antes de cancelar.

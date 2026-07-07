@@ -267,6 +267,7 @@ export const OperationalApi = {
     total: number;
     origin: 'tablet' | 'pdv' | 'qr';
     sellerId: string | null;
+    clientRequestId?: string;
     items: OrderItem[];
   }) {
     return postJson<SendToKitchenResult>('/api/orders/send-to-kitchen', {

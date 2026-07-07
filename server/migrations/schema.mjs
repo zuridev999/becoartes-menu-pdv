@@ -114,6 +114,13 @@ export const SCHEMA_MIGRATIONS = [
       addColumn('menu', 'delivery_visible', 'INTEGER DEFAULT 1'),
     ],
   },
+  {
+    id: '20260706_0001_order_submission_idempotency',
+    description: 'Add idempotency key for table order submissions.',
+    steps: [
+      addColumn('orders', 'client_request_id', 'TEXT'),
+    ],
+  },
 ];
 
 const quoteIdentifier = (value) => {
