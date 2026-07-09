@@ -44,6 +44,7 @@ const DAILY_GOALS_BY_WEEKDAY: Record<number, number> = {
 
 const DAILY_GOAL_EXCEPTIONS: Record<string, number> = {
   '2026-06-24': 3000,
+  '2026-07-09': 7000,
 };
 
 const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
