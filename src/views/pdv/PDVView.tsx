@@ -47,15 +47,35 @@ const DAILY_GOAL_EXCEPTIONS: Record<string, number> = {
   '2026-07-09': 7000,
 };
 
+const SAO_PAULO_TIME_ZONE = 'America/Sao_Paulo';
+
 const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 function getLocalDateKey(date = new Date()) {
-  return date.toLocaleDateString('en-CA');
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SAO_PAULO_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function getSaoPauloWeekday(date = new Date()) {
+  return new Date(`${getLocalDateKey(date)}T12:00:00-03:00`).getDay();
+}
+
+function isSameSaoPauloDate(date: Date | string | null | undefined, dateKey = getLocalDateKey()) {
+  if (!date) return false;
+  const parsedDate = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(parsedDate.getTime())) return false;
+  return getLocalDateKey(parsedDate) === dateKey;
 }
 
 function getDailyGoal(date = new Date()) {
   const dateKey = getLocalDateKey(date);
-  return DAILY_GOAL_EXCEPTIONS[dateKey] ?? DAILY_GOALS_BY_WEEKDAY[date.getDay()] ?? 0;
+  return DAILY_GOAL_EXCEPTIONS[dateKey] ?? DAILY_GOALS_BY_WEEKDAY[getSaoPauloWeekday(date)] ?? 0;
 }
 
 function getGoalMessage(percent: number) {
@@ -396,12 +416,9 @@ export function PDVView() {
   };
 
   // Stats
-  const todayStr = new Date().toLocaleDateString('pt-BR');
+  const todayKey = getLocalDateKey();
   const todayBills = closedBills
-    .filter(bill => {
-      const billDate = bill.closedAt instanceof Date ? bill.closedAt : new Date(bill.closedAt);
-      return billDate.toLocaleDateString('pt-BR') === todayStr;
-    });
+    .filter(bill => isSameSaoPauloDate(bill.closedAt, todayKey));
   const totalToday = todayBills
     .reduce((acc, bill) => acc + Number(bill.subtotal || 0), 0);
   const salesBreakdown = todayBills.reduce((acc, bill) => {
@@ -463,7 +480,21 @@ export function PDVView() {
   const visibleTables = tables
     .filter(table => (isComandaMode ? table.number <= 200 : table.number <= 50))
     .filter(canAccessTable);
-  const activeTablesCount = visibleTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested' || t.customerTab).length;
+  const activeVisibleTables = visibleTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested' || t.customerTab);
+  const activeTablesCount = activeVisibleTables.length;
+  const visibleTableNumbers = new Set(visibleTables.map(table => Number(table.number || 0)));
+  const servedTablesToday = new Set<string>();
+  todayBills.forEach((bill) => {
+    const tableNumber = Number(bill.tableNumber || 0);
+    if (tableNumber > 0 && visibleTableNumbers.has(tableNumber)) {
+      servedTablesToday.add(`mesa:${tableNumber}`);
+    }
+  });
+  activeVisibleTables.forEach((table) => {
+    const tableNumber = Number(table.number || 0);
+    if (tableNumber > 0) servedTablesToday.add(`mesa:${tableNumber}`);
+  });
+  const servedTablesTodayCount = servedTablesToday.size;
   const openTablesAmount = visibleTables.reduce((sum, table) => {
     const ordersTotal = getOrderItemsTotal(table.orders || []);
     const paymentsTotal = (table.payments || []).reduce((acc, payment) => acc + Number(payment.amount || 0), 0);
@@ -746,6 +777,10 @@ export function PDVView() {
               <div className={`${canViewSalesTotals ? 'border-l border-white/10 max-md:border-t' : ''} px-4 py-3`}>
                 <span className="block truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">Mesas ativas</span>
                 <span className="mt-0.5 block truncate text-lg font-black tabular-nums leading-tight text-primary">{activeTablesCount}</span>
+                <div className="mt-1 flex items-center justify-between gap-2 border-t border-white/10 pt-1">
+                  <span className="truncate text-[8px] font-black uppercase tracking-[0.14em] text-zinc-500">Atendidas hoje</span>
+                  <span className="shrink-0 text-sm font-black tabular-nums leading-none text-zinc-700">{servedTablesTodayCount}</span>
+                </div>
               </div>
               <div className="border-l border-white/10 px-4 py-3 max-md:border-l-0 max-md:border-t">
                 <span className="block truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">Mesas em aberto</span>
