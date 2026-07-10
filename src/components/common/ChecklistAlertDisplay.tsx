@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, ClipboardCheck, Clock, X } from 'lucide-react';
+import { AppApi } from '../../lib/api';
 
 type ChecklistAlert = {
   id: string;
@@ -22,12 +23,6 @@ type ChecklistAlertResponse = {
 const BEFORE_DUE_SNOOZE_MS = 30 * 60 * 1000;
 const OVERDUE_SNOOZE_MS = 2 * 60 * 1000;
 const POLL_MS = 60 * 1000;
-const DEFAULT_ALERTS_URL = 'https://os.becoartes.com/api/operational/checklist-alerts?slug=becoartes';
-
-function getAlertsUrl() {
-  return import.meta.env.VITE_OS_CHECKLIST_ALERTS_URL || DEFAULT_ALERTS_URL;
-}
-
 function getSnoozeKey(alertId: string) {
   return `beco_pdv_checklist_alert_snooze_${alertId}`;
 }
@@ -52,8 +47,7 @@ export function ChecklistAlertDisplay() {
 
     async function loadAlerts() {
       try {
-        const response = await fetch(getAlertsUrl(), { cache: 'no-store' });
-        const payload = await response.json() as ChecklistAlertResponse;
+        const payload = await AppApi.getChecklistAlerts<ChecklistAlertResponse>();
         if (!cancelled && payload.success) setAlerts(payload.alerts || []);
       } catch {
         if (!cancelled) setAlerts([]);
@@ -124,7 +118,7 @@ export function ChecklistAlertDisplay() {
             <button
               onClick={snoozeAlert}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/10 hover:text-white"
-              aria-label="Ocultar alerta de checklist por 5 minutos"
+              aria-label="Adiar alerta de checklist"
             >
               <X size={18} />
             </button>

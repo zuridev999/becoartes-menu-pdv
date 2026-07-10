@@ -33,6 +33,10 @@ const DEFAULT_MANAGER_PIN = requireRuntimeSecret('DEFAULT_MANAGER_PIN', process.
 const DEFAULT_OPERATOR_PIN = requireRuntimeSecret('DEFAULT_OPERATOR_PIN', process.env.DEFAULT_OPERATOR_PIN);
 const TABLET_SETUP_PIN = requireRuntimeSecret('TABLET_SETUP_PIN', process.env.TABLET_SETUP_PIN);
 const ADMIN_BYPASS_PIN = String(process.env.ADMIN_BYPASS_PIN || '').trim();
+const ADMIN_BYPASS_ENABLED = process.env.ADMIN_BYPASS_ENABLED === 'true';
+const OS_CHECKLIST_ALERTS_URL = process.env.OS_CHECKLIST_ALERTS_URL || 'https://os.becoartes.com/api/operational/checklist-alerts?slug=becoartes';
+const OS_OPERATIONAL_ALERTS_TOKEN = String(process.env.OS_OPERATIONAL_ALERTS_TOKEN || '').trim();
+const MAX_JSON_BODY_BYTES = Math.max(64 * 1024, Number(process.env.MAX_JSON_BODY_BYTES || 2 * 1024 * 1024));
 const ALLOWED_OPERATION_IPS = (process.env.ALLOWED_OPERATION_IPS || '')
   .split(',')
   .map((ip) => ip.trim())
@@ -837,7 +841,7 @@ const isOperationIpAllowed = (req) => (
 );
 
 const isAdminSession = (session) => normalizePermission(session?.permission) === 'admin';
-const isAdminBypassPin = (pin) => ADMIN_BYPASS_PIN && String(pin || '') === ADMIN_BYPASS_PIN;
+const isAdminBypassPin = (pin) => ADMIN_BYPASS_ENABLED && ADMIN_BYPASS_PIN && String(pin || '') === ADMIN_BYPASS_PIN;
 
 const throwIpRestricted = (req) => {
   const error = new Error(`Acesso operacional permitido apenas na rede autorizada. IP detectado: ${getClientIp(req)}`);
@@ -846,7 +850,7 @@ const throwIpRestricted = (req) => {
 };
 
 const isPinRateLimited = (req, pathname) => {
-  if (pathname !== '/api/auth/login' && pathname !== '/api/tablet/setup-login') return false;
+  if (!['/api/auth/login', '/api/tablet/setup-login', '/api/cash/open', '/api/cash/close'].includes(pathname)) return false;
 
   const key = `${pathname}:${getClientIp(req)}`;
   const now = Date.now();
@@ -2293,6 +2297,44 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
     tables: visibleTables,
     auditLogs,
   }, { view, session });
+};
+
+const isTransientSnapshotError = (error) => /fetch failed|timeout|timed out|etimedout|econnreset|socket hang up/i.test(String(error?.message || error || ''));
+
+const getAppSnapshotWithRetry = async (options) => {
+  try {
+    return await getAppSnapshot(options);
+  } catch (error) {
+    if (!isTransientSnapshotError(error)) throw error;
+    console.warn(`[sync-retry] view=${options?.view || 'pdv'} reason=${String(error?.message || error)}`);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return getAppSnapshot(options);
+  }
+};
+
+const getChecklistAlertsFromOs = async () => {
+  if (!OS_OPERATIONAL_ALERTS_TOKEN) {
+    return { success: false, degraded: true, alerts: [] };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+  try {
+    const response = await fetch(OS_CHECKLIST_ALERTS_URL, {
+      headers: { 'x-operational-alerts-token': OS_OPERATIONAL_ALERTS_TOKEN },
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload) {
+      const error = new Error(`Alertas do checklist indisponíveis (HTTP ${response.status}).`);
+      error.statusCode = 503;
+      throw error;
+    }
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 const createAdminBypassSession = () => {
@@ -7914,6 +7956,8 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
     'POST /api/tables/join': 'joinTables',
     'POST /api/cash/open': 'openCash',
     'POST /api/cash/close': 'closeCash',
+    'POST /api/shifts/open': 'manageShifts',
+    'POST /api/shifts/close': 'manageShifts',
     'POST /api/table-payments': 'launchPayment',
     'POST /api/table-payments/cancel': 'cancelPayment',
     'POST /api/coupons/create': 'manageCoupons',
@@ -7935,14 +7979,14 @@ const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllo
 };
 
 const handlers = {
-  'GET /api/app/init': async (_body, context) => getAppSnapshot({
+  'GET /api/app/init': async (_body, context) => getAppSnapshotWithRetry({
     includeCatalog: true,
     includeAuditLimit: 50,
     view: context.url.searchParams.get('view') || 'pdv',
     session: context.session,
     operationAccessAllowed: context.operationAccessAllowed,
   }),
-  'POST /api/app/sync': async (body, context) => getAppSnapshot({
+  'POST /api/app/sync': async (body, context) => getAppSnapshotWithRetry({
     includeCatalog: Boolean(body.includeCatalog),
     includeAuditLimit: 0,
     view: body.view || 'pdv',
@@ -7952,6 +7996,7 @@ const handlers = {
   'POST /api/auth/login': async (body, context) => login(body, context),
   'POST /api/tablet/setup-login': async (body, context) => validateTabletSetupPin(body, context),
   'POST /api/table-access-token': async (body, context) => createTableAccessToken(body, context.session),
+  'GET /api/checklist-alerts': async () => getChecklistAlertsFromOs(),
   'POST /api/audit-logs/list': async (body) => ({
     auditLogs: await getAuditLogs({
       limit: Number(body.limit || 100),
@@ -8058,6 +8103,7 @@ const handleApi = createApiHandler({
   isOperationIpAllowed,
   isAdminSession,
   enforceRouteAccess,
+  maxJsonBodyBytes: MAX_JSON_BODY_BYTES,
 });
 
 const serveStatic = createStaticHandler({

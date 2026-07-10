@@ -1,6 +1,17 @@
-export const readJsonBody = async (req) => {
+const DEFAULT_MAX_JSON_BODY_BYTES = 2 * 1024 * 1024;
+
+export const readJsonBody = async (req, { maxBytes = DEFAULT_MAX_JSON_BODY_BYTES } = {}) => {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let totalBytes = 0;
+  for await (const chunk of req) {
+    totalBytes += chunk.length;
+    if (totalBytes > maxBytes) {
+      const error = new Error('Corpo JSON excede o limite permitido.');
+      error.statusCode = 413;
+      throw error;
+    }
+    chunks.push(chunk);
+  }
   const raw = Buffer.concat(chunks).toString('utf8');
   req.rawBody = raw;
   if (!raw.trim()) return {};

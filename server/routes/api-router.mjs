@@ -1,5 +1,12 @@
 import { assertSameOrigin, readJsonBody, sendJson } from '../http.mjs';
 import { createHealthPayload } from '../health.mjs';
+import { randomUUID } from 'node:crypto';
+
+const isTransientServiceError = (error) => /fetch failed|timeout|timed out|etimedout|econnreset|socket hang up/i.test(String(error?.message || error || ''));
+const isExpectedClientError = (error) => (
+  error instanceof SyntaxError
+  || /inv[aá]lid|obrigat[oó]ri|n[aã]o encontrad|indispon[ií]vel|bloquead|j[aá] est[aá]|selecione|informe|digite|sem permiss[aã]o|acesso negado/i.test(String(error?.message || ''))
+);
 
 export const createApiHandler = ({
   db,
@@ -15,6 +22,7 @@ export const createApiHandler = ({
   isOperationIpAllowed,
   isAdminSession,
   enforceRouteAccess,
+  maxJsonBodyBytes = 2 * 1024 * 1024,
 }) => async (req, res, url) => {
   if (url.pathname === '/api/health') {
     const health = await createHealthPayload({
@@ -48,7 +56,7 @@ export const createApiHandler = ({
       return;
     }
 
-    const body = req.method === 'GET' ? {} : await readJsonBody(req);
+    const body = req.method === 'GET' ? {} : await readJsonBody(req, { maxBytes: maxJsonBodyBytes });
     const session = getSessionFromRequest(req);
     const isLoginRoute = routeKey === 'POST /api/auth/login' || routeKey === 'POST /api/tablet/setup-login';
     // Login por PIN nunca deve herdar permissão de uma sessão antiga. Isso evita
@@ -58,7 +66,20 @@ export const createApiHandler = ({
     const data = await handler(body, { req, url, session, operationAccessAllowed, rawBody: req.rawBody || '' });
     sendJson(res, 200, { ok: true, data });
   } catch (error) {
-    console.error('BFF error:', error);
-    sendJson(res, error.statusCode || 400, { ok: false, error: error instanceof Error ? error.message : 'Erro interno' });
+    const requestId = randomUUID();
+    const transient = isTransientServiceError(error);
+    const status = Number(error?.statusCode || (transient ? 503 : isExpectedClientError(error) ? 400 : 500));
+    console.error(JSON.stringify({
+      event: 'bff_request_error',
+      requestId,
+      route: `${req.method} ${url.pathname}`,
+      status,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    sendJson(res, status, {
+      ok: false,
+      error: status >= 500 ? 'Serviço temporariamente indisponível.' : error instanceof Error ? error.message : 'Erro interno',
+      requestId,
+    });
   }
 };

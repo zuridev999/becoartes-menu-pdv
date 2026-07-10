@@ -675,6 +675,10 @@ export const AppApi = {
     return postJson<any>('/api/app/sync', { includeCatalog, view: getCurrentView() }).then(hydrateSnapshot);
   },
 
+  getChecklistAlerts<T>() {
+    return getJson<T>('/api/checklist-alerts');
+  },
+
   login(pin: string, sellerId?: string) {
     return postJson<{ seller: any | null; sessionToken?: string; accessRestricted?: boolean }>('/api/auth/login', { pin, sellerId, view: getCurrentView() });
   },

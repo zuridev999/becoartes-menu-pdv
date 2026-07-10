@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createClient } from '@libsql/client';
@@ -18,12 +18,23 @@ const env = {
   DEFAULT_OPERATOR_PIN: '246801',
   TABLET_SETUP_PIN: '975310',
   ADMIN_BYPASS_PIN: '0719',
+  ADMIN_BYPASS_ENABLED: 'true',
   BFF_SESSION_SECRET: 'critical-backend-test-secret',
   OS_EMPRESA_ID: 'empresa_test',
   OS_SYSTEM_USER_ID: 'user_test',
   CASH_SANDBOX_MODE: '1',
   HEALTH_DB_TIMEOUT_MS: '1000',
 };
+
+const bffSource = readFileSync(join(process.cwd(), 'server/bff.mjs'), 'utf8');
+const routerSource = readFileSync(join(process.cwd(), 'server/routes/api-router.mjs'), 'utf8');
+const httpSource = readFileSync(join(process.cwd(), 'server/http.mjs'), 'utf8');
+assert.match(bffSource, /ADMIN_BYPASS_ENABLED && ADMIN_BYPASS_PIN/, 'admin bypass must be disabled unless explicitly enabled');
+assert.match(bffSource, /api\/cash\/open.*api\/cash\/close/s, 'cash PIN routes must participate in rate limiting');
+assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
+assert.match(routerSource, /transient \? 503/, 'transient backend failures must return 503');
+assert.match(routerSource, /bff_request_error/, 'backend errors must include structured route context');
+assert.match(httpSource, /totalBytes > maxBytes/, 'JSON body parsing must enforce a byte limit');
 
 const fetchJson = async (path, { method = 'GET', token = '', body = undefined, expectedStatus = 200 } = {}) => {
   const response = await fetch(`${baseUrl}${path}`, {

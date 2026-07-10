@@ -18,6 +18,8 @@ const LEGACY_TABLET_TABLE_STORAGE_KEY = 'becoartes_tablet_table_id';
 const SELLER_SESSION_STORAGE_KEY = 'beco_seller_session';
 let syncIntervalId: number | undefined;
 let syncInFlight: Promise<void> | null = null;
+let consecutiveSyncFailures = 0;
+let nextSyncAllowedAt = 0;
 let lastCatalogSyncAt = 0;
 let lastCatalogVersion = '0';
 const CATALOG_SYNC_INTERVAL_MS = 5 * 60 * 1000;
@@ -705,6 +707,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   syncData: async (options = {}) => {
+    if (!options.includeCatalog && Date.now() < nextSyncAllowedAt) return;
     if (syncInFlight) {
       if (options.includeCatalog) {
         return syncInFlight.then(() => get().syncData(options));
@@ -790,7 +793,12 @@ export const useStore = create<AppState>((set, get) => ({
           tables: finalTables.sort((a, b) => a.number - b.number),
           serverTimeOffset
         });
+        consecutiveSyncFailures = 0;
+        nextSyncAllowedAt = 0;
       } catch (error) {
+        consecutiveSyncFailures += 1;
+        const backoffMs = Math.min(60_000, 2_000 * (2 ** Math.min(consecutiveSyncFailures - 1, 5)));
+        nextSyncAllowedAt = Date.now() + backoffMs;
         console.error("❌ Erro no sync de dados:", error);
       }
     })();
