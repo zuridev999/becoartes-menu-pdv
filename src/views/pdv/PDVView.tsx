@@ -22,6 +22,7 @@ import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { AdminApi, AppApi, CustomerTabApi, type PdvLockState } from '../../lib/api';
 import type { ReceiptData } from '../../lib/receiptPrint';
+import { businessDateKey, businessWeekday } from '../../lib/business-time';
 
 const CANCEL_REASONS = [
   { code: 'cliente_desistiu', label: 'Cliente desistiu' },
@@ -47,23 +48,14 @@ const DAILY_GOAL_EXCEPTIONS: Record<string, number> = {
   '2026-07-09': 7000,
 };
 
-const SAO_PAULO_TIME_ZONE = 'America/Sao_Paulo';
-
 const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 function getLocalDateKey(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: SAO_PAULO_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
+  return businessDateKey(date);
 }
 
 function getSaoPauloWeekday(date = new Date()) {
-  return new Date(`${getLocalDateKey(date)}T12:00:00-03:00`).getDay();
+  return businessWeekday(getLocalDateKey(date));
 }
 
 function isSameSaoPauloDate(date: Date | string | null | undefined, dateKey = getLocalDateKey()) {

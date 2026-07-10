@@ -7,6 +7,7 @@ import { sendJson } from './http.mjs';
 import { runSchemaMigrations } from './migrations/schema.mjs';
 import { createApiHandler } from './routes/api-router.mjs';
 import { createStaticHandler } from './static-files.mjs';
+import { businessDateKey, resolveBusinessTimeZone } from './business-time.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -91,6 +92,7 @@ const DELIVERY_DEFAULT_COUPONS = [
 const APP_VERSION = process.env.APP_VERSION || process.env.VITE_APP_VERSION || 'unknown';
 const APP_COMMIT = process.env.APP_COMMIT || process.env.VITE_APP_COMMIT || 'unknown';
 const HEALTH_DB_TIMEOUT_MS = Math.max(250, Number(process.env.HEALTH_DB_TIMEOUT_MS || 3000));
+const BUSINESS_TIME_ZONE = resolveBusinessTimeZone(process.env.BUSINESS_TIME_ZONE);
 
 if (!tursoUrl || (!tursoAuthToken && !isLocalLibsqlUrl)) {
   throw new Error('Missing Turso configuration for BFF runtime.');
@@ -127,7 +129,7 @@ const mimeTypes = {
 const createId = () => randomUUID();
 const osTimestamp = () => Math.floor(Date.now() / 1000);
 const toStockAmount = (value) => Number(Math.max(0, Number(value || 0)).toFixed(4));
-const getBusinessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+const getBusinessDate = () => businessDateKey(new Date(), BUSINESS_TIME_ZONE);
 const formatMoneyForNotification = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const hashToken = (value) => createHash('sha256').update(String(value || '')).digest('hex');
 const generateNumericCode = () => String(Math.floor(100000 + Math.random() * 900000));
@@ -215,8 +217,47 @@ const getDeliveryCoupons = () => {
   }
 };
 
-const hashPin = (pin) => createHash('sha256').update(`${pin}becoartes_salt_2024`).digest('hex');
-const isLegacyPlainPin = (storedPin) => /^\d{4}$/.test(String(storedPin || ''));
+const PIN_SCRYPT_KEYLEN = 32;
+const PIN_SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+const safeSecretEqual = (actual, expected) => {
+  const actualBuffer = Buffer.from(String(actual || ''));
+  const expectedBuffer = Buffer.from(String(expected || ''));
+  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+};
+const hashLegacyPin = (pin) => createHash('sha256').update(`${pin}becoartes_salt_2024`).digest('hex');
+const hashPin = (pin, salt = randomBytes(16).toString('hex')) => {
+  const hash = scryptSync(String(pin || ''), salt, PIN_SCRYPT_KEYLEN, PIN_SCRYPT_OPTIONS).toString('hex');
+  return `scrypt:${salt}:${hash}`;
+};
+const verifyPin = (pin, storedPin = '') => {
+  const normalized = String(storedPin || '').trim();
+  const scryptMatch = /^scrypt:([a-f0-9]{32}):([a-f0-9]{64})$/i.exec(normalized);
+  if (scryptMatch) {
+    try {
+      const actual = scryptSync(String(pin || ''), scryptMatch[1], PIN_SCRYPT_KEYLEN, PIN_SCRYPT_OPTIONS);
+      const expected = Buffer.from(scryptMatch[2], 'hex');
+      return { ok: actual.length === expected.length && timingSafeEqual(actual, expected), needsRehash: false };
+    } catch {
+      return { ok: false, needsRehash: false };
+    }
+  }
+  if (/^\d{4,8}$/.test(normalized)) {
+    const ok = safeSecretEqual(pin, normalized);
+    return { ok, needsRehash: ok };
+  }
+  if (/^[a-f0-9]{64}$/i.test(normalized)) {
+    const ok = safeSecretEqual(hashLegacyPin(pin), normalized.toLowerCase());
+    return { ok, needsRehash: ok };
+  }
+  return { ok: false, needsRehash: false };
+};
+const normalizeStoredPin = (storedPin) => {
+  const normalized = String(storedPin || '').trim();
+  if (/^scrypt:[a-f0-9]{32}:[a-f0-9]{64}$/i.test(normalized)) return normalized;
+  if (/^[a-f0-9]{64}$/i.test(normalized)) return normalized.toLowerCase();
+  if (/^\d{4,8}$/.test(normalized)) return hashPin(normalized);
+  return '';
+};
 const isReservedSellerPin = (pin) => String(pin || '').trim() === '1234';
 const toSessionSeller = (seller) => ({ ...seller, pin: '' });
 const normalizeText = (value) => String(value || '').trim().replace(/\s+/g, ' ');
@@ -841,7 +882,7 @@ const isOperationIpAllowed = (req) => (
 );
 
 const isAdminSession = (session) => normalizePermission(session?.permission) === 'admin';
-const isAdminBypassPin = (pin) => ADMIN_BYPASS_ENABLED && ADMIN_BYPASS_PIN && String(pin || '') === ADMIN_BYPASS_PIN;
+const isAdminBypassPin = (pin) => ADMIN_BYPASS_ENABLED && ADMIN_BYPASS_PIN && safeSecretEqual(pin, ADMIN_BYPASS_PIN);
 
 const throwIpRestricted = (req) => {
   const error = new Error(`Acesso operacional permitido apenas na rede autorizada. IP detectado: ${getClientIp(req)}`);
@@ -1321,7 +1362,7 @@ const listSellerCandidates = async () => {
 const activateOsUserAsSeller = async ({ userId, pin }) => {
   const safeUserId = requireString(userId, 'userId');
   const safePin = String(pin || '').trim();
-  if (safePin && !/^\d{4}$/.test(safePin) && !/^[a-f0-9]{64}$/i.test(safePin)) {
+  if (safePin && !/^\d{4}$/.test(safePin)) {
     const error = new Error('PIN deve ter 4 dígitos.');
     error.statusCode = 400;
     throw error;
@@ -1349,7 +1390,7 @@ const activateOsUserAsSeller = async ({ userId, pin }) => {
   }
 
   const currentPin = String(user.pin || '').trim();
-  const nextPin = currentPin || (safePin ? (isLegacyPlainPin(safePin) ? hashPin(safePin) : safePin) : '');
+  const nextPin = currentPin ? normalizeStoredPin(currentPin) : (safePin ? hashPin(safePin) : '');
   if (!nextPin) {
     const error = new Error('Defina um PIN de 4 dígitos para ativar este vendedor.');
     error.statusCode = 400;
@@ -1390,7 +1431,7 @@ const createOsUserAsSeller = async ({ name, pin, employmentType }) => {
     error.statusCode = 400;
     throw error;
   }
-  if (!/^\d{4}$/.test(safePin) && !/^[a-f0-9]{64}$/i.test(safePin)) {
+  if (!/^\d{4}$/.test(safePin)) {
     const error = new Error('PIN deve ter 4 dígitos.');
     error.statusCode = 400;
     throw error;
@@ -1431,7 +1472,7 @@ const createOsUserAsSeller = async ({ name, pin, employmentType }) => {
   const tipoVinculo = isFreelancer ? 'Freelancer' : 'CLT';
   const role = isFreelancer ? 'freelancer' : 'colaborador';
   const funcao = 'Vendedor';
-  const hashedPin = isLegacyPlainPin(safePin) ? hashPin(safePin) : safePin;
+  const hashedPin = hashPin(safePin);
   const timestamp = osTimestamp();
   const email = `pdv+${id}@becoartes.local`;
   const passwordHash = hashDeliveryPassword(randomBytes(24).toString('hex'));
@@ -1467,6 +1508,13 @@ const syncOperationalUsersToSellers = async () => {
   for (const user of operationalUsers) {
     const mirrorId = `os:${user.id}`;
     const pin = String(user.pin || '').trim();
+    const normalizedPin = normalizeStoredPin(pin);
+    if (pin && normalizedPin && normalizedPin !== pin) {
+      await db.execute({
+        sql: "UPDATE users SET pin = ? WHERE empresa_id = ? AND id = ?",
+        args: [normalizedPin, OS_EMPRESA_ID, user.id],
+      });
+    }
     await db.execute({
       sql: `
         INSERT INTO sellers (id, name, nickname, status, role, permission, pin, tipo_vinculo)
@@ -1487,7 +1535,7 @@ const syncOperationalUsersToSellers = async () => {
         user.status,
         user.role,
         user.permission,
-        pin ? (isLegacyPlainPin(pin) ? hashPin(pin) : pin) : '',
+        normalizedPin,
         user.employmentType || 'fixo',
       ],
     });
@@ -2382,7 +2430,7 @@ const login = async ({ pin, sellerId, view }, { operationAccessAllowed = true, r
     .filter((seller) => seller.status === 'active' && (!sellerId || seller.id === sellerId));
   let blockedNonAdminMatch = false;
 
-  if (activeSellers.length === 0 && BOOTSTRAP_ADMIN_PIN && safePin === BOOTSTRAP_ADMIN_PIN) {
+  if (activeSellers.length === 0 && BOOTSTRAP_ADMIN_PIN && safeSecretEqual(safePin, BOOTSTRAP_ADMIN_PIN)) {
     const seller = {
       id: 'master',
       name: 'Admin Mestre',
@@ -2399,8 +2447,8 @@ const login = async ({ pin, sellerId, view }, { operationAccessAllowed = true, r
 
   for (const seller of activeSellers) {
     const storedPin = seller.pin || '';
-    const isMatch = isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
-    if (!isMatch) continue;
+    const pinCheck = verifyPin(safePin, storedPin);
+    if (!pinCheck.ok) continue;
     const safeSeller = toSessionSeller(seller);
 
     if (!operationAccessAllowed && !canAccessOutsideOperationIp(safeSeller)) {
@@ -2411,8 +2459,8 @@ const login = async ({ pin, sellerId, view }, { operationAccessAllowed = true, r
       continue;
     }
 
-    if (isLegacyPlainPin(storedPin)) {
-      await updateSellerPin({ id: seller.id, pin: hashPin(safePin) });
+    if (pinCheck.needsRehash) {
+      await persistSellerPin(seller.id, safePin);
     }
 
     return {
@@ -2430,7 +2478,7 @@ const login = async ({ pin, sellerId, view }, { operationAccessAllowed = true, r
 
 const validateTabletSetupPin = async ({ pin }, { operationAccessAllowed = true } = {}) => {
   const safePin = String(pin || '');
-  if (safePin === TABLET_SETUP_PIN && operationAccessAllowed) return { valid: true, ...createProductionStationSession() };
+  if (safeSecretEqual(safePin, TABLET_SETUP_PIN) && operationAccessAllowed) return { valid: true, ...createProductionStationSession() };
   if (isAdminBypassPin(safePin)) return { valid: true, ...createAdminBypassSession() };
   return { valid: false, sessionToken: null };
 };
@@ -2468,7 +2516,7 @@ const validateSessionPin = async (session, pin) => {
   if (!seller) return false;
 
   const storedPin = seller.pin || '';
-  return isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
+  return verifyPin(safePin, storedPin).ok;
 };
 
 const resolveCashActorByPin = async (pin, requiredPermission) => {
@@ -2488,11 +2536,11 @@ const resolveCashActorByPin = async (pin, requiredPermission) => {
 
   for (const seller of activeSellers) {
     const storedPin = seller.pin || '';
-    const isMatch = isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
-    if (!isMatch) continue;
+    const pinCheck = verifyPin(safePin, storedPin);
+    if (!pinCheck.ok) continue;
 
-    if (isLegacyPlainPin(storedPin)) {
-      await updateSellerPin({ id: seller.id, pin: hashPin(safePin) });
+    if (pinCheck.needsRehash) {
+      await persistSellerPin(seller.id, safePin);
     }
 
     const safeSeller = toSessionSeller(seller);
@@ -2532,11 +2580,11 @@ const resolveQrModeAuthorizerByPin = async (pin) => {
 
   for (const seller of activeSellers) {
     const storedPin = seller.pin || '';
-    const isMatch = isLegacyPlainPin(storedPin) ? storedPin === safePin : storedPin === hashPin(safePin);
-    if (!isMatch) continue;
+    const pinCheck = verifyPin(safePin, storedPin);
+    if (!pinCheck.ok) continue;
 
-    if (isLegacyPlainPin(storedPin)) {
-      await updateSellerPin({ id: seller.id, pin: hashPin(safePin) });
+    if (pinCheck.needsRehash) {
+      await persistSellerPin(seller.id, safePin);
     }
 
     const safeSeller = toSessionSeller(seller);
@@ -6492,7 +6540,7 @@ const closeShift = async ({ id, closingBalance }) => {
 const addSeller = async ({ seller }, session = null) => {
   const safeSeller = seller || {};
   const pin = requireString(safeSeller.pin, 'seller.pin');
-  if (!/^\d{4}$/.test(pin) && !/^[a-f0-9]{64}$/i.test(pin)) {
+  if (!/^\d{4}$/.test(pin)) {
     const error = new Error('PIN deve ter 4 dígitos.');
     error.statusCode = 400;
     throw error;
@@ -6518,20 +6566,36 @@ const addSeller = async ({ seller }, session = null) => {
       safeSeller.status || 'active',
       safeSeller.role || 'atendente',
       permission,
-      isLegacyPlainPin(pin) ? hashPin(pin) : pin,
+      hashPin(pin),
       employmentType,
     ],
   });
   return { saved: true };
 };
 
-const updateSellerPin = async ({ id, pin }) => {
-  requireString(id, 'id');
-  const safePin = requireString(pin, 'pin');
+const persistSellerPin = async (id, rawPin) => {
+  const hashedPin = hashPin(rawPin);
   await db.execute({
     sql: "UPDATE sellers SET pin = ? WHERE id = ?",
-    args: [isLegacyPlainPin(safePin) ? hashPin(safePin) : safePin, id],
+    args: [hashedPin, id],
   });
+  if (String(id).startsWith('os:')) {
+    await db.execute({
+      sql: "UPDATE users SET pin = ? WHERE empresa_id = ? AND id = ?",
+      args: [hashedPin, OS_EMPRESA_ID, String(id).slice(3)],
+    });
+  }
+};
+
+const updateSellerPin = async ({ id, pin }) => {
+  const safeId = requireString(id, 'id');
+  const safePin = requireString(pin, 'pin').trim();
+  if (!/^\d{4}$/.test(safePin) || isReservedSellerPin(safePin)) {
+    const error = new Error('PIN deve ter 4 dígitos e ser diferente de 1234.');
+    error.statusCode = 400;
+    throw error;
+  }
+  await persistSellerPin(safeId, safePin);
   return { updated: true };
 };
 
@@ -6593,13 +6657,13 @@ const updateSeller = async ({ id, seller }, session = null) => {
 
   if (safeSeller.pin !== undefined && String(safeSeller.pin).trim()) {
     const pin = requireString(safeSeller.pin, 'seller.pin').trim();
-    if (!/^\d{4}$/.test(pin) && !/^[a-f0-9]{64}$/i.test(pin)) {
+    if (!/^\d{4}$/.test(pin)) {
       const error = new Error('PIN deve ter 4 dígitos.');
       error.statusCode = 400;
       throw error;
     }
     fields.push('pin = ?');
-    args.push(isLegacyPlainPin(pin) ? hashPin(pin) : pin);
+    args.push(hashPin(pin));
   }
 
   if (fields.length === 0) {

@@ -30,6 +30,9 @@ const bffSource = readFileSync(join(process.cwd(), 'server/bff.mjs'), 'utf8');
 const routerSource = readFileSync(join(process.cwd(), 'server/routes/api-router.mjs'), 'utf8');
 const httpSource = readFileSync(join(process.cwd(), 'server/http.mjs'), 'utf8');
 assert.match(bffSource, /ADMIN_BYPASS_ENABLED && ADMIN_BYPASS_PIN/, 'admin bypass must be disabled unless explicitly enabled');
+assert.match(bffSource, /scrypt:\$\{salt\}:\$\{hash\}/, 'seller PINs must be stored with scrypt and a per-record salt');
+assert.match(bffSource, /const verifyPin =/, 'seller PIN login must support verified transparent migration');
+assert.doesNotMatch(bffSource, /storedPin === hashPin/, 'randomly salted PIN hashes must never be compared by re-hashing');
 assert.match(bffSource, /api\/cash\/open.*api\/cash\/close/s, 'cash PIN routes must participate in rate limiting');
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
 assert.match(routerSource, /transient \? 503/, 'transient backend failures must return 503');
@@ -170,6 +173,26 @@ try {
   assert.equal(denied.ok, false);
   assert.match(denied.error || '', /Permissão insuficiente/);
 
+  const forgedHash = await post('/api/sellers', {
+    seller: {
+      id: 'forged_hash_seller',
+      name: 'Forged Hash Seller',
+      status: 'active',
+      role: 'atendente',
+      permission: 'operator',
+      pin: 'a'.repeat(64),
+    },
+  }, admin.sessionToken, 400);
+  assert.equal(forgedHash.ok, false);
+  assert.match(forgedHash.error || '', /4 dígitos/);
+
+  const migratedSeller = await login('1122');
+  assert.equal(migratedSeller.seller.id, 'seller_test');
+  const migratedPin = await getScalar("SELECT pin FROM sellers WHERE id = 'seller_test'");
+  assert.match(String(migratedPin.pin || ''), /^scrypt:[a-f0-9]{32}:[a-f0-9]{64}$/i, 'legacy seller PIN must migrate to scrypt after login');
+  const migratedSellerAgain = await login('1122');
+  assert.equal(migratedSellerAgain.seller.id, 'seller_test', 'scrypt PIN must remain usable after migration');
+
   await post('/api/tables/open', { tableId: '1', wasAvailable: true }, admin.sessionToken);
   const order = await post('/api/orders/send-to-kitchen', {
     orderId: 'order_partial',
@@ -246,6 +269,8 @@ try {
     ok: true,
     covered: [
       'permissao_negada',
+      'pin_hash_forjado_bloqueado',
+      'pin_scrypt_migracao_transparente',
       'pagamento_parcial',
       'retry_pagamento_parcial',
       'fechamento',
