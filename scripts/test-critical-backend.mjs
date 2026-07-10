@@ -27,12 +27,13 @@ const env = {
 };
 
 const bffSource = readFileSync(join(process.cwd(), 'server/bff.mjs'), 'utf8');
+const pinSource = readFileSync(join(process.cwd(), 'server/auth/pins.mjs'), 'utf8');
 const routerSource = readFileSync(join(process.cwd(), 'server/routes/api-router.mjs'), 'utf8');
 const httpSource = readFileSync(join(process.cwd(), 'server/http.mjs'), 'utf8');
 assert.match(bffSource, /ADMIN_BYPASS_ENABLED && ADMIN_BYPASS_PIN/, 'admin bypass must be disabled unless explicitly enabled');
-assert.match(bffSource, /scrypt:\$\{salt\}:\$\{hash\}/, 'seller PINs must be stored with scrypt and a per-record salt');
-assert.match(bffSource, /const verifyPin =/, 'seller PIN login must support verified transparent migration');
-assert.doesNotMatch(bffSource, /storedPin === hashPin/, 'randomly salted PIN hashes must never be compared by re-hashing');
+assert.match(pinSource, /scrypt:\$\{salt\}:\$\{hash\}/, 'seller PINs must be stored with scrypt and a per-record salt');
+assert.match(pinSource, /export const verifyPin =/, 'seller PIN login must support verified transparent migration');
+assert.doesNotMatch(pinSource, /storedPin === hashPin/, 'randomly salted PIN hashes must never be compared by re-hashing');
 assert.match(bffSource, /api\/cash\/open.*api\/cash\/close/s, 'cash PIN routes must participate in rate limiting');
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
 assert.match(routerSource, /transient \? 503/, 'transient backend failures must return 503');

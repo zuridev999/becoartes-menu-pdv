@@ -6,8 +6,17 @@ import { createClient } from '@libsql/client';
 import { sendJson } from './http.mjs';
 import { runSchemaMigrations } from './migrations/schema.mjs';
 import { createApiHandler } from './routes/api-router.mjs';
+import { createAccessGuards, createRouteAccessEnforcer } from './routes/access-policy.mjs';
+import { createRouteHandlers } from './routes/handlers.mjs';
 import { createStaticHandler } from './static-files.mjs';
 import { businessDateKey, resolveBusinessTimeZone } from './business-time.mjs';
+import {
+  hashPin,
+  isReservedSellerPin,
+  normalizeStoredPin,
+  safeSecretEqual,
+  verifyPin,
+} from './auth/pins.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -217,48 +226,6 @@ const getDeliveryCoupons = () => {
   }
 };
 
-const PIN_SCRYPT_KEYLEN = 32;
-const PIN_SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
-const safeSecretEqual = (actual, expected) => {
-  const actualBuffer = Buffer.from(String(actual || ''));
-  const expectedBuffer = Buffer.from(String(expected || ''));
-  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
-};
-const hashLegacyPin = (pin) => createHash('sha256').update(`${pin}becoartes_salt_2024`).digest('hex');
-const hashPin = (pin, salt = randomBytes(16).toString('hex')) => {
-  const hash = scryptSync(String(pin || ''), salt, PIN_SCRYPT_KEYLEN, PIN_SCRYPT_OPTIONS).toString('hex');
-  return `scrypt:${salt}:${hash}`;
-};
-const verifyPin = (pin, storedPin = '') => {
-  const normalized = String(storedPin || '').trim();
-  const scryptMatch = /^scrypt:([a-f0-9]{32}):([a-f0-9]{64})$/i.exec(normalized);
-  if (scryptMatch) {
-    try {
-      const actual = scryptSync(String(pin || ''), scryptMatch[1], PIN_SCRYPT_KEYLEN, PIN_SCRYPT_OPTIONS);
-      const expected = Buffer.from(scryptMatch[2], 'hex');
-      return { ok: actual.length === expected.length && timingSafeEqual(actual, expected), needsRehash: false };
-    } catch {
-      return { ok: false, needsRehash: false };
-    }
-  }
-  if (/^\d{4,8}$/.test(normalized)) {
-    const ok = safeSecretEqual(pin, normalized);
-    return { ok, needsRehash: ok };
-  }
-  if (/^[a-f0-9]{64}$/i.test(normalized)) {
-    const ok = safeSecretEqual(hashLegacyPin(pin), normalized.toLowerCase());
-    return { ok, needsRehash: ok };
-  }
-  return { ok: false, needsRehash: false };
-};
-const normalizeStoredPin = (storedPin) => {
-  const normalized = String(storedPin || '').trim();
-  if (/^scrypt:[a-f0-9]{32}:[a-f0-9]{64}$/i.test(normalized)) return normalized;
-  if (/^[a-f0-9]{64}$/i.test(normalized)) return normalized.toLowerCase();
-  if (/^\d{4,8}$/.test(normalized)) return hashPin(normalized);
-  return '';
-};
-const isReservedSellerPin = (pin) => String(pin || '').trim() === '1234';
 const toSessionSeller = (seller) => ({ ...seller, pin: '' });
 const normalizeText = (value) => String(value || '').trim().replace(/\s+/g, ' ');
 const DELIVERY_COUPONS = getDeliveryCoupons();
@@ -7855,303 +7822,97 @@ const finalizeCustomerTab = async ({ tabId }, session) => {
   return { tab: sanitizeCustomerTab(updated.rows[0], totals[row.table_id]) };
 };
 
-const requireSession = (session) => {
-  if (!session) {
-    const error = new Error('Sessão obrigatória.');
-    error.statusCode = 401;
-    throw error;
-  }
-};
+const { requireSession, requirePermission } = createAccessGuards({ canSessionWithSettings });
 
-const requirePermission = (session, permission, settings = null) => {
-  requireSession(session);
-  if (!canSessionWithSettings(session, permission, settings)) {
-    const error = new Error('Permissão insuficiente.');
-    error.statusCode = 403;
-    throw error;
-  }
-};
+const enforceRouteAccess = createRouteAccessEnforcer({
+  verifyPublicTableToken,
+  canAccessOutsideOperationIp,
+  throwIpRestricted,
+  getSettings,
+  requireSession,
+  requirePermission,
+});
 
-const isPublicOperationalOrigin = (body) => body?.origin === 'tablet' || body?.origin === 'qr';
-
-const requirePublicTableAccess = async (body) => {
-  if (!isPublicOperationalOrigin(body)) return false;
-  const access = await verifyPublicTableToken({
-    token: body?.publicAccessToken,
-    source: body.origin,
-    tableId: body?.tableId || '',
-    tableNumber: body?.tableNumber || '',
-  });
-  if (!access) {
-    const error = new Error('Token público da mesa inválido ou ausente.');
-    error.statusCode = 401;
-    throw error;
-  }
-  return true;
-};
-
-const isPublicCustomerRoute = (routeKey) => {
-  if (routeKey === 'POST /api/delivery/checkout') return true;
-  if (routeKey === 'POST /api/delivery/checkout/mock') return true;
-  if (routeKey === 'POST /api/delivery/quote') return true;
-  if (routeKey === 'POST /api/delivery/postal-code') return true;
-  if (routeKey === 'POST /api/delivery/geocode') return true;
-  if (routeKey === 'POST /api/delivery/webhooks/pagbank' || routeKey === 'POST /api/webhooks/pagbank') return true;
-  if (routeKey.startsWith('POST /api/delivery/customer/')) return true;
-  if (routeKey === 'GET /api/delivery/order') return true;
-  if (routeKey === 'GET /api/delivery/customer/session') return true;
-  if (routeKey === 'GET /api/delivery/customer/orders') return true;
-  if (routeKey === 'GET /api/delivery/config') return true;
-  if (routeKey === 'GET /api/delivery/pagbank/public-key') return true;
-  if (routeKey === 'POST /api/customer-tabs/open' || routeKey === 'POST /api/customer-tabs/recover' || routeKey === 'POST /api/customer-tabs/payment-link') return true;
-  return false;
-};
-
-const enforceRouteAccess = async (routeKey, body, session, { operationAccessAllowed = true, req = null } = {}) => {
-  if (
-    routeKey === 'GET /api/app/init'
-    || routeKey === 'POST /api/app/sync'
-    || routeKey === 'POST /api/auth/login'
-    || routeKey === 'POST /api/tablet/setup-login'
-    || routeKey === 'POST /api/table-access-token'
-  ) {
-    return;
-  }
-
-  if (isPublicCustomerRoute(routeKey)) {
-    return;
-  }
-
-  if (
-    routeKey === 'POST /api/orders/send-to-kitchen'
-    || routeKey === 'POST /api/orders/status'
-    || routeKey === 'POST /api/audit-logs'
-    || routeKey === 'POST /api/service-requests'
-    || routeKey === 'POST /api/tables/request-bill'
-  ) {
-    if (await requirePublicTableAccess(body)) return;
-  }
-
-  if (!operationAccessAllowed && !canAccessOutsideOperationIp(session)) {
-    throwIpRestricted(req);
-  }
-
-  if (routeKey === 'POST /api/orders/send-to-kitchen') {
-    const settings = await getSettings();
-    requirePermission(session, 'addOrderItem', settings);
-    requirePermission(session, 'sendOrderToProduction', settings);
-    const items = Array.isArray(body?.items) ? body.items : [];
-    if (items.some((item) => Number(item?.quantity || 0) !== 1)) {
-      requirePermission(session, 'changeItemQuantity', settings);
-    }
-    if (items.some((item) => String(item?.notes || '').trim())) {
-      requirePermission(session, 'editItemNotes', settings);
-    }
-    return;
-  }
-
-  if (routeKey === 'POST /api/counter-sales/close') {
-    const settings = await getSettings();
-    requirePermission(session, 'addOrderItem', settings);
-    requirePermission(session, 'launchPayment', settings);
-    requirePermission(session, 'closeBill', settings);
-    const items = Array.isArray(body?.items) ? body.items : [];
-    if (items.some((item) => Number(item?.quantity || 0) !== 1)) {
-      requirePermission(session, 'changeItemQuantity', settings);
-    }
-    if (items.some((item) => String(item?.notes || '').trim())) {
-      requirePermission(session, 'editItemNotes', settings);
-    }
-    return;
-  }
-
-  if (routeKey === 'POST /api/orders/status') {
-    if (session?.stationAccess && body?.status === 'ready') return;
-    requirePermission(session, 'sendOrderToProduction', await getSettings());
-    return;
-  }
-
-  if (routeKey === 'POST /api/audit-logs') {
-    requireSession(session);
-    return;
-  }
-
-  if (routeKey === 'POST /api/service-requests' || routeKey === 'POST /api/tables/request-bill') {
-    requireSession(session);
-    return;
-  }
-
-  if (routeKey === 'POST /api/cash/open' || routeKey === 'POST /api/cash/close') {
-    return;
-  }
-
-  const permissionByRoute = {
-    'POST /api/order-items/delete': 'cancelTableItem',
-    'POST /api/bills/close': 'closeBill',
-    'POST /api/service-requests/resolve': 'resolveServiceRequest',
-    'POST /api/catalog/category': 'manageCategories',
-    'POST /api/catalog/category/delete': 'manageCategories',
-    'POST /api/catalog/category/visibility': 'manageCategories',
-    'POST /api/catalog/product/delete': 'deleteProduct',
-    'POST /api/catalog/product/visibility': 'toggleProductVisibility',
-    'POST /api/catalog/product/delivery-visibility': 'toggleProductVisibility',
-    'POST /api/catalog/products/reorder': 'editProduct',
-    'POST /api/catalog/modifier-group': 'manageOptionals',
-    'POST /api/catalog/modifier-group/delete': 'manageOptionals',
-    'POST /api/catalog/modifier-group/link': 'manageOptionals',
-    'POST /api/settings': 'manageSettings',
-    'POST /api/pdv-lock': 'manageSettings',
-    'POST /api/qrcodes/regenerate': 'managePDVPermissions',
-    'POST /api/service-requests/clear': 'manageSettings',
-    'POST /api/audit-logs/list': 'viewSalesTotals',
-    'POST /api/sellers': 'managePDVUsers',
-    'POST /api/sellers/update': 'managePDVUsers',
-    'POST /api/sellers/pin': 'managePDVUsers',
-    'POST /api/sellers/delete': 'managePDVUsers',
-    'POST /api/sellers/status': 'managePDVUsers',
-    'GET /api/sellers/candidates': 'managePDVUsers',
-    'POST /api/sellers/activate-os-user': 'managePDVUsers',
-    'POST /api/sellers/create-os-user': 'managePDVUsers',
-    'POST /api/inventory/sync-beverages': 'confirmPurchaseEntry',
-    'POST /api/inventory/sync-open-orders': 'manageSettings',
-    'POST /api/tables/status': 'updateTableStatus',
-    'POST /api/tables/open': 'openTable',
-    'POST /api/tables/transfer': 'transferTable',
-    'POST /api/tables/join': 'joinTables',
-    'POST /api/cash/open': 'openCash',
-    'POST /api/cash/close': 'closeCash',
-    'POST /api/shifts/open': 'manageShifts',
-    'POST /api/shifts/close': 'manageShifts',
-    'POST /api/table-payments': 'launchPayment',
-    'POST /api/table-payments/cancel': 'cancelPayment',
-    'POST /api/coupons/create': 'manageCoupons',
-    'GET /api/coupons/list': 'manageCoupons',
-    'GET /api/delivery/orders': 'viewSalesTotals',
-    'GET /api/delivery/order-detail': 'viewSalesTotals',
-    'GET /api/closed-bills': 'viewSalesTotals',
-    'GET /api/customer-tabs/lookup': 'viewSalesTotals',
-    'POST /api/customer-tabs/finalize': 'closeBill',
-  };
-
-  const requiredPermission = permissionByRoute[routeKey];
-  if (requiredPermission) {
-    requirePermission(session, requiredPermission, await getSettings());
-    return;
-  }
-
-  requireSession(session);
-};
-
-const handlers = {
-  'GET /api/app/init': async (_body, context) => getAppSnapshotWithRetry({
-    includeCatalog: true,
-    includeAuditLimit: 50,
-    view: context.url.searchParams.get('view') || 'pdv',
-    session: context.session,
-    operationAccessAllowed: context.operationAccessAllowed,
-  }),
-  'POST /api/app/sync': async (body, context) => getAppSnapshotWithRetry({
-    includeCatalog: Boolean(body.includeCatalog),
-    includeAuditLimit: 0,
-    view: body.view || 'pdv',
-    session: context.session,
-    operationAccessAllowed: context.operationAccessAllowed,
-  }),
-  'POST /api/auth/login': async (body, context) => login(body, context),
-  'POST /api/tablet/setup-login': async (body, context) => validateTabletSetupPin(body, context),
-  'POST /api/table-access-token': async (body, context) => createTableAccessToken(body, context.session),
-  'GET /api/checklist-alerts': async () => getChecklistAlertsFromOs(),
-  'POST /api/audit-logs/list': async (body) => ({
-    auditLogs: await getAuditLogs({
-      limit: Number(body.limit || 100),
-      startDate: String(body.startDate || ''),
-      endDate: String(body.endDate || ''),
-      author: String(body.author || ''),
-      action: String(body.action || ''),
-    })
-  }),
-  'POST /api/orders/send-to-kitchen': async (body, context) => sendToKitchen(body, context.session),
-  'POST /api/delivery/quote': async (body) => getDeliveryQuote(body),
-  'POST /api/delivery/postal-code': async (body) => ({ postalCode: await lookupDeliveryPostalCode(body) }),
-  'POST /api/delivery/geocode': async (body) => ({ geocode: await geocodeDeliveryAddress(body?.customer || body) }),
-  'POST /api/delivery/checkout': async (body) => createDeliveryCheckout(body),
-  'POST /api/delivery/checkout/mock': async (body) => createDeliveryCheckout(body),
-  'POST /api/delivery/webhooks/pagbank': async (body, context) => handlePagBankDeliveryWebhook(body, context),
-  'POST /api/webhooks/pagbank': async (body, context) => handlePagBankDeliveryWebhook(body, context),
-  'POST /api/delivery/customer/register': async (body) => createDeliveryCustomerAccount(body),
-  'POST /api/delivery/customer/login': async (body) => loginDeliveryCustomer(body),
-  'POST /api/delivery/customer/forgot-password': async (body) => requestDeliveryPasswordReset(body),
-  'POST /api/delivery/customer/reset-password': async (body) => resetDeliveryCustomerPassword(body),
-  'POST /api/delivery/customer/verify-code': async (body) => verifyDeliveryCustomerCode(body),
-  'POST /api/customer-tabs/open': async (body) => openCustomerTab(body),
-  'POST /api/customer-tabs/recover': async (body) => recoverCustomerTab(body),
-  'POST /api/customer-tabs/payment-link': async (body) => createCustomerTabPaymentLink(body),
-  'GET /api/customer-tabs/lookup': async (_body, context) => lookupCustomerTabs({ query: context.url.searchParams.get('q') || '' }),
-  'POST /api/customer-tabs/finalize': async (body, context) => finalizeCustomerTab(body, context.session),
-  'GET /api/delivery/customer/session': async (_body, context) => getDeliveryCustomerSession({ token: context.req?.headers['x-beco-delivery-session'] || '' }),
-  'GET /api/delivery/customer/orders': async (_body, context) => listDeliveryCustomerOrders({ token: context.req?.headers['x-beco-delivery-session'] || '' }),
-  'GET /api/delivery/order': async (_body, context) => getDeliveryOrder({ orderId: context.url.searchParams.get('orderId') || '' }),
-  'GET /api/delivery/order-detail': async (_body, context) => getDeliveryOrder({ orderId: context.url.searchParams.get('orderId') || '', includeEvents: true }),
-  'GET /api/delivery/config': async () => getDeliveryPublicConfig(),
-  'GET /api/delivery/pagbank/public-key': async () => getPagBankPublicKey(),
-  'GET /api/delivery/orders': async (_body, context) => listDeliveryOrders({ limit: context.url.searchParams.get('limit') || 50 }),
-  'POST /api/orders/status': async (body) => updateOrderStatus(body),
-  'POST /api/order-items/delete': async (body, context) => deleteOrderItem(body, context.session),
-  'POST /api/table-payments': async (body, context) => createTablePayment(body, context.session),
-  'POST /api/table-payments/cancel': async (body, context) => cancelTablePayment(body, context.session),
-  'GET /api/coupons/list': async () => listCoupons(),
-  'POST /api/coupons/create': async (body, context) => createCoupon(body, context.session),
-  'POST /api/coupons/validate': async (body, context) => validateCoupon(body, context.session),
-  'POST /api/bills/close': async (body, context) => closeBillWithInventorySync(body, context.session),
-  'POST /api/counter-sales/close': async (body, context) => closeCounterSaleWithInventorySync(body, context.session),
-  'POST /api/catalog/category': async (body) => upsertCategory(body),
-  'POST /api/catalog/category/delete': async (body) => deleteCategory(body),
-  'POST /api/catalog/category/visibility': async (body) => toggleCategoryVisibility(body),
-  'POST /api/catalog/product': async (body, context) => upsertProduct(body, context.session),
-  'POST /api/catalog/product/delete': async (body, context) => deleteProduct(body, context.session),
-  'POST /api/catalog/product/visibility': async (body) => toggleProductVisibility(body),
-  'POST /api/catalog/product/delivery-visibility': async (body) => toggleProductDeliveryVisibility(body),
-  'POST /api/catalog/products/reorder': async (body, context) => reorderCatalogProducts(body, context.session),
-  'POST /api/catalog/modifier-group': async (body) => saveModifierGroup(body),
-  'POST /api/catalog/modifier-group/delete': async (body) => deleteModifierGroup(body),
-  'POST /api/catalog/modifier-group/link': async (body) => linkModifierGroup(body),
-  'POST /api/settings': async (body, context) => saveSettings(body, context.session),
-  'POST /api/settings/qr-mode': async (body, context) => saveQrMode(body, context.session),
-  'GET /api/pdv-lock/status': async () => getPdvLockState(),
-  'POST /api/pdv-lock': async (body, context) => setPdvLockState(body, context.session),
-  'POST /api/qrcodes/regenerate': async (body, context) => regenerateTableQr(body, context.session),
-  'POST /api/audit-logs': async (body) => addAuditLog(body),
-  'POST /api/service-requests': async (body) => createServiceRequest(body),
-  'POST /api/service-requests/resolve': async (body) => resolveServiceRequest(body),
-  'POST /api/service-requests/clear': async (body) => clearServiceRequest(body),
-  'POST /api/tables/request-bill': async (body) => requestBill(body),
-  'POST /api/tables/status': async (body, context) => updateTableStatus(body, context.session),
-  'POST /api/tables/open': async (body, context) => openTable(body, context.session),
-  'POST /api/tables/transfer': async (body, context) => transferTable(body, context.session),
-  'POST /api/tables/join': async (body, context) => joinTables(body, context.session),
-  'GET /api/cash/status': async () => ({ cashState: await getCashState() }),
-  'POST /api/cash/open': async (body, context) => openCash(body, context.session),
-  'POST /api/cash/close': async (body, context) => closeCash(body, context.session),
-  'POST /api/shifts/open': async (body) => openShift(body),
-  'POST /api/shifts/close': async (body) => closeShift(body),
-  'GET /api/closed-bills': async (_body, context) => ({
-    closedBills: await getClosedBills(Number(context.url.searchParams.get('limit') || 5000), {
-      from: context.url.searchParams.get('from') || '',
-      to: context.url.searchParams.get('to') || '',
-      extended: true,
-    }),
-  }),
-  'POST /api/sellers': async (body, context) => addSeller(body, context.session),
-  'POST /api/sellers/update': async (body, context) => updateSeller(body, context.session),
-  'POST /api/sellers/pin': async (body) => updateSellerPin(body),
-  'POST /api/sellers/delete': async (body) => deleteSeller(body),
-  'POST /api/sellers/status': async (body) => updateSellerStatus(body),
-  'GET /api/sellers/candidates': async () => ({ candidates: await listSellerCandidates() }),
-  'POST /api/sellers/activate-os-user': async (body) => activateOsUserAsSeller(body),
-  'POST /api/sellers/create-os-user': async (body) => createOsUserAsSeller(body),
-  'POST /api/inventory/sync-beverages': async () => syncBeveragesFromInventory(),
-  'POST /api/inventory/sync-open-orders': async () => syncOpenOrdersInventory(),
-};
+const handlers = createRouteHandlers({
+  activateOsUserAsSeller,
+  addAuditLog,
+  addSeller,
+  cancelTablePayment,
+  clearServiceRequest,
+  closeBillWithInventorySync,
+  closeCash,
+  closeCounterSaleWithInventorySync,
+  closeShift,
+  createCoupon,
+  createCustomerTabPaymentLink,
+  createDeliveryCheckout,
+  createDeliveryCustomerAccount,
+  createOsUserAsSeller,
+  createServiceRequest,
+  createTableAccessToken,
+  createTablePayment,
+  deleteCategory,
+  deleteModifierGroup,
+  deleteOrderItem,
+  deleteProduct,
+  deleteSeller,
+  finalizeCustomerTab,
+  geocodeDeliveryAddress,
+  getAppSnapshotWithRetry,
+  getAuditLogs,
+  getCashState,
+  getChecklistAlertsFromOs,
+  getClosedBills,
+  getDeliveryCustomerSession,
+  getDeliveryOrder,
+  getDeliveryPublicConfig,
+  getDeliveryQuote,
+  getPagBankPublicKey,
+  getPdvLockState,
+  handlePagBankDeliveryWebhook,
+  joinTables,
+  linkModifierGroup,
+  listCoupons,
+  listDeliveryCustomerOrders,
+  listDeliveryOrders,
+  listSellerCandidates,
+  login,
+  loginDeliveryCustomer,
+  lookupCustomerTabs,
+  lookupDeliveryPostalCode,
+  openCash,
+  openCustomerTab,
+  openShift,
+  openTable,
+  recoverCustomerTab,
+  regenerateTableQr,
+  reorderCatalogProducts,
+  requestBill,
+  requestDeliveryPasswordReset,
+  resetDeliveryCustomerPassword,
+  resolveServiceRequest,
+  saveModifierGroup,
+  saveQrMode,
+  saveSettings,
+  sendToKitchen,
+  setPdvLockState,
+  syncBeveragesFromInventory,
+  syncOpenOrdersInventory,
+  toggleCategoryVisibility,
+  toggleProductDeliveryVisibility,
+  toggleProductVisibility,
+  transferTable,
+  updateOrderStatus,
+  updateSeller,
+  updateSellerPin,
+  updateSellerStatus,
+  updateTableStatus,
+  upsertCategory,
+  upsertProduct,
+  validateCoupon,
+  validateTabletSetupPin,
+  verifyDeliveryCustomerCode,
+});
 
 const handleApi = createApiHandler({
   db,
