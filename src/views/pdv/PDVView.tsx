@@ -122,6 +122,8 @@ function ThemeToggleButton() {
   const { isLight, toggleTheme } = useThemeToggle();
   return (
     <button
+      type="button"
+      aria-label={isLight ? 'Mudar para tema escuro' : 'Mudar para tema claro'}
       onClick={toggleTheme}
       className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-accent/50 hover:text-accent"
       title={isLight ? 'Mudar para tema escuro' : 'Mudar para tema claro'}
@@ -170,7 +172,7 @@ export function PDVView() {
 
   const [pin, setPin] = useState('');
   const [isSendingOrder, setIsSendingOrder] = useState(false);
-  const [loginError, setLoginError] = useState(false);
+  const [loginError, setLoginError] = useState('');
   const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
   const [showCheckout, setShowCheckout] = useState(false);
   const [showProductMenu, setShowProductMenu] = useState(false);
@@ -339,21 +341,25 @@ export function PDVView() {
   }, [currentSeller?.id]);
 
   const handleLogin = async () => {
+    if (pin.length !== 4) {
+      setLoginError('Digite os 4 dígitos do seu PIN.');
+      return;
+    }
     const success = await login(pin);
     if (!success) {
-      setLoginError(true);
+      setLoginError('PIN incorreto ou sem acesso neste terminal.');
       setPin('');
-      setTimeout(() => setLoginError(false), 2000);
+      setTimeout(() => setLoginError(''), 3000);
     }
   };
 
   if (!currentSeller) {
     return (
-      <div className="min-h-screen bg-transparent flex items-center justify-center font-['Outfit'] p-8">
+      <div className="min-h-screen bg-transparent flex items-center justify-center font-['Outfit'] p-4 sm:p-8">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card w-full max-w-md p-12 border-white/10 shadow-2xl flex flex-col items-center"
+          className="glass-card w-full max-w-md p-6 sm:p-12 border-white/10 shadow-2xl flex flex-col items-center"
         >
           <div className="w-20 h-20 bg-primary/10 rounded-[2rem] flex items-center justify-center text-primary mb-8">
             <Users size={40} />
@@ -365,18 +371,27 @@ export function PDVView() {
             <div className="relative">
               <input 
                 type="password"
+                name="pin"
+                aria-label="PIN de acesso do PDV"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
                 value={pin}
-                onChange={(e) => setPin(e.target.value)}
+                onChange={(e) => {
+                  setPin(e.target.value.replace(/\D/g, '').slice(0, 4));
+                  if (loginError) setLoginError('');
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                 className={`w-full glass py-8 px-6 rounded-3xl text-4xl text-center font-black tracking-[0.5em] outline-none border-2 transition-all ${loginError ? 'border-rose-500 animate-shake text-rose-500' : 'border-white/10 focus:border-primary'}`}
                 placeholder="****"
                 maxLength={4}
                 autoFocus
               />
-              {loginError && <p className="text-[10px] font-black uppercase text-rose-500 text-center mt-4">PIN INCORRETO. TENTE NOVAMENTE.</p>}
+              {loginError && <p role="alert" className="mt-4 text-center text-[10px] font-black uppercase text-rose-500">{loginError}</p>}
             </div>
 
             <button 
+              type="button"
               onClick={handleLogin}
               className="w-full btn-beco btn-beco-purple py-6 text-xl font-black rounded-2xl shadow-2xl shadow-primary/20"
             >
@@ -698,6 +713,8 @@ export function PDVView() {
 
         <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
+            aria-label="Abrir gestão de cardápio"
             onClick={() => useStore.getState().setActiveView('admin', 'products', 'menu')}
             className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-emerald-400/40 hover:text-emerald-400"
             title="Gestão de Cardápio"
@@ -706,6 +723,8 @@ export function PDVView() {
           </button>
           {isAdminProfile && canViewSalesTotals && (
             <button
+              type="button"
+              aria-label="Abrir fechamentos e pagamentos"
               onClick={() => useStore.getState().setActiveView('admin', 'finance', 'settings')}
               className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-emerald-400/40 hover:text-emerald-400"
               title="Fechamentos e pagamentos"
@@ -715,6 +734,8 @@ export function PDVView() {
           )}
           {can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides) && (
             <button
+              type="button"
+              aria-label="Abrir configurações gerais"
               onClick={() => useStore.getState().setActiveView('admin', 'config', 'settings')}
               className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-primary/40 hover:text-primary"
               title="Configurações Gerais"
@@ -724,6 +745,8 @@ export function PDVView() {
           )}
           <ThemeToggleButton />
           <button
+            type="button"
+            aria-label="Sair do PDV"
             onClick={logout}
             className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-rose-400/40 hover:text-rose-400"
             title="Sair"
@@ -947,7 +970,7 @@ export function PDVView() {
                   ) : (
                     <div className="flex flex-col items-start">
                       <span className="text-sm sm:text-base font-black tabular-nums tracking-tight leading-tight">
-                        R$ {getOrderItemsTotal(table.orders).toFixed(2)}
+                        {formatCurrency(getOrderItemsTotal(table.orders))}
                       </span>
                       {table.customerTab && (
                         <span className="mt-0.5 max-w-full truncate text-[9px] font-black uppercase tracking-[0.12em] text-white/55">
@@ -1108,6 +1131,8 @@ export function PDVView() {
                       <div className="flex items-center gap-2">
                         {canClearResolvedRequests && isResolved && (
                           <button
+                            type="button"
+                            aria-label="Limpar solicitação"
                             onClick={(e) => {
                               e.stopPropagation();
                               clearServiceRequest(req.id);
@@ -1168,7 +1193,7 @@ export function PDVView() {
           >
             <div className="flex justify-between items-center mb-6 sm:mb-8">
               <h2 className="text-4xl sm:text-5xl font-black italic tracking-tighter">Mesa <span className="text-primary">{selectedTable.number}</span></h2>
-              <button onClick={() => setSelectedTable(null)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all"><X size={24}/></button>
+              <button type="button" aria-label="Fechar mesa" onClick={() => setSelectedTable(null)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all"><X size={24}/></button>
             </div>
 
             {managedTable?.status === 'available' ? (
@@ -1200,9 +1225,11 @@ export function PDVView() {
                         <div className="flex items-start justify-between gap-3">
                           <p className="min-w-0 flex-1 text-base font-black leading-tight text-zinc-50">{o.quantity}x {o.name}</p>
                           <div className="flex shrink-0 items-center gap-2">
-                            <p className="text-sm font-black tabular-nums text-zinc-200">R$ {getOrderItemTotal(o).toFixed(2)}</p>
+                            <p className="text-sm font-black tabular-nums text-zinc-200">{formatCurrency(getOrderItemTotal(o))}</p>
                             {canCancelTableItem && (
                               <button
+                                type="button"
+                                aria-label={`Cancelar ${o.name} da mesa`}
                                 onClick={() => {
                                   setCancelReasonCode('');
                                   setCancelReasonNotes('');
@@ -1236,13 +1263,14 @@ export function PDVView() {
                     <div>
                       <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Total Acumulado</span>
                       <p className="text-4xl sm:text-5xl font-black italic tracking-tighter text-emerald-400">
-                        R$ {getOrderItemsTotal(managedTable?.orders || []).toFixed(2)}
+                        {formatCurrency(getOrderItemsTotal(managedTable?.orders || []))}
                       </p>
                     </div>
                     <div className="flex w-[142px] flex-col gap-2">
                       <div className="grid grid-cols-[44px_1fr] gap-2">
                         <button
                           type="button"
+                          aria-label="Imprimir conta aberta"
                           onClick={() => handlePrintOpenTableReceipt(managedTable)}
                           className="glass flex h-11 items-center justify-center rounded-xl text-emerald-300 transition-all hover:bg-emerald-500/10"
                           title="Imprimir conta aberta"
@@ -1339,7 +1367,7 @@ export function PDVView() {
                  <h2 className="text-3xl sm:text-4xl font-black italic tracking-tighter leading-none">Adicionar à <span className="text-primary">Mesa {selectedTable.number}</span></h2>
                  <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">Selecione os produtos abaixo</p>
                </div>
-               <button onClick={() => setShowProductMenu(false)} className="p-4 sm:p-6 glass rounded-3xl hover:text-rose-500 transition-all shrink-0"><X size={28}/></button>
+               <button type="button" aria-label="Fechar cardápio" onClick={() => setShowProductMenu(false)} className="p-4 sm:p-6 glass rounded-3xl hover:text-rose-500 transition-all shrink-0"><X size={28}/></button>
             </div>
 
             <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-8 overflow-hidden min-h-0">
@@ -1411,7 +1439,7 @@ export function PDVView() {
                          </div>
                          
                          <div className="flex items-center gap-6 shrink-0">
-                           <span className="text-base sm:text-lg font-black italic tracking-tighter text-emerald-400 whitespace-nowrap">R$ {product.price.toFixed(2)}</span>
+                           <span className="text-base sm:text-lg font-black italic tracking-tighter text-emerald-400 whitespace-nowrap">{formatCurrency(product.price)}</span>
                          </div>
                       </motion.button>
                     ))}
@@ -1468,7 +1496,7 @@ export function PDVView() {
                         </div>
 
                         <span className="w-24 text-right text-sm sm:text-base font-black italic text-emerald-400">
-                          R$ {getOrderItemTotal(item).toFixed(2)}
+                          {formatCurrency(getOrderItemTotal(item))}
                         </span>
 
                         <button
@@ -1494,7 +1522,7 @@ export function PDVView() {
                  </div>
                  <div>
                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1">Subtotal</span>
-                   <span className="text-2xl sm:text-3xl font-black italic tracking-tighter text-emerald-400">R$ {getOrderItemsTotal(cart).toFixed(2)}</span>
+                   <span className="text-2xl sm:text-3xl font-black italic tracking-tighter text-emerald-400">{formatCurrency(getOrderItemsTotal(cart))}</span>
                  </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
@@ -1580,7 +1608,7 @@ export function PDVView() {
                     {todayBills.length} mesa(s) fechada(s) hoje, separadas por forma lançada no PDV.
                   </p>
                 </div>
-                <button onClick={() => setShowSalesBreakdown(false)} className="glass p-3 rounded-2xl text-zinc-400 hover:text-white">
+                <button type="button" aria-label="Fechar resumo de vendas" onClick={() => setShowSalesBreakdown(false)} className="glass p-3 rounded-2xl text-zinc-400 hover:text-white">
                   <X size={22} />
                 </button>
               </div>
@@ -1668,7 +1696,7 @@ export function PDVView() {
                     {cashDialog === 'open' ? 'Abrir caixa' : 'Fechar caixa'}
                   </h3>
                 </div>
-                <button onClick={() => setCashDialog(null)} className="glass p-3 rounded-2xl text-zinc-400 hover:text-white">
+                <button type="button" aria-label="Fechar caixa" onClick={() => setCashDialog(null)} className="glass p-3 rounded-2xl text-zinc-400 hover:text-white">
                   <X size={22} />
                 </button>
               </div>
@@ -1865,7 +1893,7 @@ export function PDVView() {
             <div className="glass-card w-full max-w-xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto custom-scrollbar p-5 sm:p-8 lg:p-12 relative z-10 border-white/10 shadow-2xl">
                <div className="flex justify-between items-center mb-8 sm:mb-12">
                   <h2 className="text-2xl sm:text-3xl font-black italic tracking-tighter uppercase">Novo <span className="text-primary">Lançamento</span></h2>
-                  <button onClick={() => setShowManualLog(false)} className="p-4 glass rounded-2xl hover:text-rose-500"><X size={20}/></button>
+                  <button type="button" aria-label="Fechar lançamento manual" onClick={() => setShowManualLog(false)} className="p-4 glass rounded-2xl hover:text-rose-500"><X size={20}/></button>
                </div>
 
                <div className="space-y-6">
@@ -1941,7 +1969,7 @@ export function PDVView() {
                     <Clock size={12} /> {new Date(selectedRequestForDetails.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • {selectedRequestForDetails.status === 'resolved' ? 'Atendimento concluído' : 'Aguardando atendimento'}
                   </p>
                 </div>
-                <button onClick={() => setSelectedRequestForDetails(null)} className="p-4 bg-white/20 rounded-full text-white hover:bg-white/30 transition-all">
+                <button type="button" aria-label="Fechar solicitação" onClick={() => setSelectedRequestForDetails(null)} className="p-4 bg-white/20 rounded-full text-white hover:bg-white/30 transition-all">
                   <X size={28} />
                 </button>
               </div>

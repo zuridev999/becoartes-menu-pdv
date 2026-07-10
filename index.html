@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" style="overscroll-behavior: none !important;">
+<html lang="pt-BR" style="overscroll-behavior: none !important;">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#8b5cf6" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Becoartes PDV</title>
     <script>
       // Restaura o tema salvo antes do React montar (evita flash).
@@ -50,26 +50,6 @@
       // Bloquear menu de contexto (clique direito / toque longo)
       document.addEventListener('contextmenu', e => e.preventDefault());
 
-      window.addEventListener('touchmove', (e) => {
-        // Bloqueio ultra-agressivo: se não estiver explicitamente dentro de um scroll, cancela.
-        const path = e.composedPath ? e.composedPath() : [];
-        let canScroll = false;
-        for (let i = 0; i < path.length; i++) {
-          const el = path[i];
-          if (el.classList && el.classList.contains('custom-scrollbar')) {
-            canScroll = true;
-            break;
-          }
-        }
-        if (!canScroll) {
-          e.preventDefault();
-        }
-      }, { passive: false });
-
-      // Impedir zoom com dois dedos
-      document.addEventListener('touchstart', (e) => {
-        if (e.touches.length > 1) e.preventDefault();
-      }, { passive: false });
     </script>
   </head>
   <body>

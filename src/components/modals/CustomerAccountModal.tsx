@@ -4,6 +4,7 @@ import { X, FileText, Receipt, LayoutDashboard, QrCode, CreditCard, Landmark, Lo
 import { useStore } from '../../store';
 import { CustomerTabApi } from '../../lib/api';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
+import { formatCurrency } from '../../lib/format';
 
 type PaymentMethod = 'pix' | 'credit' | 'debit';
 
@@ -68,32 +69,32 @@ export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[200] flex items-center justify-center p-8 bg-black/80 backdrop-blur-md"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-3 backdrop-blur-md sm:p-8"
     >
       <motion.div 
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
-        className="w-full max-w-3xl bg-[#0a0a0c] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0a0a0c] shadow-2xl sm:max-h-[90vh] sm:rounded-[3rem]"
       >
-        <div className="p-10 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-          <div className="flex items-center gap-6">
-            <div className="w-16 h-16 bg-accent/20 rounded-3xl flex items-center justify-center text-accent">
-              <Receipt size={32} />
+        <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] p-4 sm:p-10">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-6">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent/20 text-accent sm:h-16 sm:w-16 sm:rounded-3xl">
+              <Receipt size={28} />
             </div>
             <div>
-              <h2 className="text-5xl font-black italic tracking-tighter mb-1">Minha <span className="text-accent">Conta</span></h2>
+              <h2 className="mb-1 text-3xl font-black italic tracking-tighter sm:text-5xl">Minha <span className="text-accent">Conta</span></h2>
               <p className="text-gray-500 font-black uppercase tracking-widest text-xs flex items-center gap-2">
                 <LayoutDashboard size={14} /> Mesa {table.number}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-4 glass rounded-full hover:bg-rose-500/20 text-rose-500 transition-all">
-            <X size={32} />
+          <button type="button" aria-label="Fechar conta" onClick={onClose} className="glass shrink-0 rounded-full p-3 text-rose-500 transition-all hover:bg-rose-500/20 sm:p-4">
+            <X size={28} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
-          <div className="space-y-6 mb-12">
+        <div className="custom-scrollbar flex-1 overflow-y-auto p-4 sm:p-12">
+          <div className="mb-8 space-y-6 sm:mb-12">
             {table.orders.length === 0 ? (
               <div className="text-center py-20 opacity-20">
                 <FileText size={80} className="mx-auto mb-6" />
@@ -105,7 +106,7 @@ export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
                   <div className="flex-1">
                     <div className="flex justify-between items-center mb-1">
                       <p className="text-2xl font-black italic tracking-tighter">{item.quantity}x {item.name}</p>
-                      <p className="text-2xl font-black text-white/90">R$ {((item.price + (item.selectedModifiers?.reduce((acc, m) => acc + m.price, 0) || 0)) * item.quantity).toFixed(2)}</p>
+                      <p className="text-lg font-black text-white/90 sm:text-2xl">{formatCurrency((item.price + (item.selectedModifiers?.reduce((acc, m) => acc + m.price, 0) || 0)) * item.quantity)}</p>
                     </div>
                     {item.selectedModifiers && item.selectedModifiers.length > 0 && (
                       <p className="text-sm text-gray-500 font-bold">
@@ -118,32 +119,32 @@ export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          <div className="bg-white/[0.03] rounded-[2.5rem] p-10 space-y-6 border border-white/5">
+          <section className="space-y-4 border-y border-white/10 py-6 sm:space-y-6 sm:py-8">
             <div className="flex justify-between items-center text-gray-500 font-black uppercase tracking-[0.2em] text-sm">
               <span>Subtotal</span>
-              <span>R$ {subtotal.toFixed(2)}</span>
+              <span>{formatCurrency(subtotal)}</span>
             </div>
             <div className="flex justify-between items-center text-gray-500 font-black uppercase tracking-[0.2em] text-sm">
               <span>Taxa de serviço ({formatPercent(serviceFeePercent)}%)</span>
-              <span>R$ {serviceFee.toFixed(2)}</span>
+              <span>{formatCurrency(serviceFee)}</span>
             </div>
             <div className="pt-6 border-t border-white/10 flex justify-between items-center">
               <span className="text-3xl font-black italic tracking-tighter uppercase">Total</span>
-              <span className="text-5xl font-black text-accent italic tracking-tighter">R$ {total.toFixed(2)}</span>
+              <span className="text-3xl font-black text-accent italic tracking-tighter sm:text-5xl">{formatCurrency(total)}</span>
             </div>
             {paid > 0 && (
               <div className="flex justify-between items-center text-emerald-400 font-black uppercase tracking-[0.2em] text-sm">
                 <span>Já pago</span>
-                <span>R$ {paid.toFixed(2)}</span>
+                <span>{formatCurrency(paid)}</span>
               </div>
             )}
             <div className="flex justify-between items-center text-white font-black uppercase tracking-[0.2em] text-sm">
               <span>Saldo aberto</span>
-              <span>R$ {balance.toFixed(2)}</span>
+              <span>{formatCurrency(balance)}</span>
             </div>
-          </div>
+          </section>
 
-          <div className="mt-8 bg-[#111116] rounded-[2.5rem] p-7 border border-white/10">
+          <section className="mt-8 border-t border-white/10 pt-7">
             <div className="mb-5">
               <p className="text-[10px] font-black uppercase tracking-[0.28em] text-accent">Pagamento online</p>
               <h3 className="text-2xl font-black italic tracking-tighter mt-1">Escolha como pagar</h3>
@@ -178,7 +179,7 @@ export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
                 })}
               </div>
             )}
-          </div>
+          </section>
         </div>
 
         <div className="p-10 bg-white/[0.02] border-t border-white/5">

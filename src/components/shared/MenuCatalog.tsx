@@ -4,6 +4,7 @@ import { Search, ChevronRight, Plus, Utensils } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import { isItemAvailable } from '../../lib/utils';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
+import { formatCurrency } from '../../lib/format';
 
 interface MenuCatalogProps {
   onProductSelect: (product: Product) => void;
@@ -24,25 +25,10 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
     })
     .sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0)),
   [dbCategories]);
-  const availableCategoryNames = useMemo(() => availableCategories.map(c => c.name), [availableCategories]);
   const categoryOrder = useMemo(
     () => new Map(availableCategories.map((category, index) => [category.id, Number(category.sortOrder ?? index)])),
     [availableCategories]
   );
-
-  const [selectedCategory, setSelectedCategory] = useState(availableCategoryNames[0] || '');
-  const [searchQuery, setSearchQuery] = useState('');
-  const categorySectionRefs = useRef<Record<string, HTMLElement | null>>({});
-
-  useEffect(() => {
-    if (availableCategoryNames.length === 0) {
-      setSelectedCategory('');
-      return;
-    }
-    if (!selectedCategory || !availableCategoryNames.includes(selectedCategory)) {
-      setSelectedCategory(availableCategoryNames[0]);
-    }
-  }, [availableCategoryNames, selectedCategory]);
 
   const productCountByCategory = useMemo(() => {
     const counts = new Map<string, number>();
@@ -62,6 +48,27 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
     }
     return counts;
   }, [dbCategories, menu, surface]);
+
+  const availableCategoryNames = useMemo(
+    () => availableCategories
+      .filter((category) => (productCountByCategory.get(category.name) || 0) > 0)
+      .map((category) => category.name),
+    [availableCategories, productCountByCategory],
+  );
+
+  const [selectedCategory, setSelectedCategory] = useState(availableCategoryNames[0] || '');
+  const [searchQuery, setSearchQuery] = useState('');
+  const categorySectionRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  useEffect(() => {
+    if (availableCategoryNames.length === 0) {
+      setSelectedCategory('');
+      return;
+    }
+    if (!selectedCategory || !availableCategoryNames.includes(selectedCategory)) {
+      setSelectedCategory(availableCategoryNames[0]);
+    }
+  }, [availableCategoryNames, selectedCategory]);
 
   const visibleMenu = useMemo(() => menu
     .filter(p => {
@@ -120,8 +127,8 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
   const renderGridProduct = (p: Product) => (
     <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className={productCardClassName}>
       <div className={productImageClassName}>
-        <img src={getImageSrc(p.image)} onError={applyImageFallback} className="w-full h-full object-cover object-center group-hover:scale-110 transition-all duration-500" />
-        <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-black/60 backdrop-blur-xl px-3 md:px-4 py-2 rounded-xl font-black text-accent border border-white/10 text-sm md:text-base">R$ {p.price.toFixed(2)}</div>
+        <img src={getImageSrc(p.image)} alt={p.name} onError={applyImageFallback} className="w-full h-full object-cover object-center group-hover:scale-110 transition-all duration-500" />
+        <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-black/70 backdrop-blur-xl px-3 md:px-4 py-2 rounded-xl font-black text-accent border border-white/10 text-sm md:text-base">{formatCurrency(p.price)}</div>
       </div>
       <h4 className="font-black text-xl md:text-2xl mb-2 italic tracking-tighter leading-none">{p.name}</h4>
       <p className="text-gray-500 font-bold text-xs md:text-sm line-clamp-2 leading-relaxed">{p.description}</p>
@@ -178,6 +185,9 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
             <div className="relative w-full md:w-96">
                <input 
                 type="text" 
+                name="menu-search"
+                aria-label="Pesquisar no cardápio"
+                autoComplete="off"
                 placeholder="Pesquisar..." 
                 value={searchQuery} 
                 onChange={(e) => {
@@ -200,7 +210,12 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
             </div>
          </div>
 
-         {navigationMode === 'continuous' && viewMode === 'grid' ? (
+	         {visibleMenu.length === 0 ? (
+	           <div className="border-y border-white/10 py-10 text-center">
+	             <p className="text-sm font-black text-white">Nenhum item encontrado</p>
+	             <p className="mt-1 text-xs font-semibold text-zinc-500">Limpe a busca ou escolha outra categoria.</p>
+	           </div>
+	         ) : navigationMode === 'continuous' && viewMode === 'grid' ? (
            <div className="space-y-10 pb-4">
              {menuByCategory.map(({ category, products }) => (
                <section
@@ -225,14 +240,14 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
          ) : (
            <div className="space-y-6">
              {filteredMenu.map(p => (
-               <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className="glass-card flex items-center p-6 border-white/5 hover:border-primary/30 group transition-all w-full text-left">
-                 <div className="w-48 h-48 rounded-3xl overflow-hidden mr-8"><img src={getImageSrc(p.image)} onError={applyImageFallback} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" /></div>
+	               <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className="glass-card flex items-center p-6 border-white/5 hover:border-primary/30 group transition-all w-full text-left">
+	                 <div className="w-48 h-48 rounded-3xl overflow-hidden mr-8"><img src={getImageSrc(p.image)} alt={p.name} onError={applyImageFallback} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" /></div>
                  <div className="flex-1">
                    <h4 className="font-black text-3xl mb-3 italic tracking-tighter">{p.name}</h4>
                    <p className="text-gray-500 font-bold text-lg leading-relaxed max-w-2xl">{p.description}</p>
                  </div>
                  <div className="text-right">
-                   <p className="text-accent font-black text-4xl tracking-tighter mb-4">R$ {p.price.toFixed(2)}</p>
+	                   <p className="text-accent font-black text-4xl tracking-tighter mb-4">{formatCurrency(p.price)}</p>
                    <div className="btn-beco btn-beco-purple px-8 py-3 rounded-2xl flex items-center gap-3">
                      <Plus size={20} /> <span className="font-black">ADICIONAR</span>
                    </div>

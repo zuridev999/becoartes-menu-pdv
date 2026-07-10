@@ -72,7 +72,7 @@ export function ProductModal({
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`fixed inset-0 z-[750] flex items-center justify-center pointer-events-none font-['Outfit'] ${modalShellClass}`}>
         <div className={`glass-card flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
           <div className={`relative shrink-0 overflow-hidden ${mediaPanelClass}`}>
-             <img src={getImageSrc(product.image)} onError={applyImageFallback} className="w-full h-full object-cover" />
+             <img src={getImageSrc(product.image)} alt={product.name} onError={applyImageFallback} className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
              <div className={tabletLandscape ? 'absolute bottom-5 left-5 right-5 min-[900px]:bottom-10 min-[900px]:left-10 min-[900px]:right-10' : 'absolute bottom-16 left-16'}>
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2 block">{product.categoryName}</span>
@@ -81,7 +81,7 @@ export function ProductModal({
              </div>
           </div>
           <div className={`${contentPanelClass} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
-             <button onClick={onClose} className={`${tabletLandscape ? 'top-5 right-5 p-3' : 'top-8 right-8 p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
+             <button type="button" aria-label="Fechar produto" onClick={onClose} className={`${tabletLandscape ? 'top-5 right-5 p-3' : 'top-8 right-8 p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
              <div className="flex justify-between items-center mb-5 lg:hidden">
                 <h2 className="text-3xl sm:text-4xl font-black italic leading-none pr-14">{product.name}</h2>
              </div>
@@ -158,6 +158,8 @@ export function ProductModal({
                 <div className="space-y-4">
                    <h4 className="text-sm font-black uppercase tracking-widest text-white">Observações Especiais</h4>
                    <textarea 
+                    name="item-notes"
+                    aria-label="Observações do pedido"
                     value={notes}
                     onChange={(e) => canEditItemNotes && setNotes(e.target.value)}
                     disabled={!canEditItemNotes}
@@ -176,9 +178,9 @@ export function ProductModal({
              <div className={`${tabletLandscape ? 'mt-4 pt-4 space-y-3 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-4 sm:mt-8 pt-4 sm:pt-8 space-y-4 sm:space-y-6'} border-t border-white/10 shrink-0`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 glass p-2 rounded-2xl border-white/5">
-                     <button disabled={!canChangeItemQuantity} onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-10 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">-</button>
+                     <button type="button" aria-label="Diminuir quantidade" disabled={!canChangeItemQuantity} onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-11 h-11 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">-</button>
                      <span className="text-xl font-black w-8 text-center">{quantity}</span>
-                     <button disabled={!canChangeItemQuantity} onClick={() => setQuantity(quantity + 1)} className="w-10 h-10 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">+</button>
+                     <button type="button" aria-label="Aumentar quantidade" disabled={!canChangeItemQuantity} onClick={() => setQuantity(quantity + 1)} className="w-11 h-11 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">+</button>
                   </div>
                   <div className="text-right">
                      <p className="text-[10px] font-black uppercase text-gray-500 mb-1">Total do Item</p>
@@ -187,6 +189,7 @@ export function ProductModal({
                 </div>
 
                 <button 
+                type="button"
                 onClick={handleAdd}
                 disabled={isAdding}
                 className={`${tabletLandscape ? 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-5 sm:py-8 text-sm sm:text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4 disabled:opacity-50 disabled:pointer-events-none`}

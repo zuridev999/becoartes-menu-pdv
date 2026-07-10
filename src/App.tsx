@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useStore } from './store';
 import { AnimatePresence } from 'framer-motion';
+import { RefreshCw, TriangleAlert } from 'lucide-react';
 
 // Componentes Comuns
 import { AntigravityErrorBoundary } from './components/common/UI';
@@ -19,7 +20,7 @@ const DeliveryView = lazy(() => import('./views/delivery/DeliveryView').then(mod
 
 function App() {
   const { 
-    init, isLoading, activeView, syncData, setActiveView
+    init, isLoading, initError, activeView, syncData, setActiveView
   } = useStore();
   const [animationFinished, setAnimationFinished] = useState(() => {
     const path = window.location.pathname.replace(/^\/+/, '');
@@ -79,22 +80,40 @@ function App() {
       <div className="min-h-screen bg-transparent">
         <NotificationDisplay />
         {activeView === 'pdv' && <ChecklistAlertDisplay />}
+        {!isLoading && initError && (
+          <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white">
+            <section className="w-full max-w-md border-y border-white/10 py-8">
+              <TriangleAlert className="mx-auto mb-5 h-10 w-10 text-amber-300" aria-hidden="true" />
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">Conexão indisponível</p>
+              <h1 className="mt-2 text-3xl font-black">Não foi possível abrir a operação</h1>
+              <p className="mt-3 text-sm font-semibold text-zinc-400">{initError}</p>
+              <button
+                type="button"
+                onClick={() => init()}
+                className="btn-beco btn-beco-purple mx-auto mt-6 inline-flex min-h-11 items-center gap-2 px-5 py-3"
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                Tentar novamente
+              </button>
+            </section>
+          </main>
+        )}
         {/* Roteamento de Views com Hostname Fallback */}
         <Suspense fallback={null}>
-          {activeView === 'tablet' && <TabletView />}
-          {activeView === 'qr' && <QRView />}
-          {activeView === 'pdv' && <PDVView />}
-          {activeView === 'kitchen' && <KitchenView />}
-          {activeView === 'admin' && <AdminView />}
-          {activeView === 'delivery' && <DeliveryView />}
+          {!initError && activeView === 'tablet' && <TabletView />}
+          {!initError && activeView === 'qr' && <QRView />}
+          {!initError && activeView === 'pdv' && <PDVView />}
+          {!initError && activeView === 'kitchen' && <KitchenView />}
+          {!initError && activeView === 'admin' && <AdminView />}
+          {!initError && activeView === 'delivery' && <DeliveryView />}
         </Suspense>
         
         {/* Fallback amigável para URLs desconhecidas */}
-        {!isLoading && !['tablet', 'pdv', 'kitchen', 'admin', 'qr', 'delivery'].includes(activeView) && (
+        {!isLoading && !initError && !['tablet', 'pdv', 'kitchen', 'admin', 'qr', 'delivery'].includes(activeView) && (
           <div className="flex flex-col items-center justify-center h-screen text-center p-12">
             <h2 className="text-4xl font-black italic mb-4 text-white">Módulo não encontrado</h2>
             <p className="text-gray-500 mb-8">O hostname <span className="text-primary font-bold">{window.location.hostname}</span> não está mapeado para nenhum módulo operacional.</p>
-            <button onClick={() => window.location.href = 'https://pdv.becoartes.com'} className="btn-beco btn-beco-purple px-8 py-4">Ir ao PDV Central</button>
+            <button type="button" onClick={() => window.location.href = 'https://pdv.becoartes.com'} className="btn-beco btn-beco-purple px-8 py-4">Ir ao PDV Central</button>
           </div>
         )}
       </div>

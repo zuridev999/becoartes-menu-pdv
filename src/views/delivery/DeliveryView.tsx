@@ -1157,9 +1157,9 @@ function DeliveryBuildingScreen() {
           <Bike size={38} />
         </div>
         <p className="text-[10px] font-black uppercase tracking-[0.32em] text-red-300 mb-4">delivery.becoartes.com</p>
-        <h1 className="text-5xl sm:text-7xl font-black italic tracking-tighter leading-none">Estamos criando o seu delivery</h1>
+        <h1 className="text-5xl sm:text-7xl font-black italic tracking-tighter leading-none">Delivery ainda não lançado</h1>
         <p className="mt-6 text-lg sm:text-xl font-bold text-zinc-400">
-          Em breve você vai pedir Becoartes por aqui.
+          Os pedidos online permanecem desativados enquanto finalizamos e homologamos a operação.
         </p>
       </div>
     </div>

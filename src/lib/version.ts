@@ -1,4 +1,4 @@
-export const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'v1.4.84';
+export const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'v1.4.85';
 
 export const APP_COMMIT = import.meta.env.VITE_APP_COMMIT || '';
 
@@ -8,10 +8,10 @@ export const APP_BUILD_LABEL = APP_COMMIT
 
 export const getAppLabel = () => {
   if (typeof window === 'undefined') return 'PDV';
-  const host = window.location.hostname;
-  if (host.includes('tablet')) return 'Tablet';
-  if (host.includes('coz')) return 'Cozinha';
-  if (host.includes('bar')) return 'Bar';
-  if (host.includes('qr')) return 'QR';
+  const location = `${window.location.hostname}${window.location.pathname}`.toLowerCase();
+  if (location.includes('tablet')) return 'Tablet';
+  if (location.includes('/bar') || location.includes('bar.')) return 'Bar';
+  if (location.includes('/kitchen') || location.includes('coz')) return 'Cozinha';
+  if (location.includes('/qr') || location.includes('qr.')) return 'QR';
   return 'PDV';
 };

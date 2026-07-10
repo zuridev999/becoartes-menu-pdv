@@ -39,7 +39,7 @@ html, body {
     radial-gradient(circle at 85% -5%, rgba(250, 204, 21, 0.05), transparent 26rem),
     radial-gradient(circle at 10% 0%, rgba(139, 92, 246, 0.16), transparent 32rem),
     linear-gradient(170deg, #17141d 0%, #0a090d 55%, #0d0b12 100%);
-  touch-action: none; /* Bloqueia TUDO por padrão */
+  touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -118,6 +118,22 @@ html.light body {
 .custom-scrollbar {
   touch-action: pan-x pan-y !important;
   overscroll-behavior-y: contain !important;
+}
+
+button,
+[role="button"],
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+@media (pointer: coarse) {
+  button,
+  [role="button"] {
+    min-height: 44px;
+  }
 }
 
 #root {

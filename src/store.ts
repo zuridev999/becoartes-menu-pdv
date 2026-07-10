@@ -139,6 +139,7 @@ export interface AppState {
   adminTab: AdminTab;
   adminMode: 'menu' | 'settings';
   isLoading: boolean;
+  initError: string | null;
   setAdminTab: (tab: AdminTab) => void;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
   cashState: CashState | null;
@@ -214,6 +215,7 @@ export const useStore = create<AppState>((set, get) => ({
   adminTab: 'config',
   adminMode: 'settings',
   isLoading: true,
+  initError: null,
   banners: [
     '/slideshow/beco-drinks.jpg',
     '/slideshow/beco-food.jpg',
@@ -405,6 +407,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   init: async () => {
+    set({ initError: null });
     // Só mostra o loader se for a PRIMEIRA vez absoluta que carrega algo
     if (get().categories.length === 0) {
       set({ isLoading: true });
@@ -505,6 +508,9 @@ export const useStore = create<AppState>((set, get) => ({
 
     } catch (e) {
       console.error("❌ Erro ao inicializar App:", e);
+      set({
+        initError: getErrorMessage(e) || 'Não foi possível carregar os dados operacionais.',
+      });
     } finally {
       set({ isLoading: false });
     }

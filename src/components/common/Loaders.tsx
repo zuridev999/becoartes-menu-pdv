@@ -1,30 +1,18 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
-import { useStore } from '../../store';
 import { fallbackImageSrc, getImageSrc } from '../../lib/image';
 
-const DEFAULT_SLIDESHOW_IMAGES = [
-  '/slideshow/beco-drinks.jpg',
-  '/slideshow/beco-food.jpg',
-  '/slideshow/beco-bar.jpg'
-];
-
 export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => void, isLoading: boolean }) {
-  const { settings } = useStore();
-  const configuredImages = settings.tablet.bannerUrls.filter(url => url.trim() !== '');
-  const bannerImages = configuredImages.length > 0 ? configuredImages : DEFAULT_SLIDESHOW_IMAGES;
-
   useEffect(() => {
     const hasLoaded = sessionStorage.getItem('beco_loaded');
     if (hasLoaded && !isLoading) {
       onComplete();
     } else if (!isLoading) {
-      // Breve o suficiente para operação, mantendo só um respiro visual na primeira carga.
       const timer = setTimeout(() => {
         sessionStorage.setItem('beco_loaded', 'true');
         onComplete();
-      }, 700);
+      }, 250);
       return () => clearTimeout(timer);
     }
   }, [onComplete, isLoading]);
@@ -32,40 +20,20 @@ export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => voi
   return (
     <motion.div 
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-[#0a0a0c] flex flex-col items-center justify-center z-[1000] font-['Outfit'] overflow-hidden"
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-center overflow-hidden bg-[#0a0a0c] p-6 font-['Outfit']"
     >
-      {/* Slideshow de Fundo */}
-      {bannerImages.length > 0 && (
-        <div className="absolute inset-0 z-0">
-          <Slideshow images={bannerImages} interval={5000} />
-          <div className="absolute inset-0 bg-black/40" />
-        </div>
-      )}
-
-      <div className="relative z-10 mb-12">
-        <motion.div 
-          initial={{ rotate: 0, scale: 0.8 }}
-          animate={{ rotate: 360, scale: 1 }}
-          transition={{ duration: 1.5, ease: "anticipate" }}
-          className="w-32 h-32 bg-gradient-to-tr from-primary to-purple-600 rounded-[2.5rem] flex items-center justify-center shadow-[0_0_50px_rgba(139,92,246,0.3)]"
-        >
-          <span className="text-5xl font-black text-white">B</span>
-        </motion.div>
-        <div className="absolute inset-[-20px] border border-primary/20 rounded-[3.5rem] animate-pulse" />
-      </div>
-
-      <div className="relative z-10 text-center">
-        <h2 className="text-5xl font-black tracking-tighter mb-4 text-white italic">
-          BECOARTES <span className="text-primary">PDV</span>
-        </h2>
-        <div className="flex items-center justify-center gap-4 text-white/50">
+      <img src="/favicon.svg" alt="Becoartes" className="mb-6 h-14 w-14 rounded-2xl" />
+      <div className="text-center">
+        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Becoartes</p>
+        <h2 className="mt-2 text-2xl font-black text-white">Preparando a operação</h2>
+        <div className="mt-4 flex items-center justify-center gap-3 text-zinc-400" role="status" aria-live="polite">
           {isLoading ? (
              <>
                <Loader2 className="animate-spin" size={20} />
-               <p className="text-[10px] font-black uppercase tracking-[0.5em]">Sincronizando Galáxia...</p>
+               <p className="text-xs font-bold">Carregando dados atualizados...</p>
              </>
           ) : (
-             <p className="text-[10px] font-black uppercase tracking-[0.5em] text-accent animate-pulse">Prepare o seu Coração...</p>
+             <p className="text-xs font-bold text-emerald-300">Pronto.</p>
           )}
         </div>
       </div>

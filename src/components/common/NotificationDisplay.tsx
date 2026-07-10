@@ -43,7 +43,9 @@ export function NotificationDisplay() {
               <p className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-1">{notif.type === 'service' ? 'Solicitação' : 'Notificação'}</p>
               <p className="text-sm font-bold text-white leading-tight">{notif.message}</p>
             </div>
-            <button 
+            <button
+              type="button"
+              aria-label="Fechar notificação"
               onClick={() => clearNotification(notif.id)}
               className="text-zinc-500 hover:text-white transition-colors"
             >

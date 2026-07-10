@@ -75,6 +75,8 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
             {tables.map(table => (
               <button 
                 key={table.id} 
+                type="button"
+                aria-label={`Vincular mesa ${table.number}`}
                 onClick={() => void handleTableSelect(table.id)}
                 className="h-20 rounded-2xl glass border-white/5 font-black text-xl hover:bg-primary hover:text-white transition-all transform hover:scale-110 active:scale-95"
               >
@@ -108,11 +110,14 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, 'C'].map((num, idx) => (
             <button
               key={idx}
+              type="button"
+              aria-label={num === 'C' ? 'Apagar PIN' : num === '' ? 'Tecla vazia' : `Dígito ${num}`}
+              disabled={num === ''}
               onClick={() => {
                 if (num === 'C') setPin('');
                 else if (num !== '') void handlePinSubmit(num.toString());
               }}
-              className={`h-16 rounded-2xl flex items-center justify-center text-xl font-black transition-all active:scale-90 ${num === '' ? 'pointer-events-none' : 'glass border-white/5 hover:bg-white/10'}`}
+              className={`h-16 rounded-2xl flex items-center justify-center text-xl font-black transition-all active:scale-90 ${num === '' ? 'pointer-events-none opacity-0' : 'glass border-white/5 hover:bg-white/10'}`}
             >
               {num}
             </button>

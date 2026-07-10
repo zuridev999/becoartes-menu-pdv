@@ -79,12 +79,12 @@ export function ActionDialog({
               <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center ${isDanger ? 'bg-rose-500/10 text-rose-400' : 'bg-primary/10 text-primary'}`}>
                 {isDanger ? <AlertTriangle size={26} /> : <CheckCircle2 size={26} />}
               </div>
-              <button onClick={onClose} className="p-3 glass rounded-xl hover:text-rose-400 transition-all">
+              <button type="button" aria-label="Fechar confirmação" onClick={onClose} className="p-3 glass rounded-xl hover:text-rose-400 transition-all">
                 <X size={18} />
               </button>
             </div>
           ) : (
-            <button onClick={onClose} className="absolute right-5 top-5 p-3 glass rounded-xl hover:text-rose-400 transition-all">
+            <button type="button" aria-label="Fechar confirmação" onClick={onClose} className="absolute right-5 top-5 p-3 glass rounded-xl hover:text-rose-400 transition-all">
               <X size={18} />
             </button>
           )}

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, ShoppingBag, Trash2, Send, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
+import { formatCurrency } from '../../lib/format';
 
 export function CustomerOrderModal({
   onClose,
@@ -91,7 +92,7 @@ export function CustomerOrderModal({
               <p className="text-gray-500 font-black uppercase tracking-widest text-[9px] sm:text-xs">Revise antes de enviar</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-3 sm:p-4 glass rounded-full hover:bg-rose-500/20 text-rose-500 transition-all shrink-0">
+          <button type="button" aria-label="Fechar pedido" onClick={onClose} className="p-3 sm:p-4 glass rounded-full hover:bg-rose-500/20 text-rose-500 transition-all shrink-0">
             <X size={24} className="sm:hidden" />
             <X size={32} className="hidden sm:block" />
           </button>
@@ -112,9 +113,9 @@ export function CustomerOrderModal({
               )}
             </div>
           ) : (
-            <div className="space-y-4 sm:space-y-8">
+            <div className="divide-y divide-white/10 border-y border-white/10">
               {table.cart.map((item, idx) => (
-                <div key={idx} className="flex justify-between items-center gap-3 group bg-white/[0.02] p-4 sm:p-6 rounded-3xl sm:rounded-[2rem] border border-white/5">
+                <div key={idx} className="group flex items-center justify-between gap-3 py-4 sm:py-6">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 sm:gap-6 mb-2">
                        <div className="bg-primary/10 text-primary w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex shrink-0 items-center justify-center font-black text-xl sm:text-2xl">
@@ -122,7 +123,7 @@ export function CustomerOrderModal({
                        </div>
                        <div className="min-w-0">
                           <p className="text-lg sm:text-2xl font-black italic tracking-tighter leading-tight mb-1">{item.name}</p>
-                          <p className="text-accent font-black text-sm sm:text-base">R$ {getOrderItemTotal(item).toFixed(2)}</p>
+                          <p className="text-accent font-black text-sm sm:text-base">{formatCurrency(getOrderItemTotal(item))}</p>
                        </div>
                     </div>
                     {item.selectedModifiers && item.selectedModifiers.length > 0 && (
@@ -133,7 +134,7 @@ export function CustomerOrderModal({
                       </div>
                     )}
                   </div>
-                  <button onClick={() => removeFromCart(item.id)} className="p-3 sm:p-4 glass rounded-2xl text-rose-500 hover:bg-rose-500/20 transition-all shrink-0">
+                  <button type="button" aria-label={`Remover ${item.name} do pedido`} onClick={() => removeFromCart(item.id)} className="p-3 sm:p-4 glass rounded-2xl text-rose-500 hover:bg-rose-500/20 transition-all shrink-0">
                     <Trash2 size={20} className="sm:hidden" />
                     <Trash2 size={24} className="hidden sm:block" />
                   </button>
@@ -149,12 +150,13 @@ export function CustomerOrderModal({
                 <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-2">
                   {table.cart.length > 0 ? 'Total do Pedido' : 'Total na Minha Conta'}
                 </p>
-                <p className="text-4xl sm:text-6xl font-black text-accent italic tracking-tighter">R$ {displayTotal.toFixed(2)}</p>
+                <p className="text-4xl sm:text-6xl font-black text-accent italic tracking-tighter">{formatCurrency(displayTotal)}</p>
               </div>
            </div>
 
            <div className="flex gap-6">
               <button
+                type="button"
                 onClick={table.cart.length === 0 && hasAccountItems ? handleOpenAccount : handleSendOrder}
                 disabled={isSending || (table.cart.length === 0 && !hasAccountItems)}
                 className="flex-1 py-5 sm:py-9 btn-beco btn-beco-purple text-base sm:text-3xl font-black tracking-[0.16em] sm:tracking-[0.2em] rounded-3xl sm:rounded-[2.5rem] shadow-2xl shadow-primary/30 flex items-center justify-center gap-3 sm:gap-4 animate-pulse-slow disabled:opacity-20"

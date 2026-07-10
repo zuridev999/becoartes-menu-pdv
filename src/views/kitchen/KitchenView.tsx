@@ -71,6 +71,9 @@ function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
         <h1 className="text-4xl sm:text-5xl font-black italic tracking-tighter mb-6 sm:mb-10">Digite o PIN</h1>
 
         <input
+          name="station-pin"
+          aria-label={`PIN de acesso do ${stationLabel.toLowerCase()}`}
+          autoComplete="off"
           value={pin}
           onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
           inputMode="numeric"
@@ -82,7 +85,7 @@ function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
           placeholder="••••"
         />
 
-        {error && <p className="mt-4 text-rose-400 text-[10px] font-black tracking-widest">{error}</p>}
+        {error && <p role="alert" className="mt-4 text-rose-400 text-[10px] font-black tracking-widest">{error}</p>}
 
         <div className="grid grid-cols-3 gap-2.5 sm:gap-3 mt-6 sm:mt-8">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(digit => (
@@ -147,11 +150,13 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
   const isDelivery = order.origin === 'delivery';
 
   return (
-    <motion.div 
+    <motion.button
+      type="button"
+      aria-label={`Abrir pedido ${isDelivery ? 'delivery' : `da mesa ${order.tableNumber}`}`}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className={`p-4 sm:p-6 pt-5 sm:pt-6 cursor-pointer relative border-2 sm:border-[3px] rounded-[1.75rem] sm:rounded-[2.5rem] transition-all duration-300 min-h-[260px] sm:h-full flex flex-col shadow-lg uppercase ${
+      className={`p-4 sm:p-6 pt-5 sm:pt-6 cursor-pointer relative border-2 sm:border-[3px] rounded-[1.75rem] sm:rounded-[2.5rem] transition-all duration-300 min-h-[260px] sm:h-full flex flex-col text-left shadow-lg uppercase ${
         isDanger ? 'bg-red-600 border-red-700 text-black shadow-red-200' : 
         isWarning ? 'bg-amber-400 border-amber-500 text-black shadow-amber-100' : 
         'bg-white border-gray-100 text-black'
@@ -232,7 +237,7 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
           {isDanger ? 'Atrasado' : isWarning ? 'Atenção' : 'Normal'}
         </span>
       </div>
-    </motion.div>
+    </motion.button>
   );
 }
 
@@ -281,7 +286,7 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
                 <p className="text-black/60 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] text-[10px] sm:text-sm truncate">Preparando Agora</p>
              </div>
           </div>
-          <button type="button" onClick={onClose} className="p-4 sm:p-6 bg-gray-100 rounded-full hover:bg-rose-50 text-black transition-all shrink-0">
+          <button type="button" aria-label="Fechar pedido" onClick={onClose} className="p-4 sm:p-6 bg-gray-100 rounded-full hover:bg-rose-50 text-black transition-all shrink-0">
             <X size={28} className="sm:w-10 sm:h-10" />
           </button>
         </div>         <div className="flex-1 overflow-y-auto p-4 sm:p-12 custom-scrollbar bg-white">
@@ -564,6 +569,7 @@ export function KitchenView() {
     <div className="p-2 sm:p-4 bg-[#09090b] h-[100dvh] text-white font-['Outfit'] overflow-hidden flex flex-col uppercase">
       <button
         type="button"
+        aria-label="Ativar tela cheia"
         onClick={requestFullscreen}
         className="fixed top-3 left-3 sm:top-8 sm:left-8 z-[400] w-11 h-11 sm:w-14 sm:h-14 rounded-2xl glass border-white/5 text-white/80 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center shadow-2xl"
         title="Ativar tela cheia"

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { ShoppingBag, LayoutDashboard, Bell, FileText, Send, UserRound, Phone, BadgeCheck } from 'lucide-react';
+import { ShoppingBag, LayoutDashboard, Bell, FileText, Send, UserRound, Phone, BadgeCheck, QrCode, RefreshCw } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import type { CustomerTab } from '../../types';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
@@ -10,10 +10,19 @@ import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
 import { getOrderItemsTotal } from '../../lib/totals';
 import { AppApi, CustomerTabApi, setPublicTableAccess } from '../../lib/api';
+import { formatCurrency } from '../../lib/format';
 
 const CUSTOMER_TAB_CPF_KEY = 'becoartes_customer_tab_cpf';
 
 const normalizeCpfInput = (value: string) => value.replace(/\D/g, '').slice(0, 11);
+
+const getRouteTableNumber = () => {
+  const pathMatch = window.location.pathname.match(/(?:^|\/)mesa\/(\d+)(?:\/)?$/);
+  const params = new URLSearchParams(window.location.search);
+  const rawValue = pathMatch?.[1] || params.get('mesa') || params.get('table');
+  const tableNumber = Number(rawValue);
+  return Number.isFinite(tableNumber) && tableNumber > 0 ? tableNumber : null;
+};
 
 export function QRView() {
   const { currentTableId, tables, setCurrentTableId, settings } = useStore();
@@ -21,20 +30,17 @@ export function QRView() {
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
-  const [routeTableNumber, setRouteTableNumber] = useState<number | null>(null);
+  const [routeTableNumber, setRouteTableNumber] = useState<number | null>(getRouteTableNumber);
   const [isTableAccessReady, setIsTableAccessReady] = useState(false);
+  const [tableAccessError, setTableAccessError] = useState('');
+  const [tableAccessRetry, setTableAccessRetry] = useState(0);
   const isCouponRulesPage = window.location.pathname.includes('regulamento-cupom');
 
   useEffect(() => {
     if (settings.qrMode === 'comanda') return;
-    const pathMatch = window.location.pathname.match(/(?:^|\/)mesa\/(\d+)(?:\/)?$/);
-    const params = new URLSearchParams(window.location.search);
-    const tableFromUrl = pathMatch?.[1] || params.get('mesa') || params.get('table');
-    const tableNumber = Number(tableFromUrl);
-
-    if (!Number.isFinite(tableNumber) || tableNumber <= 0) return;
-
+    const tableNumber = getRouteTableNumber();
     setRouteTableNumber(tableNumber);
+    if (!tableNumber) return;
 
     const table = tables.find(t => t.number === tableNumber);
     if (table && table.id !== currentTableId) {
@@ -42,29 +48,35 @@ export function QRView() {
     }
   }, [currentTableId, setCurrentTableId, settings.qrMode, tables]);
 
+  const routeTable = routeTableNumber ? tables.find(t => t.number === routeTableNumber) : null;
+  const routeTableId = routeTable?.id;
+  const resolvedRouteTableNumber = routeTable?.number;
+
   useEffect(() => {
     if (settings.qrMode === 'comanda' || !routeTableNumber) return;
-    const table = tables.find(t => t.number === routeTableNumber);
-    if (!table) return;
+    if (!routeTableId || !resolvedRouteTableNumber) return;
 
     let cancelled = false;
     setIsTableAccessReady(false);
-    AppApi.createTableAccessToken({ origin: 'qr', tableId: table.id, tableNumber: table.number })
+    setTableAccessError('');
+    AppApi.createTableAccessToken({ origin: 'qr', tableId: routeTableId, tableNumber: resolvedRouteTableNumber })
       .then((access) => {
         if (cancelled) return;
         setPublicTableAccess(access);
         setIsTableAccessReady(true);
       })
       .catch(() => {
-        if (!cancelled) setIsTableAccessReady(false);
+        if (!cancelled) {
+          setIsTableAccessReady(false);
+          setTableAccessError('Não foi possível validar esta mesa agora.');
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [routeTableNumber, settings.qrMode, tables]);
+  }, [resolvedRouteTableNumber, routeTableId, routeTableNumber, settings.qrMode, tableAccessRetry]);
 
-  const routeTable = routeTableNumber ? tables.find(t => t.number === routeTableNumber) : null;
   const currentTable = routeTableNumber ? routeTable : tables.find(t => t.id === currentTableId);
 
   if (isCouponRulesPage) {
@@ -88,6 +100,21 @@ export function QRView() {
 
   if (settings.qrMode === 'comanda') {
     return <ComandaQRExperience />;
+  }
+
+  if (!routeTableNumber) {
+    return (
+      <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white font-['Outfit']">
+        <section className="w-full max-w-md border-y border-white/10 py-9">
+          <QrCode className="mx-auto h-12 w-12 text-primary" aria-hidden="true" />
+          <p className="mt-5 text-[10px] font-black uppercase tracking-[0.24em] text-primary">Cardápio da mesa</p>
+          <h1 className="mt-2 text-4xl font-black leading-tight">Escaneie o QR da sua mesa</h1>
+          <p className="mx-auto mt-4 max-w-sm text-sm font-semibold leading-relaxed text-zinc-400">
+            O cardápio e os pedidos só abrem pelo QR identificado na mesa. Se ele estiver danificado, chame alguém da equipe.
+          </p>
+        </section>
+      </main>
+    );
   }
 
   if (routeTableNumber && tables.length === 0) {
@@ -119,6 +146,25 @@ export function QRView() {
   }
 
   if (routeTableNumber && currentTable && !isTableAccessReady) {
+    if (tableAccessError) {
+      return (
+        <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white font-['Outfit']">
+          <section className="w-full max-w-md border-y border-rose-500/25 py-8">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-rose-300">Acesso à mesa</p>
+            <h1 className="mt-2 text-3xl font-black">Mesa {routeTableNumber}</h1>
+            <p className="mt-3 text-sm font-semibold text-zinc-400">{tableAccessError}</p>
+            <button
+              type="button"
+              onClick={() => setTableAccessRetry((current) => current + 1)}
+              className="btn-beco btn-beco-purple mx-auto mt-6 inline-flex min-h-11 items-center gap-2 px-5 py-3"
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              Tentar novamente
+            </button>
+          </section>
+        </main>
+      );
+    }
     return (
       <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-8 text-center">
         <div className="glass-card max-w-md p-8 border-primary/30">
@@ -213,8 +259,8 @@ export function QRView() {
             </p>
             <p className="text-lg font-black text-white leading-none">
               {hasCartItems
-                ? `Enviar meu pedido - R$ ${cartTotal.toFixed(2)}`
-                : `Minha conta - R$ ${accountTotal.toFixed(2)}`}
+                ? `Enviar meu pedido - ${formatCurrency(cartTotal)}`
+                : `Minha conta - ${formatCurrency(accountTotal)}`}
             </p>
           </div>
         </button>
@@ -332,14 +378,14 @@ function ComandaQRExperience() {
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Nome</span>
                   <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
                     <UserRound size={18} className="text-primary" />
-                    <input value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="Seu nome" />
+                    <input name="name" autoComplete="name" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="Seu nome" />
                   </div>
                 </label>
                 <label className="block">
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Telefone</span>
                   <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
                     <Phone size={18} className="text-primary" />
-                    <input value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="WhatsApp" />
+                    <input name="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="WhatsApp" />
                   </div>
                 </label>
               </>
@@ -348,6 +394,8 @@ function ComandaQRExperience() {
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">CPF</span>
               <input
                 value={cpf}
+                name="cpf"
+                autoComplete="off"
                 onChange={e => setCpf(normalizeCpfInput(e.target.value))}
                 inputMode="numeric"
                 className="mt-2 w-full rounded-3xl border border-white/10 bg-white/[0.04] px-5 py-4 sm:py-5 outline-none text-xl sm:text-2xl font-black tracking-[0.16em] focus:border-primary/70"
@@ -438,7 +486,7 @@ function ComandaQRExperience() {
               {hasCartItems ? `${cartCount} item${cartCount > 1 ? 's' : ''} no pedido` : hasAccountItems ? `${accountCount} item${accountCount > 1 ? 's' : ''} na minha comanda` : 'Nenhum consumo lançado ainda'}
             </p>
             <p className="text-lg font-black text-white leading-none">
-              {hasCartItems ? `Enviar meu pedido - R$ ${cartTotal.toFixed(2)}` : `Minha comanda - R$ ${accountTotal.toFixed(2)}`}
+              {hasCartItems ? `Enviar meu pedido - ${formatCurrency(cartTotal)}` : `Minha comanda - ${formatCurrency(accountTotal)}`}
             </p>
           </div>
         </button>
