@@ -230,8 +230,9 @@ export function QRView() {
       <div className="h-full pt-16 sm:pt-20 pb-[6.5rem] sm:pb-28">
         <MenuCatalog
           onProductSelect={setSelectedProduct}
-          viewMode="grid"
+          viewMode="list"
           navigationMode="continuous"
+          presentation="compact-menu"
           footerContent={(
             <footer className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center shadow-2xl shadow-black/20">
               <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
@@ -468,6 +469,7 @@ function ComandaQRExperience() {
           onProductSelect={setSelectedProduct}
           viewMode="grid"
           navigationMode="continuous"
+          presentation="compact-menu"
           footerContent={(
             <footer className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center shadow-2xl shadow-black/20">
               <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.24em] text-zinc-500">

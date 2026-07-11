@@ -11,10 +11,11 @@ interface MenuCatalogProps {
   viewMode?: 'grid' | 'list';
   navigationMode?: 'sidebar' | 'menu' | 'continuous';
   surface?: 'default' | 'delivery';
+  presentation?: 'default' | 'compact-menu';
   footerContent?: ReactNode;
 }
 
-export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', surface = 'default', footerContent }: MenuCatalogProps) {
+export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', surface = 'default', presentation = 'default', footerContent }: MenuCatalogProps) {
   const { menu, categories: dbCategories } = useStore();
   const availableCategories = useMemo(() => dbCategories
     .filter(c => {
@@ -117,6 +118,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
   };
 
   const isContinuousMenu = navigationMode === 'continuous';
+  const isCompactMenu = presentation === 'compact-menu';
   const gridClassName = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 pb-4";
   const productCardClassName = isContinuousMenu
     ? "glass-card flex flex-col p-3.5 sm:p-4 md:p-6 border-white/5 hover:border-primary/30 group transition-all text-left active:scale-[0.98]"
@@ -132,6 +134,30 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       </div>
       <h4 className="font-black text-xl md:text-2xl mb-2 italic tracking-tighter leading-none">{p.name}</h4>
       <p className="text-gray-500 font-bold text-xs md:text-sm line-clamp-2 leading-relaxed">{p.description}</p>
+    </motion.button>
+  );
+  const renderCompactProduct = (p: Product) => (
+    <motion.button
+      layout
+      key={p.id}
+      onClick={() => onProductSelect(p)}
+      className="glass-card group flex min-h-[132px] w-full items-stretch gap-3 p-3 text-left active:scale-[0.99]"
+    >
+      <div className="flex min-w-0 flex-1 flex-col py-0.5">
+        <h4 className="line-clamp-2 text-[17px] font-black leading-tight tracking-tight text-white">{p.name}</h4>
+        {p.description && (
+          <p className="mt-1.5 line-clamp-2 text-xs font-semibold leading-relaxed text-zinc-400">{p.description}</p>
+        )}
+        <p className="mt-auto pt-2 text-base font-black tracking-tight text-accent">{formatCurrency(p.price)}</p>
+      </div>
+      <div className="h-[106px] w-[106px] shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
+        <img
+          src={getImageSrc(p.image)}
+          alt={p.name}
+          onError={applyImageFallback}
+          className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+        />
+      </div>
     </motion.button>
   );
 
@@ -215,7 +241,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
 	             <p className="text-sm font-black text-white">Nenhum item encontrado</p>
 	             <p className="mt-1 text-xs font-semibold text-zinc-500">Limpe a busca ou escolha outra categoria.</p>
 	           </div>
-	         ) : navigationMode === 'continuous' && viewMode === 'grid' ? (
+         ) : navigationMode === 'continuous' && (viewMode === 'grid' || isCompactMenu) ? (
            <div className="space-y-10 pb-4">
              {menuByCategory.map(({ category, products }) => (
                <section
@@ -227,8 +253,8 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
                    <p className="text-[9px] font-black uppercase tracking-[0.35em] text-primary">{products.length} itens</p>
                    <h4 className="text-3xl sm:text-4xl font-black italic tracking-tighter">{category}</h4>
                  </div>
-                 <div className={gridClassName}>
-                   {products.map(renderGridProduct)}
+                 <div className={isCompactMenu ? 'space-y-3' : gridClassName}>
+                   {products.map(isCompactMenu ? renderCompactProduct : renderGridProduct)}
                  </div>
                </section>
              ))}
