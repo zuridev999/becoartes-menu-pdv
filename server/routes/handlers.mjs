@@ -64,6 +64,7 @@ export const createRouteHandlers = (services) => ({
   'POST /api/catalog/category/delete': async (body) => services.deleteCategory(body),
   'POST /api/catalog/category/visibility': async (body) => services.toggleCategoryVisibility(body),
   'POST /api/catalog/product': async (body, context) => services.upsertProduct(body, context.session),
+  'POST /api/catalog/product/cmv': async (body, context) => services.ensureCmvForMenuProduct(body, context.session),
   'POST /api/catalog/product/delete': async (body, context) => services.deleteProduct(body, context.session),
   'POST /api/catalog/product/visibility': async (body) => services.toggleProductVisibility(body),
   'POST /api/catalog/product/delivery-visibility': async (body) => services.toggleProductDeliveryVisibility(body),

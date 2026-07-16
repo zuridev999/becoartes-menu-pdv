@@ -160,6 +160,13 @@ try {
   assert.equal(Number(migrationLedger.count) > 0, true, 'empty database bootstrap should apply versioned migrations');
   await seedCatalogAndStock();
 
+  const ensuredCmv = await post('/api/catalog/product/cmv', { productId: 'prod_test' }, admin.sessionToken);
+  assert.equal(ensuredCmv.ok, true);
+  assert.equal(ensuredCmv.data.created, true, 'produto sem CMV deve criar uma ficha técnica vazia vinculada');
+  const cmvRow = await getScalar("SELECT pdv_product_id, custo_total FROM fichas_tecnicas WHERE pdv_product_id = 'prod_test'");
+  assert.equal(cmvRow.pdv_product_id, 'prod_test');
+  assert.equal(Number(cmvRow.custo_total || 0), 0, 'CMV criado deve permanecer zerado até receber ingredientes');
+
   const denied = await post('/api/sellers', {
     seller: {
       id: 'blocked_seller',
@@ -233,6 +240,55 @@ try {
   const afterOrderStock = await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'");
   assert.equal(Number(afterOrderStock.quantidade_atual), 9, 'send-to-kitchen should decrement stock once');
 
+  await post('/api/tables/open', { tableId: '2', wasAvailable: true }, admin.sessionToken);
+  const cancellableOrder = await post('/api/orders/send-to-kitchen', {
+    orderId: 'order_cancel',
+    tableId: '2',
+    total: 100,
+    origin: 'pdv',
+    sellerId: admin.seller.id,
+    items: [orderItem('item_cancel')],
+  }, admin.sessionToken);
+  assert.equal(cancellableOrder.ok, true);
+  const afterCancellableOrder = await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'");
+  assert.equal(Number(afterCancellableOrder.quantidade_atual), 8);
+
+  const cancelled = await post('/api/order-items/delete', {
+    itemId: 'item_cancel',
+    cancelContext: {
+      tableNumber: 2,
+      itemName: 'Produto Teste',
+      quantity: 1,
+      sellerName: 'Admin',
+      sellerPermission: 'admin',
+      reasonCode: 'test',
+      reasonLabel: 'Teste automatizado',
+      reasonNotes: 'Cancelamento validado pelo teste',
+    },
+  }, admin.sessionToken);
+  assert.equal(cancelled.ok, true);
+  assert.equal(cancelled.data.inventoryReversalCount, 1);
+  const afterCancelStock = await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'");
+  assert.equal(Number(afterCancelStock.quantidade_atual), 9, 'cancelamento deve devolver ao estoque o item baixado');
+  const cancelReversal = await getScalar("SELECT COUNT(*) AS count FROM estoque_movimentacoes WHERE order_item_id = 'item_cancel' AND source_item_kind = 'cancel_reversal'");
+  assert.equal(Number(cancelReversal.count), 1, 'cancelamento deve registrar estorno auditável e idempotente');
+
+  await post('/api/order-items/delete', {
+    itemId: 'item_cancel',
+    cancelContext: {
+      tableNumber: 2,
+      itemName: 'Produto Teste',
+      quantity: 1,
+      sellerName: 'Admin',
+      sellerPermission: 'admin',
+      reasonCode: 'test',
+      reasonLabel: 'Teste automatizado',
+      reasonNotes: 'Repetição idempotente do cancelamento',
+    },
+  }, admin.sessionToken);
+  const afterCancelRetryStock = await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'");
+  assert.equal(Number(afterCancelRetryStock.quantidade_atual), 9, 'retry do cancelamento não pode devolver o estoque duas vezes');
+
   const closePayload = {
     tableId: '1',
     tableNumber: 1,
@@ -259,7 +315,7 @@ try {
   const afterCloseStock = await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'");
   assert.equal(Number(afterCloseStock.quantidade_atual), 9, 'close retry must not decrement stock again');
 
-  const movementCount = await getScalar("SELECT COUNT(*) AS count FROM estoque_movimentacoes WHERE produto_id = 'stock_test' AND origem = 'pdv'");
+  const movementCount = await getScalar("SELECT COUNT(*) AS count FROM estoque_movimentacoes WHERE produto_id = 'stock_test' AND origem = 'pdv' AND order_item_id = 'item_partial' AND tipo_movimentacao = 'saida'");
   assert.equal(Number(movementCount.count), 1, 'stock movement should remain idempotent for the sold item');
 
   const appliedPayment = await getScalar("SELECT status, applied_closed_bill_id FROM table_payments WHERE id = 'partial_1'");
@@ -277,6 +333,9 @@ try {
       'fechamento',
       'retry_fechamento',
       'estoque_idempotente',
+      'cmv_vinculado_ao_produto_pdv',
+      'cancelamento_estorna_estoque',
+      'retry_cancelamento_idempotente',
     ],
   }, null, 2));
 } catch (error) {

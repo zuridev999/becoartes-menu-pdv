@@ -531,12 +531,13 @@ export function AdminView() {
     categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
     adminTab, setAdminTab, adminMode, toggleProductVisibility, toggleProductDeliveryVisibility, deleteCategory, reorderCategories, reorderProducts, toggleCategoryVisibility,
     linkGroupToCategory, linkGroupToProduct, currentSeller, closedBills, addNotification,
-    productModifierMapping, categoryModifierMapping
+    productModifierMapping, categoryModifierMapping, syncData
   } = useStore();
 
   const activeTab = adminTab;
   const setActiveTab = setAdminTab;
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isEnsuringCmv, setIsEnsuringCmv] = useState(false);
   const [editingGroup, setEditingGroup] = useState<string | null>(null);
 
 
@@ -632,6 +633,29 @@ export function AdminView() {
       productEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
   }, []);
+
+  const ensureProductCmv = async () => {
+    if (!editingProduct || isEnsuringCmv) return;
+    setIsEnsuringCmv(true);
+    try {
+      const result = await AdminApi.ensureProductCmv(editingProduct.id);
+      setEditingProduct({
+        ...editingProduct,
+        cmvId: result.cmvId,
+        cmvStatus: 'empty',
+        cmvIngredientCount: 0,
+        cmvUnlinkedCount: 0,
+        cost: result.cost,
+        costSource: 'cmv',
+      });
+      await syncData({ includeCatalog: true });
+      addNotification(result.created ? 'CMV criado. Agora adicione os ingredientes no OS.' : 'Este produto já possui CMV.', 'info');
+    } catch (error) {
+      addNotification(error instanceof Error ? error.message : 'Não foi possível criar o CMV.', 'error');
+    } finally {
+      setIsEnsuringCmv(false);
+    }
+  };
 
   const refreshPdvLockState = useCallback(async () => {
     try {
@@ -2084,7 +2108,46 @@ export function AdminView() {
                       </div>
                     </div>
                     <ConfigInput label="Preço" type="number" value={editingProduct.price} onChange={(v) => setEditingProduct({...editingProduct, price: v})} placeholder="0,00" disabled={!canEditProductMoney} />
-                    <ConfigInput label="Custo" type="number" value={editingProduct.cost || 0} onChange={(v) => setEditingProduct({...editingProduct, cost: v})} placeholder="0,00" disabled={!canEditProductMoney} />
+                    <ConfigInput label={editingProduct.costSource === 'cmv' ? "Custo oficial do CMV" : editingProduct.costSource === 'stock' ? "Custo médio do estoque" : "Custo"} type="number" value={editingProduct.cost || 0} onChange={(v) => setEditingProduct({...editingProduct, cost: v})} placeholder="0,00" disabled={!canEditProductMoney || editingProduct.costSource === 'cmv' || editingProduct.costSource === 'stock'} />
+                  </div>
+                  <div className={`rounded-2xl border p-4 ${editingProduct.cmvStatus === 'complete' || editingProduct.cmvStatus === 'direct_stock' ? 'border-emerald-500/20 bg-emerald-500/10' : 'border-amber-500/25 bg-amber-500/10'}`}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Origem do custo e baixa de estoque</p>
+                        <p className="mt-1 text-sm font-black text-white">
+                          {editingProduct.cmvStatus === 'complete' && `CMV completo • ${editingProduct.cmvIngredientCount || 0} ingrediente(s)`}
+                          {editingProduct.cmvStatus === 'empty' && 'CMV criado, mas ainda está zerado'}
+                          {editingProduct.cmvStatus === 'incomplete' && `CMV incompleto • ${editingProduct.cmvUnlinkedCount || 0} ingrediente(s) sem estoque`}
+                          {editingProduct.cmvStatus === 'direct_stock' && 'Revenda direta vinculada ao estoque'}
+                          {(!editingProduct.cmvStatus || editingProduct.cmvStatus === 'missing') && 'Produto sem CMV e sem vínculo direto de estoque'}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-zinc-400">
+                          O custo mostrado no PDV vem automaticamente do CMV ou do custo médio do estoque.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {(!editingProduct.cmvStatus || editingProduct.cmvStatus === 'missing') && (
+                          <button
+                            type="button"
+                            onClick={ensureProductCmv}
+                            disabled={isEnsuringCmv}
+                            className="rounded-xl bg-primary px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                          >
+                            {isEnsuringCmv ? 'Criando...' : 'Criar CMV deste produto'}
+                          </button>
+                        )}
+                        {editingProduct.cmvId && (
+                          <a
+                            href={`https://os.becoartes.com/becoartes/fichas-tecnicas?pdvProductId=${encodeURIComponent(editingProduct.id)}&cmvId=${encodeURIComponent(editingProduct.cmvId)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/5"
+                          >
+                            <ExternalLink size={13} /> Ir ao CMV
+                          </a>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Vincular Opcionais</label>

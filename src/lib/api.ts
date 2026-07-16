@@ -771,6 +771,10 @@ export const CatalogApi = {
 };
 
 export const AdminApi = {
+  ensureProductCmv(productId: string) {
+    return postJson<{ created: boolean; cmvId: string; cost: number }>('/api/catalog/product/cmv', { productId });
+  },
+
   saveSettings(settings: unknown) {
     return postJson<{ saved: boolean }>('/api/settings', { settings });
   },

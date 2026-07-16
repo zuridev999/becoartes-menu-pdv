@@ -22,7 +22,7 @@ const services = new Proxy({}, {
 });
 const handlers = createRouteHandlers(services);
 
-assert.equal(Object.keys(handlers).length, 82, 'route registry lost or duplicated operational endpoints');
+assert.equal(Object.keys(handlers).length, 83, 'route registry lost or duplicated operational endpoints');
 for (const route of [
   'GET /api/app/init',
   'POST /api/orders/send-to-kitchen',
@@ -30,6 +30,7 @@ for (const route of [
   'POST /api/counter-sales/close',
   'POST /api/delivery/checkout',
   'POST /api/catalog/product/delete',
+  'POST /api/catalog/product/cmv',
 ]) {
   assert.equal(typeof handlers[route], 'function', `missing handler ${route}`);
 }

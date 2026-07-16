@@ -43,6 +43,7 @@ export const PERMISSION_BY_ROUTE = Object.freeze({
   'POST /api/catalog/product/visibility': 'toggleProductVisibility',
   'POST /api/catalog/product/delivery-visibility': 'toggleProductVisibility',
   'POST /api/catalog/products/reorder': 'editProduct',
+  'POST /api/catalog/product/cmv': 'editProduct',
   'POST /api/catalog/modifier-group': 'manageOptionals',
   'POST /api/catalog/modifier-group/delete': 'manageOptionals',
   'POST /api/catalog/modifier-group/link': 'manageOptionals',

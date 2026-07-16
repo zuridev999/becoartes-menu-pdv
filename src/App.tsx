@@ -79,7 +79,7 @@ function App() {
 
       <div className="min-h-screen bg-transparent">
         <NotificationDisplay />
-        {activeView === 'pdv' && <ChecklistAlertDisplay />}
+        <ChecklistAlertDisplay />
         {!isLoading && initError && (
           <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white">
             <section className="w-full max-w-md border-y border-white/10 py-8">

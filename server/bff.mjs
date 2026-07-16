@@ -993,10 +993,25 @@ const getMenu = async () => {
       c.name as category_name,
       c.sort_order as category_sort_order,
       ep.quantidade_atual as stock_quantity,
-      ep.estoque_minimo as stock_minimum
+      ep.estoque_minimo as stock_minimum,
+      ep.preco_custo as stock_cost,
+      ft.id as cmv_id,
+      ft.custo_total as cmv_cost,
+      (SELECT COUNT(*) FROM ficha_ingredientes fi WHERE fi.ficha_tecnica_id = ft.id) as cmv_ingredient_count,
+      (SELECT COUNT(*) FROM ficha_ingredientes fi WHERE fi.ficha_tecnica_id = ft.id AND fi.estoque_produto_id IS NULL) as cmv_unlinked_count
     FROM menu m
     LEFT JOIN categories c ON m.category_id = c.id
     LEFT JOIN estoque_produtos ep ON ep.id = m.remote_stock_id AND ep.ativo = 1
+    LEFT JOIN fichas_tecnicas ft ON ft.id = (
+      SELECT candidate.id
+      FROM fichas_tecnicas candidate
+      WHERE candidate.pdv_product_id = m.id
+      ORDER BY
+        CASE WHEN EXISTS (SELECT 1 FROM ficha_ingredientes fi2 WHERE fi2.ficha_tecnica_id = candidate.id) THEN 0 ELSE 1 END,
+        candidate.updated_at DESC,
+        candidate.created_at DESC
+      LIMIT 1
+    )
     ORDER BY COALESCE(c.sort_order, 0) ASC, COALESCE(m.sort_order, 0) ASC, m.rowid ASC
   `);
   return res.rows.map((row) => ({
@@ -1015,7 +1030,24 @@ const getMenu = async () => {
     remoteStockId: row.remote_stock_id || '',
     stockQuantity: row.remote_stock_id ? Number(row.stock_quantity || 0) : null,
     stockMinimum: row.remote_stock_id ? Number(row.stock_minimum || 0) : null,
-    cost: Number(row.cost || 0),
+    cost: row.cmv_id
+      ? Number(row.cmv_cost || 0)
+      : row.remote_stock_id
+        ? Number(row.stock_cost || 0)
+        : Number(row.cost || 0),
+    costSource: row.cmv_id ? 'cmv' : row.remote_stock_id ? 'stock' : 'manual',
+    cmvId: row.cmv_id || '',
+    cmvIngredientCount: Number(row.cmv_ingredient_count || 0),
+    cmvUnlinkedCount: Number(row.cmv_unlinked_count || 0),
+    cmvStatus: row.cmv_id
+      ? Number(row.cmv_ingredient_count || 0) === 0
+        ? 'empty'
+        : Number(row.cmv_unlinked_count || 0) > 0
+          ? 'incomplete'
+          : 'complete'
+      : row.remote_stock_id
+        ? 'direct_stock'
+        : 'missing',
     modifierGroups: [],
   }));
 };
@@ -2814,15 +2846,15 @@ const findFichaTecnicaForSoldItem = async (empresaId, candidates) => {
     const nameNorms = names.map(normalizeRecipeLookupName);
     const serving = getRecipeServing(`${pdvName} ${fichaName}`);
 
-    if (soldNorm && nameNorms.includes(soldNorm)) return 0;
-    if (soldName && names.some((name) => isLooseRecipeNameMatch(soldName, name))) {
-      if (soldServing && serving && soldServing !== serving) return 999;
-      return 1;
-    }
     if (soldId && row.pdv_product_id === soldId) {
       if (soldServing && serving && soldServing !== serving) return 999;
-      if (!soldServing && serving === 'p2') return 30;
-      return 5;
+      if (!soldServing && serving === 'p2') return 5;
+      return 0;
+    }
+    if (soldNorm && nameNorms.includes(soldNorm)) return 10;
+    if (soldName && names.some((name) => isLooseRecipeNameMatch(soldName, name))) {
+      if (soldServing && serving && soldServing !== serving) return 999;
+      return 20;
     }
     return 999;
   };
@@ -3166,16 +3198,114 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
   }
 
   const itemRes = await db.execute({
-    sql: "SELECT oi.order_id, o.table_id FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1",
+    sql: `
+      SELECT oi.order_id, oi.product_id, oi.quantity, oi.selected_modifiers,
+             o.table_id, m.name, m.remote_stock_id
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      LEFT JOIN menu m ON m.id = oi.product_id
+      WHERE oi.id = ?
+      LIMIT 1
+    `,
     args: [itemId],
   });
-  const orderId = itemRes.rows[0]?.order_id;
-  const tableId = itemRes.rows[0]?.table_id;
+  const itemRow = itemRes.rows[0] || null;
+  if (!itemRow) {
+    const existingReversal = await db.execute({
+      sql: `
+        SELECT order_id
+        FROM estoque_movimentacoes
+        WHERE order_item_id = ? AND source_item_kind = 'cancel_reversal'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      args: [itemId],
+    });
+    return {
+      orderId: existingReversal.rows[0]?.order_id || null,
+      inventoryReversalCount: 0,
+      idempotent: Boolean(existingReversal.rows[0]),
+    };
+  }
+  const orderId = itemRow?.order_id;
+  const tableId = itemRow?.table_id;
   if (tableId) {
     await ensureTableAccess(tableId, session);
   }
 
-  await db.execute({ sql: "DELETE FROM order_items WHERE id = ?", args: [itemId] });
+  const stockMovements = await db.execute({
+    sql: `
+      SELECT id, empresa_id, produto_id, quantidade, responsavel_id
+      FROM estoque_movimentacoes
+      WHERE origem = 'pdv'
+        AND order_item_id = ?
+        AND tipo_movimentacao = 'saida'
+        AND COALESCE(source_item_kind, '') != 'cancel_reversal'
+    `,
+    args: [itemId],
+  });
+  const now = osTimestamp();
+  let osUserId = null;
+  if (stockMovements.rows.length > 0) {
+    try {
+      osUserId = (await resolveOSContext()).userId;
+    } catch {
+      osUserId = null;
+    }
+  }
+
+  const cancellationBatch = [];
+  for (const movement of stockMovements.rows) {
+    const stockProduct = await db.execute({
+      sql: "SELECT id FROM estoque_produtos WHERE id = ? AND empresa_id = ? LIMIT 1",
+      args: [movement.produto_id, movement.empresa_id],
+    });
+    if (!stockProduct.rows[0]) {
+      const error = new Error('Não foi possível estornar o item porque o produto vinculado não existe mais no estoque. Revise o vínculo antes de cancelar.');
+      error.statusCode = 409;
+      throw error;
+    }
+    const reversalId = `pdv_cancel_${movement.id}`;
+    cancellationBatch.push(
+      {
+        sql: `
+          INSERT OR IGNORE INTO estoque_movimentacoes
+            (id, empresa_id, produto_id, tipo_movimentacao, quantidade,
+             quantidade_anterior, quantidade_nova, motivo, responsavel_id,
+             created_at, order_id, order_item_id, origem, source_item_id, source_item_kind)
+          SELECT ?, empresa_id, id, 'entrada', ?, quantidade_atual, quantidade_atual + ?, ?, ?, ?, ?, ?, 'pdv', ?, 'cancel_reversal'
+          FROM estoque_produtos
+          WHERE id = ? AND empresa_id = ?
+        `,
+        args: [
+          reversalId,
+          Number(movement.quantidade || 0),
+          Number(movement.quantidade || 0),
+          `Estorno automático por cancelamento do item ${itemId}: ${reasonLabel}`,
+          osUserId || movement.responsavel_id,
+          now,
+          orderId,
+          itemId,
+          String(movement.id),
+          movement.produto_id,
+          movement.empresa_id,
+        ],
+      },
+      {
+        sql: `
+          UPDATE estoque_produtos
+          SET quantidade_atual = quantidade_atual + ?,
+              status = CASE WHEN quantidade_atual + ? <= estoque_minimo THEN 'Crítico' ELSE 'Saudável' END,
+              updated_at = ?
+          WHERE id = ? AND empresa_id = ? AND changes() > 0
+        `,
+        args: [Number(movement.quantidade || 0), Number(movement.quantidade || 0), now, movement.produto_id, movement.empresa_id],
+      },
+    );
+  }
+  cancellationBatch.push({ sql: "DELETE FROM order_items WHERE id = ?", args: [itemId] });
+  await db.batch(cancellationBatch, 'write');
+  if (stockMovements.rows.length > 0) await bumpCatalogVersion();
 
   if (orderId) {
     const remainingRes = await db.execute({
@@ -3214,7 +3344,7 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
     reasonNotes,
   });
 
-  return { orderId: orderId || null };
+  return { orderId: orderId || null, inventoryReversalCount: stockMovements.rows.length };
 };
 
 const getExistingOrderSubmission = async (clientRequestId) => {
@@ -5329,6 +5459,63 @@ const upsertProduct = async ({ product }, session = null) => {
   }
 
   return { catalogVersion: await bumpCatalogVersion() };
+};
+
+const ensureCmvForMenuProduct = async ({ productId }, session = null) => {
+  const id = requireString(productId, 'productId');
+  const settings = await getSettings();
+  requirePermission(session, 'editProduct', settings);
+  const productResult = await db.execute({
+    sql: `
+      SELECT m.id, m.name, m.price, c.name AS category_name
+      FROM menu m
+      LEFT JOIN categories c ON c.id = m.category_id
+      WHERE m.id = ?
+      LIMIT 1
+    `,
+    args: [id],
+  });
+  const product = productResult.rows[0];
+  if (!product) {
+    const error = new Error('Produto do PDV não encontrado.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const existing = await db.execute({
+    sql: "SELECT id, custo_total FROM fichas_tecnicas WHERE pdv_product_id = ? ORDER BY updated_at DESC LIMIT 1",
+    args: [id],
+  });
+  if (existing.rows[0]) {
+    return { created: false, cmvId: existing.rows[0].id, cost: Number(existing.rows[0].custo_total || 0) };
+  }
+
+  const { empresaId, userId } = await resolveOSContext();
+  const cmvId = `ficha-pdv-${id}-${Date.now()}`;
+  const now = osTimestamp();
+  await db.execute({
+    sql: `
+      INSERT INTO fichas_tecnicas (
+        id, empresa_id, nome_prato, categoria, subcategoria, preco_venda,
+        custo_total, cmv_percentual, modo_preparo, criado_por_id,
+        pdv_product_id, pdv_product_name, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, 0, 0, '', ?, ?, ?, ?, ?)
+    `,
+    args: [
+      cmvId,
+      empresaId,
+      String(product.name || 'Produto PDV'),
+      String(product.category_name || 'Outros'),
+      Number(product.price || 0),
+      userId,
+      id,
+      String(product.name || 'Produto PDV'),
+      now,
+      now,
+    ],
+  });
+  await bumpCatalogVersion();
+  return { created: true, cmvId, cost: 0 };
 };
 
 const DELETED_PRODUCT_SUFFIX = ' (produto deletado)';
@@ -7856,6 +8043,7 @@ const handlers = createRouteHandlers({
   deleteOrderItem,
   deleteProduct,
   deleteSeller,
+  ensureCmvForMenuProduct,
   finalizeCustomerTab,
   geocodeDeliveryAddress,
   getAppSnapshotWithRetry,

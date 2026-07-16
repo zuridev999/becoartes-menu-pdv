@@ -18,11 +18,24 @@ type ChecklistAlert = {
 type ChecklistAlertResponse = {
   success: boolean;
   alerts?: ChecklistAlert[];
+  stockAudit?: StockAuditAlert | null;
+};
+
+type StockAuditAlert = {
+  id: string;
+  shouldDisplay: boolean;
+  title?: string;
+  message?: string;
+  lastFinishedAt?: number | null;
+  responsibleName?: string;
+  progress?: number;
+  actionUrl?: string;
 };
 
 const BEFORE_DUE_SNOOZE_MS = 30 * 60 * 1000;
 const OVERDUE_SNOOZE_MS = 2 * 60 * 1000;
 const POLL_MS = 60 * 1000;
+const STOCK_AUDIT_SNOOZE_MS = 60 * 60 * 1000;
 function getSnoozeKey(alertId: string) {
   return `beco_pdv_checklist_alert_snooze_${alertId}`;
 }
@@ -40,6 +53,7 @@ function getAlertDueMs(alert: ChecklistAlert) {
 
 export function ChecklistAlertDisplay() {
   const [alerts, setAlerts] = useState<ChecklistAlert[]>([]);
+  const [stockAudit, setStockAudit] = useState<StockAuditAlert | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -48,9 +62,15 @@ export function ChecklistAlertDisplay() {
     async function loadAlerts() {
       try {
         const payload = await AppApi.getChecklistAlerts<ChecklistAlertResponse>();
-        if (!cancelled && payload.success) setAlerts(payload.alerts || []);
+        if (!cancelled && payload.success) {
+          setAlerts(payload.alerts || []);
+          setStockAudit(payload.stockAudit || null);
+        }
       } catch {
-        if (!cancelled) setAlerts([]);
+        if (!cancelled) {
+          setAlerts([]);
+          setStockAudit(null);
+        }
       }
     }
 
@@ -70,7 +90,8 @@ export function ChecklistAlertDisplay() {
   ), [alerts, nowMs]);
 
   const alert = visibleAlerts[0];
-  if (!alert) return null;
+  const stockAuditVisible = stockAudit?.shouldDisplay && !isSnoozed(stockAudit.id, nowMs) ? stockAudit : null;
+  if (!stockAuditVisible && !alert) return null;
 
   function snoozeAlert() {
     const now = Date.now();
@@ -78,6 +99,66 @@ export function ChecklistAlertDisplay() {
     localStorage.setItem(getSnoozeKey(alert.id), String(now + snoozeMs));
     setNowMs(Date.now());
   }
+
+  function snoozeStockAudit() {
+    if (!stockAuditVisible) return;
+    localStorage.setItem(getSnoozeKey(stockAuditVisible.id), String(Date.now() + STOCK_AUDIT_SNOOZE_MS));
+    setNowMs(Date.now());
+  }
+
+  if (stockAuditVisible) {
+    const absoluteActionUrl = stockAuditVisible.actionUrl?.startsWith('http')
+      ? stockAuditVisible.actionUrl
+      : `https://os.becoartes.com${stockAuditVisible.actionUrl || '/becoartes/estoque?auditoria=1'}`;
+
+    return (
+      <div className="fixed inset-x-4 bottom-5 z-[1200] pointer-events-none sm:left-auto sm:right-6 sm:max-w-lg font-['Outfit']">
+        <AnimatePresence>
+          <motion.div
+            key={stockAuditVisible.id}
+            initial={{ opacity: 0, y: 28, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 18, scale: 0.96 }}
+            className="pointer-events-auto overflow-hidden rounded-[1.8rem] border border-amber-400/35 bg-[#11100d]/97 shadow-2xl shadow-amber-950/50 backdrop-blur-xl"
+          >
+            <div className="p-5 sm:p-6">
+              <div className="flex gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-400/15 text-amber-300">
+                  <ClipboardCheck size={24} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-black uppercase tracking-[0.28em] text-amber-300">Auditoria semanal</p>
+                  <h3 className="mt-1 text-lg font-black uppercase tracking-tight text-white">{stockAuditVisible.title}</h3>
+                  <p className="mt-2 text-sm font-semibold leading-relaxed text-zinc-300">{stockAuditVisible.message}</p>
+                  {stockAuditVisible.lastFinishedAt ? (
+                    <p className="mt-2 text-xs font-bold text-zinc-500">
+                      Última: {new Date(stockAuditVisible.lastFinishedAt * 1000).toLocaleString('pt-BR')} · {stockAuditVisible.responsibleName}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  onClick={snoozeStockAudit}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/10 hover:text-white"
+                  aria-label="Lembrar novamente em uma hora"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => window.open(absoluteActionUrl, '_blank', 'noopener,noreferrer')}
+                className="mt-5 flex h-12 w-full items-center justify-center rounded-2xl bg-amber-400 text-xs font-black uppercase tracking-[0.18em] text-black transition hover:bg-amber-300"
+              >
+                {stockAuditVisible.progress ? 'Continuar auditoria no OS' : 'Fazer auditoria no OS'}
+              </button>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  if (!alert) return null;
 
   return (
     <div className="fixed left-4 right-4 bottom-5 z-[1200] pointer-events-none sm:left-auto sm:right-6 sm:max-w-md font-['Outfit']">

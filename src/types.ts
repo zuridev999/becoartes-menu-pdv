@@ -57,6 +57,11 @@ export interface Product {
   stockQuantity?: number | null;
   stockMinimum?: number | null;
   cost?: number;
+  costSource?: 'cmv' | 'stock' | 'manual';
+  cmvId?: string;
+  cmvStatus?: 'complete' | 'empty' | 'incomplete' | 'direct_stock' | 'missing';
+  cmvIngredientCount?: number;
+  cmvUnlinkedCount?: number;
 }
 
 export interface OrderItem {

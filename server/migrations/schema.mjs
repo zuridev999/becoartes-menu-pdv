@@ -121,6 +121,24 @@ export const SCHEMA_MIGRATIONS = [
       addColumn('orders', 'client_request_id', 'TEXT'),
     ],
   },
+  {
+    id: '20260716_0001_pdv_cmv_linkage',
+    description: 'Expose CMV ownership and calculated cost to the PDV catalog.',
+    steps: [
+      addColumn('estoque_produtos', 'preco_custo', 'REAL DEFAULT 0'),
+      addColumn('fichas_tecnicas', 'categoria', 'TEXT'),
+      addColumn('fichas_tecnicas', 'subcategoria', 'TEXT'),
+      addColumn('fichas_tecnicas', 'preco_venda', 'REAL DEFAULT 0'),
+      addColumn('fichas_tecnicas', 'custo_total', 'REAL DEFAULT 0'),
+      addColumn('fichas_tecnicas', 'cmv_percentual', 'REAL DEFAULT 0'),
+      addColumn('fichas_tecnicas', 'modo_preparo', 'TEXT'),
+      addColumn('fichas_tecnicas', 'criado_por_id', 'TEXT'),
+      addColumn('fichas_tecnicas', 'pdv_product_id', 'TEXT'),
+      addColumn('fichas_tecnicas', 'pdv_product_name', 'TEXT'),
+      addColumn('fichas_tecnicas', 'created_at', 'INTEGER'),
+      addColumn('fichas_tecnicas', 'updated_at', 'INTEGER'),
+    ],
+  },
 ];
 
 const quoteIdentifier = (value) => {
