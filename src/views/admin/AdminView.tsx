@@ -60,6 +60,8 @@ type AdminDialog = {
     placeholder?: string;
     type?: string;
     inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+    multiline?: boolean;
+    maxLength?: number;
   };
   onConfirm: (value?: string) => void | Promise<void>;
 };
@@ -670,12 +672,11 @@ export function AdminView() {
     refreshPdvLockState();
   }, [refreshPdvLockState]);
 
-  const togglePdvLock = async () => {
+  const savePdvLockState = async (nextLocked: boolean, message: string) => {
     if (isPdvLockSaving) return;
-    const nextLocked = !pdvLockState?.locked;
     setIsPdvLockSaving(true);
     try {
-      const state = await AppApi.setPdvLockState(nextLocked);
+      const state = await AppApi.setPdvLockState(nextLocked, message);
       setPdvLockState({ locked: state.locked, message: state.message });
       addNotification(state.locked ? 'PDV operacional bloqueado.' : 'PDV operacional liberado.', 'info');
     } catch (error) {
@@ -684,6 +685,34 @@ export function AdminView() {
     } finally {
       setIsPdvLockSaving(false);
     }
+  };
+
+  const requestPdvLockToggle = () => {
+    if (isPdvLockSaving) return;
+
+    if (pdvLockState?.locked) {
+      setAdminDialog({
+        title: 'Liberar o PDV?',
+        description: 'A equipe voltará a acessar mesas, pedidos e pagamentos imediatamente.',
+        confirmLabel: 'Liberar PDV',
+        onConfirm: async () => savePdvLockState(false, 'PDV liberado para operação.')
+      });
+      return;
+    }
+
+    setAdminDialog({
+      title: 'Bloquear o PDV?',
+      description: 'Escreva um recado direto para a equipe. Ele ficará destacado em vermelho na tela bloqueada.',
+      confirmLabel: 'Bloquear e exibir recado',
+      tone: 'danger',
+      input: {
+        label: 'Recado para a equipe',
+        placeholder: 'Ex.: Não lançar pedidos. Aguardar orientação da gerência.',
+        multiline: true,
+        maxLength: 240
+      },
+      onConfirm: async (message) => savePdvLockState(true, message || '')
+    });
   };
 
   useEffect(() => {
@@ -1581,7 +1610,7 @@ export function AdminView() {
             </p>
           </div>
           <button
-            onClick={togglePdvLock}
+            onClick={requestPdvLockToggle}
             disabled={isPdvLockSaving}
             className={`ml-auto hidden sm:flex h-10 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
               pdvLockState?.locked
@@ -1595,7 +1624,7 @@ export function AdminView() {
           </button>
         </div>
         <button
-          onClick={togglePdvLock}
+          onClick={requestPdvLockToggle}
           disabled={isPdvLockSaving}
           className={`sm:hidden flex h-12 w-full items-center justify-center gap-3 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
             pdvLockState?.locked

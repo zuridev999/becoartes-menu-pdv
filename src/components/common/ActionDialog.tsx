@@ -17,6 +17,8 @@ type ActionDialogProps = {
     placeholder?: string;
     type?: string;
     inputMode?: InputHTMLAttributes<HTMLInputElement>['inputMode'];
+    multiline?: boolean;
+    maxLength?: number;
   };
   children?: ReactNode;
   confirmDisabled?: boolean;
@@ -97,16 +99,33 @@ export function ActionDialog({
           {input && (
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{input.label}</label>
-              <input
-                type={input.type || 'text'}
-                inputMode={input.inputMode}
-                autoFocus
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-                onKeyDown={(event) => event.key === 'Enter' && handleConfirm()}
-                placeholder={input.placeholder}
-                className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-black text-lg focus:border-primary/40"
-              />
+              {input.multiline ? (
+                <textarea
+                  inputMode={input.inputMode}
+                  autoFocus
+                  rows={4}
+                  maxLength={input.maxLength}
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  placeholder={input.placeholder}
+                  className="w-full resize-none glass p-5 rounded-2xl border-white/10 outline-none font-black text-lg leading-relaxed focus:border-primary/40"
+                />
+              ) : (
+                <input
+                  type={input.type || 'text'}
+                  inputMode={input.inputMode}
+                  autoFocus
+                  maxLength={input.maxLength}
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  onKeyDown={(event) => event.key === 'Enter' && handleConfirm()}
+                  placeholder={input.placeholder}
+                  className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-black text-lg focus:border-primary/40"
+                />
+              )}
+              {input.maxLength && (
+                <p className="text-right text-[10px] font-black tracking-widest text-zinc-600">{value.length}/{input.maxLength}</p>
+              )}
             </div>
           )}
         </div>

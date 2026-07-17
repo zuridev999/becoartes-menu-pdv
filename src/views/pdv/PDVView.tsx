@@ -660,15 +660,20 @@ export function PDVView() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="solid-panel fixed inset-0 z-[1400] flex flex-col items-center justify-center bg-[#0b4dff] p-8 text-center"
+            className="solid-panel fixed inset-0 z-[1400] flex flex-col items-center justify-center bg-[#11090c] p-6 text-center sm:p-10"
           >
-            <LockKeyhole size={92} className="mb-8 text-white" />
-            <h1 className="text-5xl sm:text-7xl xl:text-8xl font-black italic tracking-tighter text-white">
+            <div className="mb-7 grid h-24 w-24 place-items-center rounded-full border-2 border-rose-500/40 bg-rose-500/10 shadow-[0_0_80px_rgba(244,63,94,0.22)]">
+              <LockKeyhole size={48} className="text-rose-500" />
+            </div>
+            <h1 className="text-5xl sm:text-7xl xl:text-8xl font-black italic tracking-tighter text-rose-500">
               PDV BLOQUEADO
             </h1>
-            <p className="mt-6 max-w-2xl text-lg sm:text-2xl font-black uppercase tracking-[0.2em] text-white/80">
-              Consultar mensagens no celular
-            </p>
+            <div className="mt-8 w-full max-w-3xl rounded-[2rem] border-2 border-rose-500/35 bg-white px-7 py-8 shadow-2xl sm:px-12 sm:py-10">
+              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">Recado da gerência</p>
+              <p className="whitespace-pre-wrap text-2xl font-black leading-tight text-rose-600 sm:text-4xl">
+                {pdvLockState.message || 'Aguarde orientação da gerência.'}
+              </p>
+            </div>
           </motion.div>
         )}
         {hasPanicAlert && (
