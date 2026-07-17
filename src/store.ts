@@ -531,6 +531,13 @@ export const useStore = create<AppState>((set, get) => ({
     if (!product) return;
     const newVisible = !product.visible;
 
+    if (!hasApiSessionToken()) {
+      clearSellerSession();
+      set({ currentSeller: null });
+      get().addNotification("Sessão expirada. Entre com o PIN novamente para alterar o produto.", "error");
+      return;
+    }
+
     // 1. Atualização Otimista (Interface responde na hora)
     set((state) => ({
       menu: state.menu.map(p => p.id === id ? { ...p, visible: newVisible } : p)
@@ -546,7 +553,15 @@ export const useStore = create<AppState>((set, get) => ({
       set((state) => ({
         menu: state.menu.map(p => p.id === id ? { ...p, visible: !newVisible } : p)
       }));
-      get().addNotification("Falha na rede ao ocultar produto. Tente novamente.", "error");
+      if (isSessionExpiredError(e)) {
+        clearSellerSession();
+        set({ currentSeller: null });
+        get().addNotification("Sessão expirada. Entre com o PIN novamente para alterar o produto.", "error");
+        return;
+      }
+      const action = newVisible ? 'mostrar' : 'ocultar';
+      const message = getErrorMessage(e);
+      get().addNotification(message || `Não foi possível ${action} o produto. Tente novamente.`, "error");
     }
   },
   toggleProductDeliveryVisibility: async (id) => {
@@ -554,6 +569,13 @@ export const useStore = create<AppState>((set, get) => ({
     if (!product) return;
     const currentVisible = product.deliveryVisible !== false;
     const newVisible = !currentVisible;
+
+    if (!hasApiSessionToken()) {
+      clearSellerSession();
+      set({ currentSeller: null });
+      get().addNotification("Sessão expirada. Entre com o PIN novamente para alterar o delivery.", "error");
+      return;
+    }
 
     set((state) => ({
       menu: state.menu.map(p => p.id === id ? { ...p, deliveryVisible: newVisible } : p)
@@ -567,13 +589,27 @@ export const useStore = create<AppState>((set, get) => ({
       set((state) => ({
         menu: state.menu.map(p => p.id === id ? { ...p, deliveryVisible: currentVisible } : p)
       }));
-      get().addNotification("Falha na rede ao alterar produto no delivery.", "error");
+      if (isSessionExpiredError(e)) {
+        clearSellerSession();
+        set({ currentSeller: null });
+        get().addNotification("Sessão expirada. Entre com o PIN novamente para alterar o delivery.", "error");
+        return;
+      }
+      const message = getErrorMessage(e);
+      get().addNotification(message || "Não foi possível alterar o produto no delivery.", "error");
     }
   },
   toggleCategoryVisibility: async (id) => {
     const category = get().categories.find(c => c.id === id);
     if (!category) return;
     const newVisible = !category.visible;
+
+    if (!hasApiSessionToken()) {
+      clearSellerSession();
+      set({ currentSeller: null });
+      get().addNotification("Sessão expirada. Entre com o PIN novamente para alterar a categoria.", "error");
+      return;
+    }
 
     // 1. Atualização Otimista
     set((state) => ({
@@ -588,7 +624,15 @@ export const useStore = create<AppState>((set, get) => ({
       set((state) => ({
         categories: state.categories.map(c => c.id === id ? { ...c, visible: !newVisible } : c)
       }));
-      get().addNotification("Falha na rede ao ocultar categoria.", "error");
+      if (isSessionExpiredError(e)) {
+        clearSellerSession();
+        set({ currentSeller: null });
+        get().addNotification("Sessão expirada. Entre com o PIN novamente para alterar a categoria.", "error");
+        return;
+      }
+      const action = newVisible ? 'mostrar' : 'ocultar';
+      const message = getErrorMessage(e);
+      get().addNotification(message || `Não foi possível ${action} a categoria.`, "error");
     }
   },
   updateProduct: async (id, data) => {
