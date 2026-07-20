@@ -43,6 +43,11 @@ const catalogCopy: Partial<Record<PublicLanguageCode, Record<string, string>>> =
   },
 };
 
+const getCatalogBaseTranslation = (locale: PublicLanguageCode, text: string) => {
+  const normalizedText = normalizeCatalogText(text);
+  return Object.entries(catalogCopy[locale] || {}).find(([source]) => normalizeCatalogText(source) === normalizedText)?.[1];
+};
+
 export const getDefaultPublicCopy = (locale: PublicLanguageCode) => ({ ...(copy[locale as keyof typeof copy] || copy['pt-BR']) });
 
 const STORAGE_KEY = 'beco_public_language';
@@ -94,7 +99,7 @@ export function PublicI18nProvider({ settings, children }: { settings: AppSettin
       const raw = language?.copy?.[key] || copy[locale as keyof typeof copy]?.[key] || copy['pt-BR'][key] || key;
       return interpolate(raw, values);
     },
-    catalogText: (id, text, field) => languages.find((item) => item.code === locale)?.catalog?.[id]?.[field] || catalogCopy[locale]?.[normalizeCatalogText(text)] || text,
+    catalogText: (id, text, field) => languages.find((item) => item.code === locale)?.catalog?.[id]?.[field] || getCatalogBaseTranslation(locale, text) || text,
   }), [languages, locale, setLocale]);
 
   return <PublicI18nContext.Provider value={value}>{children}</PublicI18nContext.Provider>;
