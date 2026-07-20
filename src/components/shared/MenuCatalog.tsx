@@ -5,6 +5,7 @@ import { useStore, type Product } from '../../store';
 import { isItemAvailable } from '../../lib/utils';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { formatCurrency } from '../../lib/format';
+import { usePublicI18n } from '../../lib/public-i18n';
 
 interface MenuCatalogProps {
   onProductSelect: (product: Product) => void;
@@ -17,6 +18,7 @@ interface MenuCatalogProps {
 
 export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', surface = 'default', presentation = 'default', footerContent }: MenuCatalogProps) {
   const { menu, categories: dbCategories } = useStore();
+  const { t, locale, catalogText } = usePublicI18n();
   const availableCategories = useMemo(() => dbCategories
     .filter(c => {
       if (c.visible === false) return false;
@@ -87,7 +89,9 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       const { available } = isItemAvailable(p.schedule);
       if (!available && p.schedule?.hideTotally) return false;
 
-      return p.name.toLowerCase().includes(searchQuery.toLowerCase()) || (p.description || '').toLowerCase().includes(searchQuery.toLowerCase());
+      const translatedName = catalogText(p.id, p.name, 'name');
+      const translatedDescription = catalogText(p.id, p.description || '', 'description');
+      return translatedName.toLowerCase().includes(searchQuery.toLowerCase()) || translatedDescription.toLowerCase().includes(searchQuery.toLowerCase());
     })
     .map((product, index) => ({ product, index }))
     .sort((a, b) => {
@@ -98,7 +102,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       return a.index - b.index;
     })
     .map(({ product }) => product),
-  [categoryOrder, dbCategories, menu, searchQuery, surface]);
+  [catalogText, categoryOrder, dbCategories, menu, searchQuery, surface]);
 
   const filteredMenu = visibleMenu.filter(p => p.categoryName === selectedCategory);
   const menuByCategory = useMemo(() => {
@@ -130,10 +134,10 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
     <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className={productCardClassName}>
       <div className={productImageClassName}>
         <img src={getImageSrc(p.image)} alt={p.name} onError={applyImageFallback} className="w-full h-full object-cover object-center group-hover:scale-110 transition-all duration-500" />
-        <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-black/70 backdrop-blur-xl px-3 md:px-4 py-2 rounded-xl font-black text-accent border border-white/10 text-sm md:text-base">{formatCurrency(p.price)}</div>
+        <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-black/70 backdrop-blur-xl px-3 md:px-4 py-2 rounded-xl font-black text-accent border border-white/10 text-sm md:text-base">{formatCurrency(p.price, locale)}</div>
       </div>
-      <h4 className="font-black text-xl md:text-2xl mb-2 italic tracking-tighter leading-none">{p.name}</h4>
-      <p className="text-gray-500 font-bold text-xs md:text-sm line-clamp-2 leading-relaxed">{p.description}</p>
+      <h4 className="font-black text-xl md:text-2xl mb-2 italic tracking-tighter leading-none">{catalogText(p.id, p.name, 'name')}</h4>
+      <p className="text-gray-500 font-bold text-xs md:text-sm line-clamp-2 leading-relaxed">{catalogText(p.id, p.description || '', 'description')}</p>
     </motion.button>
   );
   const renderCompactProduct = (p: Product) => (
@@ -144,11 +148,11 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       className="glass-card group flex min-h-[132px] w-full items-stretch gap-3 p-3 text-left active:scale-[0.99]"
     >
       <div className="flex min-w-0 flex-1 flex-col py-0.5">
-        <h4 className="line-clamp-2 text-[17px] font-black leading-tight tracking-tight text-white">{p.name}</h4>
+        <h4 className="line-clamp-2 text-[17px] font-black leading-tight tracking-tight text-white">{catalogText(p.id, p.name, 'name')}</h4>
         {p.description && (
-          <p className="mt-1.5 line-clamp-2 text-xs font-semibold leading-relaxed text-zinc-400">{p.description}</p>
+          <p className="mt-1.5 line-clamp-2 text-xs font-semibold leading-relaxed text-zinc-400">{catalogText(p.id, p.description, 'description')}</p>
         )}
-        <p className="mt-auto pt-2 text-base font-black tracking-tight text-accent">{formatCurrency(p.price)}</p>
+        <p className="mt-auto pt-2 text-base font-black tracking-tight text-accent">{formatCurrency(p.price, locale)}</p>
       </div>
       <div className="h-[106px] w-[106px] shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
         <img
@@ -171,9 +175,9 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
               <Utensils size={17} />
             </div>
             <div>
-              <p className="text-[8px] font-black uppercase tracking-[0.28em] text-primary">Menu do cardápio</p>
+              <p className="text-[8px] font-black uppercase tracking-[0.28em] text-primary">{t('menu')}</p>
               <p className="text-xs font-bold text-gray-500">
-                {navigationMode === 'continuous' ? 'Role o cardápio inteiro ou toque para pular até uma categoria.' : 'Toque em uma categoria para ver só aqueles itens.'}
+                {navigationMode === 'continuous' ? t('menuGuide') : t('categoryGuide')}
               </p>
             </div>
           </div>
@@ -187,9 +191,9 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
             >
               <div>
                 <p className={`font-black text-[8px] md:text-[10px] uppercase tracking-widest ${selectedCategory === cat ? 'text-white/70' : 'text-primary'}`}>
-                  {productCountByCategory.get(cat) || 0} itens
+                  {productCountByCategory.get(cat) || 0} {t('items')}
                 </p>
-                <h4 className="font-black text-sm md:text-lg tracking-tighter italic whitespace-nowrap">{cat}</h4>
+                <h4 className="font-black text-sm md:text-lg tracking-tighter italic whitespace-nowrap">{catalogText(availableCategories.find((category) => category.name === cat)?.id || cat, cat, 'name')}</h4>
               </div>
               <ChevronRight size={18} className={`${navigationMode === 'menu' || navigationMode === 'continuous' ? 'hidden' : 'hidden md:block'} ${selectedCategory === cat ? 'opacity-100' : 'opacity-0'}`} />
             </button>
@@ -201,20 +205,20 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       <div className={`flex-1 min-h-0 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'p-4 sm:p-6 lg:p-10' : 'p-4 sm:p-8 lg:p-12'} overflow-y-auto custom-scrollbar bg-white/[0.01]`}>
          <div className={`flex flex-col md:flex-row md:justify-between md:items-center gap-4 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'mb-5 sm:mb-8' : 'mb-6 md:mb-16'}`}>
             <div className="min-w-0">
-              <h3 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter italic leading-none truncate">{navigationMode === 'continuous' ? 'Cardápio' : selectedCategory}</h3>
+              <h3 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter italic leading-none truncate">{navigationMode === 'continuous' ? t('menu') : catalogText(availableCategories.find((category) => category.name === selectedCategory)?.id || selectedCategory, selectedCategory, 'name')}</h3>
               <p className="text-primary font-black uppercase tracking-[0.28em] md:tracking-[0.5em] text-[9px] md:text-[10px] mt-2">
                 {navigationMode === 'continuous'
-                  ? `${visibleMenu.length} ${visibleMenu.length === 1 ? 'item' : 'itens'} em todas as categorias`
-                  : `${filteredMenu.length} ${filteredMenu.length === 1 ? 'item' : 'itens'} nesta categoria`}
+                  ? `${visibleMenu.length} ${visibleMenu.length === 1 ? t('item') : t('items')}`
+                  : `${filteredMenu.length} ${filteredMenu.length === 1 ? t('item') : t('items')}`}
               </p>
             </div>
             <div className="relative w-full md:w-96">
                <input 
                 type="text" 
                 name="menu-search"
-                aria-label="Pesquisar no cardápio"
+                aria-label={t('search')}
                 autoComplete="off"
-                placeholder="Pesquisar..." 
+                placeholder={t('searchPlaceholder')}
                 value={searchQuery} 
                 onChange={(e) => {
                   const val = e.target.value;
@@ -238,8 +242,8 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
 
 	         {visibleMenu.length === 0 ? (
 	           <div className="border-y border-white/10 py-10 text-center">
-	             <p className="text-sm font-black text-white">Nenhum item encontrado</p>
-	             <p className="mt-1 text-xs font-semibold text-zinc-500">Limpe a busca ou escolha outra categoria.</p>
+	             <p className="text-sm font-black text-white">{t('noItems')}</p>
+	             <p className="mt-1 text-xs font-semibold text-zinc-500">{t('clearSearch')}</p>
 	           </div>
          ) : navigationMode === 'continuous' && (viewMode === 'grid' || isCompactMenu) ? (
            <div className="space-y-10 pb-4">
@@ -250,8 +254,8 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
                  className="scroll-mt-6"
                >
                  <div className="mb-4">
-                   <p className="text-[9px] font-black uppercase tracking-[0.35em] text-primary">{products.length} itens</p>
-                   <h4 className="text-3xl sm:text-4xl font-black italic tracking-tighter">{category}</h4>
+                   <p className="text-[9px] font-black uppercase tracking-[0.35em] text-primary">{products.length} {t('items')}</p>
+                   <h4 className="text-3xl sm:text-4xl font-black italic tracking-tighter">{catalogText(availableCategories.find((entry) => entry.name === category)?.id || category, category, 'name')}</h4>
                  </div>
                  <div className={isCompactMenu ? 'space-y-3' : gridClassName}>
                    {products.map(isCompactMenu ? renderCompactProduct : renderGridProduct)}
@@ -269,13 +273,13 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
 	               <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className="glass-card flex items-center p-6 border-white/5 hover:border-primary/30 group transition-all w-full text-left">
 	                 <div className="w-48 h-48 rounded-3xl overflow-hidden mr-8"><img src={getImageSrc(p.image)} alt={p.name} onError={applyImageFallback} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" /></div>
                  <div className="flex-1">
-                   <h4 className="font-black text-3xl mb-3 italic tracking-tighter">{p.name}</h4>
-                   <p className="text-gray-500 font-bold text-lg leading-relaxed max-w-2xl">{p.description}</p>
+                   <h4 className="font-black text-3xl mb-3 italic tracking-tighter">{catalogText(p.id, p.name, 'name')}</h4>
+                   <p className="text-gray-500 font-bold text-lg leading-relaxed max-w-2xl">{catalogText(p.id, p.description || '', 'description')}</p>
                  </div>
                  <div className="text-right">
-	                   <p className="text-accent font-black text-4xl tracking-tighter mb-4">{formatCurrency(p.price)}</p>
+	                   <p className="text-accent font-black text-4xl tracking-tighter mb-4">{formatCurrency(p.price, locale)}</p>
                    <div className="btn-beco btn-beco-purple px-8 py-3 rounded-2xl flex items-center gap-3">
-                     <Plus size={20} /> <span className="font-black">ADICIONAR</span>
+                     <Plus size={20} /> <span className="font-black">{t('add').toUpperCase()}</span>
                    </div>
                  </div>
                </motion.button>

@@ -6,7 +6,7 @@ import {
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
   GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy,
-  QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle, Bike, LockKeyhole
+  QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle, Bike, LockKeyhole, Languages
 } from 'lucide-react';
 import {
   DndContext,
@@ -45,6 +45,8 @@ import { createId } from '../../lib/id';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
 import { AdminApi, AppApi, DeliveryApi, type DeliveryOrderSummary, type SellerCandidate } from '../../lib/api';
+import { getDefaultPublicCopy, getPublicLanguages } from '../../lib/public-i18n';
+import type { PublicLanguageConfig } from '../../types';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import type { ClosedBill, ScheduleConfig, Seller } from '../../types';
@@ -525,6 +527,126 @@ function SortableProductRow({
   );
 }
 
+function PublicLanguagesSettings({
+  languages,
+  onSave,
+}: {
+  languages: PublicLanguageConfig[];
+  onSave: (languages: PublicLanguageConfig[]) => Promise<void>;
+}) {
+  const [selectedCode, setSelectedCode] = useState(languages[0]?.code || 'pt-BR');
+  const [isAdding, setIsAdding] = useState(false);
+  const [newLanguage, setNewLanguage] = useState({ code: '', name: '', nativeName: '', flag: '🌐' });
+  const selected = languages.find((language) => language.code === selectedCode) || languages[0];
+  const [copyDraft, setCopyDraft] = useState(() => JSON.stringify(selected?.copy || getDefaultPublicCopy(selected?.code || 'pt-BR'), null, 2));
+  const [catalogDraft, setCatalogDraft] = useState(() => JSON.stringify(selected?.catalog || {}, null, 2));
+
+  useEffect(() => {
+    const next = languages.find((language) => language.code === selectedCode) || languages[0];
+    setCopyDraft(JSON.stringify(next?.copy || getDefaultPublicCopy(next?.code || 'pt-BR'), null, 2));
+    setCatalogDraft(JSON.stringify(next?.catalog || {}, null, 2));
+  }, [languages, selectedCode]);
+
+  if (!selected) return null;
+
+  const persist = async (next: PublicLanguageConfig[]) => {
+    await onSave(next);
+  };
+
+  const toggleLanguage = async (code: string) => {
+    if (code === 'pt-BR') return;
+    await persist(languages.map((language) => language.code === code ? { ...language, enabled: !language.enabled } : language));
+  };
+
+  const saveCopy = async () => {
+    try {
+      const parsed = JSON.parse(copyDraft) as Record<string, string>;
+      await persist(languages.map((language) => language.code === selected.code ? { ...language, copy: parsed } : language));
+    } catch {
+      window.alert('O dicionário precisa estar em formato JSON válido.');
+    }
+  };
+
+  const saveCatalog = async () => {
+    try {
+      const parsed = JSON.parse(catalogDraft) as Record<string, { name?: string; description?: string }>;
+      await persist(languages.map((language) => language.code === selected.code ? { ...language, catalog: parsed } : language));
+    } catch {
+      window.alert('As traduções do catálogo precisam estar em formato JSON válido.');
+    }
+  };
+
+  const addLanguage = async () => {
+    const code = newLanguage.code.trim();
+    if (!code || !newLanguage.name.trim() || languages.some((language) => language.code === code)) return;
+    const language: PublicLanguageConfig = {
+      code,
+      name: newLanguage.name.trim(),
+      nativeName: newLanguage.nativeName.trim() || newLanguage.name.trim(),
+      flag: newLanguage.flag.trim() || '🌐',
+      enabled: false,
+      copy: getDefaultPublicCopy('pt-BR'),
+      catalog: {},
+    };
+    await persist([...languages, language]);
+    setSelectedCode(code);
+    setNewLanguage({ code: '', name: '', nativeName: '', flag: '🌐' });
+    setIsAdding(false);
+  };
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-7">
+      <section className="glass-card border-primary/20 p-6 sm:p-9">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-primary">Cardápio público</p>
+            <h2 className="mt-2 text-3xl font-black tracking-tighter sm:text-5xl">Idiomas</h2>
+            <p className="mt-3 max-w-2xl text-sm font-bold leading-relaxed text-zinc-400">Português é o padrão. O cliente escolhe pelo ícone discreto de bandeira no cabeçalho; a preferência fica salva no dispositivo.</p>
+          </div>
+          <button type="button" onClick={() => setIsAdding((current) => !current)} className="btn-beco btn-beco-purple px-5 py-3 text-xs font-black uppercase tracking-widest">+ Adicionar idioma</button>
+        </div>
+        {isAdding && (
+          <div className="mt-6 grid gap-3 rounded-3xl border border-white/10 bg-black/20 p-5 sm:grid-cols-4">
+            <input value={newLanguage.name} onChange={(event) => setNewLanguage({ ...newLanguage, name: event.target.value })} placeholder="Nome" className="glass rounded-xl border-white/10 p-3 text-sm font-bold" />
+            <input value={newLanguage.nativeName} onChange={(event) => setNewLanguage({ ...newLanguage, nativeName: event.target.value })} placeholder="Nome nativo" className="glass rounded-xl border-white/10 p-3 text-sm font-bold" />
+            <input value={newLanguage.code} onChange={(event) => setNewLanguage({ ...newLanguage, code: event.target.value })} placeholder="Código (ex.: fr-FR)" className="glass rounded-xl border-white/10 p-3 text-sm font-bold" />
+            <div className="flex gap-2"><input value={newLanguage.flag} onChange={(event) => setNewLanguage({ ...newLanguage, flag: event.target.value })} aria-label="Bandeira" className="glass w-16 rounded-xl border-white/10 p-3 text-center text-sm" /><button type="button" onClick={addLanguage} className="btn-beco btn-beco-purple flex-1 px-3 text-xs font-black">CRIAR</button></div>
+          </div>
+        )}
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-3">
+        {languages.map((language) => (
+          <button key={language.code} type="button" onClick={() => setSelectedCode(language.code)} className={`rounded-3xl border p-5 text-left transition ${selected.code === language.code ? 'border-primary bg-primary/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'}`}>
+            <div className="flex items-center justify-between gap-4"><span className="text-2xl">{language.flag}</span><span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest ${language.enabled ? 'bg-emerald-400/15 text-emerald-300' : 'bg-white/5 text-zinc-500'}`}>{language.enabled ? 'Ativo' : 'Inativo'}</span></div>
+            <p className="mt-4 text-lg font-black">{language.nativeName}</p><p className="mt-1 text-xs font-bold text-zinc-500">{language.code}</p>
+          </button>
+        ))}
+      </section>
+
+      <section className="grid gap-7 xl:grid-cols-[0.85fr_1.15fr]">
+        <div className="glass-card p-6 sm:p-8">
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-primary">Disponibilidade</p>
+          <h3 className="mt-2 text-2xl font-black">{selected.flag} {selected.nativeName}</h3>
+          <p className="mt-2 text-sm font-bold leading-relaxed text-zinc-500">Ative apenas após revisar os textos. Idioma incompleto usa português como fallback e nunca mostra uma chave técnica ao cliente.</p>
+          <button type="button" disabled={selected.code === 'pt-BR'} onClick={() => toggleLanguage(selected.code)} className={`mt-6 w-full rounded-2xl border px-5 py-4 text-xs font-black uppercase tracking-widest transition disabled:cursor-not-allowed disabled:opacity-50 ${selected.enabled ? 'border-rose-400/30 bg-rose-500/10 text-rose-200' : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'}`}>{selected.enabled ? 'Desativar para o cliente' : 'Ativar para o cliente'}</button>
+          <div className="mt-5 rounded-2xl border border-amber-300/15 bg-amber-300/5 p-4 text-xs font-bold leading-relaxed text-amber-100/80">Produtos, categorias e adicionais usam o cadastro principal enquanto não houver uma tradução específica. Isso preserva nomes comerciais e evita traduções erradas de marcas.</div>
+        </div>
+        <div className="glass-card p-6 sm:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.25em] text-primary">Textos da interface</p><h3 className="mt-2 text-2xl font-black">Dicionário editável</h3></div><button type="button" onClick={saveCopy} className="btn-beco btn-beco-purple px-5 py-3 text-xs font-black uppercase tracking-widest">Salvar textos</button></div>
+          <p className="mt-3 text-sm font-bold leading-relaxed text-zinc-500">Cada chave é um texto da experiência pública: menu, busca, pedido, conta, pagamento e atendimento. Você pode editar o valor sem alterar código.</p>
+          <textarea value={copyDraft} onChange={(event) => setCopyDraft(event.target.value)} spellCheck={false} className="custom-scrollbar mt-5 min-h-[520px] w-full resize-y rounded-2xl border border-white/10 bg-black/25 p-4 font-mono text-xs leading-relaxed text-zinc-200 outline-none focus:border-primary/60" />
+        </div>
+      </section>
+      <section className="glass-card p-6 sm:p-8">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.25em] text-primary">Catálogo</p><h3 className="mt-2 text-2xl font-black">Produtos e categorias</h3></div><button type="button" onClick={saveCatalog} className="btn-beco btn-beco-purple px-5 py-3 text-xs font-black uppercase tracking-widest">Salvar traduções</button></div>
+        <p className="mt-3 text-sm font-bold leading-relaxed text-zinc-500">Use o ID do produto ou categoria como chave. Exemplo: <code className="text-primary">&#123; "id-do-item": &#123; "name": "Name", "description": "Description" &#125; &#125;</code>. Marcas podem ficar sem tradução para preservar sua identidade.</p>
+        <textarea value={catalogDraft} onChange={(event) => setCatalogDraft(event.target.value)} spellCheck={false} placeholder={'{\n  "id-do-produto": {\n    "name": "Nome traduzido",\n    "description": "Descrição traduzida"\n  }\n}'} className="custom-scrollbar mt-5 min-h-[260px] w-full resize-y rounded-2xl border border-white/10 bg-black/25 p-4 font-mono text-xs leading-relaxed text-zinc-200 outline-none focus:border-primary/60" />
+      </section>
+    </div>
+  );
+}
+
 export function AdminView() {
   const {
     menu, updateProduct, addProduct, deleteProduct,
@@ -962,6 +1084,7 @@ export function AdminView() {
     ...(canManageCategories ? ['categories'] : []),
     ...(canManageOptionals ? ['optionals'] : []),
     ...(isAdminProfile && canManageSettings ? ['config'] : []),
+    ...(isAdminProfile && canManageSettings ? ['languages'] : []),
     ...(isAdminProfile && canManageSettings ? ['qrcodes'] : []),
     ...(canManagePDVUsers ? ['sellers'] : []),
     ...(isAdminProfile && canViewSalesTotals ? ['finance', 'delivery', 'movements'] : []),
@@ -1639,6 +1762,7 @@ export function AdminView() {
         <div className="metal-surface flex w-max min-w-full p-1.5 rounded-[1.25rem]">
           {[
             { id: 'config', name: 'Geral', icon: Settings },
+            { id: 'languages', name: 'Idiomas', icon: Languages },
             { id: 'categories', name: 'Categorias', icon: LayoutDashboard },
             { id: 'products', name: 'Produtos', icon: Package },
             { id: 'optionals', name: 'Opcionais', icon: Sparkles },
@@ -1733,6 +1857,13 @@ export function AdminView() {
             </div>
           </SectionCard>
         </div>
+      )}
+
+      {activeTab === 'languages' && isAdminProfile && canManageSettings && (
+        <PublicLanguagesSettings
+          languages={getPublicLanguages(settings)}
+          onSave={(publicLanguages) => updateSettings({ publicLanguages })}
+        />
       )}
 
       {activeTab === 'qrcodes' && isAdminProfile && canManageSettings && (

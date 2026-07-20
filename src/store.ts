@@ -11,7 +11,7 @@ import type {
 
 export type { Product, Table, OrderItem, KitchenOrder, ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier };
 
-type AdminTab = 'config' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance' | 'qrcodes' | 'delivery';
+type AdminTab = 'config' | 'languages' | 'products' | 'categories' | 'optionals' | 'sellers' | 'movements' | 'finance' | 'qrcodes' | 'delivery';
 
 const TABLET_TABLE_STORAGE_KEY = 'beco_tablet_table_id';
 const LEGACY_TABLET_TABLE_STORAGE_KEY = 'becoartes_tablet_table_id';

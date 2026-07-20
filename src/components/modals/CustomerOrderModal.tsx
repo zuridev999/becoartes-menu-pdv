@@ -4,6 +4,7 @@ import { X, ShoppingBag, Trash2, Send, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { formatCurrency } from '../../lib/format';
+import { usePublicI18n } from '../../lib/public-i18n';
 
 export function CustomerOrderModal({
   onClose,
@@ -15,6 +16,7 @@ export function CustomerOrderModal({
   origin?: 'tablet' | 'qr';
 }) {
   const { currentTableId, tables, removeFromCart, sendToKitchen, addNotification } = useStore();
+  const { t, locale } = usePublicI18n();
   const [isSending, setIsSending] = useState(false);
   const [isSent, setIsSent] = useState(false);
   
@@ -42,7 +44,7 @@ export function CustomerOrderModal({
         setIsSent(false);
       }, 1800);
     } catch {
-      addNotification('Erro ao enviar pedido. Tente novamente.', 'error');
+      addNotification(t('sendOrder'), 'error');
     } finally {
       setIsSending(false);
     }
@@ -75,8 +77,8 @@ export function CustomerOrderModal({
               >
                 <CheckCircle2 size={80} />
               </motion.div>
-              <h2 className="text-6xl font-black italic tracking-tighter mb-4">Sucesso!</h2>
-              <p className="text-2xl font-bold opacity-90 uppercase tracking-widest">Seu pedido foi enviado.</p>
+              <h2 className="text-6xl font-black italic tracking-tighter mb-4">{t('success')}</h2>
+              <p className="text-2xl font-bold opacity-90 uppercase tracking-widest">{t('orderWasSent')}</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -88,8 +90,8 @@ export function CustomerOrderModal({
               <ShoppingBag size={32} className="hidden sm:block" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-3xl sm:text-5xl font-black italic tracking-tighter mb-1 leading-none">Meu <span className="text-primary">Pedido</span></h2>
-              <p className="text-gray-500 font-black uppercase tracking-widest text-[9px] sm:text-xs">Revise antes de enviar</p>
+              <h2 className="text-3xl sm:text-5xl font-black italic tracking-tighter mb-1 leading-none">{t('order')}</h2>
+              <p className="text-gray-500 font-black uppercase tracking-widest text-[9px] sm:text-xs">{t('reviewBeforeSending')}</p>
             </div>
           </div>
           <button type="button" aria-label="Fechar pedido" onClick={onClose} className="p-3 sm:p-4 glass rounded-full hover:bg-rose-500/20 text-rose-500 transition-all shrink-0">
@@ -104,11 +106,11 @@ export function CustomerOrderModal({
               <ShoppingBag size={76} className="mx-auto mb-8 sm:hidden" />
               <ShoppingBag size={100} className="mx-auto mb-8 hidden sm:block" />
               <p className="text-2xl sm:text-3xl font-black uppercase tracking-widest italic">
-                {hasAccountItems ? 'Pedido já enviado' : 'Seu pedido está vazio'}
+                {hasAccountItems ? t('orderSent') : t('orderEmpty')}
               </p>
               {hasAccountItems && (
                 <p className="mt-4 text-sm sm:text-base font-bold uppercase tracking-widest text-gray-400">
-                  Os itens enviados estão em Minha Conta.
+                  {t('sentItemsInAccount')}
                 </p>
               )}
             </div>
@@ -123,7 +125,7 @@ export function CustomerOrderModal({
                        </div>
                        <div className="min-w-0">
                           <p className="text-lg sm:text-2xl font-black italic tracking-tighter leading-tight mb-1">{item.name}</p>
-                          <p className="text-accent font-black text-sm sm:text-base">{formatCurrency(getOrderItemTotal(item))}</p>
+                          <p className="text-accent font-black text-sm sm:text-base">{formatCurrency(getOrderItemTotal(item), locale)}</p>
                        </div>
                     </div>
                     {item.selectedModifiers && item.selectedModifiers.length > 0 && (
@@ -148,9 +150,9 @@ export function CustomerOrderModal({
            <div className="flex justify-between items-end">
               <div>
                 <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-2">
-                  {table.cart.length > 0 ? 'Total do Pedido' : 'Total na Minha Conta'}
+                  {table.cart.length > 0 ? t('totalOrder') : t('accountTotal')}
                 </p>
-                <p className="text-4xl sm:text-6xl font-black text-accent italic tracking-tighter">{formatCurrency(displayTotal)}</p>
+                <p className="text-4xl sm:text-6xl font-black text-accent italic tracking-tighter">{formatCurrency(displayTotal, locale)}</p>
               </div>
            </div>
 
@@ -163,7 +165,7 @@ export function CustomerOrderModal({
               >
                 <Send size={22} className="sm:hidden" />
                 <Send size={32} className="hidden sm:block" />
-                {table.cart.length === 0 && hasAccountItems ? 'VER MINHA CONTA' : 'ENVIAR PEDIDO'}
+                {table.cart.length === 0 && hasAccountItems ? t('viewAccount').toUpperCase() : t('sendOrder').toUpperCase()}
               </button>
            </div>
         </div>

@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { Check, X } from 'lucide-react';
 import { useStore, type Product, type Modifier } from '../../store';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
+import { formatCurrency } from '../../lib/format';
+import { usePublicI18n } from '../../lib/public-i18n';
 
 export function ProductModal({
   product,
@@ -22,6 +24,7 @@ export function ProductModal({
   onAddToCart?: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
 }) {
   const { addToCart } = useStore();
+  const { t, locale, catalogText } = usePublicI18n();
   const [quantity, setQuantity] = useState(1);
   const [selectedModifiers, setSelectedModifiers] = useState<Modifier[]>([]);
   const [notes, setNotes] = useState('');
@@ -38,7 +41,7 @@ export function ProductModal({
     }) || [];
 
     if (missingGroups.length > 0) {
-      setErrors(missingGroups.map(g => `O grupo "${g.name}" exige pelo menos ${g.minChoices} escolha(s).`));
+      setErrors(missingGroups.map(g => `${g.name}: ${t('chooseRange', { min: g.minChoices, max: g.maxChoices })}.`));
       return;
     }
 
@@ -52,7 +55,6 @@ export function ProductModal({
   };
 
   const totalPrice = (product.price + selectedModifiers.reduce((acc: number, m: any) => acc + m.price, 0)) * quantity;
-  const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const modalShellClass = tabletLandscape
     ? 'p-3 sm:p-4'
     : 'p-3 sm:p-6 lg:p-12';
@@ -72,18 +74,18 @@ export function ProductModal({
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`fixed inset-0 z-[750] flex items-center justify-center pointer-events-none font-['Outfit'] ${modalShellClass}`}>
         <div className={`glass-card flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
           <div className={`relative shrink-0 overflow-hidden ${mediaPanelClass}`}>
-             <img src={getImageSrc(product.image)} alt={product.name} onError={applyImageFallback} className="w-full h-full object-cover" />
+             <img src={getImageSrc(product.image)} alt={catalogText(product.id, product.name, 'name')} onError={applyImageFallback} className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
              <div className={tabletLandscape ? 'absolute bottom-5 left-5 right-5 min-[900px]:bottom-10 min-[900px]:left-10 min-[900px]:right-10' : 'absolute bottom-16 left-16'}>
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2 block">{product.categoryName}</span>
-                <h2 className={`${tabletLandscape ? 'text-3xl min-[900px]:text-5xl' : 'text-7xl'} font-black tracking-tighter italic text-white mb-2 min-[900px]:mb-4 leading-none`}>{product.name}</h2>
-                <p className={`${tabletLandscape ? 'hidden min-[900px]:block text-base max-w-sm' : 'text-xl max-w-md'} text-gray-400 font-medium italic`}>"{product.description || 'Uma obra prima gastronômica curada especialmente para o Becoartes.'}"</p>
+                <h2 className={`${tabletLandscape ? 'text-3xl min-[900px]:text-5xl' : 'text-7xl'} font-black tracking-tighter italic text-white mb-2 min-[900px]:mb-4 leading-none`}>{catalogText(product.id, product.name, 'name')}</h2>
+                <p className={`${tabletLandscape ? 'hidden min-[900px]:block text-base max-w-sm' : 'text-xl max-w-md'} text-gray-400 font-medium italic`}>"{catalogText(product.id, product.description || '', 'description')}"</p>
              </div>
           </div>
           <div className={`${contentPanelClass} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
-             <button type="button" aria-label="Fechar produto" onClick={onClose} className={`${tabletLandscape ? 'top-5 right-5 p-3' : 'top-8 right-8 p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
+             <button type="button" aria-label={t('close')} onClick={onClose} className={`${tabletLandscape ? 'top-5 right-5 p-3' : 'top-8 right-8 p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
              <div className="flex justify-between items-center mb-5 lg:hidden">
-                <h2 className="text-3xl sm:text-4xl font-black italic leading-none pr-14">{product.name}</h2>
+                <h2 className="text-3xl sm:text-4xl font-black italic leading-none pr-14">{catalogText(product.id, product.name, 'name')}</h2>
              </div>
 
              <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${tabletLandscape ? 'space-y-4 min-[900px]:space-y-6' : 'space-y-6 lg:space-y-10'}`}>
@@ -98,11 +100,11 @@ export function ProductModal({
                           <h4 className="text-base sm:text-lg font-black uppercase tracking-[0.12em] text-white leading-tight pr-4">{group.name}</h4>
                           <p className="mt-2 flex items-center gap-2 text-[10px] text-gray-500 font-black uppercase tracking-[0.16em]">
                             <span className="w-2 h-2 rounded-full bg-accent shadow-[0_0_16px_rgba(255,210,30,0.8)]" />
-                            {isSingle ? 'Escolha 1 adicional' : `Escolha de ${group.minChoices} a ${group.maxChoices}`}
+                            {isSingle ? t('chooseOne') : t('chooseRange', { min: group.minChoices, max: group.maxChoices })}
                           </p>
                         </div>
                         {group.isRequired && (
-                          <span className="bg-accent text-black px-3 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg shadow-accent/20">Obrigatório</span>
+                          <span className="bg-accent text-black px-3 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg shadow-accent/20">{t('required')}</span>
                         )}
                       </div>
                       <div className="grid grid-cols-1 gap-4">
@@ -143,10 +145,10 @@ export function ProductModal({
                               <div className="min-w-0">
                                 <span className={`block font-black ${tabletLandscape ? 'text-lg' : 'text-base sm:text-xl'} tracking-tight leading-tight`}>{m.name}</span>
                                 <span className={`mt-1 block text-[10px] font-black uppercase tracking-[0.16em] ${isSelected ? 'text-white/65' : 'text-black/55'}`}>
-                                  {isSelected ? 'Selecionado, toque para remover' : 'Toque para adicionar'}
+                                  {isSelected ? t('selectedRemove') : t('tapToAdd')}
                                 </span>
                               </div>
-                              {m.price > 0 && <span className={`${tabletLandscape ? 'text-lg' : 'text-sm sm:text-xl'} font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-black'}`}>+ {formatCurrency(m.price)}</span>}
+                              {m.price > 0 && <span className={`${tabletLandscape ? 'text-lg' : 'text-sm sm:text-xl'} font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-black'}`}>+ {formatCurrency(m.price, locale)}</span>}
                             </motion.button>
                           );
                         })}
@@ -156,14 +158,14 @@ export function ProductModal({
                 })}
 
                 <div className="space-y-4">
-                   <h4 className="text-sm font-black uppercase tracking-widest text-white">Observações Especiais</h4>
+                   <h4 className="text-sm font-black uppercase tracking-widest text-white">{t('specialInstructions')}</h4>
                    <textarea 
                     name="item-notes"
-                    aria-label="Observações do pedido"
+                    aria-label={t('specialInstructions')}
                     value={notes}
                     onChange={(e) => canEditItemNotes && setNotes(e.target.value)}
                     disabled={!canEditItemNotes}
-                    placeholder={canEditItemNotes ? 'Ex: sem cebola, ponto menos, gelo e limão...' : 'Observações bloqueadas para este perfil'}
+                    placeholder={canEditItemNotes ? t('notesPlaceholder') : t('specialInstructions')}
                     className="w-full glass p-4 sm:p-6 rounded-3xl border-white/10 outline-none focus:border-primary transition-all text-sm font-medium min-h-[96px] sm:min-h-[120px] resize-none disabled:opacity-40 disabled:cursor-not-allowed"
                    />
                 </div>
@@ -183,8 +185,8 @@ export function ProductModal({
                      <button type="button" aria-label="Aumentar quantidade" disabled={!canChangeItemQuantity} onClick={() => setQuantity(quantity + 1)} className="w-11 h-11 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">+</button>
                   </div>
                   <div className="text-right">
-                     <p className="text-[10px] font-black uppercase text-gray-500 mb-1">Total do Item</p>
-                     <p className={`${tabletLandscape ? 'text-3xl' : 'text-3xl sm:text-4xl'} font-black text-accent tracking-tighter`}>{formatCurrency(totalPrice)}</p>
+                     <p className="text-[10px] font-black uppercase text-gray-500 mb-1">{t('totalItem')}</p>
+                     <p className={`${tabletLandscape ? 'text-3xl' : 'text-3xl sm:text-4xl'} font-black text-accent tracking-tighter`}>{formatCurrency(totalPrice, locale)}</p>
                   </div>
                 </div>
 
@@ -194,7 +196,7 @@ export function ProductModal({
                 disabled={isAdding}
                 className={`${tabletLandscape ? 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-5 sm:py-8 text-sm sm:text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4 disabled:opacity-50 disabled:pointer-events-none`}
               >
-                {isAdding ? 'ADICIONANDO...' : 'ADICIONAR AO PEDIDO'}
+                {isAdding ? t('adding').toUpperCase() : t('addToOrder').toUpperCase()}
               </button>
              </div>
           </div>

@@ -10,6 +10,7 @@ import { PremiumLoader } from './components/common/Loaders';
 import { NotificationDisplay } from './components/common/NotificationDisplay';
 import { ChecklistAlertDisplay } from './components/common/ChecklistAlertDisplay';
 import { postOSMessage, subscribeOSMessages } from './lib/osBridge';
+import { PublicI18nProvider } from './lib/public-i18n';
 
 const TabletView = lazy(() => import('./views/tablet/TabletView').then(module => ({ default: module.TabletView })));
 const PDVView = lazy(() => import('./views/pdv/PDVView').then(module => ({ default: module.PDVView })));
@@ -20,7 +21,7 @@ const DeliveryView = lazy(() => import('./views/delivery/DeliveryView').then(mod
 
 function App() {
   const { 
-    init, isLoading, initError, activeView, syncData, setActiveView
+    init, isLoading, initError, activeView, syncData, setActiveView, settings
   } = useStore();
   const [animationFinished, setAnimationFinished] = useState(() => {
     const path = window.location.pathname.replace(/^\/+/, '');
@@ -77,6 +78,7 @@ function App() {
         )}
       </AnimatePresence>
 
+      <PublicI18nProvider settings={settings}>
       <div className="min-h-screen bg-transparent">
         <NotificationDisplay />
         <ChecklistAlertDisplay />
@@ -117,6 +119,7 @@ function App() {
           </div>
         )}
       </div>
+      </PublicI18nProvider>
     </AntigravityErrorBoundary>
   );
 }

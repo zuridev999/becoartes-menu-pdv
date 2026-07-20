@@ -11,6 +11,8 @@ import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal
 import { getOrderItemsTotal } from '../../lib/totals';
 import { AppApi, CustomerTabApi, setPublicTableAccess } from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
+import { usePublicI18n } from '../../lib/public-i18n';
+import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
 
 const CUSTOMER_TAB_CPF_KEY = 'becoartes_customer_tab_cpf';
 
@@ -26,6 +28,7 @@ const getRouteTableNumber = () => {
 
 export function QRView() {
   const { currentTableId, tables, setCurrentTableId, settings } = useStore();
+  const { t } = usePublicI18n();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
@@ -107,10 +110,10 @@ export function QRView() {
       <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white font-['Outfit']">
         <section className="w-full max-w-md border-y border-white/10 py-9">
           <QrCode className="mx-auto h-12 w-12 text-primary" aria-hidden="true" />
-          <p className="mt-5 text-[10px] font-black uppercase tracking-[0.24em] text-primary">Cardápio da mesa</p>
-          <h1 className="mt-2 text-4xl font-black leading-tight">Escaneie o QR da sua mesa</h1>
+          <p className="mt-5 text-[10px] font-black uppercase tracking-[0.24em] text-primary">{t('menu')}</p>
+          <h1 className="mt-2 text-4xl font-black leading-tight">{t('scanTableQr')}</h1>
           <p className="mx-auto mt-4 max-w-sm text-sm font-semibold leading-relaxed text-zinc-400">
-            O cardápio e os pedidos só abrem pelo QR identificado na mesa. Se ele estiver danificado, chame alguém da equipe.
+            {t('scanTableQrDescription')}
           </p>
         </section>
       </main>
@@ -199,23 +202,24 @@ export function QRView() {
             <LayoutDashboard size={18} />
           </div>
           <div className="min-w-0">
-            <p className="text-[8px] font-black uppercase text-gray-500">Mesa</p>
+            <p className="text-[8px] font-black uppercase text-gray-500">{t('table')}</p>
             <h2 className="text-xl font-black tracking-tighter">{currentTable?.number}</h2>
           </div>
         </div>
         
         <div className="flex items-center gap-2">
+          <PublicLanguageMenu />
           <button 
             onClick={() => setIsServiceOpen(true)} 
             className="p-3 glass rounded-xl text-primary active:scale-95 transition-all"
-            aria-label="Chamar atendimento"
+            aria-label={t('callService')}
           >
             <Bell size={18} />
           </button>
           <button 
             onClick={handlePrimaryAccountAction}
             className="btn-beco btn-beco-purple px-4 py-3 relative active:scale-95"
-            aria-label={hasCartItems ? 'Ver pedido antes de enviar' : 'Ver minha conta'}
+            aria-label={hasCartItems ? t('order') : t('viewAccount')}
           >
             <ShoppingBag size={18} />
             {(hasCartItems || hasAccountItems) && (

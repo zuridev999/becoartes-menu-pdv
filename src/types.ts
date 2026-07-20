@@ -229,6 +229,18 @@ export interface Seller {
   employmentType?: string;
 }
 
+export type PublicLanguageCode = string;
+
+export interface PublicLanguageConfig {
+  code: PublicLanguageCode;
+  name: string;
+  nativeName: string;
+  flag: string;
+  enabled: boolean;
+  copy?: Record<string, string>;
+  catalog?: Record<string, { name?: string; description?: string }>;
+}
+
 export interface AppSettings {
   unitName: string;
   currency: string;
@@ -248,6 +260,7 @@ export interface AppSettings {
     operator?: Record<string, boolean>;
   };
   pdvUserPermissions?: Record<string, Record<string, boolean>>;
+  publicLanguages?: PublicLanguageConfig[];
   tablet: {
     bannerUrls: string[];
     bannerText: string;

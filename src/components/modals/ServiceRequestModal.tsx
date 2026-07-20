@@ -5,24 +5,26 @@ import {
   Wallet, CupSoda, Users 
 } from 'lucide-react';
 import { useStore } from '../../store';
+import { usePublicI18n } from '../../lib/public-i18n';
 
 export function ServiceRequestModal({ onClose }: { onClose: () => void }) {
   const { currentTableId, requestService, addNotification } = useStore();
+  const { t } = usePublicI18n();
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
 
   const options = [
-    { id: 'waiter', label: 'Chamar Garçom', icon: Users },
-    { id: 'bill', label: 'Fechar Conta', icon: Wallet },
-    { id: 'glass', label: 'Pedir Copo Extra', icon: CupSoda },
-    { id: 'cutlery', label: 'Pedir Talher', icon: Utensils },
+    { id: 'waiter', label: t('callWaiter'), icon: Users },
+    { id: 'bill', label: t('closeBill'), icon: Wallet },
+    { id: 'glass', label: t('extraGlass'), icon: CupSoda },
+    { id: 'cutlery', label: t('cutlery'), icon: Utensils },
   ];
 
   const handleSend = async (type: string, directLabel?: string) => {
     if (!currentTableId) return;
     setIsSending(true);
     await requestService(currentTableId, type, message || directLabel || '');
-    addNotification('Solicitação enviada!');
+    addNotification(t('requestSent'));
     setIsSending(false);
     onClose();
   };
@@ -41,8 +43,8 @@ export function ServiceRequestModal({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] p-5 sm:p-10">
           <div>
-            <h2 className="mb-2 text-3xl font-black italic tracking-tighter sm:text-5xl">Chamar <span className="text-primary">Garçom</span></h2>
-            <p className="text-gray-500 font-black uppercase tracking-widest text-xs">Como podemos ajudar você hoje?</p>
+            <h2 className="mb-2 text-3xl font-black italic tracking-tighter sm:text-5xl">{t('service')}</h2>
+            <p className="text-gray-500 font-black uppercase tracking-widest text-xs">{t('helpToday')}</p>
           </div>
           <button type="button" aria-label="Fechar atendimento" onClick={onClose} className="glass shrink-0 rounded-full p-3 text-rose-500 transition-all hover:bg-rose-500/20 sm:p-4">
             <X size={28} />
@@ -67,13 +69,13 @@ export function ServiceRequestModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="space-y-4">
-            <p className="text-xs font-black uppercase tracking-widest text-gray-500 ml-4">Digite sua solicitação (opcional)</p>
+            <p className="text-xs font-black uppercase tracking-widest text-gray-500 ml-4">{t('serviceRequest')}</p>
             <textarea
               name="service-request"
-              aria-label="Solicitação ao atendimento"
+              aria-label={t('serviceRequest')}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Ex: Trazer mais 2 copos com gelo e limão..."
+              placeholder={t('servicePlaceholder')}
               className="w-full h-32 bg-white/5 border border-white/10 rounded-[2rem] p-8 text-xl font-bold focus:outline-none focus:border-primary/50 transition-all resize-none"
             />
           </div>
@@ -86,7 +88,7 @@ export function ServiceRequestModal({ onClose }: { onClose: () => void }) {
             disabled={isSending || !message.trim()}
             className="w-full py-8 btn-beco btn-beco-purple text-2xl font-black tracking-widest rounded-[2rem] disabled:opacity-20 shadow-2xl shadow-primary/20"
           >
-            ENVIAR SOLICITAÇÃO
+            {t('sendRequest').toUpperCase()}
           </button>
         </div>
       </motion.div>

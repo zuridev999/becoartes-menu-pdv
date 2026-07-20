@@ -7,6 +7,8 @@ import { ProductModal } from '../../components/modals/ProductModal';
 import { createId } from '../../lib/id';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { DeliveryApi, type DeliveryCouponConfig, type DeliveryCustomerAccount, type DeliveryOrderSummary } from '../../lib/api';
+import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
+import { usePublicI18n } from '../../lib/public-i18n';
 
 type DeliveryCustomer = {
   name: string;
@@ -211,6 +213,7 @@ const shouldTrackOrder = (order: DeliveryEvent) => (
 );
 
 export function DeliveryView() {
+  const { t } = usePublicI18n();
   const { addNotification } = useStore();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [cart, setCart] = useState<OrderItem[]>([]);
@@ -635,11 +638,13 @@ export function DeliveryView() {
             <h1 className="text-xl sm:text-2xl font-black tracking-tighter truncate">Becoartes em casa</h1>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+        <PublicLanguageMenu />
         <button
           onClick={() => setIsCheckoutOpen(true)}
           disabled={cart.length === 0}
           className="btn-beco btn-beco-purple px-4 py-3 relative active:scale-95 disabled:opacity-30"
-          aria-label="Abrir carrinho"
+          aria-label={t('order')}
         >
           <ShoppingBag size={18} />
           {cart.length > 0 && (
@@ -658,6 +663,7 @@ export function DeliveryView() {
         >
           {account ? 'Meus pedidos' : 'Login'}
         </button>
+        </div>
       </div>
 
       <div className="h-full pt-16 sm:pt-20 pb-[6.5rem] sm:pb-28">
