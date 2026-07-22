@@ -35,6 +35,9 @@ assert.match(pinSource, /scrypt:\$\{salt\}:\$\{hash\}/, 'seller PINs must be sto
 assert.match(pinSource, /export const verifyPin =/, 'seller PIN login must support verified transparent migration');
 assert.doesNotMatch(pinSource, /storedPin === hashPin/, 'randomly salted PIN hashes must never be compared by re-hashing');
 assert.match(bffSource, /api\/cash\/open.*api\/cash\/close/s, 'cash PIN routes must participate in rate limiting');
+assert.match(bffSource, /seller\?\.source !== 'os' \|\| cashActor\.seller\?\.osRole !== 'super_admin'/, 'cash closing must require a real OS superadmin');
+assert.match(bffSource, /getLatestClosedCashRow[\s\S]*ORDER BY updated_at DESC, data DESC, created_at DESC/, 'cash opening must use the latest completed closing');
+assert.match(bffSource, /requestedOpeningCents !== requiredOpeningCents/, 'cash opening must reject a balance different from the previous closing');
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
 assert.match(routerSource, /transient \? 503/, 'transient backend failures must return 503');
 assert.match(routerSource, /bff_request_error/, 'backend errors must include structured route context');

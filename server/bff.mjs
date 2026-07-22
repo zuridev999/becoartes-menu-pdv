@@ -1246,28 +1246,34 @@ const getOpenCashRow = async () => {
   return res.rows[0] || null;
 };
 
+const getLatestClosedCashRow = async () => {
+  const res = await db.execute({
+    sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND status = 'Fechado' ORDER BY updated_at DESC, data DESC, created_at DESC LIMIT 1`,
+    args: [OS_EMPRESA_ID],
+  });
+  return res.rows[0] || null;
+};
+
 const getCashState = async () => {
   await ensureDatabaseReady();
   const businessDate = getBusinessDate();
-  const [openCashRow, todayRes, lastClosedRes] = await Promise.all([
+  const [openCashRow, todayRes, lastClosedRow] = await Promise.all([
     getOpenCashRow(),
     db.execute({
       sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND data = ? LIMIT 1`,
       args: [OS_EMPRESA_ID, businessDate],
     }),
-    db.execute({
-      sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND status = 'Fechado' AND data != ? ORDER BY data DESC LIMIT 1`,
-      args: [OS_EMPRESA_ID, businessDate],
-    }),
+    getLatestClosedCashRow(),
   ]);
   const current = mapCashRow(openCashRow || todayRes.rows[0]);
-  const lastClosed = mapCashRow(lastClosedRes.rows[0]);
+  const lastClosed = mapCashRow(lastClosedRow);
 
   return {
     businessDate: current?.businessDate || businessDate,
     isOpen: current?.status === 'Aberto',
     current,
     lastClosingBalance: lastClosed?.closingBalance || 0,
+    hasPreviousClosing: Boolean(lastClosed),
     sandbox: CASH_SANDBOX_MODE,
   };
 };
@@ -1312,6 +1318,7 @@ const getOperationalUsers = async ({ includePins = false, view = '' } = {}) => {
       temporaryOperationalAccess: row.temporaryAccess,
       stationAccess: row.temporaryAccess?.station || null,
       source: 'os',
+      osRole: normalizeText(row.row.role).toLowerCase(),
       email: row.row.email || '',
     }));
 };
@@ -2555,6 +2562,16 @@ const resolveCashActorByPin = async (pin, requiredPermission) => {
   const error = new Error('PIN não encontrado ou usuário inativo.');
   error.statusCode = 403;
   throw error;
+};
+
+const resolveCashClosingActorByPin = async (pin) => {
+  const cashActor = await resolveCashActorByPin(pin, 'closeCash');
+  if (cashActor.seller?.source !== 'os' || cashActor.seller?.osRole !== 'super_admin') {
+    const error = new Error('Somente o superadministrador pode fechar o caixa.');
+    error.statusCode = 403;
+    throw error;
+  }
+  return { ...cashActor, override: true };
 };
 
 const canAuthorizeQrMode = (session) => {
@@ -6475,7 +6492,17 @@ const openCash = async ({ openingBalance, notes, confirmationPin }) => {
   }
 
   const now = osTimestamp();
-  const normalizedOpeningBalance = requireNumber(openingBalance, 'openingBalance');
+  const requestedOpeningCents = moneyToCents(openingBalance, 'openingBalance');
+  const latestClosedCash = await getLatestClosedCashRow();
+  const requiredOpeningCents = latestClosedCash
+    ? moneyToCents(latestClosedCash.valor_caixa_final || 0, 'lastClosingBalance')
+    : requestedOpeningCents;
+  if (latestClosedCash && requestedOpeningCents !== requiredOpeningCents) {
+    const error = new Error(`O caixa deve ser aberto com o valor exato do último fechamento: ${formatMoneyBRL(centsToMoney(requiredOpeningCents))}.`);
+    error.statusCode = 409;
+    throw error;
+  }
+  const normalizedOpeningBalance = centsToMoney(requiredOpeningCents);
   const responsibleId = await resolveCashResponsibleId(effectiveSession);
 
   if (existingCash) {
@@ -6592,7 +6619,7 @@ const getExpectedClosingCents = async (cash) => {
 };
 
 const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
-  const cashActor = await resolveCashActorByPin(confirmationPin, 'closeCash');
+  const cashActor = await resolveCashClosingActorByPin(confirmationPin);
   const effectiveSession = cashActor.seller;
 
   const cash = await getOpenCashRow();
@@ -6601,39 +6628,6 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
   const closingCents = moneyToCents(closingBalance, 'closingBalance');
   const closeSummary = await getExpectedClosingCents(cash);
   const missingCents = closeSummary.expectedCents - closingCents;
-
-  if (missingCents > 0 && !cashActor.override) {
-    await addAuditLog({
-      id: createId(),
-      action: 'cash_close_blocked',
-      details: JSON.stringify({
-        expected: centsToMoney(closeSummary.expectedCents),
-        declared: centsToMoney(closingCents),
-        missing: centsToMoney(missingCents),
-        opening: centsToMoney(closeSummary.openingCents),
-        cashSales: centsToMoney(closeSummary.cashSalesCents),
-        manualIn: centsToMoney(closeSummary.manualInCents),
-        manualOut: centsToMoney(closeSummary.manualOutCents),
-        adminOverride: cashActor.override,
-        sandbox: CASH_SANDBOX_MODE,
-      }),
-      origin: 'pdv',
-      authorId: effectiveSession.id,
-      authorName: effectiveSession.name,
-      timestamp: new Date().toISOString(),
-    });
-
-    await safeCreateOSNotification({
-      title: 'Bloqueio: falta de dinheiro no caixa',
-      message: `${effectiveSession.name || 'Usuário'} tentou fechar o caixa com ${formatMoneyBRL(centsToMoney(missingCents))} abaixo do esperado.`,
-      type: 'alert',
-      link: `/${OS_TENANT_SLUG}/controle-dinheiro`,
-    });
-
-    const error = new Error('Dinheiro físico abaixo do esperado. Solicite liberação administrativa para autorizar este fechamento.');
-    error.statusCode = 409;
-    throw error;
-  }
 
   const now = osTimestamp();
   await db.execute({

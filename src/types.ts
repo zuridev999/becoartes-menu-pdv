@@ -224,6 +224,7 @@ export interface Seller {
   role: 'garçom' | 'atendente' | 'gerente' | 'outro';
   permission: 'admin' | 'manager' | 'operator' | 'standard' | 'restricted';
   source?: 'os' | 'pdv';
+  osRole?: string;
   allowRemote?: boolean;
   canSellInPdv?: boolean;
   employmentType?: string;

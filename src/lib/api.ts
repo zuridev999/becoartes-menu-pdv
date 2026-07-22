@@ -53,6 +53,7 @@ export type CashState = {
   isOpen: boolean;
   sandbox?: boolean;
   lastClosingBalance: number;
+  hasPreviousClosing: boolean;
   current: null | {
     id: string;
     businessDate: string;

@@ -524,6 +524,12 @@ export function PDVView() {
     return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
+  useEffect(() => {
+    if (cashDialog !== 'open' || !cashState?.hasPreviousClosing) return;
+    const cents = Math.round(Number(cashState.lastClosingBalance || 0) * 100);
+    setCashValue(formatMoneyInput(String(cents)));
+  }, [cashDialog, cashState?.hasPreviousClosing, cashState?.lastClosingBalance]);
+
   const submitQrModeSwitch = async (authorizationPin?: string) => {
     if (isSwitchingQrMode) return;
     setIsSwitchingQrMode(true);
@@ -1720,9 +1726,10 @@ export function PDVView() {
                   <input
                     value={cashValue}
                     onChange={(event) => setCashValue(formatMoneyInput(event.target.value))}
+                    readOnly={cashDialog === 'open' && Boolean(cashState?.hasPreviousClosing)}
                     placeholder="R$ 0,00"
                     inputMode="numeric"
-                    className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-5 sm:px-6 py-5 sm:py-6 outline-none text-3xl sm:text-4xl font-black text-accent focus:border-primary/60"
+                    className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-5 sm:px-6 py-5 sm:py-6 outline-none text-3xl sm:text-4xl font-black text-accent focus:border-primary/60 read-only:cursor-not-allowed read-only:opacity-80"
                     autoFocus
                   />
                 </div>
@@ -1731,6 +1738,11 @@ export function PDVView() {
                   <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-5">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-2">Último fechamento</p>
                     <p className="text-xl font-black text-white">{formatCurrency(cashState?.lastClosingBalance || 0)}</p>
+                    <p className="mt-2 text-xs font-bold text-zinc-500">
+                      {cashState?.hasPreviousClosing
+                        ? 'A abertura herda obrigatoriamente o valor físico do último fechamento.'
+                        : 'Primeiro caixa: informe o fundo inicial para começar o histórico.'}
+                    </p>
                   </div>
                 )}
 
