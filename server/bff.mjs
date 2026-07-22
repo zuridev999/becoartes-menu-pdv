@@ -2566,7 +2566,8 @@ const resolveCashActorByPin = async (pin, requiredPermission) => {
 
 const resolveCashClosingActorByPin = async (pin) => {
   const cashActor = await resolveCashActorByPin(pin, 'closeCash');
-  if (cashActor.seller?.source !== 'os' || cashActor.seller?.osRole !== 'super_admin') {
+  const isOsSuperAdmin = cashActor.seller?.source === 'os' && cashActor.seller?.osRole === 'super_admin';
+  if (!cashActor.override && !isOsSuperAdmin) {
     const error = new Error('Somente o superadministrador pode fechar o caixa.');
     error.statusCode = 403;
     throw error;
@@ -6627,7 +6628,6 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
 
   const closingCents = moneyToCents(closingBalance, 'closingBalance');
   const closeSummary = await getExpectedClosingCents(cash);
-  const missingCents = closeSummary.expectedCents - closingCents;
 
   const now = osTimestamp();
   await db.execute({

@@ -50,6 +50,13 @@ const DAILY_GOAL_EXCEPTIONS: Record<string, number> = {
 
 const formatCurrency = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+const formatMoneyInput = (value: string) => {
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return '';
+  const amount = Number(digits) / 100;
+  return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
 function getLocalDateKey(date = new Date()) {
   return businessDateKey(date);
 }
@@ -340,6 +347,12 @@ export function PDVView() {
     };
   }, [currentSeller?.id]);
 
+  useEffect(() => {
+    if (cashDialog !== 'open' || !cashState?.hasPreviousClosing) return;
+    const cents = Math.round(Number(cashState.lastClosingBalance || 0) * 100);
+    setCashValue(formatMoneyInput(String(cents)));
+  }, [cashDialog, cashState?.hasPreviousClosing, cashState?.lastClosingBalance]);
+
   const handleLogin = async () => {
     if (pin.length !== 4) {
       setLoginError('Digite os 4 dígitos do seu PIN.');
@@ -516,19 +529,6 @@ export function PDVView() {
     const digits = value.replace(/\D/g, '');
     return (Number(digits) || 0) / 100;
   };
-
-  const formatMoneyInput = (value: string) => {
-    const digits = value.replace(/\D/g, '');
-    if (!digits) return '';
-    const amount = Number(digits) / 100;
-    return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  };
-
-  useEffect(() => {
-    if (cashDialog !== 'open' || !cashState?.hasPreviousClosing) return;
-    const cents = Math.round(Number(cashState.lastClosingBalance || 0) * 100);
-    setCashValue(formatMoneyInput(String(cents)));
-  }, [cashDialog, cashState?.hasPreviousClosing, cashState?.lastClosingBalance]);
 
   const submitQrModeSwitch = async (authorizationPin?: string) => {
     if (isSwitchingQrMode) return;
