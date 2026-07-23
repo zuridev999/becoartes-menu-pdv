@@ -1787,7 +1787,7 @@ export function PDVView() {
                       className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-6 py-5 outline-none text-3xl font-black tracking-[0.5em] text-white focus:border-primary/60"
                     />
                     <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-zinc-600">
-                      O caixa será registrado no nome do dono deste PIN. Em emergência operacional, use apenas o PIN super admin autorizado.
+                      Com o valor conferido, use o PIN de quem está fechando. Se houver diferença, solicite o PIN do superadministrador.
                     </p>
                   </div>
                 )}

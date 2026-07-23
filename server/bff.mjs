@@ -2581,16 +2581,8 @@ const resolveCashActorByPin = async (pin, requiredPermission) => {
   throw error;
 };
 
-const resolveCashClosingActorByPin = async (pin) => {
-  const cashActor = await resolveCashActorByPin(pin, 'closeCash');
-  const isOsSuperAdmin = cashActor.seller?.source === 'os' && cashActor.seller?.osRole === 'super_admin';
-  if (!cashActor.override && !isOsSuperAdmin) {
-    const error = new Error('Somente o superadministrador pode fechar o caixa.');
-    error.statusCode = 403;
-    throw error;
-  }
-  return { ...cashActor, override: true };
-};
+const isCashSuperAdmin = (cashActor) => cashActor.override
+  || (cashActor.seller?.source === 'os' && cashActor.seller?.osRole === 'super_admin');
 
 const canAuthorizeQrMode = (session) => {
   const permission = normalizePermission(session?.permission);
@@ -6637,14 +6629,22 @@ const getExpectedClosingCents = async (cash) => {
 };
 
 const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
-  const cashActor = await resolveCashClosingActorByPin(confirmationPin);
-  const effectiveSession = cashActor.seller;
-
   const cash = await getOpenCashRow();
   if (!cash) throw new Error('Não existe caixa aberto.');
 
   const closingCents = moneyToCents(closingBalance, 'closingBalance');
   const closeSummary = await getExpectedClosingCents(cash);
+  const cashActor = await resolveCashActorByPin(confirmationPin, 'closeCash');
+  const hasDifference = closingCents !== closeSummary.expectedCents;
+  const adminOverride = hasDifference && isCashSuperAdmin(cashActor);
+
+  if (hasDifference && !adminOverride) {
+    const error = new Error('O valor físico está diferente do esperado. Solicite a confirmação do superadministrador para concluir o fechamento.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const effectiveSession = cashActor.seller;
 
   const now = osTimestamp();
   await db.execute({
@@ -6672,7 +6672,7 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
       cashSales: centsToMoney(closeSummary.cashSalesCents),
       manualIn: centsToMoney(closeSummary.manualInCents),
       manualOut: centsToMoney(closeSummary.manualOutCents),
-      adminOverride: cashActor.override,
+      adminOverride,
       sandbox: CASH_SANDBOX_MODE,
     }),
     origin: 'pdv',

@@ -35,7 +35,8 @@ assert.match(pinSource, /scrypt:\$\{salt\}:\$\{hash\}/, 'seller PINs must be sto
 assert.match(pinSource, /export const verifyPin =/, 'seller PIN login must support verified transparent migration');
 assert.doesNotMatch(pinSource, /storedPin === hashPin/, 'randomly salted PIN hashes must never be compared by re-hashing');
 assert.match(bffSource, /api\/cash\/open.*api\/cash\/close/s, 'cash PIN routes must participate in rate limiting');
-assert.match(bffSource, /!cashActor\.override && !isOsSuperAdmin/, 'cash closing must accept only an OS superadmin or the explicitly enabled emergency admin PIN');
+assert.match(bffSource, /const hasDifference = closingCents !== closeSummary\.expectedCents/, 'cash closing must compare the declared and expected balances');
+assert.match(bffSource, /if \(hasDifference && !adminOverride\)/, 'only a balance difference must require superadmin confirmation');
 assert.match(bffSource, /getLatestClosedCashRow[\s\S]*ORDER BY updated_at DESC, data DESC, created_at DESC/, 'cash opening must use the latest completed closing');
 assert.match(bffSource, /requestedOpeningCents !== requiredOpeningCents/, 'cash opening must reject a balance different from the previous closing');
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
@@ -162,6 +163,7 @@ try {
   const migrationLedger = await getScalar('SELECT COUNT(*) AS count FROM schema_migrations');
   assert.equal(Number(migrationLedger.count) > 0, true, 'empty database bootstrap should apply versioned migrations');
   await seedCatalogAndStock();
+  const cashier = await login('1122');
 
   const openedCash = await post('/api/cash/open', {
     openingBalance: 108.35,
@@ -170,13 +172,35 @@ try {
   }, admin.sessionToken);
   assert.equal(openedCash.ok, true, 'admin bypass explicitly enabled must open cash');
 
+  const deniedDifference = await post('/api/cash/close', {
+    closingBalance: 100,
+    notes: 'Tentativa de fechamento com diferença',
+    confirmationPin: '1122',
+  }, cashier.sessionToken, 403);
+  assert.equal(deniedDifference.ok, false, 'operador não deve fechar caixa com diferença');
+  assert.match(deniedDifference.error || '', /diferente do esperado/);
+
   const closedCash = await post('/api/cash/close', {
     closingBalance: 108.35,
-    notes: 'Teste automatizado do fechamento administrativo',
+    notes: 'Teste automatizado do fechamento conferido',
+    confirmationPin: '1122',
+  }, cashier.sessionToken);
+  assert.equal(closedCash.ok, true, 'operador autorizado deve fechar o caixa quando o valor confere');
+  assert.equal(closedCash.data.cashState.isOpen, false, 'cash must be closed after an exact operator confirmation');
+
+  const testDb = createClient({ url: dbUrl });
+  await testDb.execute({
+    sql: "UPDATE pdv_cash_sandbox SET status = 'Aberto', saldo_inicial = 108.35, entradas_dinheiro = 0, saidas_dinheiro = 0, valor_caixa_final = 0, updated_at = ? WHERE empresa_id = ?",
+    args: [Math.floor(Date.now() / 1000), 'empresa_test'],
+  });
+
+  const overrideDifference = await post('/api/cash/close', {
+    closingBalance: 100,
+    notes: 'Fechamento com diferença autorizado pelo superadministrador',
     confirmationPin: '0719',
   }, admin.sessionToken);
-  assert.equal(closedCash.ok, true, 'admin bypass explicitly enabled must close cash');
-  assert.equal(closedCash.data.cashState.isOpen, false, 'cash must be closed after administrative confirmation');
+  assert.equal(overrideDifference.ok, true, 'superadmin must close cash with an explicit difference');
+  assert.equal(overrideDifference.data.cashState.isOpen, false, 'cash must close after superadmin confirmation');
 
   const ensuredCmv = await post('/api/catalog/product/cmv', { productId: 'prod_test' }, admin.sessionToken);
   assert.equal(ensuredCmv.ok, true);
