@@ -18,6 +18,7 @@ const LEGACY_TABLET_TABLE_STORAGE_KEY = 'becoartes_tablet_table_id';
 const SELLER_SESSION_STORAGE_KEY = 'beco_seller_session';
 let syncIntervalId: number | undefined;
 let syncInFlight: Promise<void> | null = null;
+const pendingBillClosures = new Map<string, Table>();
 let consecutiveSyncFailures = 0;
 let nextSyncAllowedAt = 0;
 let lastCatalogSyncAt = 0;
@@ -814,6 +815,19 @@ export const useStore = create<AppState>((set, get) => ({
         const now = Date.now();
         const finalTables = snapshot.tables.map((newTable: Table) => {
           const localTable = currentTables.find(t => t.id === newTable.id);
+          const pendingClosure = pendingBillClosures.get(newTable.id);
+          if (pendingClosure && newTable.status === 'available') {
+            pendingBillClosures.delete(newTable.id);
+          }
+          if (pendingClosure && newTable.status !== 'available') {
+            return {
+              ...pendingClosure,
+              status: 'available' as const,
+              orders: [],
+              payments: [],
+              cart: localTable?.cart || [],
+            };
+          }
           const localOrders = localTable?.orders || [];
           const serverOrders = newTable.orders || [];
           const hasRecentLocalOrder = localOrders.some((order) => {
@@ -1267,6 +1281,23 @@ export const useStore = create<AppState>((set, get) => ({
       return false;
     }
 
+    const tableBeforeClosing = get().tables.find((table) => table.id === data.tableId);
+    if (!tableBeforeClosing) {
+      get().addNotification('Mesa não encontrada para finalizar.', 'error');
+      return false;
+    }
+    const serviceRequestsBeforeClosing = get().serviceRequests.filter((request) => request.tableId === data.tableId);
+
+    pendingBillClosures.set(data.tableId, tableBeforeClosing);
+    set((state) => ({
+      tables: state.tables.map((table) => table.id === data.tableId
+        ? { ...table, status: 'available', orders: [], payments: [] }
+        : table),
+      serviceRequests: state.serviceRequests.map((request) => request.tableId === data.tableId
+        ? { ...request, status: 'resolved' }
+        : request),
+    }));
+
     try {
       const closeResult = await OperationalApi.closeBill(data);
 
@@ -1276,6 +1307,7 @@ export const useStore = create<AppState>((set, get) => ({
         return false;
       }
 
+      pendingBillClosures.delete(data.tableId);
       set((state) => ({
         closedBills: [...state.closedBills, closeResult.closedBill],
         tables: state.tables.map(t => t.id === data.tableId ? { ...t, status: 'available', orders: [], payments: [] } : t),
@@ -1298,6 +1330,14 @@ export const useStore = create<AppState>((set, get) => ({
       get().addNotification(`Conta Lançada! Mesa ${data.tableNumber} finalizada com sucesso!${inventorySuffix}`, 'info');
       return true;
     } catch (error) {
+      pendingBillClosures.delete(data.tableId);
+      set((state) => ({
+        tables: state.tables.map((table) => table.id === data.tableId ? tableBeforeClosing : table),
+        serviceRequests: state.serviceRequests.map((request) => {
+          const previousRequest = serviceRequestsBeforeClosing.find((previous) => previous.id === request.id);
+          return previousRequest || request;
+        }),
+      }));
       console.error("Erro ao fechar conta:", error);
       if (isSessionExpiredError(error)) {
         clearSellerSession();

@@ -457,9 +457,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     });
   };
 
-  const handleFinish = async () => {
+  const handleFinish = () => {
     if (hasInvalidOverpayment || hasPendingCouponChoice || remaining > 0 || !selectedSeller || !canLaunchPayment || !canCloseBill) return;
-    const success = await closeBill({
+    void closeBill({
       tableId: table.id,
       tableNumber: table.number,
       sellerId: selectedSeller.id,
@@ -474,10 +474,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       total: totalFinal,
       payments
     });
-
-    if (success) {
-      onClose();
-    }
+    onClose();
   };
 
   return (
