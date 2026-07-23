@@ -66,6 +66,8 @@ const CLOSED_BILLS_LIMIT = Number(process.env.CLOSED_BILLS_LIMIT || 200);
 const AUDIT_LOG_LIMIT = Number(process.env.AUDIT_LOG_LIMIT || 100);
 const CASH_SANDBOX_MODE = process.env.CASH_SANDBOX_MODE === '1';
 const CASH_TABLE = CASH_SANDBOX_MODE ? 'pdv_cash_sandbox' : 'caixa_diario';
+const CASH_MAX_OPEN_HOURS = 18;
+const CASH_MAX_OPEN_SECONDS = CASH_MAX_OPEN_HOURS * 60 * 60;
 const DEFAULT_PAYMENT_METHOD = 'credit';
 const DELIVERY_PAYMENT_PROVIDER = process.env.DELIVERY_PAYMENT_PROVIDER || 'mock';
 const DELIVERY_LOGISTICS_PROVIDER = process.env.DELIVERY_LOGISTICS_PROVIDER || 'disabled';
@@ -1254,6 +1256,17 @@ const getLatestClosedCashRow = async () => {
   return res.rows[0] || null;
 };
 
+const getCashOpenDurationSeconds = (cash) => Math.max(0, osTimestamp() - toUnixSeconds(cash?.created_at));
+
+const assertCashOperationAllowed = async () => {
+  const openCash = await getOpenCashRow();
+  if (!openCash || getCashOpenDurationSeconds(openCash) < CASH_MAX_OPEN_SECONDS) return;
+
+  const error = new Error('Caixa aberto desde ontem. Feche o caixa e faça uma nova abertura para continuar.');
+  error.statusCode = 423;
+  throw error;
+};
+
 const getCashState = async () => {
   await ensureDatabaseReady();
   const businessDate = getBusinessDate();
@@ -1267,6 +1280,8 @@ const getCashState = async () => {
   ]);
   const current = mapCashRow(openCashRow || todayRes.rows[0]);
   const lastClosed = mapCashRow(lastClosedRow);
+  const openDurationHours = openCashRow ? getCashOpenDurationSeconds(openCashRow) / (60 * 60) : 0;
+  const requiresClosing = Boolean(openCashRow) && openDurationHours >= CASH_MAX_OPEN_HOURS;
 
   return {
     businessDate: current?.businessDate || businessDate,
@@ -1275,6 +1290,8 @@ const getCashState = async () => {
     lastClosingBalance: lastClosed?.closingBalance || 0,
     hasPreviousClosing: Boolean(lastClosed),
     sandbox: CASH_SANDBOX_MODE,
+    requiresClosing,
+    openDurationHours,
   };
 };
 
@@ -8110,6 +8127,7 @@ const handleApi = createApiHandler({
   isOperationIpAllowed,
   isAdminSession,
   enforceRouteAccess,
+  assertCashOperationAllowed,
   maxJsonBodyBytes: MAX_JSON_BODY_BYTES,
 });
 

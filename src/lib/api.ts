@@ -51,6 +51,8 @@ export type PdvLockState = {
 export type CashState = {
   businessDate: string;
   isOpen: boolean;
+  requiresClosing?: boolean;
+  openDurationHours?: number;
   sandbox?: boolean;
   lastClosingBalance: number;
   hasPreviousClosing: boolean;

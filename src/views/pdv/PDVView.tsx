@@ -467,6 +467,7 @@ export function PDVView() {
     { method: 'pix' as const, label: 'Pix', tone: 'text-amber-300', bg: 'bg-amber-500/10', border: 'border-amber-400/20' },
   ];
   const isCashOpen = Boolean(cashState?.isOpen);
+  const isCashOverdue = Boolean(cashState?.requiresClosing);
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides, userPermissionOverrides);
   const canCancelTableItem = can(currentSeller, 'cancelTableItem', permissionOverrides, userPermissionOverrides);
   const canCloseBill = can(currentSeller, 'closeBill', permissionOverrides, userPermissionOverrides);
@@ -927,8 +928,33 @@ export function PDVView() {
         </motion.div>
       )}
 
+      {isCashOverdue && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed inset-x-4 sm:inset-x-8 top-48 sm:top-64 bottom-8 z-30 flex items-center justify-center pointer-events-none"
+        >
+          <div className="pointer-events-auto max-w-xl w-full glass-card border-rose-400/35 p-10 text-center shadow-2xl shadow-black/40">
+            <div className="w-20 h-20 rounded-[2rem] bg-rose-400/10 text-rose-300 flex items-center justify-center mx-auto mb-6">
+              <LockKeyhole size={38} />
+            </div>
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-rose-300 mb-3">Operação bloqueada</p>
+            <h2 className="text-4xl font-black tracking-tight mb-4">Caixa aberto desde ontem</h2>
+            <p className="text-sm font-bold text-zinc-500 leading-relaxed mb-8">
+              Este caixa está aberto há mais de 18 horas. Feche o caixa e faça uma nova abertura para continuar.
+            </p>
+            <button
+              onClick={() => setCashDialog('close')}
+              className="btn-beco btn-beco-purple px-10 py-5 rounded-2xl font-black uppercase tracking-widest"
+            >
+              Fechar caixa
+            </button>
+          </div>
+        </motion.div>
+      )}
+
       <div className={`grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-8 min-h-[calc(100vh-220px)] xl:h-[calc(100vh-200px)] transition-all duration-300 ${
-        isCashOpen || canPreviewTablesWithClosedCash ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
+        (isCashOpen || canPreviewTablesWithClosedCash) && !isCashOverdue ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
       }`}>
         {/* LEFT: MAPA DE MESAS */}
         <div className="xl:col-span-8 flex flex-col gap-5 xl:gap-6 xl:overflow-y-auto xl:pr-4 custom-scrollbar min-w-0">

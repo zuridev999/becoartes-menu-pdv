@@ -22,6 +22,7 @@ export const createApiHandler = ({
   isOperationIpAllowed,
   isAdminSession,
   enforceRouteAccess,
+  assertCashOperationAllowed = async () => {},
   maxJsonBodyBytes = 2 * 1024 * 1024,
 }) => async (req, res, url) => {
   if (url.pathname === '/api/health') {
@@ -63,6 +64,18 @@ export const createApiHandler = ({
     // que um token admin salvo no navegador libere PIN de colaborador fora da rede.
     const operationAccessAllowed = isOperationIpAllowed(req) || (!isLoginRoute && isAdminSession(session));
     await enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
+    if (new Set([
+      'POST /api/orders/send-to-kitchen',
+      'POST /api/table-payments',
+      'POST /api/table-payments/cancel',
+      'POST /api/bills/close',
+      'POST /api/counter-sales/close',
+      'POST /api/tables/open',
+      'POST /api/tables/transfer',
+      'POST /api/tables/join',
+    ]).has(routeKey)) {
+      await assertCashOperationAllowed();
+    }
     const data = await handler(body, { req, url, session, operationAccessAllowed, rawBody: req.rawBody || '' });
     sendJson(res, 200, { ok: true, data });
   } catch (error) {
