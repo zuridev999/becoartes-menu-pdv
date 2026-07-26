@@ -6635,10 +6635,11 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
   const closingCents = moneyToCents(closingBalance, 'closingBalance');
   const closeSummary = await getExpectedClosingCents(cash);
   const cashActor = await resolveCashActorByPin(confirmationPin, 'closeCash');
-  const hasDifference = closingCents !== closeSummary.expectedCents;
-  const adminOverride = hasDifference && isCashSuperAdmin(cashActor);
+  const shortageCents = Math.max(0, closeSummary.expectedCents - closingCents);
+  const hasBlockingShortage = shortageCents > 100;
+  const adminOverride = hasBlockingShortage && isCashSuperAdmin(cashActor);
 
-  if (hasDifference && !adminOverride) {
+  if (hasBlockingShortage && !adminOverride) {
     const error = new Error('O valor físico está diferente do esperado. Solicite a confirmação do superadministrador para concluir o fechamento.');
     error.statusCode = 403;
     throw error;
@@ -6672,6 +6673,8 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
       cashSales: centsToMoney(closeSummary.cashSalesCents),
       manualIn: centsToMoney(closeSummary.manualInCents),
       manualOut: centsToMoney(closeSummary.manualOutCents),
+      tolerance: centsToMoney(100),
+      blockingShortage: hasBlockingShortage,
       adminOverride,
       sandbox: CASH_SANDBOX_MODE,
     }),

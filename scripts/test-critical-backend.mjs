@@ -35,8 +35,9 @@ assert.match(pinSource, /scrypt:\$\{salt\}:\$\{hash\}/, 'seller PINs must be sto
 assert.match(pinSource, /export const verifyPin =/, 'seller PIN login must support verified transparent migration');
 assert.doesNotMatch(pinSource, /storedPin === hashPin/, 'randomly salted PIN hashes must never be compared by re-hashing');
 assert.match(bffSource, /api\/cash\/open.*api\/cash\/close/s, 'cash PIN routes must participate in rate limiting');
-assert.match(bffSource, /const hasDifference = closingCents !== closeSummary\.expectedCents/, 'cash closing must compare the declared and expected balances');
-assert.match(bffSource, /if \(hasDifference && !adminOverride\)/, 'only a balance difference must require superadmin confirmation');
+assert.match(bffSource, /const shortageCents = Math\.max\(0, closeSummary\.expectedCents - closingCents\)/, 'cash closing must calculate only a shortage as a blocking candidate');
+assert.match(bffSource, /const hasBlockingShortage = shortageCents > 100/, 'cash closing must tolerate a shortage up to one real');
+assert.match(bffSource, /if \(hasBlockingShortage && !adminOverride\)/, 'only a shortage above the tolerance must require superadmin confirmation');
 assert.match(bffSource, /getLatestClosedCashRow[\s\S]*ORDER BY updated_at DESC, data DESC, created_at DESC/, 'cash opening must use the latest completed closing');
 assert.match(bffSource, /requestedOpeningCents !== requiredOpeningCents/, 'cash opening must reject a balance different from the previous closing');
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
@@ -189,11 +190,36 @@ try {
   assert.equal(closedCash.data.cashState.isOpen, false, 'cash must be closed after an exact operator confirmation');
 
   const testDb = createClient({ url: dbUrl });
-  await testDb.execute({
+  const resetCash = async () => testDb.execute({
     sql: "UPDATE pdv_cash_sandbox SET status = 'Aberto', saldo_inicial = 108.35, entradas_dinheiro = 0, saidas_dinheiro = 0, valor_caixa_final = 0, updated_at = ? WHERE empresa_id = ?",
     args: [Math.floor(Date.now() / 1000), 'empresa_test'],
   });
 
+  await resetCash();
+  const positiveDifference = await post('/api/cash/close', {
+    closingBalance: 109.35,
+    notes: 'Teste de sobra permitida',
+    confirmationPin: '1122',
+  }, cashier.sessionToken);
+  assert.equal(positiveDifference.ok, true, 'sobra no caixa não deve bloquear o fechamento');
+
+  await resetCash();
+  const toleratedShortage = await post('/api/cash/close', {
+    closingBalance: 107.35,
+    notes: 'Teste de falta dentro da tolerância',
+    confirmationPin: '1122',
+  }, cashier.sessionToken);
+  assert.equal(toleratedShortage.ok, true, 'falta de exatamente R$ 1,00 deve ser tolerada');
+
+  await resetCash();
+  const deniedOverTolerance = await post('/api/cash/close', {
+    closingBalance: 107.34,
+    notes: 'Teste de falta acima da tolerância',
+    confirmationPin: '1122',
+  }, cashier.sessionToken, 403);
+  assert.equal(deniedOverTolerance.ok, false, 'falta superior a R$ 1,00 deve exigir superadmin');
+
+  await resetCash();
   const overrideDifference = await post('/api/cash/close', {
     closingBalance: 100,
     notes: 'Fechamento com diferença autorizado pelo superadministrador',
