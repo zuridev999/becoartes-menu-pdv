@@ -2045,7 +2045,7 @@ export function AdminView() {
       )}
 
       {activeTab === 'products' && canAccessProducts && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16">
+        <div className="mx-auto max-w-6xl space-y-6">
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center mb-8 gap-4 px-0 sm:px-4">
               <div className="flex flex-col sm:flex-row sm:items-center gap-4 min-w-0">

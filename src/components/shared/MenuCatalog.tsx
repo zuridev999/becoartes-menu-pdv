@@ -18,22 +18,22 @@ interface MenuCatalogProps {
 
 const featuredCategoryCopy: Record<string, Record<string, { label: string; subtitle?: string }>> = {
   cat_pratos_para_dois: {
-    'pt-BR': { label: 'Pratos para Dois' },
+    'pt-BR': { label: 'Pratos para 2' },
     'en-US': { label: 'Dishes for Two' },
     'es-ES': { label: 'Platos para dos' },
   },
   dzw6tb2cg: {
-    'pt-BR': { label: 'Brazilian Dishes', subtitle: '“serve uma pessoa”' },
+    'pt-BR': { label: 'Pratos Brasileiros', subtitle: 'Serve uma pessoa' },
     'en-US': { label: 'Brazilian Dishes', subtitle: '“serves one person”' },
     'es-ES': { label: 'Platos brasileños', subtitle: '“para una persona”' },
   },
   dyao2k7w9: {
-    'pt-BR': { label: 'Burgers' },
+    'pt-BR': { label: 'Burgers Beco' },
     'en-US': { label: 'Burgers' },
     'es-ES': { label: 'Hamburguesas' },
   },
   uh9q7ngoy: {
-    'pt-BR': { label: 'Sharing Plates' },
+    'pt-BR': { label: 'Petiscos' },
     'en-US': { label: 'Sharing Plates' },
     'es-ES': { label: 'Para compartir' },
   },

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.5 - 2026-07-26
+
+- Mantem os nomes de categorias e produtos em português como padrão no QR, com traduções próprias somente nos idiomas escolhidos pelo cliente.
+- Amplia a área do Catálogo administrativo para a mesma leitura em desktop usada em Categorias.
+
 ## 1.5.4 - 2026-07-26
 
 - Reordena o cardápio para destacar Pratos para Dois, Brazilian Dishes, Burgers e Sharing Plates.
