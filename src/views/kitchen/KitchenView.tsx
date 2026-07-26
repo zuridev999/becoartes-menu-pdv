@@ -22,8 +22,15 @@ const getKitchenItemPresentation = (item: any) => {
     return { name: item.name, modifiers };
   }
 
-  const hasFries = String(item.categoryName || '').trim().toUpperCase() === 'PRATOS PARA 2'
-    || modifiers.some(isFriesModifier);
+  const isForTwo = String(item.categoryName || '').trim().toUpperCase() === 'PRATOS PARA 2';
+  const hasFries = isForTwo || modifiers.some(isFriesModifier);
+
+  if (isForTwo && /batata/i.test(String(item.name || ''))) {
+    return {
+      name: item.name,
+      modifiers: modifiers.filter((modifier: any) => !isFriesModifier(modifier)),
+    };
+  }
 
   return {
     name: `${item.name} (${hasFries ? 'com batata' : 'só salada'})`,
