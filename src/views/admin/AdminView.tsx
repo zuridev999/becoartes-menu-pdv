@@ -12,7 +12,8 @@ import {
   DndContext,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
@@ -417,7 +418,7 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 sm:p-8">
         <div className="flex items-center gap-4 sm:gap-6 flex-1 cursor-pointer min-w-0" onClick={() => onToggleExpand(cat.id)}>
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-2 hover:bg-white/5 rounded-lg transition-all text-gray-600 hover:text-primary" onClick={(e) => e.stopPropagation()}>
+          <div {...attributes} {...listeners} className="touch-none select-none cursor-grab active:cursor-grabbing p-3 sm:p-2 hover:bg-white/5 rounded-lg transition-all text-gray-600 hover:text-primary" onClick={(e) => e.stopPropagation()}>
             <GripVertical size={20} />
           </div>
           <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center font-black text-primary">{cat.sortOrder}</div>
@@ -727,7 +728,9 @@ export function AdminView() {
   const productEditorRef = useRef<HTMLDivElement | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    // A short press starts drag on touch devices without turning ordinary scrolling into a reorder.
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -2097,7 +2100,7 @@ export function AdminView() {
                             <div
                               {...attributes}
                               {...listeners}
-                              className={`shrink-0 p-2 rounded-lg transition-all text-gray-600 hover:text-primary hover:bg-white/5 ${searchTerm ? 'opacity-30 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}`}
+                              className={`shrink-0 touch-none select-none p-3 sm:p-2 rounded-lg transition-all text-gray-600 hover:text-primary hover:bg-white/5 ${searchTerm ? 'opacity-30 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}`}
                               title={searchTerm ? 'Limpe a busca para reordenar' : 'Arraste para reordenar'}
                             >
                               <GripVertical size={18} />
