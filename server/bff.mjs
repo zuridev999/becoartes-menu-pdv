@@ -1148,8 +1148,8 @@ const getModifierData = async () => {
   `);
 
   const groupById = {};
-  const productMapping = {};
-  const categoryMapping = {};
+  const productMappingRows = {};
+  const categoryMappingRows = {};
 
   res.rows.forEach((row) => {
     if (!groupById[row.group_id]) {
@@ -1177,21 +1177,36 @@ const getModifierData = async () => {
     }
 
     if (row.scope === 'product' && row.scope_id) {
-      if (!productMapping[row.scope_id]) productMapping[row.scope_id] = [];
-      productMapping[row.scope_id].push(row.group_id);
+      if (!productMappingRows[row.scope_id]) productMappingRows[row.scope_id] = [];
+      productMappingRows[row.scope_id].push({
+        groupId: row.group_id,
+        sortOrder: Number(row.link_sort_order || 0),
+      });
       return;
     }
 
     if (row.scope === 'category' && row.scope_id) {
-      if (!categoryMapping[row.scope_id]) categoryMapping[row.scope_id] = [];
-      categoryMapping[row.scope_id].push(row.group_id);
+      if (!categoryMappingRows[row.scope_id]) categoryMappingRows[row.scope_id] = [];
+      categoryMappingRows[row.scope_id].push({
+        groupId: row.group_id,
+        sortOrder: Number(row.link_sort_order || 0),
+      });
     }
   });
 
+  const toSortedGroupIds = (mappingRows) => Object.fromEntries(
+    Object.entries(mappingRows).map(([scopeId, rows]) => [
+      scopeId,
+      rows
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.groupId.localeCompare(b.groupId))
+        .map((row) => row.groupId),
+    ])
+  );
+
   return {
     modifierGroups: Object.values(groupById),
-    productMapping,
-    categoryMapping,
+    productMapping: toSortedGroupIds(productMappingRows),
+    categoryMapping: toSortedGroupIds(categoryMappingRows),
   };
 };
 
