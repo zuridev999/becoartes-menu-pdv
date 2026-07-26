@@ -6,6 +6,17 @@ import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 
+const getDefaultModifiers = (product: Product): Modifier[] => {
+  const isBrazilianSingleDish = String(product.categoryName || '').trim().toUpperCase() === 'PRATOS BRASILEIROS';
+  if (!isBrazilianSingleDish) return [];
+
+  const fries = product.modifierGroups
+    ?.find((group) => group.id === 'modgrp_batata_frita_pratos')
+    ?.modifiers.find((modifier) => modifier.id === 'mod_batata_frita_pratos');
+
+  return fries ? [fries] : [];
+};
+
 export function ProductModal({
   product,
   onClose,
@@ -26,7 +37,8 @@ export function ProductModal({
   const { addToCart } = useStore();
   const { t, locale, catalogText } = usePublicI18n();
   const [quantity, setQuantity] = useState(1);
-  const [selectedModifiers, setSelectedModifiers] = useState<Modifier[]>([]);
+  // The individual Brazilian dish starts with fries selected, but customers can remove it.
+  const [selectedModifiers, setSelectedModifiers] = useState<Modifier[]>(() => getDefaultModifiers(product));
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [isAdding, setIsAdding] = useState(false);

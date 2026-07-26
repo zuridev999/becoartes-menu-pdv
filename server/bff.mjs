@@ -1090,13 +1090,17 @@ const getModifierData = async () => {
       m.id as modifier_id,
       m.name as modifier_name,
       m.price as modifier_price,
-      m.status as modifier_status,
+      CASE
+        WHEN linked_menu.id IS NOT NULL AND linked_menu.visible <> 1 THEN 'inactive'
+        ELSE m.status
+      END as modifier_status,
       m.sort_order as modifier_sort_order,
       NULL as scope,
       NULL as scope_id,
       0 as link_sort_order
     FROM modifiers m
     JOIN modifier_groups mg ON m.group_id = mg.id
+    LEFT JOIN menu linked_menu ON linked_menu.id = m.id
     WHERE mg.status = 'active'
 
     UNION ALL
