@@ -15,6 +15,7 @@ export const createHealthPayload = async ({
   startedAt,
   version,
   commit,
+  buildDate,
   dbTimeoutMs,
   service = 'becoartes-operational-bff',
 }) => {
@@ -42,6 +43,7 @@ export const createHealthPayload = async ({
     service,
     version,
     commit,
+    buildDate,
     uptimeSeconds,
     startedAt: new Date(startedAt).toISOString(),
     checkedAt,

@@ -43,6 +43,38 @@ const catalogCopy: Partial<Record<PublicLanguageCode, Record<string, string>>> =
   },
 };
 
+Object.assign(catalogCopy['en-US']!, {
+  'pratos para 2': 'Dishes for two',
+  'parmegiana de frango para 2 (batata inclusa)': 'Chicken parmigiana for two (fries included)',
+  'parmegiana de carne para 2 (batata inclusa)': 'Beef parmigiana for two (fries included)',
+  'filé de frango para 2 (batata inclusa)': 'Grilled chicken fillet for two (fries included)',
+  'contra filé acebolado para 2 (batata inclusa)': 'Onion sirloin steak for two (fries included)',
+  'calabresa para 2 (batata inclusa)': 'Brazilian sausage for two (fries included)',
+  'omelete para 2 (batata inclusa)': 'Omelette for two (fries included)',
+  'feito para dividir: duas porções de parmegiana de frango, arroz branco, farofa da casa, salada fresca e batata frita inclusa.': 'Made for sharing: two servings of chicken parmigiana with white rice, house farofa, fresh salad and fries.',
+  'feito para dividir: duas porções de parmegiana de carne, arroz branco, farofa da casa, salada fresca e batata frita inclusa.': 'Made for sharing: two servings of beef parmigiana with white rice, house farofa, fresh salad and fries.',
+  'feito para dividir: duas porções de filé de frango grelhado, arroz, feijão, salada e batata frita inclusa.': 'Made for sharing: two servings of grilled chicken fillet with rice, beans, salad and fries.',
+  'feito para dividir: duas porções de contra filé acebolado, arroz, feijão, salada e batata frita inclusa.': 'Made for sharing: two servings of onion sirloin steak with rice, beans, salad and fries.',
+  'feito para dividir: duas porções de calabresa acebolada, arroz, feijão, salada e batata frita inclusa.': 'Made for sharing: two servings of Brazilian sausage with onions, rice, beans, salad and fries.',
+  'feito para dividir: duas porções de omelete recheado, arroz, feijão, salada e batata frita inclusa.': 'Made for sharing: two servings of filled omelette with rice, beans, salad and fries.',
+});
+
+Object.assign(catalogCopy['es-ES']!, {
+  'pratos para 2': 'Platos para dos',
+  'parmegiana de frango para 2 (batata inclusa)': 'Pollo a la parmesana para dos (papas incluidas)',
+  'parmegiana de carne para 2 (batata inclusa)': 'Carne a la parmesana para dos (papas incluidas)',
+  'filé de frango para 2 (batata inclusa)': 'Filete de pollo para dos (papas incluidas)',
+  'contra filé acebolado para 2 (batata inclusa)': 'Lomo con cebolla para dos (papas incluidas)',
+  'calabresa para 2 (batata inclusa)': 'Salchicha brasileña para dos (papas incluidas)',
+  'omelete para 2 (batata inclusa)': 'Tortilla para dos (papas incluidas)',
+  'feito para dividir: duas porções de parmegiana de frango, arroz branco, farofa da casa, salada fresca e batata frita inclusa.': 'Para compartir: dos porciones de pollo a la parmesana con arroz blanco, farofa de la casa, ensalada fresca y papas fritas.',
+  'feito para dividir: duas porções de parmegiana de carne, arroz branco, farofa da casa, salada fresca e batata frita inclusa.': 'Para compartir: dos porciones de carne a la parmesana con arroz blanco, farofa de la casa, ensalada fresca y papas fritas.',
+  'feito para dividir: duas porções de filé de frango grelhado, arroz, feijão, salada e batata frita inclusa.': 'Para compartir: dos porciones de filete de pollo a la parrilla con arroz, frijoles, ensalada y papas fritas.',
+  'feito para dividir: duas porções de contra filé acebolado, arroz, feijão, salada e batata frita inclusa.': 'Para compartir: dos porciones de lomo con cebolla, arroz, frijoles, ensalada y papas fritas.',
+  'feito para dividir: duas porções de calabresa acebolada, arroz, feijão, salada e batata frita inclusa.': 'Para compartir: dos porciones de salchicha brasileña con cebolla, arroz, frijoles, ensalada y papas fritas.',
+  'feito para dividir: duas porções de omelete recheado, arroz, feijão, salada e batata frita inclusa.': 'Para compartir: dos porciones de tortilla rellena con arroz, frijoles, ensalada y papas fritas.',
+});
+
 const getCatalogBaseTranslation = (locale: PublicLanguageCode, text: string) => {
   const normalizedText = normalizeCatalogText(text);
   return Object.entries(catalogCopy[locale] || {}).find(([source]) => normalizeCatalogText(source) === normalizedText)?.[1];

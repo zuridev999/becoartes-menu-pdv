@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.4 - 2026-07-26
+
+- Reordena o cardápio para destacar Pratos para Dois, Brazilian Dishes, Burgers e Sharing Plates.
+- Amplia descrições no QR, remove o título duplicado do modal e dá mais espaço aos adicionais.
+- Completa as traduções-base em inglês e espanhol dos novos pratos para dois.
+- Expõe a data de build no endpoint de saúde da operação.
+
 ## 1.4.99 - 2026-07-26
 
 - Habilita reordenamento de categorias e produtos por toque no cardapio administrativo.

@@ -16,6 +16,29 @@ interface MenuCatalogProps {
   footerContent?: ReactNode;
 }
 
+const featuredCategoryCopy: Record<string, Record<string, { label: string; subtitle?: string }>> = {
+  cat_pratos_para_dois: {
+    'pt-BR': { label: 'Pratos para Dois' },
+    'en-US': { label: 'Dishes for Two' },
+    'es-ES': { label: 'Platos para dos' },
+  },
+  dzw6tb2cg: {
+    'pt-BR': { label: 'Brazilian Dishes', subtitle: '“serve uma pessoa”' },
+    'en-US': { label: 'Brazilian Dishes', subtitle: '“serves one person”' },
+    'es-ES': { label: 'Platos brasileños', subtitle: '“para una persona”' },
+  },
+  dyao2k7w9: {
+    'pt-BR': { label: 'Burgers' },
+    'en-US': { label: 'Burgers' },
+    'es-ES': { label: 'Hamburguesas' },
+  },
+  uh9q7ngoy: {
+    'pt-BR': { label: 'Sharing Plates' },
+    'en-US': { label: 'Sharing Plates' },
+    'es-ES': { label: 'Para compartir' },
+  },
+};
+
 export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', surface = 'default', presentation = 'default', footerContent }: MenuCatalogProps) {
   const { menu, categories: dbCategories } = useStore();
   const { t, locale, catalogText } = usePublicI18n();
@@ -62,6 +85,13 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
   const [selectedCategory, setSelectedCategory] = useState(availableCategoryNames[0] || '');
   const [searchQuery, setSearchQuery] = useState('');
   const categorySectionRefs = useRef<Record<string, HTMLElement | null>>({});
+  const getCategoryPresentation = (categoryName: string) => {
+    const category = availableCategories.find((item) => item.name === categoryName);
+    const featured = category ? featuredCategoryCopy[category.id]?.[locale] : undefined;
+    return featured || {
+      label: catalogText(category?.id || categoryName, categoryName, 'name'),
+    };
+  };
 
   useEffect(() => {
     if (availableCategoryNames.length === 0) {
@@ -145,16 +175,16 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       layout
       key={p.id}
       onClick={() => onProductSelect(p)}
-      className="glass-card group flex min-h-[132px] w-full items-stretch gap-3 p-3 text-left active:scale-[0.99]"
+      className="glass-card group flex min-h-[148px] w-full items-stretch gap-3 p-3 text-left active:scale-[0.99]"
     >
       <div className="flex min-w-0 flex-1 flex-col py-0.5">
         <h4 className="line-clamp-2 text-[17px] font-black leading-tight tracking-tight text-white">{catalogText(p.id, p.name, 'name')}</h4>
         {p.description && (
-          <p className="mt-1.5 line-clamp-2 text-xs font-semibold leading-relaxed text-zinc-400">{catalogText(p.id, p.description, 'description')}</p>
+          <p className="mt-1.5 text-xs font-semibold leading-5 text-zinc-400">{catalogText(p.id, p.description, 'description')}</p>
         )}
         <p className="mt-auto pt-2 text-base font-black tracking-tight text-accent">{formatCurrency(p.price, locale)}</p>
       </div>
-      <div className="h-[106px] w-[106px] shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
+      <div className="h-[122px] w-[106px] shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
         <img
           src={getImageSrc(p.image)}
           alt={p.name}
@@ -193,7 +223,12 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
                 <p className={`font-black text-[8px] md:text-[10px] uppercase tracking-widest ${selectedCategory === cat ? 'text-white/70' : 'text-primary'}`}>
                   {productCountByCategory.get(cat) || 0} {t('items')}
                 </p>
-                <h4 className="font-black text-sm md:text-lg tracking-tighter italic whitespace-nowrap">{catalogText(availableCategories.find((category) => category.name === cat)?.id || cat, cat, 'name')}</h4>
+                <h4 className="font-black text-sm md:text-lg tracking-tighter italic whitespace-nowrap">{getCategoryPresentation(cat).label}</h4>
+                {getCategoryPresentation(cat).subtitle && (
+                  <p className={`mt-1 text-[8px] font-black uppercase tracking-[0.12em] ${selectedCategory === cat ? 'text-white/65' : 'text-zinc-500'}`}>
+                    {getCategoryPresentation(cat).subtitle}
+                  </p>
+                )}
               </div>
               <ChevronRight size={18} className={`${navigationMode === 'menu' || navigationMode === 'continuous' ? 'hidden' : 'hidden md:block'} ${selectedCategory === cat ? 'opacity-100' : 'opacity-0'}`} />
             </button>
@@ -255,7 +290,10 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
                >
                  <div className="mb-4">
                    <p className="text-[9px] font-black uppercase tracking-[0.35em] text-primary">{products.length} {t('items')}</p>
-                   <h4 className="text-3xl sm:text-4xl font-black italic tracking-tighter">{catalogText(availableCategories.find((entry) => entry.name === category)?.id || category, category, 'name')}</h4>
+                   <h4 className="text-3xl sm:text-4xl font-black italic tracking-tighter">{getCategoryPresentation(category).label}</h4>
+                   {getCategoryPresentation(category).subtitle && (
+                     <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">{getCategoryPresentation(category).subtitle}</p>
+                   )}
                  </div>
                  <div className={isCompactMenu ? 'space-y-3' : gridClassName}>
                    {products.map(isCompactMenu ? renderCompactProduct : renderGridProduct)}

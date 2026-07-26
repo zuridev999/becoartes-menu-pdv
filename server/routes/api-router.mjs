@@ -13,6 +13,7 @@ export const createApiHandler = ({
   startedAt,
   appVersion,
   appCommit,
+  appBuildDate,
   healthDbTimeoutMs,
   allowedWebOrigins,
   ensureDatabaseReady,
@@ -31,6 +32,7 @@ export const createApiHandler = ({
       startedAt,
       version: appVersion,
       commit: appCommit,
+      buildDate: appBuildDate,
       dbTimeoutMs: healthDbTimeoutMs,
     });
     sendJson(res, health.ok ? 200 : 503, health);

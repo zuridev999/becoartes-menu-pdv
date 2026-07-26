@@ -102,6 +102,7 @@ const DELIVERY_DEFAULT_COUPONS = [
 ];
 const APP_VERSION = process.env.APP_VERSION || process.env.VITE_APP_VERSION || 'unknown';
 const APP_COMMIT = process.env.APP_COMMIT || process.env.VITE_APP_COMMIT || 'unknown';
+const APP_BUILD_DATE = process.env.APP_BUILD_DATE || process.env.VITE_APP_BUILD_DATE || '';
 const HEALTH_DB_TIMEOUT_MS = Math.max(250, Number(process.env.HEALTH_DB_TIMEOUT_MS || 3000));
 const BUSINESS_TIME_ZONE = resolveBusinessTimeZone(process.env.BUSINESS_TIME_ZONE);
 
@@ -8140,6 +8141,7 @@ const handleApi = createApiHandler({
   startedAt,
   appVersion: APP_VERSION,
   appCommit: APP_COMMIT,
+  appBuildDate: APP_BUILD_DATE,
   healthDbTimeoutMs: HEALTH_DB_TIMEOUT_MS,
   allowedWebOrigins: ALLOWED_WEB_ORIGINS,
   ensureDatabaseReady,

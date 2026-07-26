@@ -96,9 +96,11 @@ export function ProductModal({
           </div>
           <div className={`${contentPanelClass} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
              <button type="button" aria-label={t('close')} onClick={onClose} className={`${tabletLandscape ? 'top-5 right-5 p-3' : 'top-8 right-8 p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
+             {!qrMobileFlow && (
              <div className="flex justify-between items-center mb-5 lg:hidden">
                 <h2 className="text-3xl sm:text-4xl font-black italic leading-none pr-14">{catalogText(product.id, product.name, 'name')}</h2>
              </div>
+             )}
 
              <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${tabletLandscape ? 'space-y-4 min-[900px]:space-y-6' : 'space-y-6 lg:space-y-10'}`}>
                 {product.modifierGroups?.map(group => {
@@ -119,7 +121,7 @@ export function ProductModal({
                           <span className="bg-accent text-black px-3 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg shadow-accent/20">{t('required')}</span>
                         )}
                       </div>
-                      <div className="grid grid-cols-1 gap-4">
+                      <div className={`grid grid-cols-1 ${qrMobileFlow ? 'gap-5' : 'gap-4'}`}>
                         {group.modifiers.map(m => {
                           const isSelected = selectedModifiers.find(sm => sm.id === m.id);
                           return (
@@ -143,7 +145,7 @@ export function ProductModal({
                                   }
                                 }
                               }}
-                              className={`w-full ${tabletLandscape ? 'min-h-[78px] grid-cols-[48px_1fr_auto] gap-4 p-4' : 'min-h-[76px] sm:min-h-[88px] grid-cols-[48px_1fr_auto] sm:grid-cols-[54px_1fr_auto] gap-4 sm:gap-5 p-4 sm:p-5'} grid items-center rounded-[1.7rem] border text-left transition-all ${
+                              className={`w-full ${tabletLandscape ? `${qrMobileFlow ? 'min-h-[92px]' : 'min-h-[78px]'} grid-cols-[48px_1fr_auto] gap-4 p-4` : 'min-h-[76px] sm:min-h-[88px] grid-cols-[48px_1fr_auto] sm:grid-cols-[54px_1fr_auto] gap-4 sm:gap-5 p-4 sm:p-5'} grid items-center rounded-[1.7rem] border text-left transition-all ${
                                 isSelected
                                   ? 'bg-gradient-to-br from-primary to-[#6f2dff] border-primary text-white shadow-2xl shadow-primary/30'
                                   : 'bg-gradient-to-br from-accent to-[#ffad1f] border-accent text-black shadow-xl shadow-accent/20 hover:scale-[1.015]'
