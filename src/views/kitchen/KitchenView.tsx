@@ -7,6 +7,31 @@ import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
 
 const KITCHEN_SYNC_INTERVAL_MS = 5000;
 
+const BRAZILIAN_DISH_CATEGORIES = new Set(['PRATOS BRASILEIROS', 'PRATOS PARA 2']);
+
+const isFriesModifier = (modifier: any) => (
+  modifier?.id === 'mod_batata_frita_pratos'
+  || String(modifier?.name || '').trim().toLowerCase() === 'batata frita'
+);
+
+const getKitchenItemPresentation = (item: any) => {
+  const isBrazilianDish = BRAZILIAN_DISH_CATEGORIES.has(String(item.categoryName || '').trim().toUpperCase());
+  const modifiers = item.selectedModifiers || [];
+
+  if (!isBrazilianDish) {
+    return { name: item.name, modifiers };
+  }
+
+  const hasFries = String(item.categoryName || '').trim().toUpperCase() === 'PRATOS PARA 2'
+    || modifiers.some(isFriesModifier);
+
+  return {
+    name: `${item.name} (${hasFries ? 'com batata' : 'só salada'})`,
+    // Fries are encoded in the production line above, preventing duplicate kitchen instructions.
+    modifiers: modifiers.filter((modifier: any) => !isFriesModifier(modifier)),
+  };
+};
+
 function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
   const { login } = useStore();
   const stationLabel = getAppLabel() === 'Bar' ? 'BAR' : 'COZINHA';
@@ -188,29 +213,32 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
         <p className="text-[10px] sm:text-sm font-black uppercase tracking-[0.25em] sm:tracking-[0.3em] mb-3 sm:mb-4 opacity-40">{order.items.length} Itens no Pedido</p>
         <div className={`mt-2 ${order.items.length > 5 ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3' : 'space-y-2 sm:space-y-3'}`}>
           {order.items.slice(0, 10).map((item: any, idx: number) => (
-            <div key={idx} className="flex gap-3 items-start min-w-0">
-              <span className="font-black text-xl sm:text-2xl text-black shrink-0 leading-none">{item.quantity}X</span>
-              <div className="min-w-0 flex-1">
-                <span className="font-black text-base sm:text-lg tracking-tighter truncate leading-none block">{item.name}</span>
-                {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+            (() => {
+              const presentation = getKitchenItemPresentation(item);
+              return <div key={idx} className="flex gap-3 items-start min-w-0">
+                <span className="font-black text-xl sm:text-2xl text-black shrink-0 leading-none">{item.quantity}X</span>
+                <div className="min-w-0 flex-1">
+                  <span className="font-black text-base sm:text-lg tracking-tighter truncate leading-none block">{presentation.name}</span>
+                {presentation.modifiers.length > 0 && (
                   <div className="mt-2 space-y-1.5">
                     <span className="inline-flex px-3 py-1.5 rounded-lg bg-black text-white text-xs font-black uppercase tracking-widest leading-none">
                       ADICIONAIS
                     </span>
-                    {item.selectedModifiers.slice(0, 3).map((modifier: any, modifierIdx: number) => (
+                    {presentation.modifiers.slice(0, 3).map((modifier: any, modifierIdx: number) => (
                       <span key={modifierIdx} className="block text-lg font-black leading-tight text-black uppercase tracking-tighter">
                         {item.quantity}X {modifier.name}
                       </span>
                     ))}
-                    {item.selectedModifiers.length > 3 && (
+                    {presentation.modifiers.length > 3 && (
                       <span className="px-2 py-1 rounded-lg bg-black/10 text-black text-[10px] font-black uppercase tracking-widest leading-none">
-                        +{item.selectedModifiers.length - 3}
+                        +{presentation.modifiers.length - 3}
                       </span>
                     )}
                   </div>
                 )}
               </div>
-            </div>
+              </div>;
+            })()
           ))}
           {order.items.length > 10 && (
             <p className="text-base sm:text-xl font-black mt-4 sm:ml-12 text-red-600 animate-pulse">+ {order.items.length - 10} OUTROS ITENS...</p>
@@ -292,22 +320,24 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
         </div>         <div className="flex-1 overflow-y-auto p-4 sm:p-12 custom-scrollbar bg-white">
             <div className="grid grid-cols-1 gap-4 sm:gap-6">
                {order.items.map((item: any, idx: number) => (
-                 <div key={idx} className="p-4 sm:p-8 bg-gray-50 rounded-[1.5rem] sm:rounded-[2.5rem] border-2 border-gray-100 flex flex-col justify-between shadow-sm">
+                 (() => {
+                   const presentation = getKitchenItemPresentation(item);
+                   return <div key={idx} className="p-4 sm:p-8 bg-gray-50 rounded-[1.5rem] sm:rounded-[2.5rem] border-2 border-gray-100 flex flex-col justify-between shadow-sm">
                     <div>
                       <div className="flex items-center gap-4 sm:gap-8">
                          <div className="w-14 h-14 sm:w-20 sm:h-20 shrink-0 bg-white shadow-md border-2 border-gray-100 rounded-2xl sm:rounded-[1.5rem] flex items-center justify-center text-2xl sm:text-4xl font-black text-black">
                            {item.quantity}X
                          </div>
-                         <h4 className="text-2xl sm:text-5xl font-black tracking-tighter text-black leading-tight uppercase">{item.name}</h4>
+                         <h4 className="text-2xl sm:text-5xl font-black tracking-tighter text-black leading-tight uppercase">{presentation.name}</h4>
                       </div>
 
-                      {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                      {presentation.modifiers.length > 0 && (
                         <div className="mt-5 sm:mt-6 sm:ml-28 space-y-3">
                           <span className="inline-flex px-4 sm:px-5 py-2 sm:py-2.5 bg-black text-white rounded-xl text-sm sm:text-xl font-black uppercase tracking-widest leading-none">
                             ADICIONAIS:
                           </span>
                           <div className="space-y-2">
-                            {item.selectedModifiers.map((m: any, mIdx: number) => (
+                            {presentation.modifiers.map((m: any, mIdx: number) => (
                               <p key={mIdx} className="text-2xl sm:text-5xl font-black tracking-tighter text-black leading-tight uppercase">
                                 {item.quantity}X {m.name}
                               </p>
@@ -323,7 +353,8 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
                          <p className="text-lg sm:text-2xl font-bold text-black italic">"{item.notes}"</p>
                       </div>
                     )}
-                 </div>
+                 </div>;
+                 })()
                ))}
             </div>
         </div>
