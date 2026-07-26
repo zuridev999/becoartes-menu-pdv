@@ -2587,12 +2587,12 @@ export function AdminView() {
                         ))}
                         <button
                           onClick={() => {
-                            const newMods = [...group.modifiers, { id: createId(), name: 'Nova Opção', price: 0, status: 'active' as const }];
+                            const newMods = [...group.modifiers, { id: createId(), name: '', price: 0, status: 'inactive' as const }];
                             updateModifierGroup(group.id, { modifiers: newMods });
                           }}
                           className="w-full p-4 glass border-dashed border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white/5 text-primary transition-all"
                         >
-                          + Adicionar Nova Opção
+                          + Adicionar adicional
                         </button>
                       </div>
                     </div>

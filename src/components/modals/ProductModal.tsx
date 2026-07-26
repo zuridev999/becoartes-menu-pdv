@@ -84,7 +84,7 @@ export function ProductModal({
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[700]" />
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`fixed inset-0 z-[750] flex items-center justify-center pointer-events-none font-['Outfit'] ${modalShellClass}`}>
-        <div className={`glass-card flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
+        <div className={`glass-card relative flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
           <div className={`relative shrink-0 overflow-hidden ${mediaPanelClass}`}>
              <img src={getImageSrc(product.image)} alt={catalogText(product.id, product.name, 'name')} onError={applyImageFallback} className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
@@ -95,14 +95,14 @@ export function ProductModal({
              </div>
           </div>
           <div className={`${contentPanelClass} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
-             <button type="button" aria-label={t('close')} onClick={onClose} className={`${tabletLandscape ? 'top-5 right-5 p-3' : 'top-8 right-8 p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
+             <button type="button" aria-label={t('close')} onClick={onClose} className={`${tabletLandscape ? 'top-4 right-4 p-3' : 'top-3 right-3 sm:top-5 sm:right-5 p-3 sm:p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
              {!qrMobileFlow && (
              <div className="flex justify-between items-center mb-5 lg:hidden">
                 <h2 className="text-3xl sm:text-4xl font-black italic leading-none pr-14">{catalogText(product.id, product.name, 'name')}</h2>
              </div>
              )}
 
-             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${tabletLandscape ? 'space-y-4 min-[900px]:space-y-6' : 'space-y-6 lg:space-y-10'}`}>
+             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${qrMobileFlow ? 'pt-14' : ''} ${tabletLandscape ? 'space-y-4 min-[900px]:space-y-6' : 'space-y-6 lg:space-y-10'}`}>
                 {product.modifierGroups?.map(group => {
                   const selectedInGroup = selectedModifiers.filter(m => group.modifiers.some(gm => gm.id === m.id));
                   const isSingle = group.maxChoices === 1;
