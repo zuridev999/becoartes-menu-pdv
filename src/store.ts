@@ -90,7 +90,10 @@ const attachModifierGroupsToMenu = (
   return menuItems.map(item => {
     const productGroupIds = productMapping[item.id] || [];
     const categoryGroupIds = categoryMapping[item.categoryId] || [];
-    const allGroupIds = Array.from(new Set([...categoryGroupIds, ...productGroupIds]));
+    // A escolha específica do produto vem antes dos adicionais herdados da categoria.
+    // Para bebidas com sabor obrigatório, isso evita que o cliente adicione extras
+    // antes de definir a variação que será preparada.
+    const allGroupIds = Array.from(new Set([...productGroupIds, ...categoryGroupIds]));
 
     return {
       ...item,
