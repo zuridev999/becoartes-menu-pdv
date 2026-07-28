@@ -3,6 +3,7 @@ const PUBLIC_BOOTSTRAP_ROUTES = new Set([
   'POST /api/app/sync',
   'POST /api/auth/login',
   'POST /api/tablet/setup-login',
+  'POST /api/pdv-terminal/challenge',
   'POST /api/table-access-token',
 ]);
 

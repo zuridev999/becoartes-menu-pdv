@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, createPublicKey, randomBytes, randomUUID, scryptSync, timingSafeEqual, verify as verifySignature } from 'node:crypto';
 import { createClient } from '@libsql/client';
 import { sendJson } from './http.mjs';
 import { runSchemaMigrations } from './migrations/schema.mjs';
@@ -59,6 +59,7 @@ const SESSION_SECRET = isLocalLibsqlUrl
   ? (process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET || 'local-delivery-session-secret')
   : requireRuntimeSecret('BFF_SESSION_SECRET', process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET);
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const PDV_TERMINAL_CHALLENGE_TTL_MS = 2 * 60 * 1000;
 const TABLET_TABLE_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PROCESSING_STALE_MS = 10 * 60 * 1000;
 const SERVICE_REQUEST_LIMIT = Number(process.env.SERVICE_REQUEST_LIMIT || 150);
@@ -324,8 +325,9 @@ const getValidFreelancerOperationalAccess = (row, view) => {
   if (now < startsAt || now >= endsAt) return null;
   return access;
 };
+const isTrustedPdvTerminalSession = (session) => /^[0-9a-f-]{36}$/i.test(String(session?.trustedTerminalId || ''));
 const canAccessOutsideOperationIp = (session) => Boolean(
-  session && (normalizePermission(session.permission) === 'admin' || session.allowRemote)
+  session && (normalizePermission(session.permission) === 'admin' || session.allowRemote || isTrustedPdvTerminalSession(session))
 );
 
 const permissionsByProfile = {
@@ -560,7 +562,7 @@ const signSessionPayload = (payload) => (
     .digest('base64url')
 );
 
-const createSessionToken = (seller) => {
+const createSessionToken = (seller, { trustedTerminalId = '' } = {}) => {
   const payload = base64UrlJson({
     sub: seller.id,
     name: seller.name,
@@ -568,6 +570,7 @@ const createSessionToken = (seller) => {
     role: seller.role,
     allowRemote: Boolean(seller.allowRemote),
     stationAccess: Boolean(seller.stationAccess),
+    trustedTerminalId: /^[0-9a-f-]{36}$/i.test(String(trustedTerminalId || '')) ? trustedTerminalId : '',
     exp: Date.now() + SESSION_TTL_MS,
   });
   return `${payload}.${signSessionPayload(payload)}`;
@@ -630,6 +633,7 @@ const getSessionFromRequest = (req) => {
       permission: normalizePermission(decoded.permission),
       allowRemote: Boolean(decoded.allowRemote),
       stationAccess: Boolean(decoded.stationAccess),
+      trustedTerminalId: /^[0-9a-f-]{36}$/i.test(String(decoded.trustedTerminalId || '')) ? decoded.trustedTerminalId : '',
     };
   } catch {
     return null;
@@ -736,6 +740,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS production_tickets (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, station TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS service_requests (id TEXT PRIMARY KEY, table_id TEXT, type TEXT NOT NULL, status TEXT NOT NULL, message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS sellers (id TEXT PRIMARY KEY, name TEXT NOT NULL, nickname TEXT, status TEXT NOT NULL, role TEXT NOT NULL, permission TEXT DEFAULT 'standard', pin TEXT DEFAULT '1234', notes TEXT, tipo_vinculo TEXT DEFAULT 'fixo', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS pdv_terminals (id TEXT PRIMARY KEY, public_key_jwk TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', device_info TEXT, first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP, last_seen_at DATETIME, last_ip TEXT)",
     "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, details TEXT, table_number TEXT, origin TEXT, author_id TEXT, author_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS closed_bills (id TEXT PRIMARY KEY, table_id TEXT, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, subtotal REAL NOT NULL, service_fee REAL DEFAULT 0, discount REAL DEFAULT 0, discount_reason TEXT, coupon_code TEXT, coupon_amount REAL DEFAULT 0, coupon_benefit TEXT, total REAL NOT NULL, payments TEXT, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS table_payments (id TEXT PRIMARY KEY, table_id TEXT NOT NULL, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, method TEXT NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, cancelled_at DATETIME, applied_closed_bill_id TEXT)",
@@ -767,6 +772,7 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)",
     "CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id)",
     "CREATE INDEX IF NOT EXISTS idx_menu_category_sort ON menu(category_id, sort_order)",
+    "CREATE INDEX IF NOT EXISTS idx_pdv_terminals_status ON pdv_terminals(status)",
     "CREATE INDEX IF NOT EXISTS idx_stock_empresa_nome ON estoque_produtos(empresa_id, ativo, nome)",
     "CREATE INDEX IF NOT EXISTS idx_stock_mov_empresa_created ON estoque_movimentacoes(empresa_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_notif_empresa_created ON notificacoes(empresa_id, created_at)",
@@ -2463,7 +2469,108 @@ const createProductionStationSession = () => {
   };
 };
 
-const login = async ({ pin, sellerId, view }, { operationAccessAllowed = true, req = null } = {}) => {
+const isValidPdvTerminalId = (value) => /^[0-9a-f-]{36}$/i.test(String(value || ''));
+
+const hasValidPdvTerminalPublicKey = (value) => Boolean(
+  value
+  && typeof value === 'object'
+  && value.kty === 'EC'
+  && value.crv === 'P-256'
+  && typeof value.x === 'string'
+  && typeof value.y === 'string'
+);
+
+const issuePdvTerminalChallenge = async ({ terminalId }) => {
+  const safeTerminalId = String(terminalId || '').trim();
+  if (!isValidPdvTerminalId(safeTerminalId)) return { valid: false, challenge: null };
+
+  const result = await db.execute({
+    sql: "SELECT id FROM pdv_terminals WHERE id = ? AND status = 'active' LIMIT 1",
+    args: [safeTerminalId],
+  });
+  if (!result.rows[0]) return { valid: false, challenge: null };
+
+  return {
+    valid: true,
+    challenge: createSignedToken({
+      type: 'pdv_terminal_challenge',
+      terminalId: safeTerminalId,
+      nonce: randomUUID(),
+      exp: Date.now() + PDV_TERMINAL_CHALLENGE_TTL_MS,
+    }),
+  };
+};
+
+const verifyPdvTerminalProof = async ({ terminalId, terminalChallenge, terminalSignature, ip = '' }) => {
+  const safeTerminalId = String(terminalId || '').trim();
+  if (!isValidPdvTerminalId(safeTerminalId) || !terminalChallenge || !terminalSignature) {
+    return { valid: false, terminalId: '' };
+  }
+
+  try {
+    const payload = decodeSignedToken(terminalChallenge);
+    if (
+      !payload
+      || payload.type !== 'pdv_terminal_challenge'
+      || payload.terminalId !== safeTerminalId
+      || !Number.isFinite(Number(payload.exp))
+      || Number(payload.exp) < Date.now()
+    ) {
+      return { valid: false, terminalId: '' };
+    }
+
+    const result = await db.execute({
+      sql: "SELECT public_key_jwk FROM pdv_terminals WHERE id = ? AND status = 'active' LIMIT 1",
+      args: [safeTerminalId],
+    });
+    const publicKeyJwk = JSON.parse(String(result.rows[0]?.public_key_jwk || ''));
+    if (!hasValidPdvTerminalPublicKey(publicKeyJwk)) return { valid: false, terminalId: '' };
+
+    const key = createPublicKey({ key: publicKeyJwk, format: 'jwk' });
+    const valid = verifySignature(
+      'sha256',
+      Buffer.from(String(terminalChallenge)),
+      { key, dsaEncoding: 'ieee-p1363' },
+      Buffer.from(String(terminalSignature), 'base64url'),
+    );
+    if (!valid) return { valid: false, terminalId: '' };
+
+    await db.execute({
+      sql: 'UPDATE pdv_terminals SET last_seen_at = ?, last_ip = ? WHERE id = ?',
+      args: [new Date().toISOString(), String(ip || '').slice(0, 80), safeTerminalId],
+    });
+    return { valid: true, terminalId: safeTerminalId };
+  } catch {
+    return { valid: false, terminalId: '' };
+  }
+};
+
+const bootstrapPdvTerminal = async ({ terminalId, terminalPublicKey, ip = '', deviceInfo = '' }) => {
+  const safeTerminalId = String(terminalId || '').trim();
+  if (!isValidPdvTerminalId(safeTerminalId) || !hasValidPdvTerminalPublicKey(terminalPublicKey)) return '';
+
+  const current = await db.execute({
+    sql: 'SELECT id FROM pdv_terminals WHERE id = ? LIMIT 1',
+    args: [safeTerminalId],
+  });
+  if (current.rows[0]) return '';
+
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: 'INSERT INTO pdv_terminals (id, public_key_jwk, status, device_info, first_seen_at, last_seen_at, last_ip) VALUES (?, ?, \'active\', ?, ?, ?, ?)',
+    args: [
+      safeTerminalId,
+      JSON.stringify(terminalPublicKey),
+      String(deviceInfo || '').slice(0, 1000),
+      now,
+      now,
+      String(ip || '').slice(0, 80),
+    ],
+  });
+  return safeTerminalId;
+};
+
+const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, terminalChallenge, terminalSignature }, { operationAccessAllowed = true, req = null } = {}) => {
   await ensureDatabaseReady();
   await ensureDefaultSellersReady();
   const safePin = String(pin || '');
@@ -2493,8 +2600,24 @@ const login = async ({ pin, sellerId, view }, { operationAccessAllowed = true, r
     const pinCheck = verifyPin(safePin, storedPin);
     if (!pinCheck.ok) continue;
     const safeSeller = toSessionSeller(seller);
+    const terminalProof = await verifyPdvTerminalProof({
+      terminalId,
+      terminalChallenge,
+      terminalSignature,
+      ip: req ? getClientIp(req) : '',
+    });
+    const trustedTerminalId = terminalProof.valid
+      ? terminalProof.terminalId
+      : operationAccessAllowed
+        ? await bootstrapPdvTerminal({
+          terminalId,
+          terminalPublicKey,
+          ip: req ? getClientIp(req) : '',
+          deviceInfo: req?.headers?.['user-agent'] || '',
+        })
+        : '';
 
-    if (!operationAccessAllowed && !canAccessOutsideOperationIp(safeSeller)) {
+    if (!operationAccessAllowed && !terminalProof.valid && !canAccessOutsideOperationIp(safeSeller)) {
       blockedNonAdminMatch = true;
       if (req && isOperationIpRestricted()) {
         console.warn(`Blocked non-admin login outside operation IP: ${getClientIp(req)} seller=${seller.id}`);
@@ -2508,7 +2631,7 @@ const login = async ({ pin, sellerId, view }, { operationAccessAllowed = true, r
 
     return {
       seller: safeSeller,
-      sessionToken: createSessionToken(safeSeller),
+      sessionToken: createSessionToken(safeSeller, { trustedTerminalId }),
     };
   }
 
@@ -8092,6 +8215,7 @@ const handlers = createRouteHandlers({
   getPagBankPublicKey,
   getPdvLockState,
   handlePagBankDeliveryWebhook,
+  issuePdvTerminalChallenge,
   joinTables,
   linkModifierGroup,
   listCoupons,

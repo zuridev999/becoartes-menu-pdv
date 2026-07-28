@@ -1,4 +1,5 @@
 import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
+import { createPdvTerminalIdentity, signPdvTerminalChallenge } from './pdv-terminal-browser';
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
 const TABLE_ACCESS_TOKEN_STORAGE_KEY = 'beco_public_table_access';
@@ -682,8 +683,31 @@ export const AppApi = {
     return getJson<T>('/api/checklist-alerts');
   },
 
-  login(pin: string, sellerId?: string) {
-    return postJson<{ seller: any | null; sessionToken?: string; accessRestricted?: boolean }>('/api/auth/login', { pin, sellerId, view: getCurrentView() });
+  async login(pin: string, sellerId?: string) {
+    let terminalPayload: Record<string, unknown> = {};
+    try {
+      const identity = await createPdvTerminalIdentity();
+      terminalPayload = {
+        terminalId: identity.id,
+        terminalPublicKey: identity.publicKeyJwk,
+      };
+      const challenge = await postJson<{ valid: boolean; challenge?: string | null }>('/api/pdv-terminal/challenge', { terminalId: identity.id });
+      if (challenge.valid && challenge.challenge) {
+        terminalPayload = {
+          ...terminalPayload,
+          terminalChallenge: challenge.challenge,
+          terminalSignature: await signPdvTerminalChallenge(identity, challenge.challenge),
+        };
+      }
+    } catch (error) {
+      console.warn('Não foi possível preparar a identidade deste terminal:', error);
+    }
+    return postJson<{ seller: any | null; sessionToken?: string; accessRestricted?: boolean }>('/api/auth/login', {
+      pin,
+      sellerId,
+      view: getCurrentView(),
+      ...terminalPayload,
+    });
   },
 
   validateTabletSetupPin(pin: string) {

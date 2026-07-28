@@ -14,6 +14,7 @@ export const createRouteHandlers = (services) => ({
     operationAccessAllowed: context.operationAccessAllowed,
   }),
   'POST /api/auth/login': async (body, context) => services.login(body, context),
+  'POST /api/pdv-terminal/challenge': async (body) => services.issuePdvTerminalChallenge(body),
   'POST /api/tablet/setup-login': async (body, context) => services.validateTabletSetupPin(body, context),
   'POST /api/table-access-token': async (body, context) => services.createTableAccessToken(body, context.session),
   'GET /api/checklist-alerts': async () => services.getChecklistAlertsFromOs(),

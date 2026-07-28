@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { generateKeyPairSync, sign as signSignature } from 'node:crypto';
 import { createClient } from '@libsql/client';
 
 const port = Number(process.env.TEST_BACKEND_PORT || 18190);
@@ -24,6 +25,7 @@ const env = {
   OS_SYSTEM_USER_ID: 'user_test',
   CASH_SANDBOX_MODE: '1',
   HEALTH_DB_TIMEOUT_MS: '1000',
+  ALLOWED_OPERATION_IPS: '10.0.0.5',
 };
 
 const bffSource = readFileSync(join(process.cwd(), 'server/bff.mjs'), 'utf8');
@@ -41,16 +43,23 @@ assert.match(bffSource, /if \(hasBlockingShortage && !adminOverride\)/, 'only a 
 assert.match(bffSource, /getLatestClosedCashRow[\s\S]*ORDER BY updated_at DESC, data DESC, created_at DESC/, 'cash opening must use the latest completed closing');
 assert.match(bffSource, /requestedOpeningCents !== requiredOpeningCents/, 'cash opening must reject a balance different from the previous closing');
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
+assert.match(bffSource, /pdv_terminals/, 'PDV terminals must persist a public-key identity');
+assert.match(bffSource, /terminalProof\.valid/, 'trusted terminals must require a verified challenge signature');
 assert.match(routerSource, /transient \? 503/, 'transient backend failures must return 503');
+assert.match(routerSource, /isTrustedTerminalSession/, 'trusted terminal sessions must keep operating after an IP change');
 assert.match(routerSource, /bff_request_error/, 'backend errors must include structured route context');
 assert.match(httpSource, /totalBytes > maxBytes/, 'JSON body parsing must enforce a byte limit');
 
-const fetchJson = async (path, { method = 'GET', token = '', body = undefined, expectedStatus = 200 } = {}) => {
+const AUTHORIZED_IP_HEADERS = { 'X-Forwarded-For': '10.0.0.5' };
+const REMOTE_IP_HEADERS = { 'X-Forwarded-For': '198.51.100.25' };
+
+const fetchJson = async (path, { method = 'GET', token = '', body = undefined, expectedStatus = 200, headers = {} } = {}) => {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { 'X-Beco-Session': token } : {}),
+      ...headers,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -74,7 +83,7 @@ const waitForHealth = async () => {
   throw lastError || new Error('BFF healthcheck did not become healthy');
 };
 
-const post = (path, body, token, expectedStatus = 200) => fetchJson(path, { method: 'POST', body, token, expectedStatus });
+const post = (path, body, token, expectedStatus = 200, headers = AUTHORIZED_IP_HEADERS) => fetchJson(path, { method: 'POST', body, token, expectedStatus, headers });
 
 const seedCatalogAndStock = async () => {
   const db = createClient({ url: dbUrl });
@@ -123,7 +132,7 @@ const getScalar = async (sql, args = []) => {
 };
 
 const login = async (pin) => {
-  const payload = await post('/api/auth/login', { pin }, '');
+  const payload = await post('/api/auth/login', { pin }, '', 200, AUTHORIZED_IP_HEADERS);
   assert.equal(payload.ok, true);
   assert.ok(payload.data?.sessionToken, `login should return a session token for pin ${pin}`);
   return payload.data;
@@ -269,6 +278,42 @@ try {
   const migratedSellerAgain = await login('1122');
   assert.equal(migratedSellerAgain.seller.id, 'seller_test', 'scrypt PIN must remain usable after migration');
 
+  const remotePinOnly = await post('/api/auth/login', { pin: '1122', view: 'pdv' }, '', 200, REMOTE_IP_HEADERS);
+  assert.equal(remotePinOnly.data.seller, null, 'PIN sem terminal confiável continua bloqueado fora da rede autorizada');
+  assert.equal(remotePinOnly.data.accessRestricted, true);
+
+  const terminalId = '80120304-0506-4708-9010-111213141516';
+  const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const terminalPublicKey = publicKey.export({ format: 'jwk' });
+  const bootstrapTerminal = await post('/api/auth/login', {
+    pin: '1122',
+    view: 'pdv',
+    terminalId,
+    terminalPublicKey,
+  }, '', 200, AUTHORIZED_IP_HEADERS);
+  assert.ok(bootstrapTerminal.data.sessionToken, 'rede autorizada deve vincular o computador ao primeiro login válido');
+
+  const terminalChallenge = await post('/api/pdv-terminal/challenge', { terminalId }, '', 200, REMOTE_IP_HEADERS);
+  assert.equal(terminalChallenge.data.valid, true, 'terminal vinculado deve receber desafio assinado');
+  const terminalSignature = signSignature(
+    'sha256',
+    Buffer.from(terminalChallenge.data.challenge),
+    { key: privateKey, dsaEncoding: 'ieee-p1363' },
+  ).toString('base64url');
+  const trustedRemoteLogin = await post('/api/auth/login', {
+    pin: '1122',
+    view: 'pdv',
+    terminalId,
+    terminalChallenge: terminalChallenge.data.challenge,
+    terminalSignature,
+  }, '', 200, REMOTE_IP_HEADERS);
+  assert.ok(trustedRemoteLogin.data.sessionToken, 'PIN válido em terminal vinculado deve funcionar mesmo após troca de IP');
+  const trustedRemoteSnapshot = await fetchJson('/api/app/init?view=pdv', {
+    token: trustedRemoteLogin.data.sessionToken,
+    headers: REMOTE_IP_HEADERS,
+  });
+  assert.notEqual(trustedRemoteSnapshot.data.accessRestricted, true, 'sessão do terminal confiável deve sincronizar o PDV fora da rede autorizada');
+
   await post('/api/tables/open', { tableId: '1', wasAvailable: true }, admin.sessionToken);
   const order = await post('/api/orders/send-to-kitchen', {
     orderId: 'order_partial',
@@ -396,6 +441,7 @@ try {
       'permissao_negada',
       'pin_hash_forjado_bloqueado',
       'pin_scrypt_migracao_transparente',
+      'terminal_pdv_confiavel_sem_dependencia_de_ip',
       'pin_admin_emergencia_fecha_caixa',
       'pagamento_parcial',
       'retry_pagamento_parcial',

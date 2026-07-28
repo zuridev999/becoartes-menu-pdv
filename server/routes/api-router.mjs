@@ -62,9 +62,10 @@ export const createApiHandler = ({
     const body = req.method === 'GET' ? {} : await readJsonBody(req, { maxBytes: maxJsonBodyBytes });
     const session = getSessionFromRequest(req);
     const isLoginRoute = routeKey === 'POST /api/auth/login' || routeKey === 'POST /api/tablet/setup-login';
+    const isTrustedTerminalSession = Boolean(session?.trustedTerminalId);
     // Login por PIN nunca deve herdar permissão de uma sessão antiga. Isso evita
     // que um token admin salvo no navegador libere PIN de colaborador fora da rede.
-    const operationAccessAllowed = isOperationIpAllowed(req) || (!isLoginRoute && isAdminSession(session));
+    const operationAccessAllowed = isOperationIpAllowed(req) || (!isLoginRoute && (isAdminSession(session) || isTrustedTerminalSession));
     await enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
     if (new Set([
       'POST /api/orders/send-to-kitchen',
