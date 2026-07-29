@@ -40,6 +40,9 @@ assert.match(bffSource, /api\/cash\/open.*api\/cash\/close/s, 'cash PIN routes m
 assert.match(bffSource, /const shortageCents = Math\.max\(0, closeSummary\.expectedCents - closingCents\)/, 'cash closing must calculate only a shortage as a blocking candidate');
 assert.match(bffSource, /const hasBlockingShortage = shortageCents > 100/, 'cash closing must tolerate a shortage up to one real');
 assert.match(bffSource, /if \(hasBlockingShortage && !adminOverride\)/, 'only a shortage above the tolerance must require superadmin confirmation');
+assert.match(bffSource, /action: 'cash_close_blocked'/, 'blocked cash closings must leave a persistent audit trail');
+assert.match(bffSource, /action: 'cash_close_failed'/, 'failed cash closing attempts must leave a persistent audit trail');
+assert.match(bffSource, /title: closeTitle[\s\S]*controle-dinheiro/, 'successful cash closings must notify the OS control-money route');
 assert.match(bffSource, /getLatestClosedCashRow[\s\S]*ORDER BY updated_at DESC, data DESC, created_at DESC/, 'cash opening must use the latest completed closing');
 assert.match(bffSource, /requestedOpeningCents !== requiredOpeningCents/, 'cash opening must reject a balance different from the previous closing');
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
@@ -189,6 +192,21 @@ try {
   }, cashier.sessionToken, 403);
   assert.equal(deniedDifference.ok, false, 'operador não deve fechar caixa com diferença');
   assert.match(deniedDifference.error || '', /diferente do esperado/);
+  const blockedAudit = await getScalar("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'cash_close_blocked'");
+  assert.equal(Number(blockedAudit.count), 1, 'blocked cash closing must be persisted once');
+  const blockedNotification = await getScalar("SELECT COUNT(*) AS count FROM notificacoes WHERE titulo = 'Fechamento de caixa bloqueado'");
+  assert.equal(Number(blockedNotification.count), 1, 'blocked cash closing must notify the OS');
+
+  const invalidPinClose = await post('/api/cash/close', {
+    closingBalance: 108.35,
+    notes: 'Tentativa com PIN inválido',
+    confirmationPin: '9999',
+  }, cashier.sessionToken, 403);
+  assert.equal(invalidPinClose.ok, false, 'invalid PIN must not close the cash');
+  const failedAudit = await getScalar("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'cash_close_failed' AND details LIKE '%pin_not_found%'");
+  assert.equal(Number(failedAudit.count), 1, 'invalid PIN close attempt must be persisted');
+  const failedNotification = await getScalar("SELECT COUNT(*) AS count FROM notificacoes WHERE titulo = 'Tentativa de fechamento não concluída'");
+  assert.equal(Number(failedNotification.count), 1, 'invalid PIN close attempt must notify the OS');
 
   const closedCash = await post('/api/cash/close', {
     closingBalance: 108.35,
@@ -197,6 +215,8 @@ try {
   }, cashier.sessionToken);
   assert.equal(closedCash.ok, true, 'operador autorizado deve fechar o caixa quando o valor confere');
   assert.equal(closedCash.data.cashState.isOpen, false, 'cash must be closed after an exact operator confirmation');
+  const successNotification = await getScalar("SELECT COUNT(*) AS count FROM notificacoes WHERE titulo = 'Fechamento de caixa realizado'");
+  assert.equal(Number(successNotification.count), 1, 'successful cash close must notify the OS');
 
   const testDb = createClient({ url: dbUrl });
   const resetCash = async () => testDb.execute({
@@ -443,6 +463,9 @@ try {
       'pin_scrypt_migracao_transparente',
       'terminal_pdv_confiavel_sem_dependencia_de_ip',
       'pin_admin_emergencia_fecha_caixa',
+      'fechamento_bloqueado_notifica_superadmin',
+      'pin_invalido_notifica_superadmin',
+      'fechamento_concluido_notifica_superadmin',
       'pagamento_parcial',
       'retry_pagamento_parcial',
       'fechamento',

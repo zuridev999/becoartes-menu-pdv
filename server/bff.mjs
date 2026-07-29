@@ -6771,13 +6771,138 @@ const getExpectedClosingCents = async (cash) => {
   };
 };
 
-const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
-  const cash = await getOpenCashRow();
-  if (!cash) throw new Error('Não existe caixa aberto.');
+const classifyCashCloseFailure = (error) => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (/sem permissão/i.test(message)) return 'pin_without_permission';
+  if (/não encontrado|inativo/i.test(message)) return 'pin_not_found';
+  if (/4 dígitos/i.test(message)) return 'pin_invalid_format';
+  if (/não existe caixa aberto/i.test(message)) return 'no_open_cash';
+  return 'close_failed';
+};
 
+const safeRecordCashCloseEvent = async ({
+  action,
+  title,
+  message,
+  type,
+  cash = null,
+  closeSummary = null,
+  closingCents = null,
+  actor = null,
+  reasonCode = '',
+  reason = '',
+  notes = '',
+}) => {
+  const actorName = actor?.name || 'Usuário não identificado';
+  const actorId = actor?.id || '';
+  const dedupeKey = [
+    cash?.id || 'no-cash',
+    action,
+    closingCents ?? 'no-value',
+    reasonCode || 'no-reason',
+    actorId || actorName,
+  ].join(':');
+  const details = {
+    dedupeKey,
+    cashId: cash?.id || null,
+    cashDate: cash?.data || null,
+    closingBalance: closingCents === null ? null : centsToMoney(closingCents),
+    expected: closeSummary ? centsToMoney(closeSummary.expectedCents) : null,
+    difference: closeSummary && closingCents !== null
+      ? centsToMoney(closingCents - closeSummary.expectedCents)
+      : null,
+    opening: closeSummary ? centsToMoney(closeSummary.openingCents) : null,
+    cashSales: closeSummary ? centsToMoney(closeSummary.cashSalesCents) : null,
+    manualIn: closeSummary ? centsToMoney(closeSummary.manualInCents) : null,
+    manualOut: closeSummary ? centsToMoney(closeSummary.manualOutCents) : null,
+    reasonCode,
+    reason,
+    notes: notes || '',
+    actorId: actorId || null,
+    actorName,
+    sandbox: CASH_SANDBOX_MODE,
+  };
+
+  try {
+    const cutoff = new Date(Date.now() - 10_000).toISOString();
+    const recent = await db.execute({
+      sql: `
+        SELECT id
+        FROM audit_logs
+        WHERE action = ?
+          AND timestamp >= ?
+          AND json_extract(details, '$.dedupeKey') = ?
+        LIMIT 1
+      `,
+      args: [action, cutoff, dedupeKey],
+    });
+    if (recent.rows[0]?.id) return { duplicate: true };
+  } catch (error) {
+    console.error('Cash close dedupe check skipped:', error);
+  }
+
+  try {
+    await addAuditLog({
+      id: createId(),
+      action,
+      details: JSON.stringify(details),
+      origin: 'pdv',
+      authorName: actorName,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Cash close audit skipped:', action, error);
+  }
+
+  await safeCreateOSNotification({
+    title,
+    message,
+    type,
+    link: `/${OS_TENANT_SLUG}/controle-dinheiro`,
+  });
+  return { duplicate: false };
+};
+
+const closeCash = async ({ closingBalance, notes, confirmationPin }, requestSession = null) => {
   const closingCents = moneyToCents(closingBalance, 'closingBalance');
+  const cash = await getOpenCashRow();
+  if (!cash) {
+    const error = new Error('Não existe caixa aberto.');
+    await safeRecordCashCloseEvent({
+      action: 'cash_close_failed',
+      title: 'Tentativa de fechamento não concluída',
+      message: `${requestSession?.name || 'Usuário não identificado'} tentou fechar o caixa, mas não havia caixa aberto.`,
+      type: 'warning',
+      closingCents,
+      actor: requestSession,
+      reasonCode: 'no_open_cash',
+      reason: error.message,
+      notes,
+    });
+    throw error;
+  }
+
   const closeSummary = await getExpectedClosingCents(cash);
-  const cashActor = await resolveCashActorByPin(confirmationPin, 'closeCash');
+  let cashActor;
+  try {
+    cashActor = await resolveCashActorByPin(confirmationPin, 'closeCash');
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    await safeRecordCashCloseEvent({
+      action: 'cash_close_failed',
+      title: 'Tentativa de fechamento não concluída',
+      message: `${requestSession?.name || 'Usuário não identificado'} tentou fechar o caixa. Motivo: ${reason} Valor informado: ${formatMoneyBRL(centsToMoney(closingCents))}.`,
+      type: 'warning',
+      cash,
+      closeSummary,
+      closingCents,
+      actor: requestSession,
+      reasonCode: classifyCashCloseFailure(error),
+      reason,
+      notes,
+    });
+    throw error;
+  }
   const shortageCents = Math.max(0, closeSummary.expectedCents - closingCents);
   const hasBlockingShortage = shortageCents > 100;
   const adminOverride = hasBlockingShortage && isCashSuperAdmin(cashActor);
@@ -6785,6 +6910,19 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
   if (hasBlockingShortage && !adminOverride) {
     const error = new Error('O valor físico está diferente do esperado. Solicite a confirmação do superadministrador para concluir o fechamento.');
     error.statusCode = 403;
+    await safeRecordCashCloseEvent({
+      action: 'cash_close_blocked',
+      title: 'Fechamento de caixa bloqueado',
+      message: `${cashActor.seller?.name || 'Usuário não identificado'} informou ${formatMoneyBRL(centsToMoney(closingCents))}. O caixa esperava ${formatMoneyBRL(centsToMoney(closeSummary.expectedCents))}. Diferença abaixo do esperado: ${formatMoneyBRL(centsToMoney(shortageCents))}.`,
+      type: 'alert',
+      cash,
+      closeSummary,
+      closingCents,
+      actor: cashActor.seller,
+      reasonCode: 'shortage_over_tolerance',
+      reason: error.message,
+      notes,
+    });
     throw error;
   }
 
@@ -6825,6 +6963,18 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }) => {
     authorId: effectiveSession.id,
     authorName: effectiveSession.name,
     timestamp: new Date().toISOString(),
+  });
+
+  const differenceCents = closingCents - closeSummary.expectedCents;
+  const closeTitle = differenceCents === 0
+    ? 'Fechamento de caixa realizado'
+    : 'Fechamento de caixa realizado com diferença';
+  const authorizationText = adminOverride ? ' Autorizado pelo superadministrador.' : '';
+  await safeCreateOSNotification({
+    title: closeTitle,
+    message: `${effectiveSession.name} fechou o caixa. Informado: ${formatMoneyBRL(centsToMoney(closingCents))}. Esperado: ${formatMoneyBRL(centsToMoney(closeSummary.expectedCents))}. Diferença: ${formatMoneyBRL(centsToMoney(differenceCents))}.${authorizationText}`,
+    type: differenceCents === 0 ? 'info' : 'warning',
+    link: `/${OS_TENANT_SLUG}/controle-dinheiro`,
   });
 
   return { cashState: await getCashState() };

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.9 - 2026-07-29
+
+- Registra toda tentativa de fechamento de caixa, inclusive bloqueios por diferença e recusas de PIN ou permissão.
+- Envia ao OS uma notificação com valores informado e esperado, diferença e responsável, preservando a confirmação normal quando o fechamento é válido.
+
 ## 1.5.7 - 2026-07-28
 
 - Vincula computadores autorizados do PDV a uma chave criptográfica local, preservando o acesso por PIN mesmo quando o IP externo do restaurante muda.
