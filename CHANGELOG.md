@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0 - 2026-07-29
+
+- Exibe sabores, adicionais e observações diretamente nas solicitações do PDV e nos detalhes do movimento.
+- Unifica a leitura operacional dos itens entre PDV e Cozinha sem remover regras específicas de produção, como a indicação de batata nos pratos.
+- Simplifica os cards e o detalhe do Cozinha, mantendo escolhas e observações junto ao produto correspondente.
+
 ## 1.5.9 - 2026-07-29
 
 - Registra toda tentativa de fechamento de caixa, inclusive bloqueios por diferença e recusas de PIN ou permissão.

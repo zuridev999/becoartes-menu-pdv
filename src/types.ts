@@ -129,8 +129,10 @@ export interface ServiceRequest {
   id: string;
   tableId: string;
   tableNumber: number;
+  orderId?: string;
   type: string; // 'waiter' | 'bill' | 'glass' | 'cutlery' | 'napkin' | 'ice' | 'lemon' | 'physical_menu' | 'help' | 'problem' | 'other'
   message?: string;
+  items?: OrderItem[];
   status: 'pending' | 'viewed' | 'resolved';
   createdAt: Date;
 }

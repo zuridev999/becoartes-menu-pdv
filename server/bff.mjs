@@ -1881,12 +1881,70 @@ const getServiceRequests = async () => {
     args: [SERVICE_REQUEST_LIMIT],
   });
 
+  const orderIdByRequestId = new Map();
+  for (const row of res.rows) {
+    const requestId = String(row.id || '');
+    const prefix = row.type === 'order_ready'
+      ? 'order_ready_'
+      : row.type === 'new_order'
+        ? 'new_order_'
+        : '';
+    if (prefix && requestId.startsWith(prefix)) {
+      orderIdByRequestId.set(requestId, requestId.slice(prefix.length));
+    }
+  }
+
+  const orderIds = Array.from(new Set(orderIdByRequestId.values())).filter(Boolean);
+  const itemsByOrderId = {};
+  if (orderIds.length > 0) {
+    const placeholders = orderIds.map(() => '?').join(',');
+    const itemsRes = await db.execute({
+      sql: `
+        SELECT
+          oi.id,
+          oi.order_id,
+          oi.product_id,
+          oi.quantity,
+          oi.price_at_time,
+          oi.selected_modifiers,
+          oi.notes,
+          COALESCE(m.name, 'Item removido do cardápio') AS name,
+          m.category_id,
+          c.name AS category_name
+        FROM order_items oi
+        LEFT JOIN menu m ON m.id = oi.product_id
+        LEFT JOIN categories c ON c.id = m.category_id
+        WHERE oi.order_id IN (${placeholders})
+        ORDER BY oi.order_id ASC, oi.rowid ASC
+      `,
+      args: orderIds,
+    });
+
+    for (const item of itemsRes.rows) {
+      if (!itemsByOrderId[item.order_id]) itemsByOrderId[item.order_id] = [];
+      itemsByOrderId[item.order_id].push({
+        id: item.id,
+        orderId: item.order_id,
+        productId: item.product_id,
+        categoryId: item.category_id || '',
+        categoryName: item.category_name || '',
+        name: item.name || 'Item removido do cardápio',
+        price: Number(item.price_at_time || 0),
+        quantity: Number(item.quantity || 0),
+        selectedModifiers: parseJsonArray(item.selected_modifiers),
+        notes: item.notes || '',
+      });
+    }
+  }
+
   return res.rows.map((row) => ({
     id: row.id,
     tableId: row.table_id,
     tableNumber: Number(row.tableNumber || 0),
+    orderId: orderIdByRequestId.get(String(row.id || '')) || undefined,
     type: row.type,
     message: row.message || '',
+    items: itemsByOrderId[orderIdByRequestId.get(String(row.id || ''))] || [],
     status: row.status,
     createdAt: row.created_at || new Date().toISOString(),
   }));
@@ -3535,8 +3593,10 @@ const orderSubmissionDuplicateResponse = (order, tableId, items = []) => {
     request: {
       id: requestId,
       tableId: String(order?.table_id || tableId),
+      orderId,
       type: 'new_order',
       message: items.map((item) => `${item.quantity}x ${item.name}`).join(', '),
+      items,
       status: 'pending',
       createdAt: new Date().toISOString(),
     },
@@ -3638,8 +3698,10 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, client
     request: {
       id: requestId,
       tableId,
+      orderId,
       type: 'new_order',
       message: itemsList,
+      items: safeItems,
       status: 'pending',
       createdAt: new Date().toISOString(),
     },
@@ -5420,15 +5482,38 @@ const createOrderReadyRequest = async (orderId) => {
 
   const itemsRes = await db.execute({
     sql: `
-      SELECT oi.quantity, COALESCE(m.name, 'Item') as name, oi.selected_modifiers
+      SELECT
+        oi.id,
+        oi.order_id,
+        oi.product_id,
+        oi.quantity,
+        oi.price_at_time,
+        oi.selected_modifiers,
+        oi.notes,
+        COALESCE(m.name, 'Item') AS name,
+        m.category_id,
+        c.name AS category_name
       FROM order_items oi
       LEFT JOIN menu m ON oi.product_id = m.id
+      LEFT JOIN categories c ON c.id = m.category_id
       WHERE oi.order_id = ?
     `,
     args: [orderId],
   });
-  const itemsList = itemsRes.rows.map((item) => {
-    const modifiers = parseJsonArray(item.selected_modifiers)
+  const requestItems = itemsRes.rows.map((item) => ({
+    id: item.id,
+    orderId: item.order_id,
+    productId: item.product_id,
+    categoryId: item.category_id || '',
+    categoryName: item.category_name || '',
+    name: item.name || 'Item',
+    price: Number(item.price_at_time || 0),
+    quantity: Number(item.quantity || 0),
+    selectedModifiers: parseJsonArray(item.selected_modifiers),
+    notes: item.notes || '',
+  }));
+  const itemsList = requestItems.map((item) => {
+    const modifiers = item.selectedModifiers
       .map((modifier) => modifier?.name)
       .filter(Boolean);
     return `${item.quantity}x ${item.name}${modifiers.length ? ` (+ ${modifiers.join(', ')})` : ''}`;
@@ -5451,8 +5536,10 @@ const createOrderReadyRequest = async (orderId) => {
       id: request?.id || id,
       tableId: request?.table_id || order.table_id,
       tableNumber: Number(order.tableNumber || 0),
+      orderId,
       type: 'order_ready',
       message: request?.message || itemsList,
+      items: requestItems,
       status: request?.status || 'pending',
       createdAt: request?.created_at || new Date().toISOString(),
     },

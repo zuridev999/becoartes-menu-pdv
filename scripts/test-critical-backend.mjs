@@ -335,17 +335,34 @@ try {
   assert.notEqual(trustedRemoteSnapshot.data.accessRestricted, true, 'sessão do terminal confiável deve sincronizar o PDV fora da rede autorizada');
 
   await post('/api/tables/open', { tableId: '1', wasAvailable: true }, admin.sessionToken);
+  const detailedOrderItem = {
+    ...orderItem('item_partial'),
+    name: 'Caipirinha (Escolha seu sabor)',
+    selectedModifiers: [{ id: 'mod_limao', name: 'Limão', price: 0, status: 'active' }],
+    notes: 'Pouco açúcar',
+  };
   const order = await post('/api/orders/send-to-kitchen', {
     orderId: 'order_partial',
     tableId: '1',
     total: 100,
     origin: 'pdv',
     sellerId: admin.seller.id,
-    items: [orderItem('item_partial')],
+    items: [detailedOrderItem],
   }, admin.sessionToken);
   assert.equal(order.ok, true);
+  assert.equal(order.data.request.orderId, 'order_partial');
+  assert.equal(order.data.request.items[0].selectedModifiers[0].name, 'Limão');
+  assert.equal(order.data.request.items[0].notes, 'Pouco açúcar');
   assert.equal(order.data.inventorySyncError, null, `inventory sync failed: ${order.data.inventorySyncError}`);
   assert.equal(order.data.inventorySync?.movementCount, 1, `inventory sync result: ${JSON.stringify(order.data.inventorySync)}`);
+
+  const orderSnapshot = await fetchJson('/api/app/init?view=pdv', { token: admin.sessionToken });
+  const orderRequest = orderSnapshot.data.serviceRequests.find((request) => request.id === 'new_order_order_partial');
+  assert.ok(orderRequest, 'new order request must be present in the PDV snapshot');
+  assert.equal(orderRequest.orderId, 'order_partial');
+  assert.equal(orderRequest.items[0].name, 'Produto Teste');
+  assert.equal(orderRequest.items[0].selectedModifiers[0].name, 'Limão');
+  assert.equal(orderRequest.items[0].notes, 'Pouco açúcar');
 
   const partial = await post('/api/table-payments', {
     id: 'partial_1',

@@ -15,6 +15,7 @@ import type { CustomerTab } from '../../types';
 import { CheckoutModal } from '../../components/modals/CheckoutModal';
 import { CounterSaleModal } from '../../components/modals/CounterSaleModal';
 import { ActionDialog } from '../../components/common/ActionDialog';
+import { OrderItemDetails } from '../../components/common/OrderItemDetails';
 import { ReceiptPrintModal } from '../../components/common/ReceiptPrintModal';
 import { ProductModal } from '../../components/modals/ProductModal';
 import { PdvTicker } from '../../components/pdv/PdvTicker';
@@ -1154,12 +1155,14 @@ export function PDVView() {
                              {isResolved ? 'Atendimento Concluído' : (req.type === 'order_ready' ? 'Retirar na Cozinha' : (req.type === 'new_order' ? 'Preparar Bebidas/Drinks' : (req.message || 'Aguardando atendimento')))}
                            </p>
                            {isOrderActionable && (
-                             <div className="mt-2 p-3 bg-white/10 rounded-xl border border-white/5">
-                               <p className="text-[10px] font-bold text-white/80 leading-relaxed italic line-clamp-2">
-                                 {req.message}
-                               </p>
+                             <div className="mt-3">
+                               <OrderItemDetails
+                                 items={req.items}
+                                 fallbackMessage={req.message}
+                                 compact
+                               />
                                <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-white/40 uppercase">
-                                 Clique para ver movimento <ChevronRight size={8} />
+                                 Ver movimento completo <ChevronRight size={8} />
                                </div>
                              </div>
                            )}
@@ -2039,17 +2042,24 @@ export function PDVView() {
                   </div>
                 </div>
 
-                <div className="bg-white/5 rounded-[2rem] p-8 border border-white/5">
-                   <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-6">
+                <div className="border-t border-white/10 pt-6">
+                   <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-5">
                      {selectedRequestForDetails.type === 'new_order'
                        ? 'Itens do pedido'
                        : selectedRequestForDetails.type === 'order_ready'
                          ? 'Itens prontos para entrega'
                          : 'Mensagem da solicitação'}
                    </h3>
-                   <p className="text-xl sm:text-3xl font-black text-white leading-relaxed italic">
-                     {selectedRequestForDetails.message || 'Sem observação adicional.'}
-                   </p>
+                   {selectedRequestForDetails.type === 'new_order' || selectedRequestForDetails.type === 'order_ready' ? (
+                     <OrderItemDetails
+                       items={selectedRequestForDetails.items}
+                       fallbackMessage={selectedRequestForDetails.message}
+                     />
+                   ) : (
+                     <p className="text-xl sm:text-3xl font-black text-white leading-relaxed">
+                       {selectedRequestForDetails.message || 'Sem observação adicional.'}
+                     </p>
+                   )}
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 mt-10">

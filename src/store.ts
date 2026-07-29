@@ -1149,8 +1149,10 @@ export const useStore = create<AppState>((set, get) => ({
         id: requestId,
         tableId,
         tableNumber: table.number,
+        orderId,
         type: 'new_order',
         message: itemsList,
+        items: persistedItems,
         status: 'pending',
         createdAt: new Date()
       };
@@ -1233,8 +1235,10 @@ export const useStore = create<AppState>((set, get) => ({
           ...result.request,
           tableId: order.tableId,
           tableNumber: order.tableNumber,
+          orderId: result.request.orderId || order.orderId || order.id,
           type: 'order_ready',
           message: result.request.message || itemsList,
+          items: result.request.items?.length ? result.request.items : order.items,
           status: 'pending',
           createdAt: result.request.createdAt
         };

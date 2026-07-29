@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useStore, type Seller } from '../../store';
 import { AppApi, setApiSessionToken } from '../../lib/api';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
+import { OrderItemDetails } from '../../components/common/OrderItemDetails';
 
 const KITCHEN_SYNC_INTERVAL_MS = 5000;
 
@@ -218,52 +219,15 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
 
       <div className="flex-1 overflow-hidden mt-2 sm:mt-4">
         <p className="text-[10px] sm:text-sm font-black uppercase tracking-[0.25em] sm:tracking-[0.3em] mb-3 sm:mb-4 opacity-40">{order.items.length} Itens no Pedido</p>
-        <div className={`mt-2 ${order.items.length > 5 ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3' : 'space-y-2 sm:space-y-3'}`}>
-          {order.items.slice(0, 10).map((item: any, idx: number) => (
-            (() => {
-              const presentation = getKitchenItemPresentation(item);
-              return <div key={idx} className="flex gap-3 items-start min-w-0">
-                <span className="font-black text-xl sm:text-2xl text-black shrink-0 leading-none">{item.quantity}X</span>
-                <div className="min-w-0 flex-1">
-                  <span className="font-black text-base sm:text-lg tracking-tighter truncate leading-none block">{presentation.name}</span>
-                {presentation.modifiers.length > 0 && (
-                  <div className="mt-2 space-y-1.5">
-                    <span className="inline-flex px-3 py-1.5 rounded-lg bg-black text-white text-xs font-black uppercase tracking-widest leading-none">
-                      ADICIONAIS
-                    </span>
-                    {presentation.modifiers.slice(0, 3).map((modifier: any, modifierIdx: number) => (
-                      <span key={modifierIdx} className="block text-lg font-black leading-tight text-black uppercase tracking-tighter">
-                        {item.quantity}X {modifier.name}
-                      </span>
-                    ))}
-                    {presentation.modifiers.length > 3 && (
-                      <span className="px-2 py-1 rounded-lg bg-black/10 text-black text-[10px] font-black uppercase tracking-widest leading-none">
-                        +{presentation.modifiers.length - 3}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-              </div>;
-            })()
-          ))}
-          {order.items.length > 10 && (
-            <p className="text-base sm:text-xl font-black mt-4 sm:ml-12 text-red-600 animate-pulse">+ {order.items.length - 10} OUTROS ITENS...</p>
-          )}
-        </div>
-        
-        {order.items.some((i: any) => i.notes) && (
-          <div className="mt-4 sm:mt-6 p-4 sm:p-5 bg-red-600 rounded-2xl sm:rounded-3xl shadow-xl border-2 sm:border-4 border-white animate-pulse">
-            <p className="text-[10px] font-black uppercase text-white mb-2 tracking-[0.2em]">Observações do Pedido:</p>
-            <div className="space-y-1">
-              {order.items.filter((i: any) => i.notes).map((item: any, idx: number) => (
-                <p key={idx} className="text-lg sm:text-2xl font-black text-white leading-tight">
-                  !! {item.name}: {item.notes}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
+        <OrderItemDetails
+          items={order.items}
+          compact
+          maxItems={10}
+          maxModifiers={3}
+          tone="light"
+          operational
+          presentItem={getKitchenItemPresentation}
+        />
       </div>
 
       <div className={`mt-4 pt-4 border-t flex justify-between items-center gap-2 ${isDanger ? 'border-black/20' : 'border-black/5'}`}>
@@ -324,46 +288,16 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
           <button type="button" aria-label="Fechar pedido" onClick={onClose} className="p-4 sm:p-6 bg-gray-100 rounded-full hover:bg-rose-50 text-black transition-all shrink-0">
             <X size={28} className="sm:w-10 sm:h-10" />
           </button>
-        </div>         <div className="flex-1 overflow-y-auto p-4 sm:p-12 custom-scrollbar bg-white">
-            <div className="grid grid-cols-1 gap-4 sm:gap-6">
-               {order.items.map((item: any, idx: number) => (
-                 (() => {
-                   const presentation = getKitchenItemPresentation(item);
-                   return <div key={idx} className="p-4 sm:p-8 bg-gray-50 rounded-[1.5rem] sm:rounded-[2.5rem] border-2 border-gray-100 flex flex-col justify-between shadow-sm">
-                    <div>
-                      <div className="flex items-center gap-4 sm:gap-8">
-                         <div className="w-14 h-14 sm:w-20 sm:h-20 shrink-0 bg-white shadow-md border-2 border-gray-100 rounded-2xl sm:rounded-[1.5rem] flex items-center justify-center text-2xl sm:text-4xl font-black text-black">
-                           {item.quantity}X
-                         </div>
-                         <h4 className="text-2xl sm:text-5xl font-black tracking-tighter text-black leading-tight uppercase">{presentation.name}</h4>
-                      </div>
-
-                      {presentation.modifiers.length > 0 && (
-                        <div className="mt-5 sm:mt-6 sm:ml-28 space-y-3">
-                          <span className="inline-flex px-4 sm:px-5 py-2 sm:py-2.5 bg-black text-white rounded-xl text-sm sm:text-xl font-black uppercase tracking-widest leading-none">
-                            ADICIONAIS:
-                          </span>
-                          <div className="space-y-2">
-                            {presentation.modifiers.map((m: any, mIdx: number) => (
-                              <p key={mIdx} className="text-2xl sm:text-5xl font-black tracking-tighter text-black leading-tight uppercase">
-                                {item.quantity}X {m.name}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {item.notes && (
-                      <div className="mt-5 sm:mt-6 p-4 sm:p-6 bg-rose-50 border-2 border-rose-100 rounded-[1.5rem] sm:ml-28">
-                         <p className="text-xs font-black uppercase text-rose-600 mb-2 tracking-[0.3em]">Observação do Cliente:</p>
-                         <p className="text-lg sm:text-2xl font-bold text-black italic">"{item.notes}"</p>
-                      </div>
-                    )}
-                 </div>;
-                 })()
-               ))}
-            </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 sm:p-12 custom-scrollbar bg-white">
+          <p className="mb-4 text-[10px] sm:text-sm font-black uppercase tracking-[0.25em] text-black/40">
+            Itens do pedido
+          </p>
+          <OrderItemDetails
+            items={order.items}
+            tone="light"
+            presentItem={getKitchenItemPresentation}
+          />
         </div>
 
         <div className="p-4 sm:p-10 bg-gray-50 border-t border-gray-100">
