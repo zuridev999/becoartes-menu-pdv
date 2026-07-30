@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.1 - 2026-07-30
+
+- Protege cadastro, login e recuperação de conta do Delivery contra enumeração, replay e acesso cruzado.
+- Remove gravações legadas da Goomer e garante inicialização segura sem a integração descontinuada.
+
 ## 1.6.0 - 2026-07-29
 
 - Exibe sabores, adicionais e observações diretamente nas solicitações do PDV e nos detalhes do movimento.
