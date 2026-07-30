@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash, createHmac, createPublicKey, randomBytes, randomUUID, scryptSync, timingSafeEqual, verify as verifySignature } from 'node:crypto';
+import { createHash, createHmac, createPublicKey, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual, verify as verifySignature } from 'node:crypto';
 import { createClient } from '@libsql/client';
 import { sendJson } from './http.mjs';
 import { runSchemaMigrations } from './migrations/schema.mjs';
@@ -58,6 +58,9 @@ const ALLOWED_WEB_ORIGINS = (process.env.ALLOWED_WEB_ORIGINS || '')
 const SESSION_SECRET = isLocalLibsqlUrl
   ? (process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET || 'local-delivery-session-secret')
   : requireRuntimeSecret('BFF_SESSION_SECRET', process.env.BFF_SESSION_SECRET || process.env.JWT_SECRET);
+const DELIVERY_CUSTOMER_CODE_SECRET = isLocalLibsqlUrl
+  ? (process.env.DELIVERY_CUSTOMER_CODE_SECRET || SESSION_SECRET)
+  : requireRuntimeSecret('DELIVERY_CUSTOMER_CODE_SECRET', process.env.DELIVERY_CUSTOMER_CODE_SECRET);
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const PDV_TERMINAL_CHALLENGE_TTL_MS = 2 * 60 * 1000;
 const TABLET_TABLE_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -95,6 +98,12 @@ const DELIVERY_EMAIL_WEBHOOK_URL = process.env.DELIVERY_EMAIL_WEBHOOK_URL || '';
 const DELIVERY_SMS_WEBHOOK_URL = process.env.DELIVERY_SMS_WEBHOOK_URL || '';
 const DELIVERY_WHATSAPP_WEBHOOK_URL = process.env.DELIVERY_WHATSAPP_WEBHOOK_URL || '';
 const DELIVERY_NOTIFICATION_WEBHOOK_SECRET = process.env.DELIVERY_NOTIFICATION_WEBHOOK_SECRET || '';
+if (
+  process.env.NODE_ENV === 'production'
+  && [DELIVERY_EMAIL_PROVIDER, DELIVERY_SMS_PROVIDER, DELIVERY_WHATSAPP_PROVIDER].includes('mock')
+) {
+  throw new Error('Delivery customer-code providers cannot use mock mode in production.');
+}
 const DELIVERY_VIRTUAL_TABLE_ID = 'delivery_virtual';
 const DELIVERY_CLUB_CYCLE_SIZE = Math.max(1, Number(process.env.DELIVERY_CLUB_CYCLE_SIZE || 10));
 const DELIVERY_CLUB_REWARD_LABEL = process.env.DELIVERY_CLUB_REWARD_LABEL || '1 prato gratuito';
@@ -145,7 +154,10 @@ const toStockAmount = (value) => Number(Math.max(0, Number(value || 0)).toFixed(
 const getBusinessDate = () => businessDateKey(new Date(), BUSINESS_TIME_ZONE);
 const formatMoneyForNotification = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const hashToken = (value) => createHash('sha256').update(String(value || '')).digest('hex');
-const generateNumericCode = () => String(Math.floor(100000 + Math.random() * 900000));
+const hashDeliveryCustomerCode = (value) => createHmac('sha256', DELIVERY_CUSTOMER_CODE_SECRET)
+  .update(String(value || ''))
+  .digest('hex');
+const generateNumericCode = () => String(randomInt(100000, 1000000));
 const DELIVERY_PASSWORD_KEYLEN = 64;
 const hashDeliveryPassword = (password, salt = randomBytes(16).toString('hex')) => {
   const hash = scryptSync(String(password || ''), salt, DELIVERY_PASSWORD_KEYLEN).toString('hex');
@@ -824,6 +836,8 @@ const ensureDatabaseReady = () => {
 const pinAttemptBuckets = new Map();
 const PIN_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const PIN_RATE_LIMIT_MAX = 12;
+const deliveryAuthAttemptBuckets = new Map();
+const DELIVERY_AUTH_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 
 const normalizeClientIp = (ip) => String(ip || '')
   .replace(/^::ffff:/, '')
@@ -850,6 +864,29 @@ const getClientIp = (req) => {
   // sending a fake first X-Forwarded-For entry.
   const proxiedClientIp = forwardedFor[forwardedFor.length - 1];
   return normalizeClientIp(isTrustedProxyIp(remoteAddress) && proxiedClientIp ? proxiedClientIp : remoteAddress);
+};
+
+const assertDeliveryAuthRateLimit = ({ req, scope, identity = '', maxAttempts }) => {
+  const now = Date.now();
+  const identityKey = hashToken(normalizeText(identity).toLowerCase().replace(/\s+/g, ''));
+  const keys = [
+    `${scope}:ip:${getClientIp(req)}`,
+    `${scope}:identity:${identityKey}`,
+  ];
+
+  for (const key of keys) {
+    const bucket = deliveryAuthAttemptBuckets.get(key);
+    if (!bucket || bucket.resetAt <= now) {
+      deliveryAuthAttemptBuckets.set(key, { count: 1, resetAt: now + DELIVERY_AUTH_RATE_LIMIT_WINDOW_MS });
+      continue;
+    }
+    bucket.count += 1;
+    if (bucket.count > maxAttempts) {
+      const error = new Error('Muitas tentativas. Aguarde antes de tentar novamente.');
+      error.statusCode = 429;
+      throw error;
+    }
+  }
 };
 
 const isOperationIpRestricted = () => ALLOWED_OPERATION_IPS.length > 0;
@@ -4450,7 +4487,7 @@ const recordDeliveryNotification = async ({ orderId = null, customerId = null, c
   });
 };
 
-const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel, type, message, payload = {} }) => {
+const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel, type, message, payload = {}, sensitive = false }) => {
   const providerByChannel = {
     email: DELIVERY_EMAIL_PROVIDER,
     sms: DELIVERY_SMS_PROVIDER,
@@ -4478,6 +4515,9 @@ const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel
     payload,
     createdAt: new Date().toISOString(),
   };
+  const persistedPayload = sensitive
+    ? { ...notificationPayload, message: '[REDACTED]', payload: {} }
+    : notificationPayload;
   if (provider === 'webhook') {
     const webhookUrl = webhookUrlByChannel[channel] || '';
     if (!webhookUrl) {
@@ -4489,7 +4529,7 @@ const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel
         provider,
         status: 'missing_webhook_url',
         destination,
-        payload: notificationPayload,
+        payload: persistedPayload,
         error: `Configure DELIVERY_${channel.toUpperCase()}_WEBHOOK_URL.`,
       });
       return { channel, provider, status: 'missing_webhook_url' };
@@ -4513,7 +4553,7 @@ const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel
         provider,
         status,
         destination,
-        payload: { ...notificationPayload, responseStatus: response.status },
+        payload: { ...persistedPayload, responseStatus: response.status },
         error: response.ok ? null : `Webhook retornou ${response.status}`,
       });
       return { channel, provider, status };
@@ -4526,7 +4566,7 @@ const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel
         provider,
         status: 'failed',
         destination,
-        payload: notificationPayload,
+        payload: persistedPayload,
         error: error instanceof Error ? error.message : String(error),
       });
       return { channel, provider, status: 'failed' };
@@ -4541,44 +4581,82 @@ const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel
     provider,
     status,
     destination,
-    payload: notificationPayload,
+    payload: persistedPayload,
   });
   return { channel, provider, status };
 };
 
+const getDeliveryCustomerCodeChannel = (customer = {}) => {
+  const channels = [
+    {
+      channel: 'email',
+      provider: DELIVERY_EMAIL_PROVIDER,
+      webhookUrl: DELIVERY_EMAIL_WEBHOOK_URL,
+      destination: normalizeText(customer.email),
+    },
+    {
+      channel: 'sms',
+      provider: DELIVERY_SMS_PROVIDER,
+      webhookUrl: DELIVERY_SMS_WEBHOOK_URL,
+      destination: normalizeText(customer.phone),
+    },
+    {
+      channel: 'whatsapp',
+      provider: DELIVERY_WHATSAPP_PROVIDER,
+      webhookUrl: DELIVERY_WHATSAPP_WEBHOOK_URL,
+      destination: normalizeText(customer.phone),
+    },
+  ];
+  return channels.find((entry) => entry.provider === 'webhook' && entry.webhookUrl && entry.destination) || null;
+};
+
+const assertDeliveryCustomerCodeChannel = (customer = {}) => {
+  const channel = getDeliveryCustomerCodeChannel(customer);
+  if (channel) return channel;
+  const error = new Error('Canal de confirmacao temporariamente indisponivel.');
+  error.statusCode = 503;
+  throw error;
+};
+
 const sendDeliveryCustomerCode = async ({ customer, type }) => {
+  const target = assertDeliveryCustomerCodeChannel(customer);
   const code = generateNumericCode();
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   const columnPrefix = type === 'reset_password' ? 'reset' : 'verification';
   await db.execute({
     sql: `UPDATE delivery_customers SET ${columnPrefix}_code_hash = ?, ${columnPrefix}_code_expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    args: [hashToken(code), expiresAt, customer.id],
+    args: [hashDeliveryCustomerCode(code), expiresAt, customer.id],
   });
-  await sendDeliveryNotification({
+  const notification = await sendDeliveryNotification({
     customer,
-    channel: 'email',
+    channel: target.channel,
     type,
     message: `Seu codigo Becoartes e ${code}. Ele vale por 15 minutos.`,
-    payload: { codePreview: DELIVERY_EMAIL_PROVIDER === 'mock' ? code : undefined },
+    sensitive: true,
   });
-  await sendDeliveryNotification({
-    customer,
-    channel: 'sms',
-    type,
-    message: `Becoartes: codigo ${code}`,
-    payload: { codePreview: DELIVERY_SMS_PROVIDER === 'mock' ? code : undefined },
-  });
-  await sendDeliveryNotification({
-    customer,
-    channel: 'whatsapp',
-    type,
-    message: `Becoartes: seu codigo e ${code}`,
-    payload: { codePreview: DELIVERY_WHATSAPP_PROVIDER === 'mock' ? code : undefined },
-  });
-  return { expiresAt, code: (DELIVERY_EMAIL_PROVIDER === 'mock' || DELIVERY_SMS_PROVIDER === 'mock' || DELIVERY_WHATSAPP_PROVIDER === 'mock') ? code : undefined };
+  if (notification.status !== 'sent') {
+    await db.execute({
+      sql: `UPDATE delivery_customers SET ${columnPrefix}_code_hash = NULL, ${columnPrefix}_code_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      args: [customer.id],
+    });
+    const error = new Error('Canal de confirmacao temporariamente indisponivel.');
+    error.statusCode = 503;
+    throw error;
+  }
+  return { expiresAt };
 };
 
 const createDeliveryCustomerSession = async (customerId) => {
+  const customerRes = await db.execute({
+    sql: "SELECT email_verified, phone_verified FROM delivery_customers WHERE id = ? LIMIT 1",
+    args: [customerId],
+  });
+  const customer = customerRes.rows[0];
+  if (!customer || (customer.email_verified !== 1 && customer.phone_verified !== 1)) {
+    const error = new Error('Confirme seu cadastro antes de entrar.');
+    error.statusCode = 403;
+    throw error;
+  }
   const token = createId() + createId();
   const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
   await db.execute({
@@ -4602,7 +4680,7 @@ const getDeliveryCustomerBySession = async (token = '') => {
   const customerId = sessionRes.rows[0]?.customer_id;
   if (!customerId) return null;
   const customerRes = await db.execute({
-    sql: "SELECT * FROM delivery_customers WHERE id = ? LIMIT 1",
+    sql: "SELECT * FROM delivery_customers WHERE id = ? AND (email_verified = 1 OR phone_verified = 1) LIMIT 1",
     args: [customerId],
   });
   return customerRes.rows[0] || null;
@@ -4629,7 +4707,7 @@ const findDeliveryCustomerIdentity = async ({ email = '', phone = '' } = {}) => 
   return res.rows[0] || null;
 };
 
-const createDeliveryCustomerAccount = async ({ customer = {}, password = '' } = {}) => {
+const createDeliveryCustomerAccount = async ({ customer = {}, password = '' } = {}, context = {}) => {
   await ensureDatabaseReady();
   const safeCustomer = normalizeDeliveryCustomer(customer);
   requireString(safeCustomer.name, 'name');
@@ -4637,36 +4715,50 @@ const createDeliveryCustomerAccount = async ({ customer = {}, password = '' } = 
   requireString(safeCustomer.email, 'email');
   requireString(password, 'password');
   if (String(password).length < 6) throw new Error('Senha precisa ter pelo menos 6 caracteres.');
+  assertDeliveryAuthRateLimit({
+    req: context.req,
+    scope: 'delivery-register',
+    identity: `${safeCustomer.email}|${safeCustomer.phone}`,
+    maxAttempts: 5,
+  });
+  assertDeliveryCustomerCodeChannel(safeCustomer);
 
   const customerId = createHash('sha256').update(`${safeCustomer.phone}|${safeCustomer.email}`).digest('hex').slice(0, 32);
   const existing = await findDeliveryCustomerIdentity({ email: safeCustomer.email, phone: safeCustomer.phone });
-  const effectiveId = existing?.id || customerId;
-  await db.execute({
-    sql: `
-      INSERT INTO delivery_customers (id, name, phone, email, street, number, neighborhood, city, state, postal_code, complement, reference, join_club, password_hash, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        phone = excluded.phone,
-        email = excluded.email,
-        street = COALESCE(NULLIF(excluded.street, ''), delivery_customers.street),
-        number = COALESCE(NULLIF(excluded.number, ''), delivery_customers.number),
-        neighborhood = COALESCE(NULLIF(excluded.neighborhood, ''), delivery_customers.neighborhood),
-        city = COALESCE(NULLIF(excluded.city, ''), delivery_customers.city),
-        state = COALESCE(NULLIF(excluded.state, ''), delivery_customers.state),
-        postal_code = COALESCE(NULLIF(excluded.postal_code, ''), delivery_customers.postal_code),
-        complement = COALESCE(NULLIF(excluded.complement, ''), delivery_customers.complement),
-        reference = COALESCE(NULLIF(excluded.reference, ''), delivery_customers.reference),
-        join_club = excluded.join_club,
-        password_hash = excluded.password_hash,
-        updated_at = CURRENT_TIMESTAMP
-    `,
-    args: [effectiveId, safeCustomer.name, safeCustomer.phone, safeCustomer.email, safeCustomer.street, safeCustomer.number, safeCustomer.neighborhood, safeCustomer.city, safeCustomer.state, safeCustomer.postalCode, safeCustomer.complement, safeCustomer.reference, safeCustomer.joinClub ? 1 : 0, hashDeliveryPassword(password)],
-  });
-  const customerRow = (await db.execute({ sql: "SELECT * FROM delivery_customers WHERE id = ? LIMIT 1", args: [effectiveId] })).rows[0];
-  const session = await createDeliveryCustomerSession(effectiveId);
-  const verification = await sendDeliveryCustomerCode({ customer: customerRow, type: 'verify_account' });
-  return { customer: deliveryCustomerPublic(customerRow), session, verification };
+  if (existing) {
+    const error = new Error('Cadastro ja existente. Entre ou recupere seu acesso.');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  try {
+    await db.execute({
+      sql: `
+        INSERT INTO delivery_customers (id, name, phone, email, street, number, neighborhood, city, state, postal_code, complement, reference, join_club, password_hash, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `,
+      args: [customerId, safeCustomer.name, safeCustomer.phone, safeCustomer.email, safeCustomer.street, safeCustomer.number, safeCustomer.neighborhood, safeCustomer.city, safeCustomer.state, safeCustomer.postalCode, safeCustomer.complement, safeCustomer.reference, safeCustomer.joinClub ? 1 : 0, hashDeliveryPassword(password)],
+    });
+  } catch (error) {
+    if (/unique|constraint/i.test(error instanceof Error ? error.message : String(error))) {
+      const conflict = new Error('Cadastro ja existente. Entre ou recupere seu acesso.');
+      conflict.statusCode = 409;
+      throw conflict;
+    }
+    throw error;
+  }
+
+  const customerRow = (await db.execute({ sql: "SELECT * FROM delivery_customers WHERE id = ? LIMIT 1", args: [customerId] })).rows[0];
+  try {
+    const verification = await sendDeliveryCustomerCode({ customer: customerRow, type: 'verify_account' });
+    return { customer: deliveryCustomerPublic(customerRow), verification };
+  } catch (error) {
+    await db.execute({
+      sql: "DELETE FROM delivery_customers WHERE id = ? AND email_verified = 0 AND phone_verified = 0",
+      args: [customerId],
+    }).catch(() => null);
+    throw error;
+  }
 };
 
 const loginDeliveryCustomer = async ({ identity = '', password = '' } = {}) => {
@@ -4676,6 +4768,11 @@ const loginDeliveryCustomer = async ({ identity = '', password = '' } = {}) => {
   if (!customer || !passwordCheck.ok) {
     const error = new Error('E-mail/telefone ou senha invalidos.');
     error.statusCode = 401;
+    throw error;
+  }
+  if (customer.email_verified !== 1 && customer.phone_verified !== 1) {
+    const error = new Error('Confirme seu cadastro antes de entrar.');
+    error.statusCode = 403;
     throw error;
   }
   if (passwordCheck.needsRehash) {
@@ -4688,23 +4785,60 @@ const loginDeliveryCustomer = async ({ identity = '', password = '' } = {}) => {
   return { customer: deliveryCustomerPublic(customer), session };
 };
 
-const requestDeliveryPasswordReset = async ({ identity = '' } = {}) => {
+const requestDeliveryPasswordReset = async ({ identity = '' } = {}, context = {}) => {
   await ensureDatabaseReady();
+  const startedAt = Date.now();
+  assertDeliveryAuthRateLimit({
+    req: context.req,
+    scope: 'delivery-forgot-password',
+    identity,
+    maxAttempts: 5,
+  });
+  const notificationTarget = {
+    email: normalizeText(identity).includes('@') ? normalizeText(identity).toLowerCase() : '',
+    phone: normalizeText(identity).includes('@') ? '' : normalizeText(identity),
+  };
+  assertDeliveryCustomerCodeChannel(notificationTarget);
   const customer = await findDeliveryCustomerIdentity({ email: identity, phone: identity });
-  if (!customer) return { sent: true, status: 'not_found_hidden' };
-  const reset = await sendDeliveryCustomerCode({ customer, type: 'reset_password' });
-  return { sent: true, expiresAt: reset.expiresAt, code: reset.code };
+  if (customer) {
+    await sendDeliveryCustomerCode({ customer, type: 'reset_password' }).catch(() => {
+      console.error('[DeliveryCustomerReset] Falha no canal externo.');
+    });
+  }
+  const remainingDelay = 300 - (Date.now() - startedAt);
+  if (remainingDelay > 0) await new Promise((resolve) => setTimeout(resolve, remainingDelay));
+  return { sent: true };
 };
 
-const resetDeliveryCustomerPassword = async ({ identity = '', code = '', password = '' } = {}) => {
+const resetDeliveryCustomerPassword = async ({ identity = '', code = '', password = '' } = {}, context = {}) => {
   await ensureDatabaseReady();
+  assertDeliveryAuthRateLimit({
+    req: context.req,
+    scope: 'delivery-reset-password',
+    identity,
+    maxAttempts: 8,
+  });
   const customer = await findDeliveryCustomerIdentity({ email: identity, phone: identity });
-  if (!customer || !customer.reset_code_hash || customer.reset_code_hash !== hashToken(code) || new Date(customer.reset_code_expires_at).getTime() < Date.now()) {
+  if (
+    !customer
+    || !customer.reset_code_hash
+    || !safeSecretEqual(hashDeliveryCustomerCode(code), customer.reset_code_hash)
+    || new Date(customer.reset_code_expires_at).getTime() < Date.now()
+  ) {
     const error = new Error('Codigo invalido ou expirado.');
     error.statusCode = 400;
     throw error;
   }
   if (String(password).length < 6) throw new Error('Senha precisa ter pelo menos 6 caracteres.');
+  if (customer.email_verified !== 1 && customer.phone_verified !== 1) {
+    const error = new Error('Confirme seu cadastro antes de redefinir a senha.');
+    error.statusCode = 403;
+    throw error;
+  }
+  await db.execute({
+    sql: "DELETE FROM delivery_customer_sessions WHERE customer_id = ?",
+    args: [customer.id],
+  });
   await db.execute({
     sql: "UPDATE delivery_customers SET password_hash = ?, reset_code_hash = NULL, reset_code_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     args: [hashDeliveryPassword(password), customer.id],
@@ -4714,10 +4848,21 @@ const resetDeliveryCustomerPassword = async ({ identity = '', code = '', passwor
   return { customer: deliveryCustomerPublic(updated), session };
 };
 
-const verifyDeliveryCustomerCode = async ({ token = '', code = '' } = {}) => {
+const verifyDeliveryCustomerCode = async ({ identity = '', code = '' } = {}, context = {}) => {
   await ensureDatabaseReady();
-  const customer = await getDeliveryCustomerBySession(token);
-  if (!customer || !customer.verification_code_hash || customer.verification_code_hash !== hashToken(code) || new Date(customer.verification_code_expires_at).getTime() < Date.now()) {
+  assertDeliveryAuthRateLimit({
+    req: context.req,
+    scope: 'delivery-verify-account',
+    identity,
+    maxAttempts: 8,
+  });
+  const customer = await findDeliveryCustomerIdentity({ email: identity, phone: identity });
+  if (
+    !customer
+    || !customer.verification_code_hash
+    || !safeSecretEqual(hashDeliveryCustomerCode(code), customer.verification_code_hash)
+    || new Date(customer.verification_code_expires_at).getTime() < Date.now()
+  ) {
     const error = new Error('Codigo invalido ou expirado.');
     error.statusCode = 400;
     throw error;
@@ -4727,7 +4872,8 @@ const verifyDeliveryCustomerCode = async ({ token = '', code = '' } = {}) => {
     args: [customer.id],
   });
   const updated = (await db.execute({ sql: "SELECT * FROM delivery_customers WHERE id = ? LIMIT 1", args: [customer.id] })).rows[0];
-  return { customer: deliveryCustomerPublic(updated) };
+  const session = await createDeliveryCustomerSession(customer.id);
+  return { customer: deliveryCustomerPublic(updated), session };
 };
 
 const getDeliveryCustomerSession = async ({ token = '' } = {}) => {

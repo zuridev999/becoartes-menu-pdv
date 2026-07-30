@@ -606,7 +606,7 @@ export const DeliveryApi = {
   },
 
   registerCustomer(input: { customer: DeliveryCheckoutInput['customer']; password: string }) {
-    return postJson<{ customer: DeliveryCustomerAccount; session: DeliveryCustomerSession; verification?: { expiresAt: string; code?: string } }>('/api/delivery/customer/register', input);
+    return postJson<{ customer: DeliveryCustomerAccount; verification?: { expiresAt: string } }>('/api/delivery/customer/register', input);
   },
 
   loginCustomer(input: { identity: string; password: string }) {
@@ -614,15 +614,15 @@ export const DeliveryApi = {
   },
 
   forgotPassword(identity: string) {
-    return postJson<{ sent: boolean; expiresAt?: string; code?: string }>('/api/delivery/customer/forgot-password', { identity });
+    return postJson<{ sent: boolean }>('/api/delivery/customer/forgot-password', { identity });
   },
 
   resetPassword(input: { identity: string; code: string; password: string }) {
     return postJson<{ customer: DeliveryCustomerAccount; session: DeliveryCustomerSession }>('/api/delivery/customer/reset-password', input);
   },
 
-  verifyCustomerCode(input: { token: string; code: string }) {
-    return postJson<{ customer: DeliveryCustomerAccount }>('/api/delivery/customer/verify-code', input);
+  verifyCustomerCode(input: { identity: string; code: string }) {
+    return postJson<{ customer: DeliveryCustomerAccount; session: DeliveryCustomerSession }>('/api/delivery/customer/verify-code', input);
   },
 
   getCustomerSession(token: string) {
