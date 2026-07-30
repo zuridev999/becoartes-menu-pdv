@@ -32,6 +32,7 @@ const bffSource = readFileSync(join(process.cwd(), 'server/bff.mjs'), 'utf8');
 const pinSource = readFileSync(join(process.cwd(), 'server/auth/pins.mjs'), 'utf8');
 const routerSource = readFileSync(join(process.cwd(), 'server/routes/api-router.mjs'), 'utf8');
 const httpSource = readFileSync(join(process.cwd(), 'server/http.mjs'), 'utf8');
+assert.doesNotMatch(bffSource, /goomer|abrahao/i, 'PDV runtime must not retain the retired Goomer integration');
 assert.match(bffSource, /ADMIN_BYPASS_ENABLED && ADMIN_BYPASS_PIN/, 'admin bypass must be disabled unless explicitly enabled');
 assert.match(pinSource, /scrypt:\$\{salt\}:\$\{hash\}/, 'seller PINs must be stored with scrypt and a per-record salt');
 assert.match(pinSource, /export const verifyPin =/, 'seller PIN login must support verified transparent migration');
