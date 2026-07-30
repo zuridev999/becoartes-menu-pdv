@@ -29,6 +29,7 @@
     "smoke:delivery:club": "node scripts/delivery_club_smoke.mjs",
     "smoke:delivery:club-config": "node scripts/delivery_club_config_smoke.mjs",
     "smoke:delivery:customer-auth": "node scripts/delivery_customer_auth_smoke.mjs",
+    "smoke:delivery:customer-auth-fail-closed": "node scripts/delivery_customer_fail_closed_smoke.mjs",
     "smoke:delivery:coupon": "node scripts/delivery_coupon_smoke.mjs",
     "smoke:delivery:geocode": "node scripts/delivery_geocode_quote_smoke.mjs",
     "smoke:delivery:quote": "node scripts/delivery_quote_smoke.mjs",

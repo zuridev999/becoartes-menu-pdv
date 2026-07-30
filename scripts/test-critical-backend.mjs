@@ -48,6 +48,26 @@ assert.match(bffSource, /requestedOpeningCents !== requiredOpeningCents/, 'cash 
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
 assert.match(bffSource, /pdv_terminals/, 'PDV terminals must persist a public-key identity');
 assert.match(bffSource, /terminalProof\.valid/, 'trusted terminals must require a verified challenge signature');
+assert.match(bffSource, /Cadastro ja existente\. Entre ou recupere seu acesso\./, 'delivery registration must reject an existing identity');
+assert.doesNotMatch(
+  bffSource,
+  /ON CONFLICT\(id\) DO UPDATE SET[\s\S]{0,1200}password_hash = excluded\.password_hash/,
+  'delivery registration must never overwrite an existing password hash',
+);
+assert.match(bffSource, /Confirme seu cadastro antes de entrar\./, 'delivery login must reject unverified accounts');
+assert.match(bffSource, /Delivery customer-code providers cannot use mock mode in production/, 'mock customer-code providers must fail production startup');
+assert.doesNotMatch(bffSource, /codePreview/, 'delivery verification/reset codes must not be persisted as previews');
+assert.doesNotMatch(
+  bffSource,
+  /return\s*\{\s*sent:\s*true[\s\S]{0,100}\bcode\s*:/,
+  'forgot-password must never return the reset code',
+);
+assert.match(bffSource, /message:\s*'\[REDACTED\]'/, 'sensitive notification payloads must be redacted before persistence');
+assert.match(bffSource, /DELETE FROM delivery_customer_sessions WHERE customer_id = \?/, 'password reset must revoke previous customer sessions');
+assert.match(bffSource, /assertDeliveryAuthRateLimit/, 'delivery account recovery must enforce narrow rate limits');
+assert.match(bffSource, /DELIVERY_CUSTOMER_CODE_SECRET/, 'delivery codes must use an independent runtime secret');
+assert.match(bffSource, /createHmac\('sha256', DELIVERY_CUSTOMER_CODE_SECRET\)/, 'delivery codes must use a keyed HMAC at rest');
+assert.match(bffSource, /remainingDelay = 300/, 'forgot-password responses must reduce account-enumeration timing differences');
 assert.match(routerSource, /transient \? 503/, 'transient backend failures must return 503');
 assert.match(routerSource, /isTrustedTerminalSession/, 'trusted terminal sessions must keep operating after an IP change');
 assert.match(routerSource, /bff_request_error/, 'backend errors must include structured route context');

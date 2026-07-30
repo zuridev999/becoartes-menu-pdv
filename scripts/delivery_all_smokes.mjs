@@ -18,11 +18,25 @@ const scenarios = [
       'smoke:delivery:quote',
       'smoke:delivery:pickup',
       'smoke:delivery:club',
-      'smoke:delivery:customer-auth',
+      'smoke:delivery:customer-auth-fail-closed',
       'smoke:delivery:coupon',
       'smoke:delivery:orders-admin',
       'smoke:delivery:postal-code',
     ],
+  },
+  {
+    name: 'customer-auth-webhook',
+    env: {
+      DELIVERY_PAYMENT_PROVIDER: 'mock',
+      DELIVERY_KITCHEN_DISPATCH_MODE: 'mock',
+      DELIVERY_LOGISTICS_PROVIDER: 'disabled',
+      DELIVERY_EMAIL_PROVIDER: 'webhook',
+      DELIVERY_SMS_PROVIDER: 'disabled',
+      DELIVERY_WHATSAPP_PROVIDER: 'disabled',
+      DELIVERY_EMAIL_WEBHOOK_URL: 'http://127.0.0.1:19091/email',
+      DELIVERY_NOTIFICATION_WEBHOOK_SECRET: 'smoke_auth_notification_secret',
+    },
+    scripts: ['smoke:delivery:customer-auth'],
   },
   {
     name: 'club-config',
@@ -161,6 +175,14 @@ const runScenario = async (scenario) => {
   const env = {
     PORT: String(basePort),
     TURSO_DATABASE_URL: dbUrl,
+    DEFAULT_MANAGER_PIN: '135790',
+    DEFAULT_OPERATOR_PIN: '246801',
+    TABLET_SETUP_PIN: '975310',
+    ADMIN_BYPASS_PIN: '0719',
+    ADMIN_BYPASS_ENABLED: 'true',
+    DELIVERY_SMOKE_ADMIN_PIN: '0719',
+    BFF_SESSION_SECRET: 'delivery-all-smokes-session-secret',
+    DELIVERY_CUSTOMER_CODE_SECRET: 'delivery-all-smokes-code-secret',
     ...scenario.env,
   };
   const bff = spawn('node', ['server/bff.mjs'], {
@@ -178,7 +200,7 @@ const runScenario = async (scenario) => {
         env: {
           DELIVERY_SMOKE_BASE_URL: baseUrl,
           DELIVERY_SMOKE_DB_URL: dbUrl,
-          ...scenario.env,
+          ...env,
         },
       });
     }
