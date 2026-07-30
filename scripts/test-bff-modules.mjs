@@ -7,6 +7,7 @@ import {
 } from '../server/routes/access-policy.mjs';
 import { createRouteHandlers } from '../server/routes/handlers.mjs';
 import { hashPin, normalizeStoredPin, verifyPin } from '../server/auth/pins.mjs';
+import { getPdvPublishBlockers } from '../server/catalog/product-lifecycle.mjs';
 
 const bffSource = readFileSync(new URL('../server/bff.mjs', import.meta.url), 'utf8');
 assert.match(bffSource, /typ:\s*'delivery_order_tracking'/, 'Delivery orders must use signed tracking credentials.');
@@ -144,6 +145,36 @@ await assert.rejects(
 );
 assert.equal(ipRestrictionCalls, 1);
 
+assert.deepEqual(getPdvPublishBlockers({
+  name: 'Black Label 50ml',
+  price: 39.9,
+  categoryFound: true,
+  directStockFound: true,
+}), []);
+
+assert.deepEqual(getPdvPublishBlockers({
+  name: 'Caipirinha',
+  price: 32.9,
+  categoryFound: true,
+  directStockFound: false,
+  recipeId: 'ficha-caipirinha',
+  ingredientCount: 4,
+  unlinkedIngredientCount: 0,
+  invalidQuantityCount: 0,
+}), []);
+
+assert.deepEqual(getPdvPublishBlockers({
+  name: 'Produto incompleto',
+  price: 0,
+  categoryFound: false,
+  directStockFound: false,
+  recipeId: '',
+}), [
+  'Informe um preço de venda maior que zero.',
+  'Vincule o produto a uma categoria válida.',
+  'Vincule um estoque direto ou cadastre a ficha técnica do produto.',
+]);
+
 console.log(JSON.stringify({
   ok: true,
   covered: [
@@ -156,5 +187,6 @@ console.log(JSON.stringify({
     'public_table_token',
     'operation_ip_restriction',
     'pin_hash_and_verification',
+    'product_publish_lifecycle',
   ],
 }, null, 2));

@@ -10,6 +10,7 @@ import { createAccessGuards, createRouteAccessEnforcer } from './routes/access-p
 import { createRouteHandlers } from './routes/handlers.mjs';
 import { createStaticHandler } from './static-files.mjs';
 import { businessDateKey, resolveBusinessTimeZone } from './business-time.mjs';
+import { getPdvPublishBlockers } from './catalog/product-lifecycle.mjs';
 import {
   hashPin,
   isReservedSellerPin,
@@ -6118,6 +6119,111 @@ const toggleCategoryVisibility = async ({ id, visible }) => {
   return { catalogVersion: await bumpCatalogVersion() };
 };
 
+const getPdvProductPublishReadiness = async ({
+  productId,
+  name,
+  price,
+  categoryId,
+  remoteStockId,
+}) => {
+  const [categoryResult, directStockResult, recipeResult] = await Promise.all([
+    categoryId
+      ? db.execute({
+        sql: 'SELECT id FROM categories WHERE id = ? LIMIT 1',
+        args: [categoryId],
+      })
+      : Promise.resolve({ rows: [] }),
+    remoteStockId
+      ? db.execute({
+        sql: 'SELECT id FROM estoque_produtos WHERE id = ? AND ativo = 1 LIMIT 1',
+        args: [remoteStockId],
+      })
+      : Promise.resolve({ rows: [] }),
+    db.execute({
+      sql: `
+        SELECT
+          ft.id,
+          COUNT(fi.id) AS ingredient_count,
+          SUM(
+            CASE
+              WHEN fi.id IS NOT NULL
+                AND (fi.estoque_produto_id IS NULL OR ep.id IS NULL)
+              THEN 1
+              ELSE 0
+            END
+          ) AS unlinked_count,
+          SUM(
+            CASE
+              WHEN fi.id IS NOT NULL
+                AND (
+                  COALESCE(fi.quantidade_estoque_baixa, fi.quantidade_usada, 0) <= 0
+                )
+              THEN 1
+              ELSE 0
+            END
+          ) AS invalid_quantity_count
+        FROM fichas_tecnicas ft
+        LEFT JOIN ficha_ingredientes fi ON fi.ficha_tecnica_id = ft.id
+        LEFT JOIN estoque_produtos ep
+          ON ep.id = fi.estoque_produto_id
+          AND ep.ativo = 1
+        WHERE ft.pdv_product_id = ?
+        GROUP BY ft.id
+        ORDER BY
+          CASE
+            WHEN COUNT(fi.id) > 0
+              AND SUM(
+                CASE
+                  WHEN fi.id IS NOT NULL
+                    AND (fi.estoque_produto_id IS NULL OR ep.id IS NULL)
+                  THEN 1
+                  ELSE 0
+                END
+              ) = 0
+              AND SUM(
+                CASE
+                  WHEN fi.id IS NOT NULL
+                    AND COALESCE(fi.quantidade_estoque_baixa, fi.quantidade_usada, 0) <= 0
+                  THEN 1
+                  ELSE 0
+                END
+              ) = 0
+            THEN 0
+            ELSE 1
+          END,
+          ft.updated_at DESC,
+          ft.created_at DESC
+        LIMIT 1
+      `,
+      args: [productId],
+    }),
+  ]);
+
+  const recipe = recipeResult.rows[0] || null;
+  return {
+    name,
+    price,
+    categoryFound: Boolean(categoryResult.rows[0]),
+    directStockFound: Boolean(directStockResult.rows[0]),
+    recipeId: recipe?.id || '',
+    ingredientCount: Number(recipe?.ingredient_count || 0),
+    unlinkedIngredientCount: Number(recipe?.unlinked_count || 0),
+    invalidQuantityCount: Number(recipe?.invalid_quantity_count || 0),
+  };
+};
+
+const assertPdvProductCanBePublished = async (product) => {
+  const readiness = await getPdvProductPublishReadiness(product);
+  const blockers = getPdvPublishBlockers(readiness);
+  if (blockers.length === 0) return readiness;
+
+  const error = new Error(`Produto mantido oculto: ${blockers.join(' ')}`);
+  error.statusCode = 409;
+  error.code = 'PDV_PRODUCT_LIFECYCLE_INCOMPLETE';
+  error.blockers = blockers;
+  throw error;
+};
+
 const upsertProduct = async ({ product }, session = null) => {
   const p = product || {};
   const productId = requireString(p.id, 'product.id');
@@ -6169,6 +6275,17 @@ const upsertProduct = async ({ product }, session = null) => {
     if (currentDeliveryVisible !== (p.deliveryVisible !== false)) {
       requirePermission(session, 'toggleProductVisibility', settings);
     }
+  }
+
+  const currentVisible = Number(currentProduct?.visible || 0) === 1;
+  if (p.visible && !currentVisible) {
+    await assertPdvProductCanBePublished({
+      productId,
+      name: p.name,
+      price: p.price,
+      categoryId: p.categoryId,
+      remoteStockId: p.remoteStockId,
+    });
   }
 
   await db.execute({
@@ -6311,6 +6428,30 @@ const deleteProduct = async ({ id }, session = null) => {
 
 const toggleProductVisibility = async ({ id, visible }) => {
   requireString(id, 'id');
+  if (visible) {
+    const productResult = await db.execute({
+      sql: `
+        SELECT id, name, price, category_id, remote_stock_id
+        FROM menu
+        WHERE id = ?
+        LIMIT 1
+      `,
+      args: [id],
+    });
+    const product = productResult.rows[0];
+    if (!product) {
+      const error = new Error('Produto do PDV não encontrado.');
+      error.statusCode = 404;
+      throw error;
+    }
+    await assertPdvProductCanBePublished({
+      productId: product.id,
+      name: product.name,
+      price: product.price,
+      categoryId: product.category_id,
+      remoteStockId: product.remote_stock_id,
+    });
+  }
   await db.execute({
     sql: "UPDATE menu SET visible = ? WHERE id = ?",
     args: [visible ? 1 : 0, id],
