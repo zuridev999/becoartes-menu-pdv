@@ -73,6 +73,19 @@ services:
       PORT: 80
     container_name: becoartes-operational
     restart: always
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:80/api/health')
+          .then((response) => { if (!response.ok) process.exit(1) })
+          .catch(() => process.exit(1))
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
     ports:
       - "127.0.0.1:8080:80"
     networks:
