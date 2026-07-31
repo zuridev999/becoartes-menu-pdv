@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.2 - 2026-07-30
+
+- Exige propriedade e tokens assinados para pedidos, rastreamento e comandas do Delivery.
+- Reduz a duração das sessões de clientes, revoga acessos anteriores após recuperação e limpa sessões expiradas.
+- Atualiza dependências vulneráveis, adiciona health check do container e amplia testes de autorização cruzada.
+
 ## 1.6.1 - 2026-07-30
 
 - Protege cadastro, login e recuperação de conta do Delivery contra enumeração, replay e acesso cruzado.
