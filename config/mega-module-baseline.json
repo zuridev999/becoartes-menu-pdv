@@ -1,0 +1,9 @@
+{
+  "description": "Wave 4 containment: these modules may shrink, but cannot grow.",
+  "files": {
+    "server/bff.mjs": 9239,
+    "src/views/admin/AdminView.tsx": 4151,
+    "src/views/pdv/PDVView.tsx": 2110,
+    "src/store.ts": 1753
+  }
+}
