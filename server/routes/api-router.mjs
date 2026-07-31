@@ -49,7 +49,7 @@ export const createApiHandler = ({
       return;
     }
 
-    if (isPinRateLimited(req, url.pathname)) {
+    if (await isPinRateLimited(req, url.pathname)) {
       sendJson(res, 429, { ok: false, error: 'Muitas tentativas de PIN. Aguarde 1 minuto.' });
       return;
     }

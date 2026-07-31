@@ -24,6 +24,7 @@ import {
   safeSecretEqual,
   verifyPin,
 } from './auth/pins.mjs';
+import { createDistributedRateLimiter } from './security/distributed-rate-limit.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -829,6 +830,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS integration_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, table_id TEXT, ref_id TEXT, payload TEXT, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     "CREATE TABLE IF NOT EXISTS shifts (id TEXT PRIMARY KEY, status TEXT NOT NULL, opening_balance REAL NOT NULL, closing_balance REAL, total_sales REAL DEFAULT 0, opened_at DATETIME DEFAULT CURRENT_TIMESTAMP, closed_at DATETIME, sort_order INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS pdv_cash_sandbox (id TEXT PRIMARY KEY, empresa_id TEXT NOT NULL, data TEXT NOT NULL, saldo_inicial REAL NOT NULL DEFAULT 0, entradas_dinheiro REAL NOT NULL DEFAULT 0, saidas_dinheiro REAL NOT NULL DEFAULT 0, valor_caixa_final REAL NOT NULL DEFAULT 0, valor_envelopes REAL NOT NULL DEFAULT 0, total_na_casa REAL NOT NULL DEFAULT 0, responsavel_id TEXT NOT NULL, observacoes TEXT, status TEXT NOT NULL DEFAULT 'Aberto', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS security_rate_limits (bucket_key TEXT PRIMARY KEY, request_count INTEGER NOT NULL, reset_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
   ], 'write');
 
   await runSchemaMigrations(db);
@@ -871,6 +873,7 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_delivery_events_order ON delivery_events(delivery_order_id, type, status)",
     "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_mov_pdv_once ON estoque_movimentacoes(integration_event_id, order_item_id, produto_id, source_item_kind, source_item_id) WHERE origem = 'pdv' AND integration_event_id IS NOT NULL AND order_item_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_security_rate_limits_reset ON security_rate_limits(reset_at)",
   ];
 
   for (const sql of indexes) {
@@ -889,11 +892,10 @@ const ensureDatabaseReady = () => {
   return databaseReadyPromise;
 };
 
-const pinAttemptBuckets = new Map();
 const PIN_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const PIN_RATE_LIMIT_MAX = 12;
-const deliveryAuthAttemptBuckets = new Map();
 const DELIVERY_AUTH_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const distributedRateLimiter = createDistributedRateLimiter({ db });
 
 const normalizeClientIp = (ip) => String(ip || '')
   .replace(/^::ffff:/, '')
@@ -922,22 +924,20 @@ const getClientIp = (req) => {
   return normalizeClientIp(isTrustedProxyIp(remoteAddress) && proxiedClientIp ? proxiedClientIp : remoteAddress);
 };
 
-const assertDeliveryAuthRateLimit = ({ req, scope, identity = '', maxAttempts }) => {
-  const now = Date.now();
-  const identityKey = hashToken(normalizeText(identity).toLowerCase().replace(/\s+/g, ''));
-  const keys = [
+const assertDeliveryAuthRateLimit = async ({ req, scope, identity = '', maxAttempts }) => {
+  const identities = [
     `${scope}:ip:${getClientIp(req)}`,
-    `${scope}:identity:${identityKey}`,
+    `${scope}:identity:${normalizeText(identity).toLowerCase().replace(/\s+/g, '')}`,
   ];
 
-  for (const key of keys) {
-    const bucket = deliveryAuthAttemptBuckets.get(key);
-    if (!bucket || bucket.resetAt <= now) {
-      deliveryAuthAttemptBuckets.set(key, { count: 1, resetAt: now + DELIVERY_AUTH_RATE_LIMIT_WINDOW_MS });
-      continue;
-    }
-    bucket.count += 1;
-    if (bucket.count > maxAttempts) {
+  for (const rateIdentity of identities) {
+    const bucket = await distributedRateLimiter.consume({
+      scope: 'delivery-auth',
+      identity: rateIdentity,
+      limit: maxAttempts,
+      windowMs: DELIVERY_AUTH_RATE_LIMIT_WINDOW_MS,
+    });
+    if (bucket.blocked) {
       const error = new Error('Muitas tentativas. Aguarde antes de tentar novamente.');
       error.statusCode = 429;
       throw error;
@@ -959,20 +959,16 @@ const throwIpRestricted = (req) => {
   throw error;
 };
 
-const isPinRateLimited = (req, pathname) => {
+const isPinRateLimited = async (req, pathname) => {
   if (!['/api/auth/login', '/api/tablet/setup-login', '/api/cash/open', '/api/cash/close'].includes(pathname)) return false;
 
-  const key = `${pathname}:${getClientIp(req)}`;
-  const now = Date.now();
-  const bucket = pinAttemptBuckets.get(key);
-
-  if (!bucket || bucket.resetAt <= now) {
-    pinAttemptBuckets.set(key, { count: 1, resetAt: now + PIN_RATE_LIMIT_WINDOW_MS });
-    return false;
-  }
-
-  bucket.count += 1;
-  return bucket.count > PIN_RATE_LIMIT_MAX;
+  const bucket = await distributedRateLimiter.consume({
+    scope: 'pin',
+    identity: `${pathname}:${getClientIp(req)}`,
+    limit: PIN_RATE_LIMIT_MAX,
+    windowMs: PIN_RATE_LIMIT_WINDOW_MS,
+  });
+  return bucket.blocked;
 };
 
 const requireString = (value, field) => {
@@ -4982,7 +4978,7 @@ const createDeliveryCustomerAccount = async ({ customer = {}, password = '' } = 
   requireString(safeCustomer.email, 'email');
   requireString(password, 'password');
   if (String(password).length < 6) throw new Error('Senha precisa ter pelo menos 6 caracteres.');
-  assertDeliveryAuthRateLimit({
+  await assertDeliveryAuthRateLimit({
     req: context.req,
     scope: 'delivery-register',
     identity: `${safeCustomer.email}|${safeCustomer.phone}`,
@@ -5055,7 +5051,7 @@ const loginDeliveryCustomer = async ({ identity = '', password = '' } = {}) => {
 const requestDeliveryPasswordReset = async ({ identity = '' } = {}, context = {}) => {
   await ensureDatabaseReady();
   const startedAt = Date.now();
-  assertDeliveryAuthRateLimit({
+  await assertDeliveryAuthRateLimit({
     req: context.req,
     scope: 'delivery-forgot-password',
     identity,
@@ -5079,7 +5075,7 @@ const requestDeliveryPasswordReset = async ({ identity = '' } = {}, context = {}
 
 const resetDeliveryCustomerPassword = async ({ identity = '', code = '', password = '' } = {}, context = {}) => {
   await ensureDatabaseReady();
-  assertDeliveryAuthRateLimit({
+  await assertDeliveryAuthRateLimit({
     req: context.req,
     scope: 'delivery-reset-password',
     identity,
@@ -5117,7 +5113,7 @@ const resetDeliveryCustomerPassword = async ({ identity = '', code = '', passwor
 
 const verifyDeliveryCustomerCode = async ({ identity = '', code = '' } = {}, context = {}) => {
   await ensureDatabaseReady();
-  assertDeliveryAuthRateLimit({
+  await assertDeliveryAuthRateLimit({
     req: context.req,
     scope: 'delivery-verify-account',
     identity,
