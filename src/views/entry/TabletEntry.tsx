@@ -22,7 +22,7 @@ export function TabletEntry({ onUnlock }: TabletEntryProps) {
        setCurrentTableId(savedTableId);
        onUnlock();
     }
-  }, []);
+  }, [currentTableId, onUnlock, setCurrentTableId]);
 
   const handlePinSubmit = async (digit: string) => {
     const newPin = pin + digit;

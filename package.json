@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "lint:baseline": "node scripts/check-eslint-baseline.mjs",
     "typecheck": "tsc -b --pretty false",
-    "test": "node scripts/test-business-time.mjs && node scripts/test-migrations.mjs && node scripts/test-bff-modules.mjs && node scripts/test-critical-backend.mjs",
+    "test": "node scripts/test-business-time.mjs && node scripts/test-operational-watchdog.mjs && node scripts/test-migrations.mjs && node scripts/test-bff-modules.mjs && node scripts/test-critical-backend.mjs",
     "validate": "npm run test:shared-db-contract && npm run lint:baseline && npm run lint && npm run typecheck && npm test && npm run build",
     "test:shared-db-contract": "node scripts/check-shared-database-contract.mjs",
     "test:business-time": "node scripts/test-business-time.mjs",

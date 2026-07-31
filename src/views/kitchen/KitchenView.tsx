@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Clock, CheckCircle2, X, AlertCircle, ChefHat, LockKeyhole, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore, type Seller } from '../../store';
@@ -173,7 +173,7 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
     updateTimer();
     const timer = setInterval(updateTimer, 1000);
     return () => clearInterval(timer);
-  }, [order.createdAt]);
+  }, [order.createdAt, serverTimeOffset]);
 
   const mins = Math.floor(elapsedMs / 60000);
   const secs = Math.floor((elapsedMs % 60000) / 1000);
@@ -363,8 +363,14 @@ export function KitchenView() {
   const hasInitializedOrderTracking = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  const activeOrders = kitchenOrders.filter((o: any) => o.status !== 'ready');
-  const activeOrderIds = activeOrders.map((o: any) => o.id).join('|');
+  const activeOrders = useMemo(
+    () => kitchenOrders.filter((order: any) => order.status !== 'ready'),
+    [kitchenOrders],
+  );
+  const activeOrderIds = useMemo(
+    () => activeOrders.map((order: any) => order.id).join('|'),
+    [activeOrders],
+  );
 
   // Auto-sync curto: a cozinha precisa reagir em segundos, não em ciclos longos.
   useEffect(() => {
@@ -404,7 +410,7 @@ export function KitchenView() {
       window.removeEventListener('online', handleResume);
       document.removeEventListener('visibilitychange', handleResume);
     };
-  }, [syncData, isKitchenUnlocked]);
+  }, [syncData, isKitchenUnlocked, stationLabel]);
 
   useEffect(() => {
     if (!currentSeller) {
@@ -413,7 +419,7 @@ export function KitchenView() {
     }
   }, [currentSeller]);
 
-  const getAudioContext = async (shouldResume = false) => {
+  const getAudioContext = useCallback(async (shouldResume = false) => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return null;
 
@@ -426,9 +432,9 @@ export function KitchenView() {
     }
 
     return audioCtxRef.current;
-  };
+  }, []);
 
-  const unlockKitchenSound = async () => {
+  const unlockKitchenSound = useCallback(async () => {
     try {
       const audioCtx = await getAudioContext(true);
       setSoundReady(audioCtx?.state === 'running');
@@ -436,7 +442,7 @@ export function KitchenView() {
       console.warn(`Falha ao ativar som do ${stationLabel}:`, error);
       setSoundReady(false);
     }
-  };
+  }, [getAudioContext, stationLabel]);
 
   useEffect(() => {
     if (!isKitchenUnlocked) return;
@@ -452,10 +458,10 @@ export function KitchenView() {
       window.removeEventListener('pointerdown', handleFirstInteraction);
       window.removeEventListener('keydown', handleFirstInteraction);
     };
-  }, [isKitchenUnlocked]);
+  }, [isKitchenUnlocked, unlockKitchenSound]);
 
   // Função para tocar o sininho (Web Audio API)
-  const playBellSound = async () => {
+  const playBellSound = useCallback(async () => {
     try {
       const audioCtx = await getAudioContext(true);
       if (!audioCtx) return;
@@ -497,7 +503,7 @@ export function KitchenView() {
     } catch (e) {
       console.warn("Erro ao reproduzir som:", e);
     }
-  };
+  }, [getAudioContext, stationLabel]);
 
   // Detectar Novos Pedidos
   useEffect(() => {
@@ -518,7 +524,7 @@ export function KitchenView() {
     }
     
     lastOrderIds.current = currentIds;
-  }, [activeOrderIds, isKitchenUnlocked]);
+  }, [activeOrderIds, activeOrders, isKitchenUnlocked, playBellSound]);
 
   const requestFullscreen = async () => {
     try {

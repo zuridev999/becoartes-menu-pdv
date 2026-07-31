@@ -4,6 +4,7 @@ import { createId } from './lib/id';
 import { getOrderItemsTotal } from './lib/totals';
 import { postOSMessage } from './lib/osBridge';
 import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, hasApiSessionToken, setApiSessionToken, type CashState } from './lib/api';
+import { operationalRequestError } from './lib/request-timeout';
 import type {
   Product, Table, OrderItem, KitchenOrder,
   ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category, CounterSaleInput
@@ -144,6 +145,11 @@ export interface AppState {
   adminMode: 'menu' | 'settings';
   isLoading: boolean;
   initError: string | null;
+  syncState: {
+    status: 'idle' | 'syncing' | 'online' | 'degraded';
+    lastSuccessfulAt: number | null;
+    error: string | null;
+  };
   setAdminTab: (tab: AdminTab) => void;
   currentShift: { id: string, status: 'open' | 'closed', openingBalance: number } | null;
   cashState: CashState | null;
@@ -220,6 +226,11 @@ export const useStore = create<AppState>((set, get) => ({
   adminMode: 'settings',
   isLoading: true,
   initError: null,
+  syncState: {
+    status: 'idle',
+    lastSuccessfulAt: null,
+    error: null,
+  },
   banners: [
     '/slideshow/beco-drinks.jpg',
     '/slideshow/beco-food.jpg',
@@ -493,7 +504,12 @@ export const useStore = create<AppState>((set, get) => ({
         adminMode: initialAdminMode,
         adminTab: initialAdminMode === 'menu' ? 'products' : 'config',
         tables: snapshot.tables.sort((a: Table, b: Table) => a.number - b.number),
-        serverTimeOffset
+        serverTimeOffset,
+        syncState: {
+          status: 'online',
+          lastSuccessfulAt: Date.now(),
+          error: null,
+        },
       });
 
       console.log(`🚀 Sistema Becoartes Inicializado! View: ${initialView} | Host: ${hostname}`);
@@ -513,7 +529,7 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error("❌ Erro ao inicializar App:", e);
       set({
-        initError: getErrorMessage(e) || 'Não foi possível carregar os dados operacionais.',
+        initError: operationalRequestError(e),
       });
     } finally {
       set({ isLoading: false });
@@ -770,6 +786,13 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     const runSync = (async () => {
+      set((state) => ({
+        syncState: {
+          ...state.syncState,
+          status: 'syncing',
+          error: null,
+        },
+      }));
       try {
         const shouldRefreshCatalog =
           Boolean(options.includeCatalog)
@@ -858,7 +881,12 @@ export const useStore = create<AppState>((set, get) => ({
           settings: snapshot.savedSettings ? { ...get().settings, ...snapshot.savedSettings } : get().settings,
           cashState: snapshot.cashState || get().cashState,
           tables: finalTables.sort((a, b) => a.number - b.number),
-          serverTimeOffset
+          serverTimeOffset,
+          syncState: {
+            status: 'online',
+            lastSuccessfulAt: Date.now(),
+            error: null,
+          },
         });
         consecutiveSyncFailures = 0;
         nextSyncAllowedAt = 0;
@@ -867,6 +895,13 @@ export const useStore = create<AppState>((set, get) => ({
         const backoffMs = Math.min(60_000, 2_000 * (2 ** Math.min(consecutiveSyncFailures - 1, 5)));
         nextSyncAllowedAt = Date.now() + backoffMs;
         console.error("❌ Erro no sync de dados:", error);
+        set((state) => ({
+          syncState: {
+            status: 'degraded',
+            lastSuccessfulAt: state.syncState.lastSuccessfulAt,
+            error: operationalRequestError(error),
+          },
+        }));
       }
     })();
 

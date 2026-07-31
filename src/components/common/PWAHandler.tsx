@@ -1,14 +1,54 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Maximize } from 'lucide-react';
 
 export function PWAHandler() {
-  const [wakeLock, setWakeLock] = useState<any>(null);
+  const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
   const [showReentryOverlay, setShowReentryOverlay] = useState(false);
 
+  const requestFs = useCallback(() => {
+    const root = document.documentElement as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+      mozRequestFullScreen?: () => Promise<void>;
+      msRequestFullscreen?: () => Promise<void>;
+    };
+    const request = root.requestFullscreen
+      || root.webkitRequestFullscreen
+      || root.mozRequestFullScreen
+      || root.msRequestFullscreen;
+    if (request) {
+      request.call(root).catch((error: unknown) => console.error('Fullscreen error:', error));
+    }
+  }, []);
+
+  const exitFs = useCallback(() => {
+    const fullscreenDocument = document as Document & {
+      webkitExitFullscreen?: () => Promise<void>;
+      mozCancelFullScreen?: () => Promise<void>;
+      msExitFullscreen?: () => Promise<void>;
+    };
+    const exit = fullscreenDocument.exitFullscreen
+      || fullscreenDocument.webkitExitFullscreen
+      || fullscreenDocument.mozCancelFullScreen
+      || fullscreenDocument.msExitFullscreen;
+    if (exit) {
+      exit.call(fullscreenDocument).catch((error: unknown) => console.error('Exit Fullscreen error:', error));
+    }
+  }, []);
+
   useEffect(() => {
+    const fullscreenDocument = document as Document & {
+      webkitFullscreenElement?: Element | null;
+      mozFullScreenElement?: Element | null;
+      msFullscreenElement?: Element | null;
+    };
     const handleFsChange = () => {
-      const isFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
+      const isFs = Boolean(
+        document.fullscreenElement
+        || fullscreenDocument.webkitFullscreenElement
+        || fullscreenDocument.mozFullScreenElement
+        || fullscreenDocument.msFullscreenElement,
+      );
       
       // Se saiu do fullscreen e não foi por comando intencional recente, mostra overlay discreto
       if (!isFs) {
@@ -25,24 +65,32 @@ export function PWAHandler() {
 
     const requestWakeLock = async () => {
       // 1. Suporte para Fully Kiosk Browser (API Nativa)
-      if (typeof (window as any).fully !== 'undefined') {
-        const fully = (window as any).fully;
+      const kioskWindow = window as Window & {
+        fully?: {
+          setKeepScreenOn: (enabled: boolean) => void;
+          setKioskMode: (enabled: boolean) => void;
+          lockDown: (enabled: boolean) => void;
+        };
+      };
+      if (kioskWindow.fully) {
         try {
-          fully.startScreensaver(); // Exemplo
-          fully.setKeepScreenOn(true);
-          fully.setKioskMode(true);
-          fully.lockDown(true);
-          console.log('🛡️ Fully Kiosk Mode ATIVADO via API');
-        } catch (e) {}
+          kioskWindow.fully.setKeepScreenOn(true);
+          kioskWindow.fully.setKioskMode(true);
+          kioskWindow.fully.lockDown(true);
+        } catch {
+          // Fully Kiosk is optional; the browser wake lock remains the fallback.
+        }
       }
 
       // 2. Wake Lock padrão (Navegador)
       try {
         if ('wakeLock' in navigator) {
-          const wl = await (navigator as any).wakeLock.request('screen');
-          setWakeLock(wl);
+          const manager = navigator.wakeLock as WakeLock;
+          wakeLockRef.current = await manager.request('screen');
         }
-      } catch (err) {}
+      } catch {
+        wakeLockRef.current = null;
+      }
     };
 
     requestWakeLock();
@@ -56,9 +104,10 @@ export function PWAHandler() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // Escutar comandos globais de fullscreen (opcional, ou via store)
-    const handleGlobalFullscreen = (e: any) => {
-      if (e.detail === 'request') requestFs();
-      if (e.detail === 'exit') exitFs();
+    const handleGlobalFullscreen = (event: Event) => {
+      const detail = (event as CustomEvent<'request' | 'exit'>).detail;
+      if (detail === 'request') requestFs();
+      if (detail === 'exit') exitFs();
     };
     window.addEventListener('beco-fullscreen', handleGlobalFullscreen);
 
@@ -69,25 +118,10 @@ export function PWAHandler() {
       document.removeEventListener('MSFullscreenChange', handleFsChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('beco-fullscreen', handleGlobalFullscreen);
-      if (wakeLock) wakeLock.release();
+      void wakeLockRef.current?.release();
+      wakeLockRef.current = null;
     };
-  }, []);
-
-  const requestFs = () => {
-    const doc = document.documentElement as any;
-    const request = doc.requestFullscreen || doc.webkitRequestFullscreen || doc.mozRequestFullScreen || doc.msRequestFullscreen;
-    if (request) {
-      request.call(doc).catch((err: any) => console.error("Fullscreen error:", err));
-    }
-  };
-
-  const exitFs = () => {
-    const doc = document as any;
-    const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
-    if (exit) {
-      exit.call(doc).catch((err: any) => console.error("Exit Fullscreen error:", err));
-    }
-  };
+  }, [exitFs, requestFs]);
 
   return (
     <AnimatePresence>

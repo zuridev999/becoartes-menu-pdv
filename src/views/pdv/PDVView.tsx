@@ -346,7 +346,7 @@ export function PDVView() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [currentSeller?.id]);
+  }, [currentSeller]);
 
   useEffect(() => {
     if (cashDialog !== 'open' || !cashState?.hasPreviousClosing) return;

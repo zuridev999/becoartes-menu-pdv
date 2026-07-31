@@ -1,5 +1,6 @@
 import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
 import { createPdvTerminalIdentity, signPdvTerminalChallenge } from './pdv-terminal-browser';
+import { createRequestTimeoutSignal } from './request-timeout';
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
 const TABLE_ACCESS_TOKEN_STORAGE_KEY = 'beco_public_table_access';
@@ -204,10 +205,11 @@ const getCurrentView = () => {
   return 'pdv';
 };
 
-const postJson = async <T>(path: string, body: unknown): Promise<T> => {
+const postJson = async <T>(path: string, body: unknown, options: RequestInit = {}): Promise<T> => {
   const response = await fetch(path, {
+    ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...(options.headers || {}) },
     body: JSON.stringify(body),
   });
 
@@ -740,11 +742,18 @@ const hydrateSnapshot = (snapshot: any) => ({
 
 export const AppApi = {
   init() {
-    return getJson<any>(`/api/app/init?view=${encodeURIComponent(getCurrentView())}`).then(hydrateSnapshot);
+    return getJson<any>(
+      `/api/app/init?view=${encodeURIComponent(getCurrentView())}`,
+      { signal: createRequestTimeoutSignal() },
+    ).then(hydrateSnapshot);
   },
 
   sync(includeCatalog: boolean) {
-    return postJson<any>('/api/app/sync', { includeCatalog, view: getCurrentView() }).then(hydrateSnapshot);
+    return postJson<any>(
+      '/api/app/sync',
+      { includeCatalog, view: getCurrentView() },
+      { signal: createRequestTimeoutSignal() },
+    ).then(hydrateSnapshot);
   },
 
   getChecklistAlerts<T>() {

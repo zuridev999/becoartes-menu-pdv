@@ -27,7 +27,7 @@ export function QrEntry({ onEnter }: QrEntryProps) {
       // Se não tem mesa na URL, talvez mostrar erro ou pedir mesa?
       // O usuário pediu que QR venha pela URL.
     }
-  }, [tables]);
+  }, [onEnter, setCurrentTableId, tables]);
 
   return (
     <div className="fixed inset-0 bg-[#0a0a0c] flex flex-col items-center justify-center p-12 text-center">
