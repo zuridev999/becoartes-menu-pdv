@@ -604,6 +604,47 @@ const decodeSignedToken = (token = '') => {
   }
 };
 
+const CUSTOMER_TAB_ACCESS_TTL_MS = 12 * 60 * 60 * 1000;
+const DELIVERY_ORDER_TRACKING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+const createCustomerTabAccessToken = (tab) => createSignedToken({
+  typ: 'customer_tab_access',
+  tabId: String(tab?.id || ''),
+  tableId: String(tab?.table_id || tab?.tableId || ''),
+  cpfHash: String(tab?.cpf_hash || ''),
+  exp: Date.now() + CUSTOMER_TAB_ACCESS_TTL_MS,
+  iat: Date.now(),
+});
+
+const verifyCustomerTabAccessToken = ({ token = '', tab }) => {
+  const decoded = decodeSignedToken(token);
+  if (!decoded || decoded.typ !== 'customer_tab_access') return false;
+  if (!decoded.exp || Number(decoded.exp) < Date.now()) return false;
+  return (
+    String(decoded.tabId || '') === String(tab?.id || '')
+    && String(decoded.tableId || '') === String(tab?.table_id || tab?.tableId || '')
+    && String(decoded.cpfHash || '') === String(tab?.cpf_hash || '')
+  );
+};
+
+const createDeliveryOrderTrackingToken = ({ orderId, customerId }) => createSignedToken({
+  typ: 'delivery_order_tracking',
+  orderId: String(orderId || ''),
+  customerId: String(customerId || ''),
+  exp: Date.now() + DELIVERY_ORDER_TRACKING_TTL_MS,
+  iat: Date.now(),
+});
+
+const verifyDeliveryOrderTrackingToken = ({ token = '', orderId, customerId }) => {
+  const decoded = decodeSignedToken(token);
+  if (!decoded || decoded.typ !== 'delivery_order_tracking') return false;
+  if (!decoded.exp || Number(decoded.exp) < Date.now()) return false;
+  return (
+    String(decoded.orderId || '') === String(orderId || '')
+    && String(decoded.customerId || '') === String(customerId || '')
+  );
+};
+
 const safeEqual = (left, right) => {
   const leftBuffer = Buffer.from(String(left));
   const rightBuffer = Buffer.from(String(right));
@@ -5051,7 +5092,13 @@ const rowToDeliveryOrder = (row, items = [], club = null, paymentInstructions = 
   };
 };
 
-const getDeliveryOrder = async ({ orderId, includeEvents = false } = {}) => {
+const getDeliveryOrder = async ({
+  orderId,
+  includeEvents = false,
+  session = null,
+  customerSessionToken = '',
+  trackingToken = '',
+} = {}) => {
   await ensureDatabaseReady();
   const safeOrderId = requireString(orderId, 'orderId');
   const orderRes = await db.execute({
@@ -5062,6 +5109,33 @@ const getDeliveryOrder = async ({ orderId, includeEvents = false } = {}) => {
   if (!row) {
     const error = new Error('Pedido delivery não encontrado.');
     error.statusCode = 404;
+    throw error;
+  }
+
+  const operationalAccess = Boolean(
+    session
+    && (isAdminSession(session) || canSessionWithSettings(session, 'viewSalesTotals')),
+  );
+  const deliveryCustomer = customerSessionToken
+    ? await getDeliveryCustomerBySession(customerSessionToken)
+    : null;
+  const customerOwnsOrder = Boolean(
+    deliveryCustomer
+    && String(deliveryCustomer.id || '') === String(row.customer_id || ''),
+  );
+  const trackingAccess = verifyDeliveryOrderTrackingToken({
+    token: trackingToken,
+    orderId: safeOrderId,
+    customerId: row.customer_id,
+  });
+  if (!operationalAccess && !customerOwnsOrder && !trackingAccess) {
+    const error = new Error('Acesso ao pedido não autorizado.');
+    error.statusCode = 403;
+    throw error;
+  }
+  if (includeEvents && !operationalAccess) {
+    const error = new Error('Histórico operacional não autorizado.');
+    error.statusCode = 403;
     throw error;
   }
   const itemsRes = await db.execute({
@@ -5085,7 +5159,18 @@ const getDeliveryOrder = async ({ orderId, includeEvents = false } = {}) => {
   });
   const paymentPayload = parseJsonObject(paymentEventRes.rows[0]?.payload) || {};
   const order = rowToDeliveryOrder(row, items, club, paymentPayload.instructions || null);
-  if (!includeEvents) return { order };
+  if (!includeEvents) {
+    return {
+      order: {
+        ...order,
+        customer: {
+          name: order.customer?.name || '',
+          fulfillment: order.customer?.fulfillment || '',
+          paymentMethod: order.customer?.paymentMethod || '',
+        },
+      },
+    };
+  }
 
   const eventsRes = await db.execute({
     sql: `
@@ -5582,8 +5667,13 @@ const createDeliveryCheckout = async ({ orderId, customer, items, payment }) => 
   }
 
   const club = await getDeliveryClubSummary(customerId);
+  const trackingToken = createDeliveryOrderTrackingToken({
+    orderId: deliveryOrderId,
+    customerId,
+  });
 
   return {
+    trackingToken,
     order: {
       id: deliveryOrderId,
       orderId: deliveryOrderId,
@@ -8273,14 +8363,29 @@ const findAvailableCustomerTabTable = async () => {
   return { id: String(table.id), number: Number(table.number) };
 };
 
-const openCustomerTab = async ({ customerName, phone, cpf }) => {
+const openCustomerTab = async ({ customerName, phone, cpf, accessToken = '' }) => {
   const normalizedCpf = normalizeCpf(cpf);
   if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
   const safeName = requireString(customerName, 'customerName').trim().slice(0, 120);
   const safePhone = requireString(phone, 'phone').trim().slice(0, 40);
 
   const existing = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
-  if (existing) return { tab: existing, recovered: true };
+  if (existing) {
+    const existingRow = (await db.execute({
+      sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1",
+      args: [existing.id],
+    })).rows[0];
+    if (existingRow && verifyCustomerTabAccessToken({ token: accessToken, tab: existingRow })) {
+      return {
+        tab: existing,
+        accessToken: createCustomerTabAccessToken(existingRow),
+        recovered: true,
+      };
+    }
+    const error = new Error('Já existe uma comanda ativa para estes dados. Continue no dispositivo em que ela foi aberta ou peça ajuda à equipe.');
+    error.statusCode = 409;
+    throw error;
+  }
 
   let lastError = null;
   for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -8313,13 +8418,25 @@ const openCustomerTab = async ({ customerName, phone, cpf }) => {
       ], 'write');
 
       const tab = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
-      return { tab, recovered: false };
+      const tabRow = (await db.execute({
+        sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1",
+        args: [tab.id],
+      })).rows[0];
+      return {
+        tab,
+        accessToken: createCustomerTabAccessToken(tabRow),
+        recovered: false,
+      };
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : String(error);
       if (!/constraint|unique/i.test(message)) throw error;
       const racedExisting = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
-      if (racedExisting) return { tab: racedExisting, recovered: true };
+      if (racedExisting) {
+        const error = new Error('Uma comanda acabou de ser aberta para estes dados. Continue no dispositivo original ou peça ajuda à equipe.');
+        error.statusCode = 409;
+        throw error;
+      }
       // Duas pessoas podem clicar no mesmo instante e disputar a mesma mesa técnica.
       // O índice único protege a base; este retry avança para a próxima comanda livre.
     }
@@ -8328,12 +8445,28 @@ const openCustomerTab = async ({ customerName, phone, cpf }) => {
   throw lastError || new Error('Não foi possível abrir a comanda agora. Tente novamente.');
 };
 
-const recoverCustomerTab = async ({ cpf }) => {
+const recoverCustomerTab = async ({ cpf, accessToken = '' }) => {
   const normalizedCpf = normalizeCpf(cpf);
   if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
   const tab = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
-  if (!tab) throw new Error('Nenhuma comanda aberta para este CPF.');
-  return { tab };
+  if (!tab) {
+    const error = new Error('Não foi possível recuperar esta comanda neste dispositivo.');
+    error.statusCode = 403;
+    throw error;
+  }
+  const row = (await db.execute({
+    sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1",
+    args: [tab.id],
+  })).rows[0];
+  if (!row || !verifyCustomerTabAccessToken({ token: accessToken, tab: row })) {
+    const error = new Error('Não foi possível recuperar esta comanda neste dispositivo.');
+    error.statusCode = 403;
+    throw error;
+  }
+  return {
+    tab,
+    accessToken: createCustomerTabAccessToken(row),
+  };
 };
 
 const getCustomerTabOrderItems = async (tableId) => {
@@ -8392,7 +8525,12 @@ const getCustomerTabPayableBalance = async (tableId, items = null) => {
   return Number(Math.max(0, subtotal + serviceFee - paid).toFixed(2));
 };
 
-const createCustomerTabPaymentLink = async ({ tabId, method = 'pix', returnUrl = '' }) => {
+const createCustomerTabPaymentLink = async ({
+  tabId,
+  method = 'pix',
+  returnUrl = '',
+  accessToken = '',
+}, session = null) => {
   await ensureDatabaseReady();
   const safeTabId = requireString(tabId, 'tabId');
   const safeMethod = String(method || 'pix');
@@ -8401,6 +8539,15 @@ const createCustomerTabPaymentLink = async ({ tabId, method = 'pix', returnUrl =
   const tabRes = await db.execute({ sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1", args: [safeTabId] });
   const row = tabRes.rows[0];
   if (!row) throw new Error('Comanda não encontrada.');
+  const operationalAccess = Boolean(
+    session
+    && (isAdminSession(session) || canSessionWithSettings(session, 'closeBill')),
+  );
+  if (!operationalAccess && !verifyCustomerTabAccessToken({ token: accessToken, tab: row })) {
+    const error = new Error('Acesso à comanda não autorizado.');
+    error.statusCode = 403;
+    throw error;
+  }
   if (!['open', 'paid'].includes(String(row.status))) throw new Error('Esta comanda não está aberta para pagamento.');
 
   const items = await getCustomerTabOrderItems(row.table_id);
