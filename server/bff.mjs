@@ -62,6 +62,10 @@ const DELIVERY_CUSTOMER_CODE_SECRET = isLocalLibsqlUrl
   ? (process.env.DELIVERY_CUSTOMER_CODE_SECRET || SESSION_SECRET)
   : requireRuntimeSecret('DELIVERY_CUSTOMER_CODE_SECRET', process.env.DELIVERY_CUSTOMER_CODE_SECRET);
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const DELIVERY_CUSTOMER_SESSION_TTL_DAYS = Math.min(
+  30,
+  Math.max(1, Number(process.env.DELIVERY_CUSTOMER_SESSION_TTL_DAYS || 14)),
+);
 const PDV_TERMINAL_CHALLENGE_TTL_MS = 2 * 60 * 1000;
 const TABLET_TABLE_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PROCESSING_STALE_MS = 10 * 60 * 1000;
@@ -4699,7 +4703,10 @@ const createDeliveryCustomerSession = async (customerId) => {
     throw error;
   }
   const token = createId() + createId();
-  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(
+    Date.now() + DELIVERY_CUSTOMER_SESSION_TTL_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  await db.execute("DELETE FROM delivery_customer_sessions WHERE expires_at <= CURRENT_TIMESTAMP");
   await db.execute({
     sql: "INSERT INTO delivery_customer_sessions (token_hash, customer_id, expires_at) VALUES (?, ?, ?)",
     args: [hashToken(token), customerId, expiresAt],

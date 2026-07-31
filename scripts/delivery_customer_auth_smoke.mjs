@@ -159,6 +159,16 @@ const logged = await requestJson('/api/delivery/customer/login', {
   body: JSON.stringify({ identity: customer.email, password: 'senha123' }),
 });
 if (!logged.session?.token) fail('Expected session token on login', logged);
+const sessionRemainingMs = Date.parse(String(logged.session.expiresAt || '')) - Date.now();
+if (
+  !Number.isFinite(sessionRemainingMs)
+  || sessionRemainingMs <= 0
+  || sessionRemainingMs > 15 * 24 * 60 * 60 * 1000
+) {
+  fail('Customer session must expire within the configured 14-day window', {
+    expiresAt: logged.session.expiresAt || null,
+  });
+}
 
 const session = await requestJson('/api/delivery/customer/session', {
   headers: { 'X-Beco-Delivery-Session': logged.session.token },
@@ -203,6 +213,10 @@ const reset = await requestJson('/api/delivery/customer/reset-password', {
 });
 assertNoCodeInResponse('reset', reset);
 if (!reset.session?.token) fail('Expected session token after reset', reset);
+const revokedSession = await requestJson('/api/delivery/customer/session', {
+  headers: { 'X-Beco-Delivery-Session': logged.session.token },
+});
+if (revokedSession.customer) fail('Password reset must revoke every previous customer session', revokedSession);
 
 const reusedReset = await requestRaw('/api/delivery/customer/reset-password', {
   method: 'POST',
