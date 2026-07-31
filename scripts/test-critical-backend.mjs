@@ -26,6 +26,7 @@ const env = {
   CASH_SANDBOX_MODE: '1',
   HEALTH_DB_TIMEOUT_MS: '1000',
   ALLOWED_OPERATION_IPS: '10.0.0.5',
+  INVENTORY_RECONCILIATION_DISABLED: '1',
 };
 
 const bffSource = readFileSync(join(process.cwd(), 'server/bff.mjs'), 'utf8');
@@ -489,6 +490,55 @@ try {
   const movementCount = await getScalar("SELECT COUNT(*) AS count FROM estoque_movimentacoes WHERE produto_id = 'stock_test' AND origem = 'pdv' AND order_item_id = 'item_partial' AND tipo_movimentacao = 'saida'");
   assert.equal(Number(movementCount.count), 1, 'stock movement should remain idempotent for the sold item');
 
+  const dbForReconciliation = createClient({ url: dbUrl });
+  await dbForReconciliation.execute({
+    sql: `
+      INSERT INTO menu
+        (id, name, description, price, category_id, image, visible, delivery_visible, remote_stock_id, cost, sort_order)
+      VALUES ('prod_pending_inventory', 'Produto sem vínculo', '', 10, 'cat_test', '', 1, 1, NULL, 0, 1)
+    `,
+  });
+  const counterSale = await post('/api/counter-sales/close', {
+    orderId: 'counter_pending_inventory',
+    subtotal: 10,
+    total: 10,
+    payments: [{ method: 'credit', amount: 10 }],
+    items: [{
+      id: 'item_pending_inventory',
+      productId: 'prod_pending_inventory',
+      name: 'Produto sem vínculo',
+      price: 10,
+      quantity: 1,
+      selectedModifiers: [],
+      notes: '',
+    }],
+  }, admin.sessionToken);
+  assert.equal(counterSale.ok, true);
+  assert.ok(counterSale.data.closedBill?.id, 'financial counter sale must complete even when stock needs reconciliation');
+  const pendingEvent = await getScalar("SELECT status FROM integration_events WHERE id = 'pdv_counter_counter_pending_inventory'");
+  assert.equal(pendingEvent.status, 'inventory_attention', 'unmatched stock must remain visibly reconcilable');
+
+  await dbForReconciliation.execute({
+    sql: "UPDATE menu SET remote_stock_id = 'stock_test' WHERE id = 'prod_pending_inventory'",
+  });
+  const reconciled = await post('/api/inventory/reconcile-pending', {
+    limit: 10,
+    includeAttention: true,
+  }, admin.sessionToken);
+  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.data.completed >= 1, true, 'manual reconciliation must complete after linkage is fixed');
+  const reconciledEvent = await getScalar("SELECT status FROM integration_events WHERE id = 'pdv_counter_counter_pending_inventory'");
+  assert.equal(reconciledEvent.status, 'completed');
+  const afterReconciliationStock = await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'");
+  assert.equal(Number(afterReconciliationStock.quantidade_atual), 8, 'reconciliation must apply the missing stock movement once');
+
+  await post('/api/inventory/reconcile-pending', {
+    limit: 10,
+    includeAttention: true,
+  }, admin.sessionToken);
+  const afterReconciliationRetryStock = await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'");
+  assert.equal(Number(afterReconciliationRetryStock.quantidade_atual), 8, 'reconciliation retry must remain idempotent');
+
   const appliedPayment = await getScalar("SELECT status, applied_closed_bill_id FROM table_payments WHERE id = 'partial_1'");
   assert.equal(appliedPayment.status, 'applied', 'partial payment should be applied after close');
   assert.ok(appliedPayment.applied_closed_bill_id, 'partial payment should point to closed bill');
@@ -512,6 +562,8 @@ try {
       'cmv_vinculado_ao_produto_pdv',
       'cancelamento_estorna_estoque',
       'retry_cancelamento_idempotente',
+      'venda_balcao_com_estoque_pendente',
+      'reconciliacao_estoque_idempotente',
     ],
   }, null, 2));
 } catch (error) {

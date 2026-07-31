@@ -1334,7 +1334,10 @@ export const useStore = create<AppState>((set, get) => ({
       const inventorySuffix = closeResult.inventorySync.unmatched.length > 0
         ? ` ${closeResult.inventorySync.unmatched.length} item(ns) sem vínculo de estoque.`
         : '';
-      get().addNotification(`Conta Lançada! Mesa ${data.tableNumber} finalizada com sucesso!${inventorySuffix}`, 'info');
+      const pendingSuffix = closeResult.inventorySyncError
+        ? ' Baixa de estoque registrada como pendente para nova tentativa automática.'
+        : '';
+      get().addNotification(`Conta Lançada! Mesa ${data.tableNumber} finalizada com sucesso!${inventorySuffix}${pendingSuffix}`, 'info');
       return true;
     } catch (error) {
       pendingBillClosures.delete(data.tableId);
@@ -1388,7 +1391,10 @@ export const useStore = create<AppState>((set, get) => ({
       const inventorySuffix = closeResult.inventorySync.unmatched.length > 0
         ? ` ${closeResult.inventorySync.unmatched.length} item(ns) sem vínculo de estoque.`
         : '';
-      get().addNotification(`Venda balcão finalizada com sucesso!${inventorySuffix}`, 'info');
+      const pendingSuffix = closeResult.inventorySyncError
+        ? ' Baixa de estoque registrada como pendente para nova tentativa automática.'
+        : '';
+      get().addNotification(`Venda balcão finalizada com sucesso!${inventorySuffix}${pendingSuffix}`, 'info');
 
       if (closeResult.inventorySync.movementCount || closeResult.inventorySync.unmatched.length > 0) {
         await get().syncData({ includeCatalog: true });

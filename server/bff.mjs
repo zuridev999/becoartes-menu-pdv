@@ -69,6 +69,10 @@ const DELIVERY_CUSTOMER_SESSION_TTL_DAYS = Math.min(
 const PDV_TERMINAL_CHALLENGE_TTL_MS = 2 * 60 * 1000;
 const TABLET_TABLE_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PROCESSING_STALE_MS = 10 * 60 * 1000;
+const INVENTORY_RECONCILIATION_INTERVAL_MS = Math.max(
+  15_000,
+  Number(process.env.INVENTORY_RECONCILIATION_INTERVAL_MS || 60_000),
+);
 const SERVICE_REQUEST_LIMIT = Number(process.env.SERVICE_REQUEST_LIMIT || 150);
 const CLOSED_BILLS_LIMIT = Number(process.env.CLOSED_BILLS_LIMIT || 200);
 const AUDIT_LOG_LIMIT = Number(process.env.AUDIT_LOG_LIMIT || 100);
@@ -2506,7 +2510,7 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
   const needsSellers = needsOperationalPanel;
   const needsSalesData = needsOperationalPanel;
   if (needsSellers) await ensureDefaultSellersReady();
-  const [catalogData, sellers, kitchenData, serviceRequests, closedBills, savedSettings, tables, auditLogs, catalogVersion, cashState] = await Promise.all([
+  const [catalogData, sellers, kitchenData, serviceRequests, closedBills, savedSettings, tables, auditLogs, catalogVersion, cashState, inventoryReconciliation] = await Promise.all([
     includeCatalog ? getCatalogData() : Promise.resolve(null),
     needsSellers ? getAuthSellers() : Promise.resolve([]),
     getKitchenOrders(safeView),
@@ -2517,6 +2521,9 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
     needsSalesData ? getAuditLogs(includeAuditLimit) : Promise.resolve([]),
     getCatalogVersion(),
     needsOperationalPanel ? getCashState() : Promise.resolve(null),
+    needsOperationalPanel && canSessionWithSettings(session, 'viewSalesTotals')
+      ? getInventoryReconciliationSummary()
+      : Promise.resolve(null),
   ]);
   const visibleTables = savedSettings?.qrMode === 'comanda'
     ? tables
@@ -2533,6 +2540,7 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
     cashState,
     tables: visibleTables,
     auditLogs,
+    inventoryReconciliation,
   }, { view, session });
 };
 
@@ -3065,6 +3073,92 @@ const failIntegrationEvent = async (id, error) => {
   });
 };
 
+const INVENTORY_PENDING_STATUSES = ['pending_inventory', 'inventory_attention'];
+
+const parseIntegrationPayload = (value) => {
+  try {
+    const parsed = JSON.parse(String(value || '{}'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const inventoryEventPayload = ({
+  tableNumber,
+  orderIds,
+  reason,
+  closedBillId = null,
+  inventorySync = null,
+  inventorySyncError = null,
+}) => ({
+  tableNumber,
+  orderIds: Array.from(new Set((orderIds || []).filter(Boolean).map(String))),
+  reason,
+  closedBillId,
+  inventorySync,
+  inventorySyncError,
+});
+
+const getInventoryOrderItems = async (orderIds) => {
+  const safeOrderIds = Array.from(new Set((orderIds || []).filter(Boolean).map(String)));
+  if (safeOrderIds.length === 0) return [];
+  const placeholders = safeOrderIds.map(() => '?').join(', ');
+  const result = await db.execute({
+    sql: `
+      SELECT
+        oi.id,
+        oi.order_id AS orderId,
+        oi.product_id AS productId,
+        COALESCE(m.name, oi.product_id, '') AS name,
+        COALESCE(m.remote_stock_id, '') AS remoteStockId,
+        oi.quantity,
+        oi.selected_modifiers AS selectedModifiers
+      FROM order_items oi
+      LEFT JOIN menu m ON m.id = oi.product_id
+      WHERE oi.order_id IN (${placeholders})
+      ORDER BY oi.order_id, oi.id
+    `,
+    args: safeOrderIds,
+  });
+  return (result.rows || []).map((row) => ({
+    id: String(row.id || ''),
+    orderId: String(row.orderId || ''),
+    productId: String(row.productId || ''),
+    name: String(row.name || ''),
+    remoteStockId: String(row.remoteStockId || ''),
+    quantity: Number(row.quantity || 0),
+    selectedModifiers: parseJsonArray(row.selectedModifiers),
+  }));
+};
+
+const setInventoryEventState = async ({
+  id,
+  status,
+  payload,
+  error = null,
+  expectedStatuses = null,
+}) => {
+  const allowed = Array.isArray(expectedStatuses) && expectedStatuses.length > 0
+    ? expectedStatuses
+    : null;
+  const statusClause = allowed
+    ? ` AND status IN (${allowed.map(() => '?').join(', ')})`
+    : '';
+  const result = await db.execute({
+    sql: `UPDATE integration_events SET status = ?, payload = ?, error = ?, updated_at = ? WHERE id = ?${statusClause}`,
+    args: [
+      status,
+      JSON.stringify(payload || {}),
+      error ? String(error).slice(0, 1000) : null,
+      Date.now(),
+      id,
+      ...(allowed || []),
+    ],
+  });
+  return Number(result.rowsAffected || 0) > 0;
+};
+
 const findStockProduct = async (empresaId, candidates) => {
   const ids = [candidates.id].filter(Boolean);
   for (const id of ids) {
@@ -3434,6 +3528,128 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
   return result;
 };
 
+const reconcileInventoryEvent = async (eventOrId, { includeAttention = false } = {}) => {
+  const event = typeof eventOrId === 'string'
+    ? (await db.execute({
+        sql: "SELECT id, type, status, table_id, payload, error, updated_at FROM integration_events WHERE id = ? LIMIT 1",
+        args: [eventOrId],
+      })).rows?.[0]
+    : eventOrId;
+  if (!event?.id) return { skipped: true, reason: 'not_found' };
+
+  const allowedStatuses = includeAttention ? INVENTORY_PENDING_STATUSES : ['pending_inventory'];
+  if (!allowedStatuses.includes(String(event.status || ''))) {
+    return { skipped: true, reason: 'status', status: event.status };
+  }
+
+  const payload = parseIntegrationPayload(event.payload);
+  const claimed = await setInventoryEventState({
+    id: String(event.id),
+    status: 'inventory_processing',
+    payload,
+    expectedStatuses: allowedStatuses,
+  });
+  if (!claimed) return { skipped: true, reason: 'claimed' };
+
+  try {
+    const items = await getInventoryOrderItems(payload.orderIds);
+    if (items.length === 0) {
+      throw new Error('Itens da venda não foram encontrados para reconciliação de estoque.');
+    }
+
+    const inventorySync = await syncPdvOrderItemsToInventory({
+      items,
+      integrationId: String(event.id),
+      tableNumber: payload.tableNumber,
+      reason: payload.reason || `Reconciliação de estoque ${event.id}`,
+      closedBillId: payload.closedBillId || null,
+    });
+    const status = inventorySync.unmatched.length > 0 ? 'inventory_attention' : 'completed';
+    const nextPayload = {
+      ...payload,
+      inventorySync,
+      inventorySyncError: null,
+      reconciledAt: new Date().toISOString(),
+    };
+    await setInventoryEventState({
+      id: String(event.id),
+      status,
+      payload: nextPayload,
+      expectedStatuses: ['inventory_processing'],
+    });
+    return { skipped: false, status, inventorySync };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await setInventoryEventState({
+      id: String(event.id),
+      status: 'pending_inventory',
+      payload: {
+        ...payload,
+        inventorySyncError: message,
+        lastAttemptAt: new Date().toISOString(),
+      },
+      error: message,
+      expectedStatuses: ['inventory_processing'],
+    });
+    return { skipped: false, status: 'pending_inventory', error: message };
+  }
+};
+
+const reconcilePendingInventoryEvents = async ({ limit = 5, includeAttention = false } = {}) => {
+  const safeLimit = Math.max(1, Math.min(25, Number(limit || 5)));
+  const statuses = includeAttention ? INVENTORY_PENDING_STATUSES : ['pending_inventory'];
+  await db.execute({
+    sql: `
+      UPDATE integration_events
+      SET status = 'pending_inventory',
+          error = COALESCE(error, 'Reconciliação interrompida; liberada para nova tentativa.'),
+          updated_at = ?
+      WHERE status = 'inventory_processing' AND updated_at < ?
+    `,
+    args: [Date.now(), Date.now() - PROCESSING_STALE_MS],
+  });
+  const result = await db.execute({
+    sql: `
+      SELECT id, type, status, table_id, payload, error, updated_at
+      FROM integration_events
+      WHERE status IN (${statuses.map(() => '?').join(', ')})
+      ORDER BY updated_at ASC
+      LIMIT ?
+    `,
+    args: [...statuses, safeLimit],
+  });
+
+  const reconciled = [];
+  for (const event of result.rows || []) {
+    reconciled.push(await reconcileInventoryEvent(event, { includeAttention }));
+  }
+  return {
+    scanned: (result.rows || []).length,
+    completed: reconciled.filter((item) => item.status === 'completed').length,
+    attention: reconciled.filter((item) => item.status === 'inventory_attention').length,
+    pending: reconciled.filter((item) => item.status === 'pending_inventory').length,
+    results: reconciled,
+  };
+};
+
+const getInventoryReconciliationSummary = async () => {
+  const result = await db.execute(`
+    SELECT status, COUNT(*) AS total
+    FROM integration_events
+    WHERE status IN ('pending_inventory', 'inventory_processing', 'inventory_attention')
+    GROUP BY status
+  `);
+  const summary = { pending: 0, processing: 0, attention: 0, total: 0 };
+  for (const row of result.rows || []) {
+    const total = Number(row.total || 0);
+    if (row.status === 'pending_inventory') summary.pending = total;
+    if (row.status === 'inventory_processing') summary.processing = total;
+    if (row.status === 'inventory_attention') summary.attention = total;
+    summary.total += total;
+  }
+  return summary;
+};
+
 const notifyOrderItemCancelled = async ({ tableNumber, itemName, quantity, sellerName, sellerPermission, reasonLabel, reasonNotes }) => {
   const reasonText = reasonLabel ? ` Motivo: ${reasonLabel}${reasonNotes ? ` (${reasonNotes})` : ''}.` : '';
   return safeCreateOSNotification({
@@ -3736,10 +3952,30 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, client
   ];
 
   const requestId = `new_order_${orderId}`;
+  const inventoryEventId = `pdv_order_${orderId}`;
   const itemsList = safeItems.map((item) => `${item.quantity}x ${item.name}`).join(', ');
   batch.push({
     sql: "INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
     args: [requestId, tableId, 'new_order', 'pending', itemsList],
+  });
+  batch.push({
+    sql: `
+      INSERT OR IGNORE INTO integration_events
+        (id, type, status, table_id, ref_id, payload, error, created_at, updated_at)
+      VALUES (?, 'pdv_order_inventory', 'pending_inventory', ?, ?, ?, NULL, ?, ?)
+    `,
+    args: [
+      inventoryEventId,
+      tableId,
+      orderId,
+      JSON.stringify(inventoryEventPayload({
+        tableNumber: null,
+        orderIds: [orderId],
+        reason: `Venda PDV | Lançamento ${orderId}`,
+      })),
+      Date.now(),
+      Date.now(),
+    ],
   });
 
   try {
@@ -3759,12 +3995,20 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, client
   try {
     const tableRes = await db.execute({ sql: "SELECT number FROM tables WHERE id = ? LIMIT 1", args: [tableId] });
     const tableNumber = Number(tableRes.rows[0]?.number || 0);
-    inventorySync = await syncPdvOrderItemsToInventory({
-      items: safeItems.map((item) => ({ ...item, orderId })),
-      integrationId: `pdv_order_${orderId}`,
+    const currentPayload = inventoryEventPayload({
       tableNumber,
+      orderIds: [orderId],
       reason: `Venda PDV Mesa ${tableNumber} | Lançamento ${orderId}`,
     });
+    await setInventoryEventState({
+      id: inventoryEventId,
+      status: 'pending_inventory',
+      payload: currentPayload,
+      expectedStatuses: ['pending_inventory'],
+    });
+    const reconciliation = await reconcileInventoryEvent(inventoryEventId);
+    inventorySync = reconciliation.inventorySync || null;
+    inventorySyncError = reconciliation.error || null;
   } catch (error) {
     inventorySyncError = error;
     console.error('Falha ao baixar estoque no lançamento do pedido:', error);
@@ -8016,16 +8260,36 @@ const closeBillWithInventorySync = async (data, session = null) => {
       });
     }
 
+    const initialInventoryStatus = inventorySyncError
+      ? 'pending_inventory'
+      : result.unmatched.length > 0
+        ? 'inventory_attention'
+        : 'completed';
+    const closeInventoryPayload = inventoryEventPayload({
+      tableNumber: data.tableNumber,
+      orderIds,
+      reason: baseReason,
+      closedBillId: integrationId,
+      inventorySync: result,
+      inventorySyncError: inventorySyncError instanceof Error
+        ? inventorySyncError.message
+        : inventorySyncError
+          ? String(inventorySyncError)
+          : null,
+    });
     batch.push({
-      sql: "UPDATE integration_events SET status = 'completed', payload = ?, error = NULL, updated_at = ? WHERE id = ?",
+      sql: "UPDATE integration_events SET status = ?, payload = ?, error = ?, updated_at = ? WHERE id = ?",
       args: [
+        initialInventoryStatus,
         JSON.stringify({
-          tableNumber: data.tableNumber,
-          orderIds,
-          inventorySync: result,
-          inventorySyncError: inventorySyncError instanceof Error ? inventorySyncError.message : inventorySyncError ? String(inventorySyncError) : null,
+          ...closeInventoryPayload,
           movementIds: movementPlans.map((movement) => movement.movementId),
         }),
+        inventorySyncError instanceof Error
+          ? inventorySyncError.message
+          : inventorySyncError
+            ? String(inventorySyncError)
+            : null,
         Date.now(),
         integrationId,
       ],
@@ -8033,6 +8297,13 @@ const closeBillWithInventorySync = async (data, session = null) => {
 
     await db.batch(batch, 'write');
     if (result.movementCount > 0) await bumpCatalogVersion();
+    if (initialInventoryStatus === 'pending_inventory') {
+      const reconciliation = await reconcileInventoryEvent(integrationId);
+      if (reconciliation.inventorySync) {
+        Object.assign(result, reconciliation.inventorySync);
+        inventorySyncError = null;
+      }
+    }
 
     const notificationContext = osContext || null;
     const notificationTasks = [];
@@ -8090,6 +8361,11 @@ const closeBillWithInventorySync = async (data, session = null) => {
       integrationId,
       closedBill,
       inventorySync: result,
+      inventorySyncError: inventorySyncError instanceof Error
+        ? inventorySyncError.message
+        : inventorySyncError
+          ? String(inventorySyncError)
+          : null,
     };
   } catch (error) {
     await failIntegrationEvent(integrationId, error);
@@ -8246,23 +8522,13 @@ const closeCounterSaleWithInventorySync = async (data, session = null) => {
     ], 'write');
 
     let inventorySync = { movementCount: 0, unmatched: [], insufficient: [], critical: [], catalogVersion: null };
-    try {
-      inventorySync = await syncPdvOrderItemsToInventory({
-        items: persistedItems,
-        integrationId,
-        tableNumber,
-        reason: `Venda Balcão | Fechamento ${integrationId}`,
-        closedBillId: integrationId,
-      });
-    } catch (error) {
-      inventorySync.unmatched.push(`Sincronização OS indisponível: ${error instanceof Error ? error.message : String(error)}`);
-      void safeCreateOSNotification({
-        title: 'Baixa de estoque na venda balcão falhou',
-        message: `Venda ${integrationId}: ${error instanceof Error ? error.message : String(error)}`,
-        type: 'error',
-        link: `/${OS_TENANT_SLUG}/estoque`,
-      });
-    }
+    let inventorySyncError = null;
+    const pendingInventoryPayload = inventoryEventPayload({
+      tableNumber: 'BALCAO',
+      orderIds: [orderId],
+      reason: `Venda Balcão | Fechamento ${integrationId}`,
+      closedBillId: integrationId,
+    });
 
     const batch = [
       {
@@ -8297,7 +8563,8 @@ const closeCounterSaleWithInventorySync = async (data, session = null) => {
             change: centsToMoney(Math.max(0, paymentTotalCents - totalCents)),
             payments: closedBill.payments,
             itemCount: persistedItems.length,
-            inventoryMovements: inventorySync.movementCount,
+            inventoryMovements: 0,
+            inventoryStatus: 'pending_inventory',
             eventId: integrationId,
           }),
           sellerId,
@@ -8306,13 +8573,9 @@ const closeCounterSaleWithInventorySync = async (data, session = null) => {
         ],
       },
       {
-        sql: "UPDATE integration_events SET status = 'completed', payload = ?, error = NULL, updated_at = ? WHERE id = ?",
+        sql: "UPDATE integration_events SET status = 'pending_inventory', payload = ?, error = NULL, updated_at = ? WHERE id = ?",
         args: [
-          JSON.stringify({
-            tableNumber: 'BALCAO',
-            orderId,
-            inventorySync,
-          }),
+          JSON.stringify(pendingInventoryPayload),
           Date.now(),
           integrationId,
         ],
@@ -8320,12 +8583,26 @@ const closeCounterSaleWithInventorySync = async (data, session = null) => {
     ];
 
     await db.batch(batch, 'write');
+    const reconciliation = await reconcileInventoryEvent(integrationId);
+    if (reconciliation.inventorySync) {
+      inventorySync = reconciliation.inventorySync;
+    } else if (reconciliation.error) {
+      inventorySyncError = reconciliation.error;
+      inventorySync.unmatched.push(`Reconciliação pendente: ${reconciliation.error}`);
+      void safeCreateOSNotification({
+        title: 'Baixa de estoque na venda balcão pendente',
+        message: `Venda ${integrationId}: ${reconciliation.error}`,
+        type: 'error',
+        link: `/${OS_TENANT_SLUG}/estoque`,
+      });
+    }
 
     return {
       skipped: false,
       integrationId,
       closedBill,
       inventorySync,
+      inventorySyncError,
     };
   } catch (error) {
     await failIntegrationEvent(integrationId, error);
@@ -8777,6 +9054,7 @@ const handlers = createRouteHandlers({
   setPdvLockState,
   syncBeveragesFromInventory,
   syncOpenOrdersInventory,
+  reconcilePendingInventoryEvents,
   toggleCategoryVisibility,
   toggleProductDeliveryVisibility,
   toggleProductVisibility,
@@ -8835,3 +9113,12 @@ createServer(async (req, res) => {
 }).listen(port, () => {
   console.log(`Becoartes PDV BFF listening on :${port}`);
 });
+
+if (process.env.INVENTORY_RECONCILIATION_DISABLED !== '1') {
+  const inventoryWorker = setInterval(() => {
+    void reconcilePendingInventoryEvents({ limit: 5 }).catch((error) => {
+      console.error('[inventory-reconciliation] retry failed:', error instanceof Error ? error.message : String(error));
+    });
+  }, INVENTORY_RECONCILIATION_INTERVAL_MS);
+  inventoryWorker.unref();
+}

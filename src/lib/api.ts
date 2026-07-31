@@ -22,6 +22,7 @@ type CloseBillResult = {
     insufficient: string[];
     critical: string[];
   } | null;
+  inventorySyncError?: string | null;
 };
 
 type SendToKitchenResult = {

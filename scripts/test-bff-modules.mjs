@@ -35,7 +35,7 @@ const services = new Proxy({}, {
 });
 const handlers = createRouteHandlers(services);
 
-assert.equal(Object.keys(handlers).length, 84, 'route registry lost or duplicated operational endpoints');
+assert.equal(Object.keys(handlers).length, 85, 'route registry lost or duplicated operational endpoints');
 for (const route of [
   'GET /api/app/init',
   'POST /api/pdv-terminal/challenge',
@@ -45,6 +45,7 @@ for (const route of [
   'POST /api/delivery/checkout',
   'POST /api/catalog/product/delete',
   'POST /api/catalog/product/cmv',
+  'POST /api/inventory/reconcile-pending',
 ]) {
   assert.equal(typeof handlers[route], 'function', `missing handler ${route}`);
 }
@@ -128,6 +129,7 @@ await assert.rejects(
 allowedPermissions.add('managePDVUsers');
 await enforce('POST /api/sellers', {}, { id: 'admin' });
 assert.equal(PERMISSION_BY_ROUTE['POST /api/sellers'], 'managePDVUsers');
+assert.equal(PERMISSION_BY_ROUTE['POST /api/inventory/reconcile-pending'], 'manageSettings');
 
 publicTableTokenValid = true;
 await enforce('POST /api/service-requests', {

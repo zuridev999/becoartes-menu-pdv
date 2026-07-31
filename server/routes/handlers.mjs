@@ -118,4 +118,8 @@ export const createRouteHandlers = (services) => ({
   'POST /api/sellers/create-os-user': async (body) => services.createOsUserAsSeller(body),
   'POST /api/inventory/sync-beverages': async () => services.syncBeveragesFromInventory(),
   'POST /api/inventory/sync-open-orders': async () => services.syncOpenOrdersInventory(),
+  'POST /api/inventory/reconcile-pending': async (body) => services.reconcilePendingInventoryEvents({
+    limit: Number(body.limit || 10),
+    includeAttention: Boolean(body.includeAttention),
+  }),
 });
