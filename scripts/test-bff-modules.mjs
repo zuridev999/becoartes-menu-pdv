@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   createAccessGuards,
   createRouteAccessEnforcer,
@@ -6,6 +7,18 @@ import {
 } from '../server/routes/access-policy.mjs';
 import { createRouteHandlers } from '../server/routes/handlers.mjs';
 import { hashPin, normalizeStoredPin, verifyPin } from '../server/auth/pins.mjs';
+
+const bffSource = readFileSync(new URL('../server/bff.mjs', import.meta.url), 'utf8');
+assert.match(bffSource, /typ:\s*'delivery_order_tracking'/, 'Delivery orders must use signed tracking credentials.');
+assert.match(bffSource, /customerOwnsOrder/, 'Delivery customer sessions must be checked against order ownership.');
+assert.match(bffSource, /Acesso ao pedido não autorizado/, 'Delivery order reads must fail closed.');
+assert.match(bffSource, /typ:\s*'customer_tab_access'/, 'Customer tabs must use signed possession credentials.');
+assert.match(bffSource, /verifyCustomerTabAccessToken/, 'Customer tab reads and payments must verify possession.');
+assert.doesNotMatch(
+  bffSource,
+  /const recoverCustomerTab = async \(\{ cpf \}\)/,
+  'CPF alone must not recover a customer tab.',
+);
 
 const hashedPin = hashPin('9071');
 assert.match(hashedPin, /^scrypt:[a-f0-9]{32}:[a-f0-9]{64}$/);
@@ -51,6 +64,36 @@ assert.deepEqual(calls.at(-1), {
     session: initContext.session,
     operationAccessAllowed: true,
   }],
+});
+
+const deliveryContext = {
+  url: new URL('http://localhost/api/delivery/order?orderId=delivery_owner_test'),
+  req: {
+    headers: {
+      'x-beco-delivery-session': 'customer-session',
+      'x-beco-delivery-tracking': 'tracking-token',
+    },
+  },
+  session: { id: 'operator' },
+};
+await handlers['GET /api/delivery/order']({}, deliveryContext);
+assert.deepEqual(calls.at(-1), {
+  name: 'getDeliveryOrder',
+  args: [{
+    orderId: 'delivery_owner_test',
+    session: deliveryContext.session,
+    customerSessionToken: 'customer-session',
+    trackingToken: 'tracking-token',
+  }],
+});
+
+await handlers['POST /api/customer-tabs/payment-link'](
+  { tabId: 'tab-owner-test', accessToken: 'tab-token' },
+  deliveryContext,
+);
+assert.deepEqual(calls.at(-1), {
+  name: 'createCustomerTabPaymentLink',
+  args: [{ tabId: 'tab-owner-test', accessToken: 'tab-token' }, deliveryContext.session],
 });
 
 const allowedPermissions = new Set();
@@ -104,6 +147,8 @@ console.log(JSON.stringify({
   covered: [
     'route_registry_contract',
     'route_context_forwarding',
+    'delivery_order_owner_credentials',
+    'customer_tab_owner_credentials',
     'public_customer_routes',
     'permission_by_route',
     'public_table_token',

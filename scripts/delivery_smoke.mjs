@@ -85,7 +85,9 @@ if (checkout.order.paymentStatus !== 'paid_mock') fail('Unexpected payment statu
 if (checkout.order.kitchenStatus !== 'sent_mock') fail('Unexpected kitchen status', checkout.order);
 if (checkout.order.deliveryStatus !== 'requested_mock') fail('Unexpected delivery status', checkout.order);
 
-const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`, {
+  headers: { 'X-Beco-Delivery-Tracking': checkout.trackingToken },
+});
 if (status.order.id !== orderId) fail('Status endpoint returned different order', status.order);
 if (status.order.items.length !== 1) fail('Status endpoint did not return order items', status.order);
 

@@ -42,7 +42,7 @@ const seedCatalog = async () => {
 await requestJson('/api/app/init?view=delivery');
 await seedCatalog();
 
-await requestJson('/api/delivery/checkout', {
+const checkout = await requestJson('/api/delivery/checkout', {
   method: 'POST',
   body: JSON.stringify({
     orderId,
@@ -98,8 +98,20 @@ if (order.paymentStatus !== 'paid_mock') fail('Expected paid_mock status in admi
 if (order.kitchenStatus !== 'sent_mock') fail('Expected kitchen sent_mock status in admin list', order);
 if (order.deliveryStatus !== 'requested_mock') fail('Expected delivery requested_mock status in admin list', order);
 
-const publicStatus = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+const unauthorizedPublicStatus = await fetch(`${baseUrl}/api/delivery/order?orderId=${encodeURIComponent(orderId)}`, {
+  headers: { 'content-type': 'application/json' },
+});
+if (unauthorizedPublicStatus.status !== 403) {
+  fail('Expected delivery status to require an owner session or tracking token', { status: unauthorizedPublicStatus.status });
+}
+
+const publicStatus = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`, {
+  headers: { 'X-Beco-Delivery-Tracking': checkout.trackingToken },
+});
 if (publicStatus.order.events) fail('Public delivery order status must not expose internal events', publicStatus.order);
+if (publicStatus.order.customer?.email || publicStatus.order.customer?.phone || publicStatus.order.customer?.taxId) {
+  fail('Public delivery status exposed unnecessary customer data', publicStatus.order.customer);
+}
 
 const unauthorizedDetail = await fetch(`${baseUrl}/api/delivery/order-detail?orderId=${encodeURIComponent(orderId)}`, {
   headers: { 'content-type': 'application/json' },

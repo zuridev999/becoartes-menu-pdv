@@ -111,7 +111,9 @@ if (unauthorized.response.status !== 401 || unauthorized.payload?.ok !== false) 
   });
 }
 
-const stillPending = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+const stillPending = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`, {
+  headers: { 'X-Beco-Delivery-Tracking': checkout.trackingToken },
+});
 if (stillPending.order.paymentStatus !== 'missing_credentials') {
   fail('Unauthorized webhook changed payment status', stillPending.order);
 }
@@ -128,7 +130,9 @@ const authorized = await requestJson('/api/delivery/webhooks/pagbank', {
 if (authorized.status !== 'paid') fail('Expected authorized webhook status paid', authorized);
 if (!authorized.dispatch?.dispatched) fail('Expected authorized webhook dispatch to run', authorized);
 
-const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`, {
+  headers: { 'X-Beco-Delivery-Tracking': checkout.trackingToken },
+});
 if (status.order.paymentStatus !== 'paid') fail('Expected paymentStatus paid after authorized webhook', status.order);
 if (status.order.kitchenStatus !== 'sent_mock') fail('Expected kitchenStatus sent_mock after authorized webhook', status.order);
 if (status.order.deliveryStatus !== 'requested_mock') fail('Expected deliveryStatus requested_mock after authorized webhook', status.order);

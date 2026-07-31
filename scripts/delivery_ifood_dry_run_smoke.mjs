@@ -84,7 +84,9 @@ if (checkout.order.kitchenStatus !== 'sent_mock') fail('Expected kitchenStatus s
 if (checkout.order.deliveryStatus !== 'missing_coordinates') fail('Expected deliveryStatus missing_coordinates', checkout.order);
 if (checkout.order.deliveryProvider !== 'ifood') fail('Expected deliveryProvider ifood', checkout.order);
 
-const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`, {
+  headers: { 'X-Beco-Delivery-Tracking': checkout.trackingToken },
+});
 if (status.order.deliveryStatus !== 'missing_coordinates') fail('Expected persisted missing_coordinates status', status.order);
 
 console.log(JSON.stringify({

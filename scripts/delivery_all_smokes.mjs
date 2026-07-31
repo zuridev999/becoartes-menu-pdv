@@ -19,6 +19,7 @@ const scenarios = [
       'smoke:delivery:pickup',
       'smoke:delivery:club',
       'smoke:delivery:customer-auth-fail-closed',
+      'smoke:customer-tab:authorization',
       'smoke:delivery:coupon',
       'smoke:delivery:orders-admin',
       'smoke:delivery:postal-code',
