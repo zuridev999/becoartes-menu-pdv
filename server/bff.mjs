@@ -12,6 +12,12 @@ import { createStaticHandler } from './static-files.mjs';
 import { businessDateKey, resolveBusinessTimeZone } from './business-time.mjs';
 import { getPdvPublishBlockers } from './catalog/product-lifecycle.mjs';
 import {
+  centsToMoney,
+  formatMoneyBRL,
+  moneyToCents,
+  normalizePaymentsFingerprint,
+} from './domain/money.mjs';
+import {
   hashPin,
   isReservedSellerPin,
   normalizeStoredPin,
@@ -992,38 +998,6 @@ const toUnixSeconds = (value) => {
   const parsedDate = Date.parse(String(value));
   return Number.isFinite(parsedDate) ? Math.floor(parsedDate / 1000) : 0;
 };
-
-const moneyToCents = (value, field = 'money') => {
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new Error(`Campo numérico inválido: ${field}`);
-    return Math.round(value * 100);
-  }
-
-  const raw = String(value ?? '').trim();
-  if (!raw) return 0;
-  const normalized = raw
-    .replace(/[^\d,.-]/g, '')
-    .replace(/\.(?=\d{3}(?:\D|$))/g, '')
-    .replace(',', '.');
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed)) throw new Error(`Campo numérico inválido: ${field}`);
-  return Math.round(parsed * 100);
-};
-
-const centsToMoney = (cents) => Math.round(Number(cents || 0)) / 100;
-
-const formatMoneyBRL = (value) => (
-  centsToMoney(moneyToCents(value)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-);
-
-const normalizePaymentsFingerprint = (payments = []) => JSON.stringify(
-  (Array.isArray(payments) ? payments : [])
-    .map((payment) => ({
-      method: String(payment?.method || ''),
-      amount: moneyToCents(payment?.amount || 0, 'payment.amount'),
-    }))
-    .sort((a, b) => a.method.localeCompare(b.method) || a.amount - b.amount),
-);
 
 const findRecentDuplicateClosedBill = async (data, windowSeconds = 30) => {
   const tableId = String(data.tableId || '');

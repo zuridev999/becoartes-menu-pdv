@@ -8,8 +8,28 @@ import {
 import { createRouteHandlers } from '../server/routes/handlers.mjs';
 import { hashPin, normalizeStoredPin, verifyPin } from '../server/auth/pins.mjs';
 import { getPdvPublishBlockers } from '../server/catalog/product-lifecycle.mjs';
+import {
+  centsToMoney,
+  formatMoneyBRL,
+  moneyToCents,
+  normalizePaymentsFingerprint,
+} from '../server/domain/money.mjs';
 
 const bffSource = readFileSync(new URL('../server/bff.mjs', import.meta.url), 'utf8');
+assert.equal(moneyToCents('R$ 1.234,56'), 123456);
+assert.equal(moneyToCents(19.999), 2000);
+assert.equal(centsToMoney(123456), 1234.56);
+assert.equal(formatMoneyBRL(12.5), 'R$ 12,50');
+assert.equal(
+  normalizePaymentsFingerprint([
+    { method: 'pix', amount: 10 },
+    { method: 'credit', amount: '20,00' },
+  ]),
+  normalizePaymentsFingerprint([
+    { method: 'credit', amount: 20 },
+    { method: 'pix', amount: '10,00' },
+  ]),
+);
 assert.match(bffSource, /typ:\s*'delivery_order_tracking'/, 'Delivery orders must use signed tracking credentials.');
 assert.match(bffSource, /customerOwnsOrder/, 'Delivery customer sessions must be checked against order ownership.');
 assert.match(bffSource, /Acesso ao pedido não autorizado/, 'Delivery order reads must fail closed.');
