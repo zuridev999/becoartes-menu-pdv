@@ -3,6 +3,8 @@ import { createPdvTerminalIdentity, signPdvTerminalChallenge } from './pdv-termi
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
 const TABLE_ACCESS_TOKEN_STORAGE_KEY = 'beco_public_table_access';
+const CUSTOMER_TAB_ACCESS_TOKEN_STORAGE_KEY = 'beco_customer_tab_access_token';
+const DELIVERY_TRACKING_TOKEN_STORAGE_KEY = 'beco_delivery_tracking_tokens';
 
 type ApiEnvelope<T> = {
   ok: boolean;
@@ -150,6 +152,41 @@ const getAuthHeaders = () => {
   return token ? { 'X-Beco-Session': token } : {};
 };
 
+const getCustomerTabAccessToken = () => {
+  if (typeof localStorage === 'undefined') return '';
+  return localStorage.getItem(CUSTOMER_TAB_ACCESS_TOKEN_STORAGE_KEY) || '';
+};
+
+const saveCustomerTabAccessToken = (token?: string | null) => {
+  if (typeof localStorage === 'undefined') return;
+  if (token) localStorage.setItem(CUSTOMER_TAB_ACCESS_TOKEN_STORAGE_KEY, token);
+  else localStorage.removeItem(CUSTOMER_TAB_ACCESS_TOKEN_STORAGE_KEY);
+};
+
+const getDeliveryTrackingToken = (orderId: string) => {
+  if (typeof localStorage === 'undefined') return '';
+  try {
+    const tokens = JSON.parse(localStorage.getItem(DELIVERY_TRACKING_TOKEN_STORAGE_KEY) || '{}') as Record<string, string>;
+    return tokens[orderId] || '';
+  } catch {
+    return '';
+  }
+};
+
+const saveDeliveryTrackingToken = (orderId: string, token?: string | null) => {
+  if (typeof localStorage === 'undefined' || !orderId || !token) return;
+  let tokens: Record<string, string> = {};
+  try {
+    tokens = JSON.parse(localStorage.getItem(DELIVERY_TRACKING_TOKEN_STORAGE_KEY) || '{}') as Record<string, string>;
+  } catch {
+    tokens = {};
+  }
+  localStorage.setItem(DELIVERY_TRACKING_TOKEN_STORAGE_KEY, JSON.stringify({
+    ...tokens,
+    [orderId]: token,
+  }));
+};
+
 const getCurrentView = () => {
   if (typeof window === 'undefined') return 'pdv';
   const path = window.location.pathname.replace(/^\/+/, '');
@@ -229,13 +266,25 @@ const hydrateCustomerTab = (tab: CustomerTab) => ({
 
 export const CustomerTabApi = {
   open(input: { customerName: string; phone: string; cpf: string }) {
-    return postJson<{ tab: CustomerTab }>('/api/customer-tabs/open', { ...input, origin: 'qr' })
-      .then(result => ({ tab: hydrateCustomerTab(result.tab) }));
+    return postJson<{ tab: CustomerTab; accessToken: string }>('/api/customer-tabs/open', {
+      ...input,
+      accessToken: getCustomerTabAccessToken(),
+      origin: 'qr',
+    }).then(result => {
+      saveCustomerTabAccessToken(result.accessToken);
+      return { tab: hydrateCustomerTab(result.tab) };
+    });
   },
 
   recover(cpf: string) {
-    return postJson<{ tab: CustomerTab }>('/api/customer-tabs/recover', { cpf, origin: 'qr' })
-      .then(result => ({ tab: hydrateCustomerTab(result.tab) }));
+    return postJson<{ tab: CustomerTab; accessToken: string }>('/api/customer-tabs/recover', {
+      cpf,
+      accessToken: getCustomerTabAccessToken(),
+      origin: 'qr',
+    }).then(result => {
+      saveCustomerTabAccessToken(result.accessToken);
+      return { tab: hydrateCustomerTab(result.tab) };
+    });
   },
 
   lookup(query: string) {
@@ -260,7 +309,10 @@ export const CustomerTabApi = {
       status: string;
       amount: number;
       provider: string;
-    }>('/api/customer-tabs/payment-link', input);
+    }>('/api/customer-tabs/payment-link', {
+      ...input,
+      accessToken: getCustomerTabAccessToken(),
+    });
   },
 };
 
@@ -562,6 +614,7 @@ export const DeliveryApi = {
 
   checkout(input: DeliveryCheckoutInput) {
     return postJson<{
+      trackingToken: string;
       order: {
         id: string;
         orderId: string;
@@ -586,7 +639,10 @@ export const DeliveryApi = {
         deliveryExternalId: string | null;
         club?: DeliveryClubSummary;
       };
-    }>('/api/delivery/checkout', input);
+    }>('/api/delivery/checkout', input).then(result => {
+      saveDeliveryTrackingToken(result.order.orderId, result.trackingToken);
+      return result;
+    });
   },
 
   checkoutMock(input: DeliveryCheckoutInput) {
@@ -594,7 +650,18 @@ export const DeliveryApi = {
   },
 
   getOrder(orderId: string) {
-    return getJson<{ order: DeliveryOrderSummary }>(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+    const customerSession = typeof localStorage === 'undefined'
+      ? ''
+      : localStorage.getItem('beco_delivery_customer_session') || '';
+    return getJson<{ order: DeliveryOrderSummary }>(
+      `/api/delivery/order?orderId=${encodeURIComponent(orderId)}`,
+      {
+        headers: {
+          ...(customerSession ? { 'X-Beco-Delivery-Session': customerSession } : {}),
+          ...(getDeliveryTrackingToken(orderId) ? { 'X-Beco-Delivery-Tracking': getDeliveryTrackingToken(orderId) } : {}),
+        },
+      },
+    );
   },
 
   getOrderDetail(orderId: string) {
