@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.0 - 2026-07-31
+
+- Reconcilia o estoque de vendas concluídas e bloqueia produtos sem ciclo operacional completo.
+- Centraliza contratos de banco e dinheiro, mantendo telas críticas úteis durante falhas parciais de sincronização.
+- Compartilha o rate limit entre instâncias e reforça a cobertura de autorização e idempotência.
+
 ## 1.6.2 - 2026-07-30
 
 - Exige propriedade e tokens assinados para pedidos, rastreamento e comandas do Delivery.
