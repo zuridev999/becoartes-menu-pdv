@@ -787,6 +787,15 @@ export const AppApi = {
     });
   },
 
+  async authorizePdvTerminal(adminPin: string) {
+    const identity = await createPdvTerminalIdentity();
+    return postJson<{ authorized: boolean; terminalId: string }>('/api/pdv-terminal/authorize', {
+      adminPin,
+      terminalId: identity.id,
+      terminalPublicKey: identity.publicKeyJwk,
+    });
+  },
+
   validateTabletSetupPin(pin: string) {
     return postJson<{ valid: boolean; sessionToken?: string | null; seller?: any | null }>('/api/tablet/setup-login', { pin });
   },

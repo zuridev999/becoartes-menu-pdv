@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash, createHmac, createPublicKey, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual, verify as verifySignature } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@libsql/client';
 import { sendJson } from './http.mjs';
 import { runSchemaMigrations } from './migrations/schema.mjs';
@@ -24,6 +24,7 @@ import {
   safeSecretEqual,
   verifyPin,
 } from './auth/pins.mjs';
+import { createPdvTerminalServices, isMobilePdvUserAgent } from './auth/pdv-terminal.mjs';
 import { createDistributedRateLimiter } from './security/distributed-rate-limit.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -960,7 +961,7 @@ const throwIpRestricted = (req) => {
 };
 
 const isPinRateLimited = async (req, pathname) => {
-  if (!['/api/auth/login', '/api/tablet/setup-login', '/api/cash/open', '/api/cash/close'].includes(pathname)) return false;
+  if (!['/api/auth/login', '/api/tablet/setup-login', '/api/pdv-terminal/authorize', '/api/cash/open', '/api/cash/close'].includes(pathname)) return false;
 
   const bucket = await distributedRateLimiter.consume({
     scope: 'pin',
@@ -2588,112 +2589,13 @@ const createProductionStationSession = () => {
   };
 };
 
-const isValidPdvTerminalId = (value) => /^[0-9a-f-]{36}$/i.test(String(value || ''));
-
-const hasValidPdvTerminalPublicKey = (value) => Boolean(
-  value
-  && typeof value === 'object'
-  && value.kty === 'EC'
-  && value.crv === 'P-256'
-  && typeof value.x === 'string'
-  && typeof value.y === 'string'
-);
-
-const issuePdvTerminalChallenge = async ({ terminalId }) => {
-  const safeTerminalId = String(terminalId || '').trim();
-  if (!isValidPdvTerminalId(safeTerminalId)) return { valid: false, challenge: null };
-
-  const result = await db.execute({
-    sql: "SELECT id FROM pdv_terminals WHERE id = ? AND status = 'active' LIMIT 1",
-    args: [safeTerminalId],
-  });
-  if (!result.rows[0]) return { valid: false, challenge: null };
-
-  return {
-    valid: true,
-    challenge: createSignedToken({
-      type: 'pdv_terminal_challenge',
-      terminalId: safeTerminalId,
-      nonce: randomUUID(),
-      exp: Date.now() + PDV_TERMINAL_CHALLENGE_TTL_MS,
-    }),
-  };
-};
-
-const verifyPdvTerminalProof = async ({ terminalId, terminalChallenge, terminalSignature, ip = '' }) => {
-  const safeTerminalId = String(terminalId || '').trim();
-  if (!isValidPdvTerminalId(safeTerminalId) || !terminalChallenge || !terminalSignature) {
-    return { valid: false, terminalId: '' };
-  }
-
-  try {
-    const payload = decodeSignedToken(terminalChallenge);
-    if (
-      !payload
-      || payload.type !== 'pdv_terminal_challenge'
-      || payload.terminalId !== safeTerminalId
-      || !Number.isFinite(Number(payload.exp))
-      || Number(payload.exp) < Date.now()
-    ) {
-      return { valid: false, terminalId: '' };
-    }
-
-    const result = await db.execute({
-      sql: "SELECT public_key_jwk FROM pdv_terminals WHERE id = ? AND status = 'active' LIMIT 1",
-      args: [safeTerminalId],
-    });
-    const publicKeyJwk = JSON.parse(String(result.rows[0]?.public_key_jwk || ''));
-    if (!hasValidPdvTerminalPublicKey(publicKeyJwk)) return { valid: false, terminalId: '' };
-
-    const key = createPublicKey({ key: publicKeyJwk, format: 'jwk' });
-    const valid = verifySignature(
-      'sha256',
-      Buffer.from(String(terminalChallenge)),
-      { key, dsaEncoding: 'ieee-p1363' },
-      Buffer.from(String(terminalSignature), 'base64url'),
-    );
-    if (!valid) return { valid: false, terminalId: '' };
-
-    await db.execute({
-      sql: 'UPDATE pdv_terminals SET last_seen_at = ?, last_ip = ? WHERE id = ?',
-      args: [new Date().toISOString(), String(ip || '').slice(0, 80), safeTerminalId],
-    });
-    return { valid: true, terminalId: safeTerminalId };
-  } catch {
-    return { valid: false, terminalId: '' };
-  }
-};
-
-const bootstrapPdvTerminal = async ({ terminalId, terminalPublicKey, ip = '', deviceInfo = '' }) => {
-  const safeTerminalId = String(terminalId || '').trim();
-  if (!isValidPdvTerminalId(safeTerminalId) || !hasValidPdvTerminalPublicKey(terminalPublicKey)) return '';
-
-  const current = await db.execute({
-    sql: 'SELECT id FROM pdv_terminals WHERE id = ? LIMIT 1',
-    args: [safeTerminalId],
-  });
-  if (current.rows[0]) return '';
-
-  const now = new Date().toISOString();
-  await db.execute({
-    sql: 'INSERT INTO pdv_terminals (id, public_key_jwk, status, device_info, first_seen_at, last_seen_at, last_ip) VALUES (?, ?, \'active\', ?, ?, ?, ?)',
-    args: [
-      safeTerminalId,
-      JSON.stringify(terminalPublicKey),
-      String(deviceInfo || '').slice(0, 1000),
-      now,
-      now,
-      String(ip || '').slice(0, 80),
-    ],
-  });
-  return safeTerminalId;
-};
-
 const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, terminalChallenge, terminalSignature }, { operationAccessAllowed = true, req = null } = {}) => {
   await ensureDatabaseReady();
   await ensureDefaultSellersReady();
   const safePin = String(pin || '');
   const safeView = normalizeOperationalView(view);
+  const deviceInfo = String(req?.headers?.['user-agent'] || '');
+  const isMobilePdvRequest = safeView === 'pdv' && isMobilePdvUserAgent(deviceInfo);
 
   const activeSellers = (await getAuthSellers({ includePins: true, view: safeView }))
     .filter((seller) => seller.status === 'active' && (!sellerId || seller.id === sellerId));
@@ -2724,6 +2626,7 @@ const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, termi
       terminalChallenge,
       terminalSignature,
       ip: req ? getClientIp(req) : '',
+      deviceInfo,
     });
     const trustedTerminalId = terminalProof.valid
       ? terminalProof.terminalId
@@ -2732,11 +2635,11 @@ const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, termi
           terminalId,
           terminalPublicKey,
           ip: req ? getClientIp(req) : '',
-          deviceInfo: req?.headers?.['user-agent'] || '',
+          deviceInfo,
         })
         : '';
 
-    if (!operationAccessAllowed && !terminalProof.valid && !canAccessOutsideOperationIp(safeSeller)) {
+    if ((isMobilePdvRequest && !isAdminSession(safeSeller)) || (!operationAccessAllowed && !terminalProof.valid && !canAccessOutsideOperationIp(safeSeller))) {
       blockedNonAdminMatch = true;
       if (req && isOperationIpRestricted()) {
         console.warn(`Blocked non-admin login outside operation IP: ${getClientIp(req)} seller=${seller.id}`);
@@ -6676,6 +6579,22 @@ const addAuditLog = async ({ id, action, details = '', tableNumber = null, origi
   };
 };
 
+const {
+  authorizePdvTerminal,
+  bootstrapPdvTerminal,
+  issuePdvTerminalChallenge,
+  verifyPdvTerminalProof,
+} = createPdvTerminalServices({
+  db,
+  challengeTtlMs: PDV_TERMINAL_CHALLENGE_TTL_MS,
+  createSignedToken,
+  decodeSignedToken,
+  ensureDatabaseReady,
+  getClientIp,
+  isAdminBypassPin,
+  addAuditLog,
+});
+
 const normalizeCouponCode = (code = '') => String(code)
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -9111,6 +9030,7 @@ const enforceRouteAccess = createRouteAccessEnforcer({
 const handlers = createRouteHandlers({
   activateOsUserAsSeller,
   addAuditLog,
+  authorizePdvTerminal,
   addSeller,
   cancelTablePayment,
   clearServiceRequest,

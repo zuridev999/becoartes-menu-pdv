@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.2 - 2026-08-02
+
+- Permite ao superadministrador autorizar o computador do PDV mesmo depois de uma troca do IP público da loja.
+- Mantém o PIN individual de cada operador e registra a autorização do terminal na auditoria.
+- Impede que celulares sejam cadastrados ou reutilizados como terminais confiáveis do PDV.
+
 ## 1.7.1 - 2026-08-02
 
 - Vincula eventos de abertura, tentativa e fechamento ao autor, à empresa e ao caixa corretos.

@@ -31,6 +31,7 @@ const env = {
 
 const bffSource = readFileSync(join(process.cwd(), 'server/bff.mjs'), 'utf8');
 const pinSource = readFileSync(join(process.cwd(), 'server/auth/pins.mjs'), 'utf8');
+const terminalSource = readFileSync(join(process.cwd(), 'server/auth/pdv-terminal.mjs'), 'utf8');
 const routerSource = readFileSync(join(process.cwd(), 'server/routes/api-router.mjs'), 'utf8');
 const httpSource = readFileSync(join(process.cwd(), 'server/http.mjs'), 'utf8');
 assert.doesNotMatch(bffSource, /goomer|abrahao/i, 'PDV runtime must not retain the retired Goomer integration');
@@ -50,6 +51,8 @@ assert.match(bffSource, /requestedOpeningCents !== requiredOpeningCents/, 'cash 
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
 assert.match(bffSource, /pdv_terminals/, 'PDV terminals must persist a public-key identity');
 assert.match(bffSource, /terminalProof\.valid/, 'trusted terminals must require a verified challenge signature');
+assert.match(terminalSource, /const authorizePdvTerminal =/, 'superadmin must be able to authorize the operation computer after an IP change');
+assert.match(terminalSource, /isMobilePdvUserAgent/, 'mobile browsers must not become trusted PDV terminals');
 assert.match(bffSource, /Cadastro ja existente\. Entre ou recupere seu acesso\./, 'delivery registration must reject an existing identity');
 assert.doesNotMatch(
   bffSource,
@@ -336,13 +339,26 @@ try {
   const terminalId = '80120304-0506-4708-9010-111213141516';
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const terminalPublicKey = publicKey.export({ format: 'jwk' });
-  const bootstrapTerminal = await post('/api/auth/login', {
-    pin: '1122',
-    view: 'pdv',
+  const deniedTerminalAuthorization = await post('/api/pdv-terminal/authorize', {
+    adminPin: '0000',
     terminalId,
     terminalPublicKey,
-  }, '', 200, AUTHORIZED_IP_HEADERS);
-  assert.ok(bootstrapTerminal.data.sessionToken, 'rede autorizada deve vincular o computador ao primeiro login válido');
+  }, '', 403, REMOTE_IP_HEADERS);
+  assert.equal(deniedTerminalAuthorization.ok, false, 'PIN comum não pode autorizar um computador');
+
+  const deniedMobileAuthorization = await post('/api/pdv-terminal/authorize', {
+    adminPin: '0719',
+    terminalId,
+    terminalPublicKey,
+  }, '', 403, { ...REMOTE_IP_HEADERS, 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) Mobile/15E148' });
+  assert.equal(deniedMobileAuthorization.ok, false, 'celular não pode ser autorizado como terminal do PDV');
+
+  const authorizedTerminal = await post('/api/pdv-terminal/authorize', {
+    adminPin: '0719',
+    terminalId,
+    terminalPublicKey,
+  }, '', 200, REMOTE_IP_HEADERS);
+  assert.equal(authorizedTerminal.data.authorized, true, 'superadmin deve autorizar o computador mesmo após troca de IP');
 
   const terminalChallenge = await post('/api/pdv-terminal/challenge', { terminalId }, '', 200, REMOTE_IP_HEADERS);
   assert.equal(terminalChallenge.data.valid, true, 'terminal vinculado deve receber desafio assinado');
@@ -558,6 +574,8 @@ try {
       'permissao_negada',
       'pin_hash_forjado_bloqueado',
       'pin_scrypt_migracao_transparente',
+      'autorizacao_administrativa_do_computador',
+      'bloqueio_de_terminal_movel',
       'terminal_pdv_confiavel_sem_dependencia_de_ip',
       'pin_admin_emergencia_fecha_caixa',
       'fechamento_bloqueado_notifica_superadmin',

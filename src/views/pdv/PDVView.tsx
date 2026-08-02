@@ -18,6 +18,7 @@ import { ActionDialog } from '../../components/common/ActionDialog';
 import { OrderItemDetails } from '../../components/common/OrderItemDetails';
 import { ReceiptPrintModal } from '../../components/common/ReceiptPrintModal';
 import { ProductModal } from '../../components/modals/ProductModal';
+import { PdvTerminalLogin } from '../../components/auth/PdvTerminalLogin';
 import { PdvTicker } from '../../components/pdv/PdvTicker';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
@@ -167,7 +168,6 @@ export function PDVView() {
     serviceRequests,
     resolveService,
     clearServiceRequest,
-    login,
     syncData,
     updateTableStatus,
     cashState,
@@ -178,9 +178,7 @@ export function PDVView() {
   } = useStore();
   const kitchenOrders = useStore((state) => state.kitchenOrders);
 
-  const [pin, setPin] = useState('');
   const [isSendingOrder, setIsSendingOrder] = useState(false);
-  const [loginError, setLoginError] = useState('');
   const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
   const [showCheckout, setShowCheckout] = useState(false);
   const [showProductMenu, setShowProductMenu] = useState(false);
@@ -354,67 +352,8 @@ export function PDVView() {
     setCashValue(formatMoneyInput(String(cents)));
   }, [cashDialog, cashState?.hasPreviousClosing, cashState?.lastClosingBalance]);
 
-  const handleLogin = async () => {
-    if (pin.length !== 4) {
-      setLoginError('Digite os 4 dígitos do seu PIN.');
-      return;
-    }
-    const success = await login(pin);
-    if (!success) {
-      setLoginError('PIN incorreto ou sem acesso neste terminal.');
-      setPin('');
-      setTimeout(() => setLoginError(''), 3000);
-    }
-  };
-
   if (!currentSeller) {
-    return (
-      <div className="min-h-screen bg-transparent flex items-center justify-center font-['Outfit'] p-4 sm:p-8">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-card w-full max-w-md p-6 sm:p-12 border-white/10 shadow-2xl flex flex-col items-center"
-        >
-          <div className="w-20 h-20 bg-primary/10 rounded-[2rem] flex items-center justify-center text-primary mb-8">
-            <Users size={40} />
-          </div>
-          <h2 className="text-3xl font-black italic tracking-tighter mb-2">IDENTIFICAÇÃO <span className="text-primary">PDV</span></h2>
-          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-12 text-center leading-relaxed">Insira seu PIN de acesso para entrar no terminal operacional</p>
-
-          <div className="w-full space-y-6">
-            <div className="relative">
-              <input 
-                type="password"
-                name="pin"
-                aria-label="PIN de acesso do PDV"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                autoComplete="off"
-                value={pin}
-                onChange={(e) => {
-                  setPin(e.target.value.replace(/\D/g, '').slice(0, 4));
-                  if (loginError) setLoginError('');
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                className={`w-full glass py-8 px-6 rounded-3xl text-4xl text-center font-black tracking-[0.5em] outline-none border-2 transition-all ${loginError ? 'border-rose-500 animate-shake text-rose-500' : 'border-white/10 focus:border-primary'}`}
-                placeholder="****"
-                maxLength={4}
-                autoFocus
-              />
-              {loginError && <p role="alert" className="mt-4 text-center text-[10px] font-black uppercase text-rose-500">{loginError}</p>}
-            </div>
-
-            <button 
-              type="button"
-              onClick={handleLogin}
-              className="w-full btn-beco btn-beco-purple py-6 text-xl font-black rounded-2xl shadow-2xl shadow-primary/20"
-            >
-              ENTRAR
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
+    return <PdvTerminalLogin />;
   }
 
   // Derived state

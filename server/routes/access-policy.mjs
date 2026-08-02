@@ -4,6 +4,7 @@ const PUBLIC_BOOTSTRAP_ROUTES = new Set([
   'POST /api/auth/login',
   'POST /api/tablet/setup-login',
   'POST /api/pdv-terminal/challenge',
+  'POST /api/pdv-terminal/authorize',
   'POST /api/table-access-token',
 ]);
 
