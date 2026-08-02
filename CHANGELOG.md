@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.1 - 2026-08-02
+
+- Vincula eventos de abertura, tentativa e fechamento ao autor, à empresa e ao caixa corretos.
+- Mantém o contrato de auditoria compatível com o histórico detalhado do Controle do Dinheiro no OS.
+
 ## 1.7.0 - 2026-07-31
 
 - Reconcilia o estoque de vendas concluídas e bloqueia produtos sem ciclo operacional completo.

@@ -206,6 +206,10 @@ try {
     confirmationPin: '0719',
   }, admin.sessionToken);
   assert.equal(openedCash.ok, true, 'admin bypass explicitly enabled must open cash');
+  const openedAudit = await getScalar("SELECT author_id, json_extract(details, '$.empresaId') AS empresa_id, json_extract(details, '$.cashId') AS cash_id FROM audit_logs WHERE action = 'cash_opened' LIMIT 1");
+  assert.ok(openedAudit.author_id, 'cash audit must persist the responsible user id');
+  assert.equal(openedAudit.empresa_id, 'empresa_test', 'cash audit must persist tenant scope');
+  assert.ok(openedAudit.cash_id, 'cash audit must persist the related cash id');
 
   const deniedDifference = await post('/api/cash/close', {
     closingBalance: 100,
@@ -216,6 +220,11 @@ try {
   assert.match(deniedDifference.error || '', /diferente do esperado/);
   const blockedAudit = await getScalar("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'cash_close_blocked'");
   assert.equal(Number(blockedAudit.count), 1, 'blocked cash closing must be persisted once');
+  const blockedAuditScope = await getScalar("SELECT author_id, json_extract(details, '$.empresaId') AS empresa_id, json_extract(details, '$.cashId') AS cash_id, json_extract(details, '$.difference') AS difference FROM audit_logs WHERE action = 'cash_close_blocked' LIMIT 1");
+  assert.ok(blockedAuditScope.author_id, 'blocked cash attempt must persist the responsible user id');
+  assert.equal(blockedAuditScope.empresa_id, 'empresa_test', 'blocked cash attempt must persist tenant scope');
+  assert.equal(blockedAuditScope.cash_id, openedAudit.cash_id, 'blocked attempt must reference the open cash');
+  assert.equal(Number(blockedAuditScope.difference), -8.35, 'blocked attempt must persist the signed difference');
   const blockedNotification = await getScalar("SELECT COUNT(*) AS count FROM notificacoes WHERE titulo = 'Fechamento de caixa bloqueado'");
   assert.equal(Number(blockedNotification.count), 1, 'blocked cash closing must notify the OS');
 

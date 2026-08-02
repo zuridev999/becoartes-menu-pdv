@@ -6655,12 +6655,12 @@ const regenerateTableQr = async ({ tableNumber, adminPin }, session = null) => {
   return { tableNumber: safeTableNumber, revision, qrCodes: nextQrCodes };
 };
 
-const addAuditLog = async ({ id, action, details = '', tableNumber = null, origin = 'pdv', authorName = 'Sistema', timestamp }) => {
+const addAuditLog = async ({ id, action, details = '', tableNumber = null, origin = 'pdv', authorId = null, authorName = 'Sistema', timestamp }) => {
   const logId = id || createId();
   const createdAt = timestamp || new Date().toISOString();
   await db.execute({
-    sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    args: [logId, requireString(action, 'action'), details, tableNumber, origin, authorName, createdAt],
+    sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    args: [logId, requireString(action, 'action'), details, tableNumber, origin, authorId, authorName, createdAt],
   });
   return {
     log: {
@@ -6669,6 +6669,7 @@ const addAuditLog = async ({ id, action, details = '', tableNumber = null, origi
       details,
       table_number: tableNumber,
       origin,
+      author_id: authorId,
       author_name: authorName,
       timestamp: createdAt,
     },
@@ -7342,6 +7343,7 @@ const openCash = async ({ openingBalance, notes, confirmationPin }) => {
   }
   const normalizedOpeningBalance = centsToMoney(requiredOpeningCents);
   const responsibleId = await resolveCashResponsibleId(effectiveSession);
+  const cashId = existingCash?.id || createId();
 
   if (existingCash) {
     await db.execute({
@@ -7377,7 +7379,7 @@ const openCash = async ({ openingBalance, notes, confirmationPin }) => {
         VALUES (?, ?, ?, ?, ?, ?, 'Aberto', ?, ?)
       `,
       args: [
-        createId(),
+        cashId,
         OS_EMPRESA_ID,
         businessDate,
         normalizedOpeningBalance,
@@ -7393,6 +7395,9 @@ const openCash = async ({ openingBalance, notes, confirmationPin }) => {
     id: createId(),
     action: 'cash_opened',
     details: JSON.stringify({
+      empresaId: OS_EMPRESA_ID,
+      cashId,
+      cashDate: businessDate,
       openingBalance: normalizedOpeningBalance,
       reopened: Boolean(existingCash),
       adminOverride: cashActor.override,
@@ -7485,6 +7490,7 @@ const safeRecordCashCloseEvent = async ({
   ].join(':');
   const details = {
     dedupeKey,
+    empresaId: OS_EMPRESA_ID,
     cashId: cash?.id || null,
     cashDate: cash?.data || null,
     closingBalance: closingCents === null ? null : centsToMoney(closingCents),
@@ -7528,6 +7534,7 @@ const safeRecordCashCloseEvent = async ({
       action,
       details: JSON.stringify(details),
       origin: 'pdv',
+      authorId: actorId || null,
       authorName: actorName,
       timestamp: new Date().toISOString(),
     });
@@ -7628,6 +7635,9 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }, requestSess
     id: createId(),
     action: 'cash_closed',
     details: JSON.stringify({
+      empresaId: OS_EMPRESA_ID,
+      cashId: cash.id,
+      cashDate: cash.data,
       closingBalance: centsToMoney(closingCents),
       expected: centsToMoney(closeSummary.expectedCents),
       difference: centsToMoney(closingCents - closeSummary.expectedCents),
