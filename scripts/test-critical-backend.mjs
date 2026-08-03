@@ -294,9 +294,23 @@ try {
   const ensuredCmv = await post('/api/catalog/product/cmv', { productId: 'prod_test' }, admin.sessionToken);
   assert.equal(ensuredCmv.ok, true);
   assert.equal(ensuredCmv.data.created, true, 'produto sem CMV deve criar uma ficha técnica vazia vinculada');
-  const cmvRow = await getScalar("SELECT pdv_product_id, custo_total FROM fichas_tecnicas WHERE pdv_product_id = 'prod_test'");
+  const cmvRow = await getScalar("SELECT id, pdv_product_id, custo_total FROM fichas_tecnicas WHERE pdv_product_id = 'prod_test'");
   assert.equal(cmvRow.pdv_product_id, 'prod_test');
   assert.equal(Number(cmvRow.custo_total || 0), 0, 'CMV criado deve permanecer zerado até receber ingredientes');
+  await testDb.batch([
+    {
+      sql: "UPDATE fichas_tecnicas SET nome_prato = ? WHERE id = ?",
+      args: ['Caipirinha Limão', cmvRow.id],
+    },
+    {
+      sql: `
+        INSERT OR REPLACE INTO ficha_ingredientes
+          (id, ficha_tecnica_id, estoque_produto_id, nome_ingrediente, quantidade_usada, quantidade_estoque_baixa, unidade_medida, unidade_estoque_baixa)
+        VALUES (?, ?, ?, ?, 1, 1, 'UN', 'UN')
+      `,
+      args: ['ingredient_caipirinha_test', cmvRow.id, 'stock_test', 'Cachaça de teste'],
+    },
+  ], 'write');
 
   const denied = await post('/api/sellers', {
     seller: {
@@ -402,6 +416,8 @@ try {
   assert.equal(order.data.request.items[0].notes, 'Pouco açúcar');
   assert.equal(order.data.inventorySyncError, null, `inventory sync failed: ${order.data.inventorySyncError}`);
   assert.equal(order.data.inventorySync?.movementCount, 1, `inventory sync result: ${JSON.stringify(order.data.inventorySync)}`);
+  const caipirinhaMovements = await getScalar("SELECT COUNT(*) AS count FROM estoque_movimentacoes WHERE order_item_id = 'item_partial' AND source_item_kind = 'recipe' AND source_item_id = 'ingredient_caipirinha_test'");
+  assert.equal(Number(caipirinhaMovements.count), 1, 'um adicional chamado Limão não pode aplicar novamente a ficha da Caipirinha Limão');
 
   const orderSnapshot = await fetchJson('/api/app/init?view=pdv', { token: admin.sessionToken });
   const orderRequest = orderSnapshot.data.serviceRequests.find((request) => request.id === 'new_order_order_partial');

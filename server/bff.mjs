@@ -3033,7 +3033,7 @@ const setInventoryEventState = async ({
   return Number(result.rowsAffected || 0) > 0;
 };
 
-const findStockProduct = async (empresaId, candidates) => {
+const findStockProduct = async (empresaId, candidates, { allowNameFallback = true } = {}) => {
   const ids = [candidates.id].filter(Boolean);
   for (const id of ids) {
     const byId = await db.execute({
@@ -3043,7 +3043,7 @@ const findStockProduct = async (empresaId, candidates) => {
     if (byId.rows[0]) return byId.rows[0];
   }
 
-  if (!candidates.name?.trim()) return null;
+  if (!allowNameFallback || !candidates.name?.trim()) return null;
 
   const byName = await db.execute({
     sql: "SELECT * FROM estoque_produtos WHERE empresa_id = ? AND ativo = 1 AND lower(trim(nome)) = lower(trim(?)) LIMIT 1",
@@ -3097,7 +3097,7 @@ const isLooseRecipeNameMatch = (soldName, fichaName) => {
   return soldTokens.length > 0 && soldTokens.every((token) => fichaTokens.has(token));
 };
 
-const findFichaTecnicaForSoldItem = async (empresaId, candidates) => {
+const findFichaTecnicaForSoldItem = async (empresaId, candidates, { allowNameFallback = true } = {}) => {
   const soldId = String(candidates.id || '').trim();
   const soldName = String(candidates.name || '').trim();
   if (!soldId && !soldName) return null;
@@ -3129,6 +3129,7 @@ const findFichaTecnicaForSoldItem = async (empresaId, candidates) => {
       if (!soldServing && serving === 'p2') return 5;
       return 0;
     }
+    if (!allowNameFallback) return 999;
     if (soldNorm && nameNorms.includes(soldNorm)) return 10;
     if (soldName && names.some((name) => isLooseRecipeNameMatch(soldName, name))) {
       if (soldServing && serving && soldServing !== serving) return 999;
@@ -3200,6 +3201,7 @@ const appendInventoryPlansForSoldItem = async ({
   reason,
   sourceKind,
   reportUnmatched = true,
+  allowNameFallback = true,
 }) => {
   const requestedQuantity = toStockAmount(quantity);
   if (requestedQuantity <= 0) return;
@@ -3209,7 +3211,11 @@ const appendInventoryPlansForSoldItem = async ({
     return;
   }
 
-  const ficha = await findFichaTecnicaForSoldItem(empresaId, { id: productId, name });
+  const ficha = await findFichaTecnicaForSoldItem(
+    empresaId,
+    { id: productId, name },
+    { allowNameFallback },
+  );
   if (ficha) {
     const ingredientRows = await getFichaIngredientStockRows(String(ficha.id));
     if (ingredientRows.length === 0) {
@@ -3252,7 +3258,7 @@ const appendInventoryPlansForSoldItem = async ({
   const directStock = await findStockProduct(empresaId, {
     id: remoteStockId || productId,
     name,
-  });
+  }, { allowNameFallback });
 
   if (!directStock) {
     if (reportUnmatched) result.unmatched.push(`${quantity}x ${name}`);
@@ -3317,6 +3323,10 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
         reason,
         sourceKind: 'modifier',
         reportUnmatched: Number(modifier.price || 0) > 0,
+        // A modifier has no stock or recipe link yet. Resolve it only by an
+        // explicit ID, never by display name: "Limão" must not match and apply
+        // the "Caipirinha Limão" recipe for a second time.
+        allowNameFallback: false,
       });
     }
   }
@@ -8097,6 +8107,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
               reason: baseReason,
               sourceKind: 'modifier',
               reportUnmatched: Number(modifier.price || 0) > 0,
+              allowNameFallback: false,
             });
           }
         }

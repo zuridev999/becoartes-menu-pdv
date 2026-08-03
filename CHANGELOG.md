@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.3 - 2026-08-03
+
+- Impede que adicionais sem vínculo explícito encontrem fichas técnicas por nome e baixem ingredientes em duplicidade.
+- Mantém a baixa por CMV do item principal e preserva adicionais que possuam um ID de estoque ou de ficha vinculado.
+
 ## 1.7.2 - 2026-08-02
 
 - Permite ao superadministrador autorizar o computador do PDV mesmo depois de uma troca do IP público da loja.
