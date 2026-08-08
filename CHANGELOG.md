@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.4 - 2026-08-07
+
+- Integra a base remota atual do PDV com a proteção contra baixa por nome quando há vínculo por ID.
+- Converte unidades compatíveis antes da baixa de estoque e bloqueia misturas de dimensões sem conversão.
+- Mantém as melhorias de segurança, Delivery, terminais confiáveis e prevenção de baixa duplicada.
+
 ## 1.7.3 - 2026-08-03
 
 - Impede que adicionais sem vínculo explícito encontrem fichas técnicas por nome e baixem ingredientes em duplicidade.
