@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 const isTransientServiceError = (error) => /fetch failed|timeout|timed out|etimedout|econnreset|socket hang up/i.test(String(error?.message || error || ''));
 const isExpectedClientError = (error) => (
   error instanceof SyntaxError
-  || /inv[aá]lid|obrigat[oó]ri|n[aã]o encontrad|indispon[ií]vel|bloquead|j[aá] est[aá]|selecione|informe|digite|sem permiss[aã]o|acesso negado/i.test(String(error?.message || ''))
+  || /inv[aá]lid|obrigat[oó]ri|n[aã]o encontrad|indispon[ií]vel|bloquead|j[aá] est[aá]|selecione|informe|digite|sem permiss[aã]o|acesso negado|saldo em aberto/i.test(String(error?.message || ''))
 );
 
 export const createApiHandler = ({
@@ -49,7 +49,7 @@ export const createApiHandler = ({
       return;
     }
 
-    if (isPinRateLimited(req, url.pathname)) {
+    if (await isPinRateLimited(req, url.pathname)) {
       sendJson(res, 429, { ok: false, error: 'Muitas tentativas de PIN. Aguarde 1 minuto.' });
       return;
     }

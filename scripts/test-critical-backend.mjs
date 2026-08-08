@@ -26,12 +26,15 @@ const env = {
   CASH_SANDBOX_MODE: '1',
   HEALTH_DB_TIMEOUT_MS: '1000',
   ALLOWED_OPERATION_IPS: '10.0.0.5',
+  INVENTORY_RECONCILIATION_DISABLED: '1',
 };
 
 const bffSource = readFileSync(join(process.cwd(), 'server/bff.mjs'), 'utf8');
 const pinSource = readFileSync(join(process.cwd(), 'server/auth/pins.mjs'), 'utf8');
+const terminalSource = readFileSync(join(process.cwd(), 'server/auth/pdv-terminal.mjs'), 'utf8');
 const routerSource = readFileSync(join(process.cwd(), 'server/routes/api-router.mjs'), 'utf8');
 const httpSource = readFileSync(join(process.cwd(), 'server/http.mjs'), 'utf8');
+assert.doesNotMatch(bffSource, /goomer|abrahao/i, 'PDV runtime must not retain the retired Goomer integration');
 assert.match(bffSource, /ADMIN_BYPASS_ENABLED && ADMIN_BYPASS_PIN/, 'admin bypass must be disabled unless explicitly enabled');
 assert.match(pinSource, /scrypt:\$\{salt\}:\$\{hash\}/, 'seller PINs must be stored with scrypt and a per-record salt');
 assert.match(pinSource, /export const verifyPin =/, 'seller PIN login must support verified transparent migration');
@@ -48,6 +51,28 @@ assert.match(bffSource, /requestedOpeningCents !== requiredOpeningCents/, 'cash 
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
 assert.match(bffSource, /pdv_terminals/, 'PDV terminals must persist a public-key identity');
 assert.match(bffSource, /terminalProof\.valid/, 'trusted terminals must require a verified challenge signature');
+assert.match(terminalSource, /const authorizePdvTerminal =/, 'superadmin must be able to authorize the operation computer after an IP change');
+assert.match(terminalSource, /isMobilePdvUserAgent/, 'mobile browsers must not become trusted PDV terminals');
+assert.match(bffSource, /Cadastro ja existente\. Entre ou recupere seu acesso\./, 'delivery registration must reject an existing identity');
+assert.doesNotMatch(
+  bffSource,
+  /ON CONFLICT\(id\) DO UPDATE SET[\s\S]{0,1200}password_hash = excluded\.password_hash/,
+  'delivery registration must never overwrite an existing password hash',
+);
+assert.match(bffSource, /Confirme seu cadastro antes de entrar\./, 'delivery login must reject unverified accounts');
+assert.match(bffSource, /Delivery customer-code providers cannot use mock mode in production/, 'mock customer-code providers must fail production startup');
+assert.doesNotMatch(bffSource, /codePreview/, 'delivery verification/reset codes must not be persisted as previews');
+assert.doesNotMatch(
+  bffSource,
+  /return\s*\{\s*sent:\s*true[\s\S]{0,100}\bcode\s*:/,
+  'forgot-password must never return the reset code',
+);
+assert.match(bffSource, /message:\s*'\[REDACTED\]'/, 'sensitive notification payloads must be redacted before persistence');
+assert.match(bffSource, /DELETE FROM delivery_customer_sessions WHERE customer_id = \?/, 'password reset must revoke previous customer sessions');
+assert.match(bffSource, /assertDeliveryAuthRateLimit/, 'delivery account recovery must enforce narrow rate limits');
+assert.match(bffSource, /DELIVERY_CUSTOMER_CODE_SECRET/, 'delivery codes must use an independent runtime secret');
+assert.match(bffSource, /createHmac\('sha256', DELIVERY_CUSTOMER_CODE_SECRET\)/, 'delivery codes must use a keyed HMAC at rest');
+assert.match(bffSource, /remainingDelay = 300/, 'forgot-password responses must reduce account-enumeration timing differences');
 assert.match(routerSource, /transient \? 503/, 'transient backend failures must return 503');
 assert.match(routerSource, /isTrustedTerminalSession/, 'trusted terminal sessions must keep operating after an IP change');
 assert.match(routerSource, /bff_request_error/, 'backend errors must include structured route context');
@@ -184,6 +209,10 @@ try {
     confirmationPin: '0719',
   }, admin.sessionToken);
   assert.equal(openedCash.ok, true, 'admin bypass explicitly enabled must open cash');
+  const openedAudit = await getScalar("SELECT author_id, json_extract(details, '$.empresaId') AS empresa_id, json_extract(details, '$.cashId') AS cash_id FROM audit_logs WHERE action = 'cash_opened' LIMIT 1");
+  assert.ok(openedAudit.author_id, 'cash audit must persist the responsible user id');
+  assert.equal(openedAudit.empresa_id, 'empresa_test', 'cash audit must persist tenant scope');
+  assert.ok(openedAudit.cash_id, 'cash audit must persist the related cash id');
 
   const deniedDifference = await post('/api/cash/close', {
     closingBalance: 100,
@@ -194,6 +223,11 @@ try {
   assert.match(deniedDifference.error || '', /diferente do esperado/);
   const blockedAudit = await getScalar("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'cash_close_blocked'");
   assert.equal(Number(blockedAudit.count), 1, 'blocked cash closing must be persisted once');
+  const blockedAuditScope = await getScalar("SELECT author_id, json_extract(details, '$.empresaId') AS empresa_id, json_extract(details, '$.cashId') AS cash_id, json_extract(details, '$.difference') AS difference FROM audit_logs WHERE action = 'cash_close_blocked' LIMIT 1");
+  assert.ok(blockedAuditScope.author_id, 'blocked cash attempt must persist the responsible user id');
+  assert.equal(blockedAuditScope.empresa_id, 'empresa_test', 'blocked cash attempt must persist tenant scope');
+  assert.equal(blockedAuditScope.cash_id, openedAudit.cash_id, 'blocked attempt must reference the open cash');
+  assert.equal(Number(blockedAuditScope.difference), -8.35, 'blocked attempt must persist the signed difference');
   const blockedNotification = await getScalar("SELECT COUNT(*) AS count FROM notificacoes WHERE titulo = 'Fechamento de caixa bloqueado'");
   assert.equal(Number(blockedNotification.count), 1, 'blocked cash closing must notify the OS');
 
@@ -319,13 +353,26 @@ try {
   const terminalId = '80120304-0506-4708-9010-111213141516';
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const terminalPublicKey = publicKey.export({ format: 'jwk' });
-  const bootstrapTerminal = await post('/api/auth/login', {
-    pin: '1122',
-    view: 'pdv',
+  const deniedTerminalAuthorization = await post('/api/pdv-terminal/authorize', {
+    adminPin: '0000',
     terminalId,
     terminalPublicKey,
-  }, '', 200, AUTHORIZED_IP_HEADERS);
-  assert.ok(bootstrapTerminal.data.sessionToken, 'rede autorizada deve vincular o computador ao primeiro login válido');
+  }, '', 403, REMOTE_IP_HEADERS);
+  assert.equal(deniedTerminalAuthorization.ok, false, 'PIN comum não pode autorizar um computador');
+
+  const deniedMobileAuthorization = await post('/api/pdv-terminal/authorize', {
+    adminPin: '0719',
+    terminalId,
+    terminalPublicKey,
+  }, '', 403, { ...REMOTE_IP_HEADERS, 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) Mobile/15E148' });
+  assert.equal(deniedMobileAuthorization.ok, false, 'celular não pode ser autorizado como terminal do PDV');
+
+  const authorizedTerminal = await post('/api/pdv-terminal/authorize', {
+    adminPin: '0719',
+    terminalId,
+    terminalPublicKey,
+  }, '', 200, REMOTE_IP_HEADERS);
+  assert.equal(authorizedTerminal.data.authorized, true, 'superadmin deve autorizar o computador mesmo após troca de IP');
 
   const terminalChallenge = await post('/api/pdv-terminal/challenge', { terminalId }, '', 200, REMOTE_IP_HEADERS);
   assert.equal(terminalChallenge.data.valid, true, 'terminal vinculado deve receber desafio assinado');
@@ -484,6 +531,55 @@ try {
   const movementCount = await getScalar("SELECT COUNT(*) AS count FROM estoque_movimentacoes WHERE produto_id = 'stock_test' AND origem = 'pdv' AND order_item_id = 'item_partial' AND tipo_movimentacao = 'saida'");
   assert.equal(Number(movementCount.count), 1, 'stock movement should remain idempotent for the sold item');
 
+  const dbForReconciliation = createClient({ url: dbUrl });
+  await dbForReconciliation.execute({
+    sql: `
+      INSERT INTO menu
+        (id, name, description, price, category_id, image, visible, delivery_visible, remote_stock_id, cost, sort_order)
+      VALUES ('prod_pending_inventory', 'Produto sem vínculo', '', 10, 'cat_test', '', 1, 1, NULL, 0, 1)
+    `,
+  });
+  const counterSale = await post('/api/counter-sales/close', {
+    orderId: 'counter_pending_inventory',
+    subtotal: 10,
+    total: 10,
+    payments: [{ method: 'credit', amount: 10 }],
+    items: [{
+      id: 'item_pending_inventory',
+      productId: 'prod_pending_inventory',
+      name: 'Produto sem vínculo',
+      price: 10,
+      quantity: 1,
+      selectedModifiers: [],
+      notes: '',
+    }],
+  }, admin.sessionToken);
+  assert.equal(counterSale.ok, true);
+  assert.ok(counterSale.data.closedBill?.id, 'financial counter sale must complete even when stock needs reconciliation');
+  const pendingEvent = await getScalar("SELECT status FROM integration_events WHERE id = 'pdv_counter_counter_pending_inventory'");
+  assert.equal(pendingEvent.status, 'inventory_attention', 'unmatched stock must remain visibly reconcilable');
+
+  await dbForReconciliation.execute({
+    sql: "UPDATE menu SET remote_stock_id = 'stock_test' WHERE id = 'prod_pending_inventory'",
+  });
+  const reconciled = await post('/api/inventory/reconcile-pending', {
+    limit: 10,
+    includeAttention: true,
+  }, admin.sessionToken);
+  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.data.completed >= 1, true, 'manual reconciliation must complete after linkage is fixed');
+  const reconciledEvent = await getScalar("SELECT status FROM integration_events WHERE id = 'pdv_counter_counter_pending_inventory'");
+  assert.equal(reconciledEvent.status, 'completed');
+  const afterReconciliationStock = await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'");
+  assert.equal(Number(afterReconciliationStock.quantidade_atual), 8, 'reconciliation must apply the missing stock movement once');
+
+  await post('/api/inventory/reconcile-pending', {
+    limit: 10,
+    includeAttention: true,
+  }, admin.sessionToken);
+  const afterReconciliationRetryStock = await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'");
+  assert.equal(Number(afterReconciliationRetryStock.quantidade_atual), 8, 'reconciliation retry must remain idempotent');
+
   const appliedPayment = await getScalar("SELECT status, applied_closed_bill_id FROM table_payments WHERE id = 'partial_1'");
   assert.equal(appliedPayment.status, 'applied', 'partial payment should be applied after close');
   assert.ok(appliedPayment.applied_closed_bill_id, 'partial payment should point to closed bill');
@@ -494,6 +590,8 @@ try {
       'permissao_negada',
       'pin_hash_forjado_bloqueado',
       'pin_scrypt_migracao_transparente',
+      'autorizacao_administrativa_do_computador',
+      'bloqueio_de_terminal_movel',
       'terminal_pdv_confiavel_sem_dependencia_de_ip',
       'pin_admin_emergencia_fecha_caixa',
       'fechamento_bloqueado_notifica_superadmin',
@@ -508,6 +606,8 @@ try {
       'cmv_vinculado_ao_produto_pdv',
       'cancelamento_estorna_estoque',
       'retry_cancelamento_idempotente',
+      'venda_balcao_com_estoque_pendente',
+      'reconciliacao_estoque_idempotente',
     ],
   }, null, 2));
 } catch (error) {

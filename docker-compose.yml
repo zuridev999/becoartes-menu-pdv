@@ -9,7 +9,7 @@ services:
         VITE_OS_TENANT_SLUG: ${VITE_OS_TENANT_SLUG:-becoartes}
         VITE_OS_SYSTEM_USER_ID: ${VITE_OS_SYSTEM_USER_ID:-}
         VITE_OS_ALLOWED_ORIGINS: ${VITE_OS_ALLOWED_ORIGINS:-https://os.becoartes.com}
-        VITE_APP_VERSION: ${VITE_APP_VERSION:-v1.6.3}
+        VITE_APP_VERSION: ${VITE_APP_VERSION:-v1.7.0}
         VITE_APP_COMMIT: ${VITE_APP_COMMIT:-}
         VITE_APP_BUILD_DATE: ${VITE_APP_BUILD_DATE:-}
         VITE_BUSINESS_TIME_ZONE: ${VITE_BUSINESS_TIME_ZONE:-America/Sao_Paulo}
@@ -23,7 +23,10 @@ services:
       ADMIN_BYPASS_PIN: ${ADMIN_BYPASS_PIN:-}
       ADMIN_BYPASS_ENABLED: ${ADMIN_BYPASS_ENABLED:-false}
       ALLOWED_OPERATION_IPS: ${ALLOWED_OPERATION_IPS:-}
+      NODE_ENV: ${NODE_ENV:-production}
       BFF_SESSION_SECRET: ${BFF_SESSION_SECRET:?BFF_SESSION_SECRET is required}
+      DELIVERY_CUSTOMER_CODE_SECRET: ${DELIVERY_CUSTOMER_CODE_SECRET:?DELIVERY_CUSTOMER_CODE_SECRET is required}
+      DELIVERY_CUSTOMER_SESSION_TTL_DAYS: ${DELIVERY_CUSTOMER_SESSION_TTL_DAYS:-14}
       OS_CHECKLIST_ALERTS_URL: ${OS_CHECKLIST_ALERTS_URL:-https://os.becoartes.com/api/operational/checklist-alerts?slug=becoartes}
       OS_OPERATIONAL_ALERTS_TOKEN: ${OS_OPERATIONAL_ALERTS_TOKEN:-}
       MAX_JSON_BODY_BYTES: ${MAX_JSON_BODY_BYTES:-2097152}
@@ -36,7 +39,7 @@ services:
       VITE_OS_EMPRESA_ID: ${VITE_OS_EMPRESA_ID:-}
       VITE_OS_TENANT_SLUG: ${VITE_OS_TENANT_SLUG:-becoartes}
       VITE_OS_SYSTEM_USER_ID: ${VITE_OS_SYSTEM_USER_ID:-}
-      VITE_APP_VERSION: ${VITE_APP_VERSION:-v1.6.3}
+      VITE_APP_VERSION: ${VITE_APP_VERSION:-v1.7.0}
       VITE_APP_COMMIT: ${VITE_APP_COMMIT:-}
       APP_BUILD_DATE: ${APP_BUILD_DATE:-${VITE_APP_BUILD_DATE:-}}
       VITE_APP_BUILD_DATE: ${VITE_APP_BUILD_DATE:-}
@@ -71,6 +74,19 @@ services:
       PORT: 80
     container_name: becoartes-operational
     restart: always
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:80/api/health')
+          .then((response) => { if (!response.ok) process.exit(1) })
+          .catch(() => process.exit(1))
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
     ports:
       - "127.0.0.1:8080:80"
     networks:

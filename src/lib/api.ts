@@ -1,8 +1,11 @@
 import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
 import { createPdvTerminalIdentity, signPdvTerminalChallenge } from './pdv-terminal-browser';
+import { createRequestTimeoutSignal } from './request-timeout';
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
 const TABLE_ACCESS_TOKEN_STORAGE_KEY = 'beco_public_table_access';
+const CUSTOMER_TAB_ACCESS_TOKEN_STORAGE_KEY = 'beco_customer_tab_access_token';
+const DELIVERY_TRACKING_TOKEN_STORAGE_KEY = 'beco_delivery_tracking_tokens';
 
 type ApiEnvelope<T> = {
   ok: boolean;
@@ -20,6 +23,7 @@ type CloseBillResult = {
     insufficient: string[];
     critical: string[];
   } | null;
+  inventorySyncError?: string | null;
 };
 
 type SendToKitchenResult = {
@@ -150,6 +154,41 @@ const getAuthHeaders = () => {
   return token ? { 'X-Beco-Session': token } : {};
 };
 
+const getCustomerTabAccessToken = () => {
+  if (typeof localStorage === 'undefined') return '';
+  return localStorage.getItem(CUSTOMER_TAB_ACCESS_TOKEN_STORAGE_KEY) || '';
+};
+
+const saveCustomerTabAccessToken = (token?: string | null) => {
+  if (typeof localStorage === 'undefined') return;
+  if (token) localStorage.setItem(CUSTOMER_TAB_ACCESS_TOKEN_STORAGE_KEY, token);
+  else localStorage.removeItem(CUSTOMER_TAB_ACCESS_TOKEN_STORAGE_KEY);
+};
+
+const getDeliveryTrackingToken = (orderId: string) => {
+  if (typeof localStorage === 'undefined') return '';
+  try {
+    const tokens = JSON.parse(localStorage.getItem(DELIVERY_TRACKING_TOKEN_STORAGE_KEY) || '{}') as Record<string, string>;
+    return tokens[orderId] || '';
+  } catch {
+    return '';
+  }
+};
+
+const saveDeliveryTrackingToken = (orderId: string, token?: string | null) => {
+  if (typeof localStorage === 'undefined' || !orderId || !token) return;
+  let tokens: Record<string, string> = {};
+  try {
+    tokens = JSON.parse(localStorage.getItem(DELIVERY_TRACKING_TOKEN_STORAGE_KEY) || '{}') as Record<string, string>;
+  } catch {
+    tokens = {};
+  }
+  localStorage.setItem(DELIVERY_TRACKING_TOKEN_STORAGE_KEY, JSON.stringify({
+    ...tokens,
+    [orderId]: token,
+  }));
+};
+
 const getCurrentView = () => {
   if (typeof window === 'undefined') return 'pdv';
   const path = window.location.pathname.replace(/^\/+/, '');
@@ -166,10 +205,11 @@ const getCurrentView = () => {
   return 'pdv';
 };
 
-const postJson = async <T>(path: string, body: unknown): Promise<T> => {
+const postJson = async <T>(path: string, body: unknown, options: RequestInit = {}): Promise<T> => {
   const response = await fetch(path, {
+    ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...(options.headers || {}) },
     body: JSON.stringify(body),
   });
 
@@ -229,13 +269,25 @@ const hydrateCustomerTab = (tab: CustomerTab) => ({
 
 export const CustomerTabApi = {
   open(input: { customerName: string; phone: string; cpf: string }) {
-    return postJson<{ tab: CustomerTab }>('/api/customer-tabs/open', { ...input, origin: 'qr' })
-      .then(result => ({ tab: hydrateCustomerTab(result.tab) }));
+    return postJson<{ tab: CustomerTab; accessToken: string }>('/api/customer-tabs/open', {
+      ...input,
+      accessToken: getCustomerTabAccessToken(),
+      origin: 'qr',
+    }).then(result => {
+      saveCustomerTabAccessToken(result.accessToken);
+      return { tab: hydrateCustomerTab(result.tab) };
+    });
   },
 
   recover(cpf: string) {
-    return postJson<{ tab: CustomerTab }>('/api/customer-tabs/recover', { cpf, origin: 'qr' })
-      .then(result => ({ tab: hydrateCustomerTab(result.tab) }));
+    return postJson<{ tab: CustomerTab; accessToken: string }>('/api/customer-tabs/recover', {
+      cpf,
+      accessToken: getCustomerTabAccessToken(),
+      origin: 'qr',
+    }).then(result => {
+      saveCustomerTabAccessToken(result.accessToken);
+      return { tab: hydrateCustomerTab(result.tab) };
+    });
   },
 
   lookup(query: string) {
@@ -260,7 +312,10 @@ export const CustomerTabApi = {
       status: string;
       amount: number;
       provider: string;
-    }>('/api/customer-tabs/payment-link', input);
+    }>('/api/customer-tabs/payment-link', {
+      ...input,
+      accessToken: getCustomerTabAccessToken(),
+    });
   },
 };
 
@@ -562,6 +617,7 @@ export const DeliveryApi = {
 
   checkout(input: DeliveryCheckoutInput) {
     return postJson<{
+      trackingToken: string;
       order: {
         id: string;
         orderId: string;
@@ -586,7 +642,10 @@ export const DeliveryApi = {
         deliveryExternalId: string | null;
         club?: DeliveryClubSummary;
       };
-    }>('/api/delivery/checkout', input);
+    }>('/api/delivery/checkout', input).then(result => {
+      saveDeliveryTrackingToken(result.order.orderId, result.trackingToken);
+      return result;
+    });
   },
 
   checkoutMock(input: DeliveryCheckoutInput) {
@@ -594,7 +653,18 @@ export const DeliveryApi = {
   },
 
   getOrder(orderId: string) {
-    return getJson<{ order: DeliveryOrderSummary }>(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+    const customerSession = typeof localStorage === 'undefined'
+      ? ''
+      : localStorage.getItem('beco_delivery_customer_session') || '';
+    return getJson<{ order: DeliveryOrderSummary }>(
+      `/api/delivery/order?orderId=${encodeURIComponent(orderId)}`,
+      {
+        headers: {
+          ...(customerSession ? { 'X-Beco-Delivery-Session': customerSession } : {}),
+          ...(getDeliveryTrackingToken(orderId) ? { 'X-Beco-Delivery-Tracking': getDeliveryTrackingToken(orderId) } : {}),
+        },
+      },
+    );
   },
 
   getOrderDetail(orderId: string) {
@@ -606,7 +676,7 @@ export const DeliveryApi = {
   },
 
   registerCustomer(input: { customer: DeliveryCheckoutInput['customer']; password: string }) {
-    return postJson<{ customer: DeliveryCustomerAccount; session: DeliveryCustomerSession; verification?: { expiresAt: string; code?: string } }>('/api/delivery/customer/register', input);
+    return postJson<{ customer: DeliveryCustomerAccount; verification?: { expiresAt: string } }>('/api/delivery/customer/register', input);
   },
 
   loginCustomer(input: { identity: string; password: string }) {
@@ -614,15 +684,15 @@ export const DeliveryApi = {
   },
 
   forgotPassword(identity: string) {
-    return postJson<{ sent: boolean; expiresAt?: string; code?: string }>('/api/delivery/customer/forgot-password', { identity });
+    return postJson<{ sent: boolean }>('/api/delivery/customer/forgot-password', { identity });
   },
 
   resetPassword(input: { identity: string; code: string; password: string }) {
     return postJson<{ customer: DeliveryCustomerAccount; session: DeliveryCustomerSession }>('/api/delivery/customer/reset-password', input);
   },
 
-  verifyCustomerCode(input: { token: string; code: string }) {
-    return postJson<{ customer: DeliveryCustomerAccount }>('/api/delivery/customer/verify-code', input);
+  verifyCustomerCode(input: { identity: string; code: string }) {
+    return postJson<{ customer: DeliveryCustomerAccount; session: DeliveryCustomerSession }>('/api/delivery/customer/verify-code', input);
   },
 
   getCustomerSession(token: string) {
@@ -672,11 +742,18 @@ const hydrateSnapshot = (snapshot: any) => ({
 
 export const AppApi = {
   init() {
-    return getJson<any>(`/api/app/init?view=${encodeURIComponent(getCurrentView())}`).then(hydrateSnapshot);
+    return getJson<any>(
+      `/api/app/init?view=${encodeURIComponent(getCurrentView())}`,
+      { signal: createRequestTimeoutSignal() },
+    ).then(hydrateSnapshot);
   },
 
   sync(includeCatalog: boolean) {
-    return postJson<any>('/api/app/sync', { includeCatalog, view: getCurrentView() }).then(hydrateSnapshot);
+    return postJson<any>(
+      '/api/app/sync',
+      { includeCatalog, view: getCurrentView() },
+      { signal: createRequestTimeoutSignal() },
+    ).then(hydrateSnapshot);
   },
 
   getChecklistAlerts<T>() {
@@ -707,6 +784,15 @@ export const AppApi = {
       sellerId,
       view: getCurrentView(),
       ...terminalPayload,
+    });
+  },
+
+  async authorizePdvTerminal(adminPin: string) {
+    const identity = await createPdvTerminalIdentity();
+    return postJson<{ authorized: boolean; terminalId: string }>('/api/pdv-terminal/authorize', {
+      adminPin,
+      terminalId: identity.id,
+      terminalPublicKey: identity.publicKeyJwk,
     });
   },
 

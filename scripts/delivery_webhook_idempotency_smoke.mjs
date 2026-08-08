@@ -89,7 +89,9 @@ const first = await requestJson('/api/delivery/webhooks/pagbank', {
 if (first.status !== 'paid') fail('Expected first webhook paid', first);
 if (!first.dispatch?.dispatched) fail('Expected first webhook dispatch', first);
 
-const firstStatus = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+const firstStatus = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`, {
+  headers: { 'X-Beco-Delivery-Tracking': checkout.trackingToken },
+});
 const firstExternalId = firstStatus.order.deliveryExternalId;
 if (!firstExternalId) fail('Expected first delivery external id', firstStatus.order);
 
@@ -102,7 +104,9 @@ if (second.status !== 'paid') fail('Expected second webhook paid', second);
 if (second.dispatch?.dispatched !== false) fail('Expected second webhook to skip dispatch', second);
 if (second.dispatch?.reason !== 'already_dispatched') fail('Expected already_dispatched reason', second);
 
-const secondStatus = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+const secondStatus = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`, {
+  headers: { 'X-Beco-Delivery-Tracking': checkout.trackingToken },
+});
 if (secondStatus.order.deliveryExternalId !== firstExternalId) {
   fail('Duplicate webhook changed deliveryExternalId', { firstExternalId, order: secondStatus.order });
 }

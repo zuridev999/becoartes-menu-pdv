@@ -81,10 +81,14 @@ const webhook = await requestJson('/api/delivery/webhooks/pagbank', {
 if (webhook.status !== 'paid') fail('Expected signed PagBank webhook to mark order paid', webhook);
 if (!webhook.dispatch?.dispatched) fail('Expected signed PagBank webhook to dispatch order', webhook);
 
-const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
-if (status.order.paymentStatus !== 'paid') fail('Expected order paymentStatus paid', status.order);
-if (status.order.kitchenStatus !== 'sent_mock') fail('Expected order kitchenStatus sent_mock', status.order);
-if (status.order.deliveryStatus !== 'requested_mock') fail('Expected order deliveryStatus requested_mock', status.order);
+const statusRes = await db.execute({
+  sql: "SELECT payment_status, kitchen_status, delivery_status FROM delivery_orders WHERE id = ? LIMIT 1",
+  args: [orderId],
+});
+const status = statusRes.rows[0];
+if (status?.payment_status !== 'paid') fail('Expected order paymentStatus paid', status);
+if (status?.kitchen_status !== 'sent_mock') fail('Expected order kitchenStatus sent_mock', status);
+if (status?.delivery_status !== 'requested_mock') fail('Expected order deliveryStatus requested_mock', status);
 
 console.log(JSON.stringify({
   ok: true,
@@ -92,7 +96,7 @@ console.log(JSON.stringify({
   dbUrl,
   orderId,
   signatureAccepted: true,
-  paymentStatus: status.order.paymentStatus,
-  kitchenStatus: status.order.kitchenStatus,
-  deliveryStatus: status.order.deliveryStatus,
+  paymentStatus: status.payment_status,
+  kitchenStatus: status.kitchen_status,
+  deliveryStatus: status.delivery_status,
 }, null, 2));

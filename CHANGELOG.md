@@ -1,17 +1,37 @@
 # Changelog
 
-## 1.6.3 - 2026-08-07
+## 1.7.3 - 2026-08-03
 
-- Release de identidade de produto e bloqueio de fallback por nome.
+- Impede que adicionais sem vínculo explícito encontrem fichas técnicas por nome e baixem ingredientes em duplicidade.
+- Mantém a baixa por CMV do item principal e preserva adicionais que possuam um ID de estoque ou de ficha vinculado.
 
-## 1.6.2 - 2026-08-07
+## 1.7.2 - 2026-08-02
 
-- Release de identidade de produto e bloqueio de fallback por nome.
+- Permite ao superadministrador autorizar o computador do PDV mesmo depois de uma troca do IP público da loja.
+- Mantém o PIN individual de cada operador e registra a autorização do terminal na auditoria.
+- Impede que celulares sejam cadastrados ou reutilizados como terminais confiáveis do PDV.
 
-## 1.6.1 - 2026-08-07
+## 1.7.1 - 2026-08-02
 
-- Impede baixa de estoque por nome quando a venda fornece um ID.
-- Protege o vínculo de CMV contra fallback silencioso entre produtos diferentes.
+- Vincula eventos de abertura, tentativa e fechamento ao autor, à empresa e ao caixa corretos.
+- Mantém o contrato de auditoria compatível com o histórico detalhado do Controle do Dinheiro no OS.
+
+## 1.7.0 - 2026-07-31
+
+- Reconcilia o estoque de vendas concluídas e bloqueia produtos sem ciclo operacional completo.
+- Centraliza contratos de banco e dinheiro, mantendo telas críticas úteis durante falhas parciais de sincronização.
+- Compartilha o rate limit entre instâncias e reforça a cobertura de autorização e idempotência.
+
+## 1.6.2 - 2026-07-30
+
+- Exige propriedade e tokens assinados para pedidos, rastreamento e comandas do Delivery.
+- Reduz a duração das sessões de clientes, revoga acessos anteriores após recuperação e limpa sessões expiradas.
+- Atualiza dependências vulneráveis, adiciona health check do container e amplia testes de autorização cruzada.
+
+## 1.6.1 - 2026-07-30
+
+- Protege cadastro, login e recuperação de conta do Delivery contra enumeração, replay e acesso cruzado.
+- Remove gravações legadas da Goomer e garante inicialização segura sem a integração descontinuada.
 
 ## 1.6.0 - 2026-07-29
 

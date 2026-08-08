@@ -97,7 +97,9 @@ const webhook = await requestJson('/api/delivery/webhooks/pagbank', {
 if (webhook.status !== 'paid') fail('Expected webhook status paid', webhook);
 if (!webhook.dispatch?.dispatched) fail('Expected webhook dispatch to run', webhook);
 
-const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`, {
+  headers: { 'X-Beco-Delivery-Tracking': checkout.trackingToken },
+});
 if (status.order.paymentStatus !== 'paid') fail('Expected order paymentStatus paid', status.order);
 if (status.order.kitchenStatus !== 'sent_mock') fail('Expected order kitchenStatus sent_mock', status.order);
 if (status.order.deliveryStatus !== 'requested_mock') fail('Expected order deliveryStatus requested_mock', status.order);

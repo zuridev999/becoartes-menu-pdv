@@ -462,9 +462,9 @@ export function DeliveryView() {
     try {
       if (!account) {
         const created = await DeliveryApi.registerCustomer({ customer, password });
-        localStorage.setItem(SESSION_KEY, created.session.token);
         setAccount(created.customer);
-        setAuthMessage(created.verification?.code ? `Codigo de confirmacao: ${created.verification.code}` : 'Cadastro criado.');
+        setAuthDraft((current) => ({ ...current, identity: created.customer.email || customer.email }));
+        setAuthMessage('Cadastro criado. Enviamos o codigo pelo canal informado.');
         setAuthMode('verify');
       }
       const encryptedCard = ['credit', 'debit'].includes(customer.paymentMethod)
@@ -561,7 +561,7 @@ export function DeliveryView() {
     setIsAuthBusy(true);
     try {
       const result = await DeliveryApi.forgotPassword(authDraft.identity);
-      setAuthMessage(result.code ? `Codigo de recuperacao: ${result.code}` : 'Se encontramos seu cadastro, enviamos um codigo.');
+      setAuthMessage(result.sent ? 'Se encontramos seu cadastro, enviamos um codigo.' : 'Tente novamente.');
       setAuthMode('reset');
     } catch (error) {
       setAuthMessage(error instanceof Error ? error.message : 'Não foi possível enviar o código agora.');
@@ -591,10 +591,11 @@ export function DeliveryView() {
     if (isAuthBusy) return;
     setIsAuthBusy(true);
     try {
-      const token = localStorage.getItem(SESSION_KEY) || '';
-      const result = await DeliveryApi.verifyCustomerCode({ token, code: authDraft.code });
+      const result = await DeliveryApi.verifyCustomerCode({ identity: authDraft.identity, code: authDraft.code });
+      localStorage.setItem(SESSION_KEY, result.session.token);
       setAccount(result.customer);
       setAuthMessage('Cadastro confirmado.');
+      setAuthMode('orders');
     } catch (error) {
       setAuthMessage(error instanceof Error ? error.message : 'Não foi possível confirmar o cadastro agora.');
     } finally {

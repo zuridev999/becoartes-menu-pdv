@@ -105,7 +105,9 @@ if (!webhook.dispatch?.dispatched) fail('Expected webhook dispatch to run', webh
 if (webhook.dispatch.kitchenStatus !== 'sent_production') fail('Expected production kitchen dispatch from webhook', webhook);
 if (webhook.dispatch.deliveryStatus !== 'requested_mock') fail('Expected logistics request from same webhook dispatch', webhook);
 
-const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`);
+const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(orderId)}`, {
+  headers: { 'X-Beco-Delivery-Tracking': checkout.trackingToken },
+});
 if (status.order.paymentStatus !== 'paid') fail('Expected order paymentStatus paid', status.order);
 if (status.order.kitchenStatus !== 'sent_production') fail('Expected order kitchenStatus sent_production', status.order);
 if (status.order.deliveryStatus !== 'requested_mock') fail('Expected order deliveryStatus requested_mock', status.order);

@@ -83,7 +83,9 @@ if (!second.order.club?.enrolled) fail('Expected second order enrolled in club',
 if (second.order.club.paidOrders !== 2) fail('Expected second paidOrders 2', second.order.club);
 if (second.order.club.remainingToReward !== 8) fail('Expected second remaining 8', second.order.club);
 
-const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(second.order.orderId)}`);
+const status = await requestJson(`/api/delivery/order?orderId=${encodeURIComponent(second.order.orderId)}`, {
+  headers: { 'X-Beco-Delivery-Tracking': second.trackingToken },
+});
 if (status.order.club?.paidOrders !== 2) fail('Expected status club paidOrders 2', status.order);
 
 console.log(JSON.stringify({

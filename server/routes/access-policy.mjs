@@ -4,6 +4,7 @@ const PUBLIC_BOOTSTRAP_ROUTES = new Set([
   'POST /api/auth/login',
   'POST /api/tablet/setup-login',
   'POST /api/pdv-terminal/challenge',
+  'POST /api/pdv-terminal/authorize',
   'POST /api/table-access-token',
 ]);
 
@@ -64,6 +65,7 @@ export const PERMISSION_BY_ROUTE = Object.freeze({
   'POST /api/sellers/create-os-user': 'managePDVUsers',
   'POST /api/inventory/sync-beverages': 'confirmPurchaseEntry',
   'POST /api/inventory/sync-open-orders': 'manageSettings',
+  'POST /api/inventory/reconcile-pending': 'manageSettings',
   'POST /api/tables/status': 'updateTableStatus',
   'POST /api/tables/open': 'openTable',
   'POST /api/tables/transfer': 'transferTable',

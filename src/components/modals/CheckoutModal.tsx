@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Plus, Menu, Printer } from 'lucide-react';
 import { useStore, type Seller, type Table as TableType } from '../../store';
@@ -168,13 +168,13 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const canManageSellers = ['admin', 'manager'].includes(String(currentSeller?.permission || ''))
     || can(currentSeller, 'managePDVUsers', settings.pdvPermissions, settings.pdvUserPermissions);
 
-  const expireSellerSession = () => {
+  const expireSellerSession = useCallback(() => {
     localStorage.removeItem(SELLER_SESSION_STORAGE_KEY);
     setApiSessionToken(null);
     useStore.setState({ currentSeller: null });
     setShowAddSellerModal(false);
     addNotification('Sessão expirada. Entre com o PIN novamente para cadastrar vendedor.', 'error');
-  };
+  }, [addNotification]);
 
   const openAddSellerModal = () => {
     if (!hasApiSessionToken()) {
@@ -343,7 +343,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     return () => {
       cancelled = true;
     };
-  }, [showAddSellerModal, addNotification]);
+  }, [showAddSellerModal, addNotification, expireSellerSession]);
 
   const currentPaymentAmount = Number(amountDigits) / 100;
   const currentPaymentCreatesInvalidChange = roundMoney(paidTotal + currentPaymentAmount) > totalFinal

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, Tablet as TabletIcon, Bell, FileText } from 'lucide-react';
+import { ShoppingBag, Tablet as TabletIcon, Bell, FileText, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import { TabletEntry } from '../entry/TabletEntry';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
@@ -11,7 +11,7 @@ import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal
 import { PWAHandler } from '../../components/common/PWAHandler';
 
 export function TabletView() {
-  const { currentTableId, tables, settings, syncData } = useStore();
+  const { currentTableId, tables, settings, syncData, syncState } = useStore();
   const [logoClicks, setLogoClicks] = useState(0);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -100,6 +100,26 @@ export function TabletView() {
       </div>
 
       <div className="flex-1 pt-24 h-full">
+        {syncState.status === 'degraded' && (
+          <div
+            role="status"
+            className="absolute inset-x-6 top-28 z-[120] flex items-center gap-3 border border-amber-400/40 bg-black/90 px-4 py-3 text-amber-100 shadow-2xl"
+          >
+            <TriangleAlert className="h-5 w-5 shrink-0 text-amber-300" />
+            <p className="min-w-0 flex-1 text-sm font-bold">
+              {syncState.error || 'A atualização falhou. O cardápio já carregado continua disponível.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => void syncData({ includeCatalog: true })}
+              className="grid size-11 shrink-0 place-items-center border border-amber-300/30 bg-amber-300/10 text-amber-200"
+              aria-label="Tentar sincronizar novamente"
+              title="Tentar sincronizar novamente"
+            >
+              <RefreshCw className="h-5 w-5" />
+            </button>
+          </div>
+        )}
         <MenuCatalog onProductSelect={setSelectedProduct} viewMode={viewMode} />
       </div>
 

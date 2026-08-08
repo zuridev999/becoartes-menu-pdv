@@ -1,0 +1,30 @@
+{
+  "contractVersion": "2026-07-31.1",
+  "compatibilityWindow": "N/N-1",
+  "database": "becoartes operational Turso",
+  "rules": {
+    "destructiveMigrations": "forbidden outside a separately approved maintenance plan",
+    "newColumns": "nullable or server-defaulted during N/N-1",
+    "renames": "expand, dual-read/write, backfill, contract in a later release",
+    "deployOrder": "owner writer first for additive schema, readers second, contract last",
+    "money": "new financial domains use integer centavos"
+  },
+  "tables": [
+    { "name": "empresas", "owner": "OS", "writers": ["OS"], "readers": ["OS", "PDV"] },
+    { "name": "users", "owner": "OS", "writers": ["OS"], "readers": ["OS", "PDV"] },
+    { "name": "estoque_produtos", "owner": "OS", "writers": ["OS", "PDV"], "readers": ["OS", "PDV"] },
+    { "name": "estoque_movimentacoes", "owner": "OS", "writers": ["OS", "PDV"], "readers": ["OS", "PDV"] },
+    { "name": "fichas_tecnicas", "owner": "OS", "writers": ["OS"], "readers": ["OS", "PDV"] },
+    { "name": "ficha_ingredientes", "owner": "OS", "writers": ["OS"], "readers": ["OS", "PDV"] },
+    { "name": "notificacoes", "owner": "OS", "writers": ["OS", "PDV"], "readers": ["OS"] },
+    { "name": "menu", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
+    { "name": "categories", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
+    { "name": "orders", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
+    { "name": "order_items", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
+    { "name": "closed_bills", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
+    { "name": "table_payments", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
+    { "name": "integration_events", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
+    { "name": "delivery_orders", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
+    { "name": "delivery_order_items", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] }
+  ]
+}
