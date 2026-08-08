@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.3 - 2026-08-07
+
+- Release de identidade de produto e bloqueio de fallback por nome.
+
 ## 1.6.2 - 2026-08-07
 
 - Release de identidade de produto e bloqueio de fallback por nome.
