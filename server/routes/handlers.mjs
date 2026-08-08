@@ -77,6 +77,8 @@ export const createRouteHandlers = (services) => ({
   'POST /api/settings/qr-mode': async (body, context) => services.saveQrMode(body, context.session),
   'GET /api/pdv-lock/status': async () => services.getPdvLockState(),
   'POST /api/pdv-lock': async (body, context) => services.setPdvLockState(body, context.session),
+  'GET /api/os-lock/status': async () => services.getOsLockState(),
+  'POST /api/os-lock': async (body, context) => services.setOsLockState(body, context.session),
   'POST /api/qrcodes/regenerate': async (body, context) => services.regenerateTableQr(body, context.session),
   'POST /api/audit-logs': async (body) => services.addAuditLog(body),
   'POST /api/service-requests': async (body) => services.createServiceRequest(body),

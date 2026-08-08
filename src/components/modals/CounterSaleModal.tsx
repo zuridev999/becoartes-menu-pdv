@@ -15,6 +15,29 @@ const PAYMENT_OPTIONS: Array<{ id: PaymentMethod; label: string; icon: typeof Cr
   { id: 'cash', label: 'Dinheiro', icon: Wallet },
 ];
 
+const normalizeSearchText = (value: string) => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const hasVolumeAwareMatch = (haystack: string, term: string) => {
+  if (!term) return true;
+  const normalizedHaystack = normalizeSearchText(haystack);
+  const normalizedTerm = normalizeSearchText(term);
+
+  if (/^\d+$/.test(normalizedTerm)) {
+    const escaped = escapeRegExp(normalizedTerm);
+    const pattern = new RegExp(`(?:^|[^\\d])${escaped}(?:[^\\d]|$)`);
+    return pattern.test(normalizedHaystack);
+  }
+
+  return normalizedHaystack.includes(normalizedTerm);
+};
+
 const formatCurrency = (value: number) => value.toLocaleString('pt-BR', {
   style: 'currency',
   currency: 'BRL',
@@ -80,7 +103,10 @@ export function CounterSaleModal({
   const visibleProducts = menu
     .filter((product) => product.visible || canSellUnavailableProduct)
     .filter((product) => !activeCategory || product.categoryId === activeCategory)
-    .filter((product) => !normalizedQuery || `${product.name} ${product.categoryName || ''}`.toLowerCase().includes(normalizedQuery));
+    .filter((product) => {
+      if (!normalizedQuery) return true;
+      return hasVolumeAwareMatch(`${product.name} ${product.categoryName || ''}`, normalizedQuery);
+    });
 
   const addCounterItem = (product: Product, quantity = 1, selectedModifiers: Modifier[] = [], notes = '') => {
     if (!canAddOrderItem) {

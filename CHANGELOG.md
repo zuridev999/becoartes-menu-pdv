@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.1 - 2026-08-07
+
+- Impede baixa de estoque por nome quando a venda fornece um ID.
+- Protege o vínculo de CMV contra fallback silencioso entre produtos diferentes.
+
 ## 1.6.0 - 2026-07-29
 
 - Exibe sabores, adicionais e observações diretamente nas solicitações do PDV e nos detalhes do movimento.

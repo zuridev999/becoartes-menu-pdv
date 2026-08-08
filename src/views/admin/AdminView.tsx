@@ -6,7 +6,7 @@ import {
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
   ArrowLeft, Eye, EyeOff, Clock, Trash2, Image, ChefHat, Search, CheckCircle, X,
   GripVertical, ChevronRight, Check, Wallet, CreditCard, Banknote, Copy,
-  QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle, Bike, LockKeyhole, Languages
+  QrCode, Download, Archive, RefreshCcw, ExternalLink, AlertTriangle, Bike, LockKeyhole, Languages, Monitor
 } from 'lucide-react';
 import {
   DndContext,
@@ -722,6 +722,8 @@ export function AdminView() {
   const [financeLoadError, setFinanceLoadError] = useState('');
   const [pdvLockState, setPdvLockState] = useState<{ locked: boolean; message: string } | null>(null);
   const [isPdvLockSaving, setIsPdvLockSaving] = useState(false);
+  const [osLockState, setOsLockState] = useState<{ locked: boolean; message: string } | null>(null);
+  const [isOsLockSaving, setIsOsLockSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
   const productImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -786,10 +788,14 @@ export function AdminView() {
 
   const refreshPdvLockState = useCallback(async () => {
     try {
-      const state = await AppApi.getPdvLockState();
-      setPdvLockState({ locked: state.locked, message: state.message });
+      const [pdvState, osState] = await Promise.all([
+        AppApi.getPdvLockState(),
+        AppApi.getOsLockState(),
+      ]);
+      setPdvLockState({ locked: pdvState.locked, message: pdvState.message });
+      setOsLockState({ locked: osState.locked, message: osState.message });
     } catch (error) {
-      console.warn('Falha ao ler bloqueio do PDV:', error);
+      console.warn('Falha ao ler bloqueios operacionais:', error);
     }
   }, []);
 
@@ -837,6 +843,49 @@ export function AdminView() {
         maxLength: 240
       },
       onConfirm: async (message) => savePdvLockState(true, message || '')
+    });
+  };
+
+  const saveOsLockState = async (nextLocked: boolean, message: string) => {
+    if (isOsLockSaving) return;
+    setIsOsLockSaving(true);
+    try {
+      const state = await AppApi.setOsLockState(nextLocked, message);
+      setOsLockState({ locked: state.locked, message: state.message });
+      addNotification(state.locked ? 'OS bloqueado para os usuários.' : 'OS liberado para operação.', 'info');
+    } catch (error) {
+      console.error('Erro ao alternar bloqueio do OS:', error);
+      addNotification('Não foi possível alternar o bloqueio do OS.', 'error');
+    } finally {
+      setIsOsLockSaving(false);
+    }
+  };
+
+  const requestOsLockToggle = () => {
+    if (isOsLockSaving) return;
+
+    if (osLockState?.locked) {
+      setAdminDialog({
+        title: 'Liberar o OS?',
+        description: 'Os usuários voltarão a acessar o sistema operacional imediatamente.',
+        confirmLabel: 'Liberar OS',
+        onConfirm: async () => saveOsLockState(false, 'OS liberado para operação.')
+      });
+      return;
+    }
+
+    setAdminDialog({
+      title: 'Bloquear o OS?',
+      description: 'O acesso dos usuários será interrompido. O superadmin continuará podendo entrar para liberar o sistema.',
+      confirmLabel: 'Bloquear OS e exibir recado',
+      tone: 'danger',
+      input: {
+        label: 'Recado para a equipe',
+        placeholder: 'Ex.: Sistema em manutenção. Aguarde a liberação do superadmin.',
+        multiline: true,
+        maxLength: 240
+      },
+      onConfirm: async (message) => saveOsLockState(true, message || '')
     });
   };
 
@@ -1000,6 +1049,7 @@ export function AdminView() {
   const userPermissionOverrides = settings.pdvUserPermissions as UserPermissionMatrix | undefined;
   const isAdminProfile = currentSeller.permission === 'admin';
   const isSuperAdmin = currentSeller.permission === 'admin' && ['admin-bootstrap', 'admin-bypass', 'master'].includes(currentSeller.id);
+  const canManageOperationalLocks = String((currentSeller as Seller & { osRole?: string }).osRole || '').toLowerCase() === 'super_admin';
   const canManageSettings = can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides);
   const canManagePDVUsers = can(currentSeller, 'managePDVUsers', permissionOverrides, userPermissionOverrides);
   const canManageOptionals = can(currentSeller, 'manageOptionals', permissionOverrides, userPermissionOverrides);
@@ -1735,32 +1785,65 @@ export function AdminView() {
               {currentSeller.name} · {getPermissionLabel(currentSeller)} · {getAppLabel()} {APP_BUILD_LABEL}
             </p>
           </div>
-          <button
-            onClick={requestPdvLockToggle}
-            disabled={isPdvLockSaving}
-            className={`ml-auto hidden sm:flex h-10 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
-              pdvLockState?.locked
-                ? 'border-rose-400/40 bg-rose-500/15 text-rose-200'
-                : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-primary/40 hover:text-white'
-            }`}
-            title={pdvLockState?.locked ? 'Liberar PDV operacional' : 'Bloquear PDV operacional'}
-          >
-            <LockKeyhole size={15} />
-            {isPdvLockSaving ? 'Salvando...' : pdvLockState?.locked ? 'Liberar PDV' : 'Travar PDV'}
-          </button>
+          {canManageOperationalLocks && (
+            <div className="ml-auto hidden items-center gap-2 sm:flex">
+              <button
+                onClick={requestPdvLockToggle}
+                disabled={isPdvLockSaving}
+                className={`flex h-10 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+                  pdvLockState?.locked
+                    ? 'border-rose-400/40 bg-rose-500/15 text-rose-200'
+                    : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-primary/40 hover:text-white'
+                }`}
+                title={pdvLockState?.locked ? 'Liberar PDV operacional' : 'Bloquear PDV operacional'}
+              >
+                <LockKeyhole size={15} />
+                {isPdvLockSaving ? 'Salvando...' : pdvLockState?.locked ? 'Liberar PDV' : 'Travar PDV'}
+              </button>
+              <button
+                onClick={requestOsLockToggle}
+                disabled={isOsLockSaving}
+                className={`flex h-10 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+                  osLockState?.locked
+                    ? 'border-rose-400/40 bg-rose-500/15 text-rose-200'
+                    : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-primary/40 hover:text-white'
+                }`}
+                title={osLockState?.locked ? 'Liberar OS operacional' : 'Bloquear OS operacional'}
+              >
+                <Monitor size={15} />
+                {isOsLockSaving ? 'Salvando...' : osLockState?.locked ? 'Liberar OS' : 'Travar OS'}
+              </button>
+            </div>
+          )}
         </div>
-        <button
-          onClick={requestPdvLockToggle}
-          disabled={isPdvLockSaving}
-          className={`sm:hidden flex h-12 w-full items-center justify-center gap-3 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
-            pdvLockState?.locked
-              ? 'border-rose-400/40 bg-rose-500/15 text-rose-200'
-              : 'border-white/10 bg-white/[0.04] text-zinc-400'
-          }`}
-        >
-          <LockKeyhole size={16} />
-          {isPdvLockSaving ? 'Salvando...' : pdvLockState?.locked ? 'Liberar PDV operacional' : 'Travar PDV operacional'}
-        </button>
+        {canManageOperationalLocks && (
+          <div className="flex flex-col gap-2 sm:hidden">
+            <button
+              onClick={requestPdvLockToggle}
+              disabled={isPdvLockSaving}
+              className={`flex h-12 w-full items-center justify-center gap-3 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+                pdvLockState?.locked
+                  ? 'border-rose-400/40 bg-rose-500/15 text-rose-200'
+                  : 'border-white/10 bg-white/[0.04] text-zinc-400'
+              }`}
+            >
+              <LockKeyhole size={16} />
+              {isPdvLockSaving ? 'Salvando...' : pdvLockState?.locked ? 'Liberar PDV operacional' : 'Travar PDV operacional'}
+            </button>
+            <button
+              onClick={requestOsLockToggle}
+              disabled={isOsLockSaving}
+              className={`flex h-12 w-full items-center justify-center gap-3 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${
+                osLockState?.locked
+                  ? 'border-rose-400/40 bg-rose-500/15 text-rose-200'
+                  : 'border-white/10 bg-white/[0.04] text-zinc-400'
+              }`}
+            >
+              <Monitor size={16} />
+              {isOsLockSaving ? 'Salvando...' : osLockState?.locked ? 'Liberar OS operacional' : 'Travar OS operacional'}
+            </button>
+          </div>
+        )}
         <div className="w-full max-w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
         <div className="metal-surface flex w-max min-w-full p-1.5 rounded-[1.25rem]">
           {[

@@ -88,7 +88,7 @@ const statements = [
   {
     sql: `INSERT OR REPLACE INTO menu
       (id, name, description, price, category, category_id, image, visible, delivery_visible, cost, sort_order)
-      VALUES (?, 'Caipirinha Vários Sabores', 'Caipirinha 51 nos sabores maracujá, morango ou abacaxi.', 20.90, ?, ?, '', 1, 1, 0, 2)`,
+      VALUES (?, 'Caipirinha (Escolha seu sabor)', 'Caipirinha 51. Escolha entre maracujá, morango ou abacaxi.', 20.90, ?, ?, '/images/caipirinha-51-varios-sabores.webp', 1, 1, 0, 2)`,
     args: [normalProductId, drinkCategoryId, drinkCategoryId],
   },
   {

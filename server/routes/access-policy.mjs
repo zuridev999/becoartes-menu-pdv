@@ -50,6 +50,7 @@ export const PERMISSION_BY_ROUTE = Object.freeze({
   'POST /api/catalog/modifier-group/link': 'manageOptionals',
   'POST /api/settings': 'manageSettings',
   'POST /api/pdv-lock': 'manageSettings',
+  'POST /api/os-lock': 'manageSettings',
   'POST /api/qrcodes/regenerate': 'managePDVPermissions',
   'POST /api/service-requests/clear': 'manageSettings',
   'POST /api/audit-logs/list': 'viewSalesTotals',

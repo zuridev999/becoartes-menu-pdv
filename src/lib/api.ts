@@ -744,6 +744,14 @@ export const AppApi = {
   setPdvLockState(locked: boolean, message = 'PDV bloqueado. Consultar mensagens no celular.') {
     return postJson<PdvLockState>('/api/pdv-lock', { locked, message });
   },
+
+  getOsLockState() {
+    return getJson<PdvLockState>('/api/os-lock/status');
+  },
+
+  setOsLockState(locked: boolean, message = 'Sistema OS bloqueado. Aguardar liberação do superadmin.') {
+    return postJson<PdvLockState>('/api/os-lock', { locked, message });
+  },
 };
 
 export const CatalogApi = {

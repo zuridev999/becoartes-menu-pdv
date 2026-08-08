@@ -74,10 +74,14 @@ export function ProductModal({
     ? 'w-[min(1120px,calc(100vw-24px))] max-h-[calc(100dvh-24px)] min-h-[min(560px,calc(100svh-24px))] flex-col min-[760px]:flex-row'
     : 'w-full max-w-6xl h-[calc(100dvh-1.5rem)] sm:h-[88dvh] lg:h-[85vh] flex-col lg:flex-row';
   const mediaPanelClass = tabletLandscape
-    ? 'block h-[34%] min-h-[170px] max-h-[260px] w-full min-[760px]:h-auto min-[760px]:max-h-none min-[760px]:w-[50%] min-[760px]:min-w-[50%]'
+    ? qrMobileFlow
+      ? 'block h-[29%] min-h-[150px] max-h-[215px] w-full min-[760px]:h-auto min-[760px]:max-h-none min-[760px]:w-[50%] min-[760px]:min-w-[50%]'
+      : 'block h-[34%] min-h-[170px] max-h-[260px] w-full min-[760px]:h-auto min-[760px]:max-h-none min-[760px]:w-[50%] min-[760px]:min-w-[50%]'
     : 'block w-full h-[28dvh] min-h-[170px] max-h-[260px] lg:h-auto lg:max-h-none lg:w-1/2';
   const contentPanelClass = tabletLandscape
-    ? 'flex-1 min-h-0 min-w-0 p-5 sm:p-6 min-[900px]:p-8'
+    ? qrMobileFlow
+      ? 'flex-1 min-h-0 min-w-0 p-4 sm:p-5 min-[900px]:p-8'
+      : 'flex-1 min-h-0 min-w-0 p-5 sm:p-6 min-[900px]:p-8'
     : 'w-full flex-1 min-h-0 min-w-0 p-5 sm:p-7 lg:w-1/2 lg:p-12';
 
   return (
@@ -102,17 +106,17 @@ export function ProductModal({
              </div>
              )}
 
-             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${qrMobileFlow ? 'pt-14' : ''} ${tabletLandscape ? 'space-y-4 min-[900px]:space-y-6' : 'space-y-6 lg:space-y-10'}`}>
+             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${qrMobileFlow ? 'pt-12 space-y-3 min-[900px]:space-y-6' : ''} ${tabletLandscape && !qrMobileFlow ? 'space-y-4 min-[900px]:space-y-6' : !tabletLandscape ? 'space-y-6 lg:space-y-10' : ''}`}>
                 {product.modifierGroups?.map(group => {
                   const selectedInGroup = selectedModifiers.filter(m => group.modifiers.some(gm => gm.id === m.id));
                   const isSingle = group.maxChoices === 1;
 
                   return (
-                    <div key={group.id} className="space-y-5">
-                      <div className={`flex justify-between items-start py-3 z-10 ${qrMobileFlow ? '' : 'sticky top-0 bg-[#0a0a0c]/95 backdrop-blur-md'}`}>
+                    <div key={group.id} className={qrMobileFlow ? 'space-y-2' : 'space-y-5'}>
+                      <div className={`flex justify-between items-start z-10 ${qrMobileFlow ? 'py-1' : 'py-3 sticky top-0 bg-[#0a0a0c]/95 backdrop-blur-md'}`}>
                         <div>
                           <h4 className="text-base sm:text-lg font-black uppercase tracking-[0.12em] text-white leading-tight pr-4">{group.name}</h4>
-                          <p className="mt-2 flex items-center gap-2 text-[10px] text-gray-500 font-black uppercase tracking-[0.16em]">
+                          <p className={`${qrMobileFlow ? 'mt-1' : 'mt-2'} flex items-center gap-2 text-[10px] text-gray-500 font-black uppercase tracking-[0.16em]`}>
                             <span className="w-2 h-2 rounded-full bg-accent shadow-[0_0_16px_rgba(255,210,30,0.8)]" />
                             {isSingle ? t('chooseOne') : t('chooseRange', { min: group.minChoices, max: group.maxChoices })}
                           </p>
@@ -121,7 +125,7 @@ export function ProductModal({
                           <span className="bg-accent text-black px-3 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg shadow-accent/20">{t('required')}</span>
                         )}
                       </div>
-                      <div className={`grid grid-cols-1 ${qrMobileFlow ? 'gap-5' : 'gap-4'}`}>
+                      <div className={`grid grid-cols-1 ${qrMobileFlow ? 'gap-1.5' : 'gap-4'}`}>
                         {group.modifiers.map(m => {
                           const isSelected = selectedModifiers.find(sm => sm.id === m.id);
                           return (
@@ -145,24 +149,24 @@ export function ProductModal({
                                   }
                                 }
                               }}
-                              className={`w-full ${tabletLandscape ? `${qrMobileFlow ? 'min-h-[92px]' : 'min-h-[78px]'} grid-cols-[48px_1fr_auto] gap-4 p-4` : 'min-h-[76px] sm:min-h-[88px] grid-cols-[48px_1fr_auto] sm:grid-cols-[54px_1fr_auto] gap-4 sm:gap-5 p-4 sm:p-5'} grid items-center rounded-[1.7rem] border text-left transition-all ${
+                              className={`w-full ${tabletLandscape ? qrMobileFlow ? 'min-h-[55px] grid-cols-[36px_1fr_auto] gap-3 px-3 py-1.5' : 'min-h-[78px] grid-cols-[48px_1fr_auto] gap-4 p-4' : 'min-h-[76px] sm:min-h-[88px] grid-cols-[48px_1fr_auto] sm:grid-cols-[54px_1fr_auto] gap-4 sm:gap-5 p-4 sm:p-5'} grid items-center ${qrMobileFlow ? 'rounded-[1.25rem]' : 'rounded-[1.7rem]'} border text-left transition-all ${
                                 isSelected
                                   ? 'bg-gradient-to-br from-primary to-[#6f2dff] border-primary text-white shadow-2xl shadow-primary/30'
                                   : 'bg-gradient-to-br from-accent to-[#ffad1f] border-accent text-black shadow-xl shadow-accent/20 hover:scale-[1.015]'
                               }`}
                             >
-                              <div className={`${tabletLandscape ? 'w-12 h-12' : 'w-12 h-12 sm:w-[54px] sm:h-[54px]'} rounded-2xl flex items-center justify-center border text-xl font-black ${
+                              <div className={`${tabletLandscape ? qrMobileFlow ? 'w-9 h-9' : 'w-12 h-12' : 'w-12 h-12 sm:w-[54px] sm:h-[54px]'} ${qrMobileFlow ? 'rounded-xl text-lg' : 'rounded-2xl text-xl'} flex items-center justify-center border font-black ${
                                 isSelected ? 'bg-white text-primary border-white' : 'bg-black/10 text-black border-black/10'
                               }`}>
-                                {isSelected ? <Check size={26} strokeWidth={5} /> : '+'}
+                                {isSelected ? <Check size={qrMobileFlow ? 20 : 26} strokeWidth={5} /> : '+'}
                               </div>
                               <div className="min-w-0">
-                                <span className={`block font-black ${tabletLandscape ? 'text-lg' : 'text-base sm:text-xl'} tracking-tight leading-tight`}>{m.name}</span>
-                                <span className={`mt-1 block text-[10px] font-black uppercase tracking-[0.16em] ${isSelected ? 'text-white/65' : 'text-black/55'}`}>
+                                <span className={`block font-black ${tabletLandscape ? qrMobileFlow ? 'text-base' : 'text-lg' : 'text-base sm:text-xl'} tracking-tight leading-tight`}>{m.name}</span>
+                                <span className={`${qrMobileFlow ? 'mt-0.5 text-[8px]' : 'mt-1 text-[10px]'} block font-black uppercase tracking-[0.16em] ${isSelected ? 'text-white/65' : 'text-black/55'}`}>
                                   {isSelected ? t('selectedRemove') : t('tapToAdd')}
                                 </span>
                               </div>
-                              {m.price > 0 && <span className={`${tabletLandscape ? 'text-lg' : 'text-sm sm:text-xl'} font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-black'}`}>+ {formatCurrency(m.price, locale)}</span>}
+                              {m.price > 0 && <span className={`${tabletLandscape ? qrMobileFlow ? 'text-base' : 'text-lg' : 'text-sm sm:text-xl'} font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-black'}`}>+ {formatCurrency(m.price, locale)}</span>}
                             </motion.button>
                           );
                         })}
@@ -191,7 +195,7 @@ export function ProductModal({
                </div>
              )}
 
-             <div className={`${tabletLandscape ? 'mt-4 pt-4 space-y-3 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-4 sm:mt-8 pt-4 sm:pt-8 space-y-4 sm:space-y-6'} border-t border-white/10 shrink-0`}>
+             <div className={`${tabletLandscape ? qrMobileFlow ? 'mt-2 pt-3 space-y-2.5 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-4 pt-4 space-y-3 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-4 sm:mt-8 pt-4 sm:pt-8 space-y-4 sm:space-y-6'} border-t border-white/10 shrink-0`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 glass p-2 rounded-2xl border-white/5">
                      <button type="button" aria-label="Diminuir quantidade" disabled={!canChangeItemQuantity} onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-11 h-11 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">-</button>
@@ -208,7 +212,7 @@ export function ProductModal({
                 type="button"
                 onClick={handleAdd}
                 disabled={isAdding}
-                className={`${tabletLandscape ? 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-5 sm:py-8 text-sm sm:text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4 disabled:opacity-50 disabled:pointer-events-none`}
+                className={`${tabletLandscape ? qrMobileFlow ? 'py-4 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-5 sm:py-8 text-sm sm:text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4 disabled:opacity-50 disabled:pointer-events-none`}
               >
                 {isAdding ? t('adding').toUpperCase() : t('addToOrder').toUpperCase()}
               </button>

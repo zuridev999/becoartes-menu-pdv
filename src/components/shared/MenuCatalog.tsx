@@ -39,6 +39,29 @@ const featuredCategoryCopy: Record<string, Record<string, { label: string; subti
   },
 };
 
+const normalizeSearchText = (value: string) => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const hasVolumeAwareMatch = (haystack: string, term: string) => {
+  if (!term) return true;
+  const normalizedHaystack = normalizeSearchText(haystack);
+  const normalizedTerm = normalizeSearchText(term);
+
+  if (/^\d+$/.test(normalizedTerm)) {
+    const escaped = escapeRegExp(normalizedTerm);
+    const pattern = new RegExp(`(?:^|[^\\d])${escaped}(?:[^\\d]|$)`);
+    return pattern.test(normalizedHaystack);
+  }
+
+  return normalizedHaystack.includes(normalizedTerm);
+};
+
 export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', surface = 'default', presentation = 'default', footerContent }: MenuCatalogProps) {
   const { menu, categories: dbCategories } = useStore();
   const { t, locale, catalogText } = usePublicI18n();
@@ -121,7 +144,8 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
 
       const translatedName = catalogText(p.id, p.name, 'name');
       const translatedDescription = catalogText(p.id, p.description || '', 'description');
-      return translatedName.toLowerCase().includes(searchQuery.toLowerCase()) || translatedDescription.toLowerCase().includes(searchQuery.toLowerCase());
+      const haystack = `${translatedName} ${translatedDescription} ${p.categoryName || ''}`;
+      return hasVolumeAwareMatch(haystack, searchQuery);
     })
     .map((product, index) => ({ product, index }))
     .sort((a, b) => {

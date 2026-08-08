@@ -139,6 +139,16 @@ export const SCHEMA_MIGRATIONS = [
       addColumn('fichas_tecnicas', 'updated_at', 'INTEGER'),
     ],
   },
+  {
+    id: '20260801_0001_inventory_cost_snapshots',
+    description: 'Preserve the weighted-average inventory cost used by each PDV movement.',
+    steps: [
+      addColumn('estoque_movimentacoes', 'custo_unitario_centavos', 'INTEGER'),
+      addColumn('estoque_movimentacoes', 'custo_total_centavos', 'INTEGER'),
+      addColumn('estoque_movimentacoes', 'metodo_custeio', 'TEXT'),
+      addColumn('estoque_movimentacoes', 'custo_fonte', 'TEXT'),
+    ],
+  },
 ];
 
 const quoteIdentifier = (value) => {

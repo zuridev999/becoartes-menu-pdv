@@ -142,6 +142,28 @@ const mimeTypes = {
 const createId = () => randomUUID();
 const osTimestamp = () => Math.floor(Date.now() / 1000);
 const toStockAmount = (value) => Number(Math.max(0, Number(value || 0)).toFixed(4));
+
+const normalizeInventoryUnit = (unit) => {
+  const raw = String(unit || 'UN').trim().toUpperCase();
+  const aliases = {
+    UND: 'UN', UNID: 'UN', UNIDADE: 'UN', UNIDADES: 'UN',
+    LT: 'L', LITRO: 'L', LITROS: 'L',
+    GRAMA: 'G', GRAMAS: 'G', QUILO: 'KG', QUILOS: 'KG',
+  };
+  return aliases[raw] || raw;
+};
+
+const convertInventoryQuantity = (quantity, fromUnit, toUnit) => {
+  const value = Number(quantity) || 0;
+  const from = normalizeInventoryUnit(fromUnit);
+  const to = normalizeInventoryUnit(toUnit);
+  if (from === to) return value;
+  if (from === 'L' && to === 'ML') return value * 1000;
+  if (from === 'ML' && to === 'L') return value / 1000;
+  if (from === 'KG' && to === 'G') return value * 1000;
+  if (from === 'G' && to === 'KG') return value / 1000;
+  return null;
+};
 const getBusinessDate = () => businessDateKey(new Date(), BUSINESS_TIME_ZONE);
 const formatMoneyForNotification = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const hashToken = (value) => createHash('sha256').update(String(value || '')).digest('hex');
@@ -568,6 +590,7 @@ const createSessionToken = (seller, { trustedTerminalId = '' } = {}) => {
     name: seller.name,
     permission: normalizePermission(seller.permission),
     role: seller.role,
+    osRole: seller.osRole || '',
     allowRemote: Boolean(seller.allowRemote),
     stationAccess: Boolean(seller.stationAccess),
     trustedTerminalId: /^[0-9a-f-]{36}$/i.test(String(trustedTerminalId || '')) ? trustedTerminalId : '',
@@ -630,6 +653,7 @@ const getSessionFromRequest = (req) => {
       id: decoded.sub,
       name: decoded.name,
       role: decoded.role,
+      osRole: decoded.osRole || '',
       permission: normalizePermission(decoded.permission),
       allowRemote: Boolean(decoded.allowRemote),
       stationAccess: Boolean(decoded.stationAccess),
@@ -752,7 +776,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS delivery_customer_sessions (token_hash TEXT PRIMARY KEY, customer_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME NOT NULL)",
     "CREATE TABLE IF NOT EXISTS delivery_notifications (id TEXT PRIMARY KEY, delivery_order_id TEXT, customer_id TEXT, channel TEXT NOT NULL, type TEXT NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL, destination TEXT, payload TEXT, error TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS estoque_produtos (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, categoria TEXT, ativo INTEGER DEFAULT 1, quantidade_atual REAL DEFAULT 0, estoque_minimo REAL DEFAULT 0, status TEXT DEFAULT 'Saudável', created_at INTEGER, updated_at INTEGER)",
-    "CREATE TABLE IF NOT EXISTS estoque_movimentacoes (id TEXT PRIMARY KEY, empresa_id TEXT, produto_id TEXT, tipo_movimentacao TEXT, quantidade REAL, quantidade_anterior REAL, quantidade_nova REAL, motivo TEXT, responsavel_id TEXT, created_at INTEGER, closed_bill_id TEXT, order_id TEXT, order_item_id TEXT, origem TEXT, integration_event_id TEXT, source_item_id TEXT, source_item_kind TEXT)",
+    "CREATE TABLE IF NOT EXISTS estoque_movimentacoes (id TEXT PRIMARY KEY, empresa_id TEXT, produto_id TEXT, tipo_movimentacao TEXT, quantidade REAL, quantidade_anterior REAL, quantidade_nova REAL, custo_unitario_centavos INTEGER, custo_total_centavos INTEGER, metodo_custeio TEXT, custo_fonte TEXT, motivo TEXT, responsavel_id TEXT, created_at INTEGER, closed_bill_id TEXT, order_id TEXT, order_item_id TEXT, origem TEXT, integration_event_id TEXT, source_item_id TEXT, source_item_kind TEXT)",
     "CREATE TABLE IF NOT EXISTS notificacoes (id TEXT PRIMARY KEY, empresa_id TEXT, usuario_id TEXT, titulo TEXT, mensagem TEXT, tipo TEXT, lida INTEGER DEFAULT 0, link TEXT, created_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, empresa_id TEXT, nome TEXT, email TEXT, role TEXT, funcao TEXT, ativo INTEGER DEFAULT 1, pin TEXT, is_operador INTEGER DEFAULT 1, permitir_acesso_remoto INTEGER DEFAULT 0, tipo_vinculo TEXT, pdv_sell_enabled INTEGER DEFAULT 0, freelancer_operational_access TEXT, created_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS fichas_tecnicas (id TEXT PRIMARY KEY, empresa_id TEXT, nome_prato TEXT, status TEXT DEFAULT 'active')",
@@ -775,6 +799,7 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_pdv_terminals_status ON pdv_terminals(status)",
     "CREATE INDEX IF NOT EXISTS idx_stock_empresa_nome ON estoque_produtos(empresa_id, ativo, nome)",
     "CREATE INDEX IF NOT EXISTS idx_stock_mov_empresa_created ON estoque_movimentacoes(empresa_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_stock_mov_order_item_cost ON estoque_movimentacoes(order_item_id, tipo_movimentacao, origem)",
     "CREATE INDEX IF NOT EXISTS idx_notif_empresa_created ON notificacoes(empresa_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_category_modifiers_category ON category_modifier_groups(category_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_modifiers_product ON product_modifier_groups(product_id)",
@@ -2050,6 +2075,7 @@ const getSettings = async () => {
 };
 
 const DEFAULT_PDV_LOCK_MESSAGE = 'PDV bloqueado. Consultar mensagens no celular.';
+const DEFAULT_OS_LOCK_MESSAGE = 'Sistema OS bloqueado. Aguardar liberação do superadmin.';
 
 const getPdvLockState = async () => {
   const res = await db.execute("SELECT value, updated_at FROM app_settings WHERE key = 'pdv_lock_state' LIMIT 1");
@@ -2063,7 +2089,28 @@ const getPdvLockState = async () => {
   };
 };
 
+const isSuperAdminSession = async (session = null) => {
+  if (String(session?.osRole || '').toLowerCase() === 'super_admin') return true;
+
+  const sessionId = String(session?.id || '').replace(/^os:/, '');
+  if (!sessionId) return false;
+
+  const result = await db.execute({
+    sql: 'SELECT role FROM users WHERE id = ? AND empresa_id = ? AND COALESCE(ativo, 1) = 1 LIMIT 1',
+    args: [sessionId, OS_EMPRESA_ID],
+  });
+  return String(result.rows[0]?.role || '').trim().toLowerCase() === 'super_admin';
+};
+
+const assertSuperAdminLockControl = async (session = null) => {
+  if (await isSuperAdminSession(session)) return;
+  const error = new Error('Apenas o superadmin pode controlar os bloqueios do PDV e do OS.');
+  error.statusCode = 403;
+  throw error;
+};
+
 const setPdvLockState = async ({ locked, message }, session = null) => {
+  await assertSuperAdminLockControl(session);
   const state = {
     locked: Boolean(locked),
     message: String(message || DEFAULT_PDV_LOCK_MESSAGE),
@@ -2080,6 +2127,48 @@ const setPdvLockState = async ({ locked, message }, session = null) => {
   await addAuditLog({
     id: createId(),
     action: state.locked ? 'pdv_locked' : 'pdv_unlocked',
+    details: JSON.stringify({ message: state.message }),
+    origin: 'pdv',
+    authorId: session?.id || '',
+    authorName: session?.name || 'Sistema',
+    timestamp: new Date().toISOString(),
+  });
+
+  return state;
+};
+
+const getOsLockState = async () => {
+  const res = await db.execute("SELECT value, updated_at FROM app_settings WHERE key = 'os_lock_state' LIMIT 1");
+  const value = parseJsonObject(res.rows[0]?.value) || {};
+  return {
+    locked: Boolean(value.locked),
+    message: String(value.message || DEFAULT_OS_LOCK_MESSAGE),
+    lockedById: value.lockedById || '',
+    lockedByName: value.lockedByName || '',
+    updatedAt: value.updatedAt || res.rows[0]?.updated_at || '',
+    empresaId: value.empresaId || OS_EMPRESA_ID,
+  };
+};
+
+const setOsLockState = async ({ locked, message }, session = null) => {
+  await assertSuperAdminLockControl(session);
+  const state = {
+    locked: Boolean(locked),
+    message: String(message || DEFAULT_OS_LOCK_MESSAGE),
+    lockedById: session?.id || '',
+    lockedByName: session?.name || 'Sistema',
+    updatedAt: new Date().toISOString(),
+    empresaId: OS_EMPRESA_ID,
+  };
+
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('os_lock_state', ?, CURRENT_TIMESTAMP)",
+    args: [JSON.stringify(state)],
+  });
+
+  await addAuditLog({
+    id: createId(),
+    action: state.locked ? 'os_locked' : 'os_unlocked',
     details: JSON.stringify({ message: state.message }),
     origin: 'pdv',
     authorId: session?.id || '',
@@ -2983,7 +3072,7 @@ const failIntegrationEvent = async (id, error) => {
   });
 };
 
-const findStockProduct = async (empresaId, candidates) => {
+const findStockProduct = async (empresaId, candidates, { allowNameFallback = true } = {}) => {
   const ids = [candidates.id].filter(Boolean);
   for (const id of ids) {
     const byId = await db.execute({
@@ -2993,7 +3082,10 @@ const findStockProduct = async (empresaId, candidates) => {
     if (byId.rows[0]) return byId.rows[0];
   }
 
-  if (!candidates.name?.trim()) return null;
+  if (!allowNameFallback || !candidates.name?.trim()) return null;
+  // A presença de um ID é uma identidade forte. Não trocar silenciosamente
+  // para outro Produto Mestre pelo nome quando esse ID não existe.
+  if (candidates.id) return null;
 
   const byName = await db.execute({
     sql: "SELECT * FROM estoque_produtos WHERE empresa_id = ? AND ativo = 1 AND lower(trim(nome)) = lower(trim(?)) LIMIT 1",
@@ -3047,7 +3139,7 @@ const isLooseRecipeNameMatch = (soldName, fichaName) => {
   return soldTokens.length > 0 && soldTokens.every((token) => fichaTokens.has(token));
 };
 
-const findFichaTecnicaForSoldItem = async (empresaId, candidates) => {
+const findFichaTecnicaForSoldItem = async (empresaId, candidates, { allowNameFallback = true } = {}) => {
   const soldId = String(candidates.id || '').trim();
   const soldName = String(candidates.name || '').trim();
   if (!soldId && !soldName) return null;
@@ -3074,11 +3166,14 @@ const findFichaTecnicaForSoldItem = async (empresaId, candidates) => {
     const nameNorms = names.map(normalizeRecipeLookupName);
     const serving = getRecipeServing(`${pdvName} ${fichaName}`);
 
-    if (soldId && row.pdv_product_id === soldId) {
+  if (soldId && row.pdv_product_id === soldId) {
       if (soldServing && serving && soldServing !== serving) return 999;
       if (!soldServing && serving === 'p2') return 5;
       return 0;
     }
+    // Com ID informado, uma ficha diferente pelo nome não é equivalente.
+    if (soldId) return 999;
+    if (!allowNameFallback) return 999;
     if (soldNorm && nameNorms.includes(soldNorm)) return 10;
     if (soldName && names.some((name) => isLooseRecipeNameMatch(soldName, name))) {
       if (soldServing && serving && soldServing !== serving) return 999;
@@ -3150,6 +3245,7 @@ const appendInventoryPlansForSoldItem = async ({
   reason,
   sourceKind,
   reportUnmatched = true,
+  allowNameFallback = true,
 }) => {
   const requestedQuantity = toStockAmount(quantity);
   if (requestedQuantity <= 0) return;
@@ -3159,7 +3255,11 @@ const appendInventoryPlansForSoldItem = async ({
     return;
   }
 
-  const ficha = await findFichaTecnicaForSoldItem(empresaId, { id: productId, name });
+  const ficha = await findFichaTecnicaForSoldItem(
+    empresaId,
+    { id: productId, name },
+    { allowNameFallback },
+  );
   if (ficha) {
     const ingredientRows = await getFichaIngredientStockRows(String(ficha.id));
     if (ingredientRows.length === 0) {
@@ -3171,8 +3271,15 @@ const appendInventoryPlansForSoldItem = async ({
           continue;
         }
 
-        const unitQuantity = toStockAmount(row.quantidade_estoque_baixa || row.quantidade_usada);
-        const recipeQuantity = toStockAmount(unitQuantity * requestedQuantity);
+        const unitQuantity = toStockAmount(row.quantidade_estoque_baixa ?? row.quantidade_usada);
+        const recipeUnit = row.unidade_estoque_baixa || row.unidade_medida || row.unidade;
+        const stockUnit = row.unidade;
+        const convertedUnitQuantity = convertInventoryQuantity(unitQuantity, recipeUnit, stockUnit);
+        if (convertedUnitQuantity == null) {
+          result.unmatched.push(`${row.nome || row.ingrediente_nome || name} (unidade incompatível: ${recipeUnit || 'UN'} -> ${stockUnit || 'UN'}; conversão do Produto Mestre necessária)`);
+          continue;
+        }
+        const recipeQuantity = toStockAmount(convertedUnitQuantity * requestedQuantity);
         if (recipeQuantity <= 0) continue;
 
         const currentQuantity = Number(row.quantidade_atual || 0);
@@ -3202,7 +3309,7 @@ const appendInventoryPlansForSoldItem = async ({
   const directStock = await findStockProduct(empresaId, {
     id: remoteStockId || productId,
     name,
-  });
+  }, { allowNameFallback });
 
   if (!directStock) {
     if (reportUnmatched) result.unmatched.push(`${quantity}x ${name}`);
@@ -3267,6 +3374,10 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
         reason,
         sourceKind: 'modifier',
         reportUnmatched: Number(modifier.price || 0) > 0,
+        // Modifiers do not carry a stock/recipe link today. Never resolve one by
+        // display name, otherwise an option such as "Limão" can match the recipe
+        // of "Caipirinha Limão" and consume its ingredients a second time.
+        allowNameFallback: false,
       });
     }
   }
@@ -3277,13 +3388,20 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
       {
         sql: `
           INSERT OR IGNORE INTO estoque_movimentacoes
-            (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova, motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
-          SELECT ?, empresa_id, id, 'saida', ?, quantidade_atual, quantidade_atual - ?, ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
+            (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova,
+             custo_unitario_centavos, custo_total_centavos, metodo_custeio, custo_fonte,
+             motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
+          SELECT ?, empresa_id, id, 'saida', ?, quantidade_atual, quantidade_atual - ?,
+                 CASE WHEN COALESCE(preco_custo, 0) > 0 THEN ROUND(preco_custo * 100) ELSE NULL END,
+                 CASE WHEN COALESCE(preco_custo, 0) > 0 THEN ROUND(preco_custo * ? * 100) ELSE NULL END,
+                 'media_movel_continua', 'estoque_produtos.preco_custo',
+                 ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
           FROM estoque_produtos
           WHERE id = ? AND empresa_id = ? AND ativo = 1
         `,
         args: [
           movement.movementId,
+          movement.requestedQuantity,
           movement.requestedQuantity,
           movement.requestedQuantity,
           movement.reason,
@@ -3463,7 +3581,8 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
 
   const stockMovements = await db.execute({
     sql: `
-      SELECT id, empresa_id, produto_id, quantidade, responsavel_id
+      SELECT id, empresa_id, produto_id, quantidade, responsavel_id,
+             custo_unitario_centavos, custo_total_centavos
       FROM estoque_movimentacoes
       WHERE origem = 'pdv'
         AND order_item_id = ?
@@ -3499,9 +3618,11 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
         sql: `
           INSERT OR IGNORE INTO estoque_movimentacoes
             (id, empresa_id, produto_id, tipo_movimentacao, quantidade,
-             quantidade_anterior, quantidade_nova, motivo, responsavel_id,
+             quantidade_anterior, quantidade_nova, custo_unitario_centavos, custo_total_centavos,
+             metodo_custeio, custo_fonte, motivo, responsavel_id,
              created_at, order_id, order_item_id, origem, source_item_id, source_item_kind)
-          SELECT ?, empresa_id, id, 'entrada', ?, quantidade_atual, quantidade_atual + ?, ?, ?, ?, ?, ?, 'pdv', ?, 'cancel_reversal'
+          SELECT ?, empresa_id, id, 'entrada', ?, quantidade_atual, quantidade_atual + ?, ?, ?,
+                 'estorno_cmv_historico', 'estoque_movimentacoes', ?, ?, ?, ?, ?, 'pdv', ?, 'cancel_reversal'
           FROM estoque_produtos
           WHERE id = ? AND empresa_id = ?
         `,
@@ -3509,6 +3630,8 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
           reversalId,
           Number(movement.quantidade || 0),
           Number(movement.quantidade || 0),
+          movement.custo_unitario_centavos == null ? null : Number(movement.custo_unitario_centavos),
+          movement.custo_total_centavos == null ? null : Number(movement.custo_total_centavos),
           `Estorno automático por cancelamento do item ${itemId}: ${reasonLabel}`,
           osUserId || movement.responsavel_id,
           now,
@@ -7574,6 +7697,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
               reason: baseReason,
               sourceKind: 'modifier',
               reportUnmatched: Number(modifier.price || 0) > 0,
+              allowNameFallback: false,
             });
           }
         }
@@ -7618,13 +7742,20 @@ const closeBillWithInventorySync = async (data, session = null) => {
         {
           sql: `
             INSERT OR IGNORE INTO estoque_movimentacoes
-              (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova, motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
-            SELECT ?, empresa_id, id, 'saida', ?, quantidade_atual, quantidade_atual - ?, ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
+              (id, empresa_id, produto_id, tipo_movimentacao, quantidade, quantidade_anterior, quantidade_nova,
+               custo_unitario_centavos, custo_total_centavos, metodo_custeio, custo_fonte,
+               motivo, responsavel_id, created_at, closed_bill_id, order_id, order_item_id, origem, integration_event_id, source_item_id, source_item_kind)
+            SELECT ?, empresa_id, id, 'saida', ?, quantidade_atual, quantidade_atual - ?,
+                   CASE WHEN COALESCE(preco_custo, 0) > 0 THEN ROUND(preco_custo * 100) ELSE NULL END,
+                   CASE WHEN COALESCE(preco_custo, 0) > 0 THEN ROUND(preco_custo * ? * 100) ELSE NULL END,
+                   'media_movel_continua', 'estoque_produtos.preco_custo',
+                   ?, ?, ?, ?, ?, ?, 'pdv', ?, ?, ?
             FROM estoque_produtos
             WHERE id = ? AND empresa_id = ? AND ativo = 1
           `,
           args: [
             movement.movementId,
+            movement.requestedQuantity,
             movement.requestedQuantity,
             movement.requestedQuantity,
             movement.reason,
@@ -8449,6 +8580,7 @@ const handlers = createRouteHandlers({
   getDeliveryOrder,
   getDeliveryPublicConfig,
   getDeliveryQuote,
+  getOsLockState,
   getPagBankPublicKey,
   getPdvLockState,
   handlePagBankDeliveryWebhook,
@@ -8479,6 +8611,7 @@ const handlers = createRouteHandlers({
   saveSettings,
   sendToKitchen,
   setPdvLockState,
+  setOsLockState,
   syncBeveragesFromInventory,
   syncOpenOrdersInventory,
   toggleCategoryVisibility,
