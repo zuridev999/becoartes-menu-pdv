@@ -60,6 +60,7 @@ const ALLOWED_OPERATION_IPS = (process.env.ALLOWED_OPERATION_IPS || '')
   .split(',')
   .map((ip) => ip.trim())
   .filter(Boolean);
+const OPERATION_ACCESS_TEMPORARY_UNTIL = String(process.env.OPERATION_ACCESS_TEMPORARY_UNTIL || '').trim();
 const ALLOWED_WEB_ORIGINS = (process.env.ALLOWED_WEB_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())
@@ -975,6 +976,10 @@ const isOperationIpRestricted = () => ALLOWED_OPERATION_IPS.length > 0;
 const isOperationIpAllowed = (req) => (
   !isOperationIpRestricted() || ALLOWED_OPERATION_IPS.includes(getClientIp(req))
 );
+const isTemporaryOperationAccessAllowed = () => {
+  const expiresAt = Date.parse(OPERATION_ACCESS_TEMPORARY_UNTIL);
+  return Number.isFinite(expiresAt) && Date.now() < expiresAt;
+};
 
 const isAdminSession = (session) => normalizePermission(session?.permission) === 'admin';
 const isAdminBypassPin = (pin) => ADMIN_BYPASS_ENABLED && ADMIN_BYPASS_PIN && safeSecretEqual(pin, ADMIN_BYPASS_PIN);
@@ -2678,7 +2683,7 @@ const createProductionStationSession = () => {
   };
 };
 
-const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, terminalChallenge, terminalSignature }, { operationAccessAllowed = true, req = null } = {}) => {
+const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, terminalChallenge, terminalSignature }, { operationAccessAllowed = true, temporaryOperationAccess = false, req = null } = {}) => {
   await ensureDatabaseReady();
   await ensureDefaultSellersReady();
   const safePin = String(pin || '');
@@ -2719,7 +2724,7 @@ const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, termi
     });
     const trustedTerminalId = terminalProof.valid
       ? terminalProof.terminalId
-      : operationAccessAllowed
+      : operationAccessAllowed && !temporaryOperationAccess
         ? await bootstrapPdvTerminal({
           terminalId,
           terminalPublicKey,
@@ -2728,7 +2733,7 @@ const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, termi
         })
         : '';
 
-    if ((isMobilePdvRequest && !isAdminSession(safeSeller)) || (!operationAccessAllowed && !terminalProof.valid && !canAccessOutsideOperationIp(safeSeller))) {
+    if ((isMobilePdvRequest && !isAdminSession(safeSeller) && !temporaryOperationAccess) || (!operationAccessAllowed && !terminalProof.valid && !canAccessOutsideOperationIp(safeSeller))) {
       blockedNonAdminMatch = true;
       if (req && isOperationIpRestricted()) {
         console.warn(`Blocked non-admin login outside operation IP: ${getClientIp(req)} seller=${seller.id}`);
@@ -9253,6 +9258,7 @@ const handleApi = createApiHandler({
   isPinRateLimited,
   getSessionFromRequest,
   isOperationIpAllowed,
+  isTemporaryOperationAccessAllowed,
   isAdminSession,
   enforceRouteAccess,
   assertCashOperationAllowed,

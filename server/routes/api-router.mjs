@@ -21,6 +21,7 @@ export const createApiHandler = ({
   isPinRateLimited,
   getSessionFromRequest,
   isOperationIpAllowed,
+  isTemporaryOperationAccessAllowed = () => false,
   isAdminSession,
   enforceRouteAccess,
   assertCashOperationAllowed = async () => {},
@@ -65,7 +66,8 @@ export const createApiHandler = ({
     const isTrustedTerminalSession = Boolean(session?.trustedTerminalId);
     // Login por PIN nunca deve herdar permissão de uma sessão antiga. Isso evita
     // que um token admin salvo no navegador libere PIN de colaborador fora da rede.
-    const operationAccessAllowed = isOperationIpAllowed(req) || (!isLoginRoute && (isAdminSession(session) || isTrustedTerminalSession));
+    const temporaryOperationAccess = isTemporaryOperationAccessAllowed();
+    const operationAccessAllowed = isOperationIpAllowed(req) || temporaryOperationAccess || (!isLoginRoute && (isAdminSession(session) || isTrustedTerminalSession));
     await enforceRouteAccess(routeKey, body, session, { operationAccessAllowed, req });
     if (new Set([
       'POST /api/orders/send-to-kitchen',
@@ -79,7 +81,7 @@ export const createApiHandler = ({
     ]).has(routeKey)) {
       await assertCashOperationAllowed();
     }
-    const data = await handler(body, { req, url, session, operationAccessAllowed, rawBody: req.rawBody || '' });
+    const data = await handler(body, { req, url, session, operationAccessAllowed, temporaryOperationAccess, rawBody: req.rawBody || '' });
     sendJson(res, 200, { ok: true, data });
   } catch (error) {
     const requestId = randomUUID();

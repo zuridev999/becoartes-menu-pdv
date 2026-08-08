@@ -75,6 +75,9 @@ assert.match(bffSource, /createHmac\('sha256', DELIVERY_CUSTOMER_CODE_SECRET\)/,
 assert.match(bffSource, /remainingDelay = 300/, 'forgot-password responses must reduce account-enumeration timing differences');
 assert.match(routerSource, /transient \? 503/, 'transient backend failures must return 503');
 assert.match(routerSource, /isTrustedTerminalSession/, 'trusted terminal sessions must keep operating after an IP change');
+assert.match(routerSource, /isTemporaryOperationAccessAllowed/, 'an emergency operational release must be explicitly time-bounded by the server');
+assert.match(bffSource, /OPERATION_ACCESS_TEMPORARY_UNTIL/, 'temporary operational access must require an explicit expiry variable');
+assert.match(bffSource, /!temporaryOperationAccess/, 'temporary mobile access must not create a permanent trusted terminal');
 assert.match(routerSource, /bff_request_error/, 'backend errors must include structured route context');
 assert.match(httpSource, /totalBytes > maxBytes/, 'JSON body parsing must enforce a byte limit');
 
