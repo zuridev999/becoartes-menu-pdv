@@ -379,7 +379,12 @@ const getValidFreelancerOperationalAccess = (row, view) => {
 };
 const isTrustedPdvTerminalSession = (session) => /^[0-9a-f-]{36}$/i.test(String(session?.trustedTerminalId || ''));
 const canAccessOutsideOperationIp = (session) => Boolean(
-  session && (normalizePermission(session.permission) === 'admin' || session.allowRemote || isTrustedPdvTerminalSession(session))
+  session && (
+    normalizePermission(session.permission) === 'admin'
+    || session.allowRemote
+    || session.stationAccess
+    || isTrustedPdvTerminalSession(session)
+  )
 );
 
 const permissionsByProfile = {
