@@ -56,12 +56,6 @@ function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
     setError('');
 
     try {
-      const allowed = await login(pin);
-      if (allowed) {
-        setPin('');
-        onUnlock();
-        return;
-      }
       const setupResult = await AppApi.validateTabletSetupPin(pin, station);
       if (setupResult.valid) {
         setApiSessionToken(setupResult.sessionToken || null);
@@ -75,6 +69,13 @@ function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
           permission: 'operator',
         };
         useStore.setState({ currentSeller: kitchenSeller });
+        setPin('');
+        onUnlock();
+        return;
+      }
+
+      const allowed = await login(pin);
+      if (allowed) {
         setPin('');
         onUnlock();
         return;
