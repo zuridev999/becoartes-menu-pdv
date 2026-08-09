@@ -1099,6 +1099,8 @@ export function PDVView() {
                                  items={req.items}
                                  fallbackMessage={req.message}
                                  compact
+                                 maxItems={req.type === 'new_order' ? req.items?.length : undefined}
+                                 maxModifiers={req.type === 'new_order' ? Number.POSITIVE_INFINITY : undefined}
                                />
                                <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-white/40 uppercase">
                                  Ver movimento completo <ChevronRight size={8} />
