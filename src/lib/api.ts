@@ -796,8 +796,8 @@ export const AppApi = {
     });
   },
 
-  validateTabletSetupPin(pin: string) {
-    return postJson<{ valid: boolean; sessionToken?: string | null; seller?: any | null }>('/api/tablet/setup-login', { pin });
+  validateTabletSetupPin(pin: string, station?: 'kitchen' | 'bar') {
+    return postJson<{ valid: boolean; sessionToken?: string | null; seller?: any | null }>('/api/tablet/setup-login', { pin, station });
   },
 
   createTableAccessToken(input: { origin: 'tablet' | 'qr'; tableId?: string; tableNumber?: number }) {

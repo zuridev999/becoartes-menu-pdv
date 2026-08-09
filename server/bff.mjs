@@ -2665,11 +2665,12 @@ const createAdminBypassSession = () => {
   };
 };
 
-const createProductionStationSession = () => {
+const createProductionStationSession = (station = 'kitchen') => {
+  const isBarStation = station === 'bar';
   const seller = {
-    id: 'production-station',
-    name: 'Estação de Produção',
-    nickname: 'Produção',
+    id: isBarStation ? 'production-station-bar' : 'production-station-kitchen',
+    name: isBarStation ? 'Estação do Bar' : 'Estação da Cozinha',
+    nickname: isBarStation ? 'Bar' : 'Cozinha',
     status: 'active',
     role: 'produção',
     permission: 'operator',
@@ -2758,9 +2759,15 @@ const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, termi
   return { seller: null, sessionToken: null, accessRestricted: blockedNonAdminMatch };
 };
 
-const validateTabletSetupPin = async ({ pin }, { operationAccessAllowed = true } = {}) => {
+const validateTabletSetupPin = async ({ pin, station }, { operationAccessAllowed = true } = {}) => {
   const safePin = String(pin || '');
-  if (safeSecretEqual(safePin, TABLET_SETUP_PIN) && operationAccessAllowed) return { valid: true, ...createProductionStationSession() };
+  const requestedStation = String(station || '').trim().toLowerCase();
+  const isProductionStationRequest = requestedStation === 'kitchen' || requestedStation === 'bar';
+  // Kitchen and bar have a dedicated station PIN. It is deliberately independent
+  // from the venue IP because production terminals may use a changing network.
+  if (safeSecretEqual(safePin, TABLET_SETUP_PIN) && (operationAccessAllowed || isProductionStationRequest)) {
+    return { valid: true, ...createProductionStationSession(requestedStation) };
+  }
   if (isAdminBypassPin(safePin)) return { valid: true, ...createAdminBypassSession() };
   return { valid: false, sessionToken: null };
 };

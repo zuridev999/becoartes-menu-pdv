@@ -43,6 +43,7 @@ const getKitchenItemPresentation = (item: any) => {
 function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
   const { login } = useStore();
   const stationLabel = getAppLabel() === 'Bar' ? 'BAR' : 'COZINHA';
+  const station = getAppLabel() === 'Bar' ? 'bar' : 'kitchen';
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,7 +62,7 @@ function KitchenPinGate({ onUnlock }: { onUnlock: () => void }) {
         onUnlock();
         return;
       }
-      const setupResult = await AppApi.validateTabletSetupPin(pin);
+      const setupResult = await AppApi.validateTabletSetupPin(pin, station);
       if (setupResult.valid) {
         setApiSessionToken(setupResult.sessionToken || null);
         const kitchenSeller: Seller = setupResult.seller || {
