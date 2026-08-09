@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.9 - 2026-08-09
+
+- Volta a mostrar todos os itens e escolhas de cada novo pedido QR em "Novas solicitações".
+- Mantém o cartão limitado ao pedido recém-enviado, sem acumular produtos anteriores da mesa.
+
 ## 1.7.4 - 2026-08-07
 
 - Integra a base remota atual do PDV com a proteção contra baixa por nome quando há vínculo por ID.
