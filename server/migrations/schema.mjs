@@ -149,6 +149,20 @@ export const SCHEMA_MIGRATIONS = [
       addColumn('estoque_movimentacoes', 'custo_fonte', 'TEXT'),
     ],
   },
+  {
+    id: '20260812_0001_qr_comanda_transition',
+    description: 'Separate physical QR locations from customer-tab accounts and preserve active tables during mode changes.',
+    steps: [
+      addColumn('tables', 'qr_flow_override', 'TEXT'),
+      addColumn('tables', 'qr_session_revision', 'INTEGER DEFAULT 1'),
+      addColumn('orders', 'source_table_id', 'TEXT'),
+      addColumn('orders', 'source_table_number', 'INTEGER'),
+      addColumn('orders', 'customer_tab_id', 'TEXT'),
+      addColumn('service_requests', 'source_table_id', 'TEXT'),
+      addColumn('service_requests', 'source_table_number', 'INTEGER'),
+      addColumn('service_requests', 'customer_tab_id', 'TEXT'),
+    ],
+  },
 ];
 
 const quoteIdentifier = (value) => {

@@ -91,6 +91,8 @@ export interface Table {
   capacity?: number;
   lastActivity?: Date;
   currentSellerId?: string;
+  qrFlowOverride?: 'mesa_until_close' | null;
+  qrSessionRevision?: number;
 }
 
 export interface CustomerTab {
@@ -118,6 +120,10 @@ export interface KitchenOrder {
   station?: 'kitchen' | 'bar';
   tableId: string;
   tableNumber: number;
+  sourceTableId?: string | null;
+  sourceTableNumber?: number | null;
+  customerTabId?: string | null;
+  customerTabNumber?: number | null;
   items: OrderItem[];
   status: 'pending' | 'preparing' | 'ready';
   createdAt: Date;
@@ -129,6 +135,10 @@ export interface ServiceRequest {
   id: string;
   tableId: string;
   tableNumber: number;
+  sourceTableId?: string | null;
+  sourceTableNumber?: number | null;
+  customerTabId?: string | null;
+  customerTabNumber?: number | null;
   orderId?: string;
   type: string; // 'waiter' | 'bill' | 'glass' | 'cutlery' | 'napkin' | 'ice' | 'lemon' | 'physical_menu' | 'help' | 'problem' | 'other'
   message?: string;

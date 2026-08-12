@@ -6,6 +6,7 @@ const PUBLIC_BOOTSTRAP_ROUTES = new Set([
   'POST /api/pdv-terminal/challenge',
   'POST /api/pdv-terminal/authorize',
   'POST /api/table-access-token',
+  'POST /api/qr/resolve',
 ]);
 
 const PUBLIC_CUSTOMER_ROUTES = new Set([
@@ -102,11 +103,12 @@ export const createRouteAccessEnforcer = ({
 }) => {
   const requirePublicTableAccess = async (body) => {
     if (!isPublicOperationalOrigin(body)) return false;
+    const isCustomerTabOrder = Boolean(body?.customerTabId);
     const access = await verifyPublicTableToken({
       token: body?.publicAccessToken,
       source: body.origin,
-      tableId: body?.tableId || '',
-      tableNumber: body?.tableNumber || '',
+      tableId: isCustomerTabOrder ? (body?.sourceTableId || '') : (body?.tableId || ''),
+      tableNumber: isCustomerTabOrder ? (body?.sourceTableNumber || '') : (body?.tableNumber || ''),
     });
     if (access) return true;
     const error = new Error('Token público da mesa inválido ou ausente.');

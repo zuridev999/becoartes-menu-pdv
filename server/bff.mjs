@@ -26,6 +26,7 @@ import {
 } from './auth/pins.mjs';
 import { createPdvTerminalServices, isMobilePdvUserAgent } from './auth/pdv-terminal.mjs';
 import { createDistributedRateLimiter } from './security/distributed-rate-limit.mjs';
+import { createQrComandaTransitionServices, createQrModeTransitionStatements } from './qr-comanda-transition.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -740,91 +741,6 @@ const getSessionFromRequest = (req) => {
   }
 };
 
-const getTableById = async (tableId) => {
-  const tableRes = await db.execute({
-    sql: "SELECT id, number FROM tables WHERE id = ? LIMIT 1",
-    args: [String(tableId || '')],
-  });
-  return tableRes.rows[0] || null;
-};
-
-const getTableByNumber = async (tableNumber) => {
-  const safeTableNumber = Math.trunc(Number(tableNumber || 0));
-  if (!Number.isFinite(safeTableNumber) || safeTableNumber <= 0) return null;
-  const tableRes = await db.execute({
-    sql: "SELECT id, number FROM tables WHERE number = ? LIMIT 1",
-    args: [String(safeTableNumber)],
-  });
-  return tableRes.rows[0] || null;
-};
-
-const createPublicTableToken = ({ source, tableId, tableNumber, revision = '', expiresAt = 0 }) => createSignedToken({
-  typ: 'public_table_access',
-  source,
-  tableId: String(tableId || ''),
-  tableNumber: Number(tableNumber || 0),
-  revision: String(revision || ''),
-  exp: expiresAt ? Number(expiresAt) : 0,
-  iat: Date.now(),
-});
-
-const verifyPublicTableToken = async ({ token, source, tableId = '', tableNumber = '' }) => {
-  const decoded = decodeSignedToken(token);
-  if (!decoded || decoded.typ !== 'public_table_access') return null;
-  if (decoded.source !== source) return null;
-  if (decoded.exp && Number(decoded.exp) < Date.now()) return null;
-
-  const table = tableId ? await getTableById(tableId) : await getTableByNumber(tableNumber || decoded.tableNumber);
-  if (!table) return null;
-  if (String(decoded.tableId) !== String(table.id)) return null;
-  if (Number(decoded.tableNumber || 0) !== Number(table.number || 0)) return null;
-  if (tableNumber && Number(tableNumber) !== Number(table.number || 0)) return null;
-
-  if (source === 'qr') {
-    const settings = await getSettings();
-    const revision = settings?.qrCodes?.tableRevisions?.[String(table.number)] || '';
-    if (String(decoded.revision || '') !== String(revision || '')) return null;
-  }
-
-  return {
-    source,
-    tableId: String(table.id),
-    tableNumber: Number(table.number || 0),
-  };
-};
-
-const createTableAccessToken = async ({ origin, tableId = '', tableNumber = '' }, session = null) => {
-  const source = origin === 'tablet' ? 'tablet' : origin === 'qr' ? 'qr' : '';
-  if (!source) throw new Error('Origem inválida para token de mesa.');
-
-  if (source === 'tablet' && !session?.stationAccess && !isAdminSession(session)) {
-    const error = new Error('Sessão do tablet inválida para vincular mesa.');
-    error.statusCode = 403;
-    throw error;
-  }
-
-  const table = tableId ? await getTableById(tableId) : await getTableByNumber(tableNumber);
-  if (!table) throw new Error('Mesa não encontrada para token público.');
-
-  const settings = await getSettings();
-  const revision = source === 'qr' ? (settings?.qrCodes?.tableRevisions?.[String(table.number)] || '') : '';
-  const expiresAt = source === 'tablet' ? Date.now() + TABLET_TABLE_TOKEN_TTL_MS : 0;
-
-  return {
-    tableId: String(table.id),
-    tableNumber: Number(table.number || 0),
-    origin: source,
-    token: createPublicTableToken({
-      source,
-      tableId: table.id,
-      tableNumber: table.number,
-      revision,
-      expiresAt,
-    }),
-    expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
-  };
-};
-
 const ensureDatabase = async () => {
   await db.batch([
     "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, schedule_config TEXT, sort_order INTEGER DEFAULT 0, visible INTEGER DEFAULT 1)",
@@ -886,7 +802,10 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_integration_events_type_status ON integration_events(type, status)",
     "CREATE INDEX IF NOT EXISTS idx_stock_mov_integration_event ON estoque_movimentacoes(integration_event_id)",
     "CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_orders_source_table_created ON orders(source_table_number, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_orders_customer_tab_status ON orders(customer_tab_id, status)",
     "CREATE INDEX IF NOT EXISTS idx_service_requests_status_created ON service_requests(status, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_service_requests_source_status ON service_requests(source_table_number, status, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_closed_bills_closed_at ON closed_bills(closed_at)",
     "CREATE INDEX IF NOT EXISTS idx_table_payments_table_status ON table_payments(table_id, status)",
     "CREATE INDEX IF NOT EXISTS idx_customer_tabs_status_cpf ON customer_tabs(status, cpf)",
@@ -1797,7 +1716,24 @@ const splitItemsByProductionStation = (items = []) => {
 const getKitchenOrders = async (view = 'pdv') => {
   const stationFilter = view === 'bar' ? 'bar' : view === 'kitchen' ? 'kitchen' : null;
   const [ordersRes, itemsRes, nowRes] = await Promise.all([
-    db.execute("SELECT o.id, o.status, o.table_id, o.origin, strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) as created_at, t.number as tableNumber FROM orders o JOIN tables t ON o.table_id = t.id WHERE o.status IN ('pending', 'preparing') ORDER BY o.created_at ASC"),
+    db.execute(`
+      SELECT
+        o.id,
+        o.status,
+        o.table_id,
+        o.origin,
+        o.source_table_id,
+        o.source_table_number,
+        o.customer_tab_id,
+        ct.table_number AS customerTabNumber,
+        strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) AS created_at,
+        t.number AS tableNumber
+      FROM orders o
+      JOIN tables t ON o.table_id = t.id
+      LEFT JOIN customer_tabs ct ON ct.id = o.customer_tab_id
+      WHERE o.status IN ('pending', 'preparing')
+      ORDER BY o.created_at ASC
+    `),
     db.execute(`
       SELECT oi.*, m.name, m.category_id, c.name as category_name
       FROM order_items oi
@@ -1885,6 +1821,10 @@ const getKitchenOrders = async (view = 'pdv') => {
         station,
         tableId: row.table_id,
         tableNumber: Number(row.tableNumber),
+        sourceTableId: row.source_table_id || null,
+        sourceTableNumber: Number(row.source_table_number || 0) || null,
+        customerTabId: row.customer_tab_id || null,
+        customerTabNumber: Number(row.customerTabNumber || 0) || null,
         status: ticket.status || row.status,
         origin: row.origin || 'pdv',
         createdAt: ticket.createdAt || row.created_at,
@@ -1901,7 +1841,10 @@ const getKitchenOrders = async (view = 'pdv') => {
 
 const materializeNewOrderRequests = async () => {
   await db.execute(`
-    INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message, created_at)
+    INSERT OR IGNORE INTO service_requests (
+      id, table_id, type, status, message, created_at,
+      source_table_id, source_table_number, customer_tab_id
+    )
     SELECT
       'new_order_' || o.id,
       o.table_id,
@@ -1913,7 +1856,10 @@ const materializeNewOrderRequests = async () => {
         LEFT JOIN menu m ON oi.product_id = m.id
         WHERE oi.order_id = o.id
       ), 'Novo pedido'),
-      o.created_at
+      o.created_at,
+      o.source_table_id,
+      o.source_table_number,
+      o.customer_tab_id
     FROM orders o
     WHERE o.status IN ('pending', 'preparing')
       AND o.created_at >= datetime('now', '-12 hours')
@@ -1942,10 +1888,15 @@ const getServiceRequests = async () => {
         sr.type,
         sr.status,
         sr.message,
+        sr.source_table_id,
+        sr.source_table_number,
+        sr.customer_tab_id,
+        ct.table_number as customerTabNumber,
         strftime('%Y-%m-%dT%H:%M:%SZ', sr.created_at) as created_at,
         t.number as tableNumber
       FROM service_requests sr
       LEFT JOIN tables t ON sr.table_id = t.id
+      LEFT JOIN customer_tabs ct ON ct.id = sr.customer_tab_id
       WHERE (
           sr.status IN ('pending', 'viewed')
           OR (
@@ -2034,6 +1985,10 @@ const getServiceRequests = async () => {
     id: row.id,
     tableId: row.table_id,
     tableNumber: Number(row.tableNumber || 0),
+    sourceTableId: row.source_table_id || null,
+    sourceTableNumber: Number(row.source_table_number || 0) || null,
+    customerTabId: row.customer_tab_id || null,
+    customerTabNumber: Number(row.customerTabNumber || 0) || null,
     orderId: orderIdByRequestId.get(String(row.id || '')) || undefined,
     type: row.type,
     message: row.message || '',
@@ -2457,6 +2412,8 @@ const getTables = async () => {
     id: row.id,
     number: Number(row.number),
     status: row.status,
+    qrFlowOverride: row.qr_flow_override || null,
+    qrSessionRevision: Number(row.qr_session_revision || 1),
     orders: ordersByTable[row.id] || [],
     payments: paymentsByTable[row.id] || [],
     customerTab: tabsByTable[row.id] || null,
@@ -3885,7 +3842,7 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
 const getExistingOrderSubmission = async (clientRequestId) => {
   if (!clientRequestId) return null;
   const result = await db.execute({
-    sql: "SELECT id, table_id FROM orders WHERE client_request_id = ? LIMIT 1",
+    sql: "SELECT id, table_id, source_table_id, source_table_number, customer_tab_id FROM orders WHERE client_request_id = ? LIMIT 1",
     args: [clientRequestId],
   });
   return result.rows?.[0] || null;
@@ -3900,6 +3857,10 @@ const orderSubmissionDuplicateResponse = (order, tableId, items = []) => {
     request: {
       id: requestId,
       tableId: String(order?.table_id || tableId),
+      tableNumber: Number(order?.source_table_number || 0) || undefined,
+      sourceTableId: order?.source_table_id || null,
+      sourceTableNumber: Number(order?.source_table_number || 0) || null,
+      customerTabId: order?.customer_tab_id || null,
       orderId,
       type: 'new_order',
       message: items.map((item) => `${item.quantity}x ${item.name}`).join(', '),
@@ -3914,10 +3875,32 @@ const orderSubmissionDuplicateResponse = (order, tableId, items = []) => {
 
 const isConstraintError = (error) => /constraint|unique|primary key/i.test(String(error?.message || error || ''));
 
-const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, clientRequestId, items }, session = null) => {
+const sendToKitchen = async ({
+  orderId,
+  tableId,
+  total,
+  origin,
+  sellerId,
+  clientRequestId,
+  items,
+  customerTabId = '',
+  customerTabAccessToken = '',
+  sourceTableId = '',
+  sourceTableNumber = '',
+  publicAccessToken = '',
+}, session = null) => {
   requireString(orderId, 'orderId');
   requireString(tableId, 'tableId');
   const safeOrigin = origin === 'tablet' || origin === 'qr' ? origin : 'pdv';
+  const customerTabContext = await verifyCustomerTabOrderContext({
+    tableId,
+    origin: safeOrigin,
+    customerTabId,
+    customerTabAccessToken,
+    sourceTableId,
+    sourceTableNumber,
+    publicAccessToken,
+  });
   const safeClientRequestId = normalizeText(clientRequestId || orderId).slice(0, 120);
   const existingSubmission = await getExistingOrderSubmission(safeClientRequestId);
   if (existingSubmission) {
@@ -3939,8 +3922,19 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, client
 
   const batch = [
     {
-      sql: "INSERT INTO orders (id, table_id, total, status, origin, created_by_id, client_request_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [orderId, tableId, requireNumber(total, 'total'), 'pending', safeOrigin, effectiveSellerId, safeClientRequestId],
+      sql: "INSERT INTO orders (id, table_id, total, status, origin, created_by_id, client_request_id, source_table_id, source_table_number, customer_tab_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [
+        orderId,
+        tableId,
+        requireNumber(total, 'total'),
+        'pending',
+        safeOrigin,
+        effectiveSellerId,
+        safeClientRequestId,
+        customerTabContext?.sourceTableId || null,
+        customerTabContext?.sourceTableNumber || null,
+        customerTabContext?.customerTabId || null,
+      ],
     },
     ...safeItems.map((item) => ({
       sql: "INSERT INTO order_items (id, order_id, product_id, quantity, price_at_time, selected_modifiers, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -3964,8 +3958,17 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, client
   const inventoryEventId = `pdv_order_${orderId}`;
   const itemsList = safeItems.map((item) => `${item.quantity}x ${item.name}`).join(', ');
   batch.push({
-    sql: "INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
-    args: [requestId, tableId, 'new_order', 'pending', itemsList],
+    sql: "INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message, source_table_id, source_table_number, customer_tab_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    args: [
+      requestId,
+      tableId,
+      'new_order',
+      'pending',
+      itemsList,
+      customerTabContext?.sourceTableId || null,
+      customerTabContext?.sourceTableNumber || null,
+      customerTabContext?.customerTabId || null,
+    ],
   });
   batch.push({
     sql: `
@@ -4033,6 +4036,11 @@ const sendToKitchen = async ({ orderId, tableId, total, origin, sellerId, client
     request: {
       id: requestId,
       tableId,
+      tableNumber: customerTabContext?.sourceTableNumber || undefined,
+      sourceTableId: customerTabContext?.sourceTableId || null,
+      sourceTableNumber: customerTabContext?.sourceTableNumber || null,
+      customerTabId: customerTabContext?.customerTabId || null,
+      customerTabNumber: customerTabContext?.customerTabNumber || null,
       orderId,
       type: 'new_order',
       message: itemsList,
@@ -5965,9 +5973,16 @@ const createDeliveryCheckout = async ({ orderId, customer, items, payment }) => 
 const createOrderReadyRequest = async (orderId) => {
   const orderRes = await db.execute({
     sql: `
-      SELECT o.table_id, t.number as tableNumber
+      SELECT
+        o.table_id,
+        o.source_table_id,
+        o.source_table_number,
+        o.customer_tab_id,
+        t.number as tableNumber,
+        ct.table_number as customerTabNumber
       FROM orders o
       LEFT JOIN tables t ON t.id = o.table_id
+      LEFT JOIN customer_tabs ct ON ct.id = o.customer_tab_id
       WHERE o.id = ?
       LIMIT 1
     `,
@@ -6017,8 +6032,8 @@ const createOrderReadyRequest = async (orderId) => {
   const id = `order_ready_${orderId}`;
 
   await db.execute({
-    sql: "INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
-    args: [id, order.table_id, 'order_ready', 'pending', itemsList],
+    sql: "INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message, source_table_id, source_table_number, customer_tab_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    args: [id, order.table_id, 'order_ready', 'pending', itemsList, order.source_table_id || null, order.source_table_number || null, order.customer_tab_id || null],
   });
 
   const requestRes = await db.execute({
@@ -6032,6 +6047,10 @@ const createOrderReadyRequest = async (orderId) => {
       id: request?.id || id,
       tableId: request?.table_id || order.table_id,
       tableNumber: Number(order.tableNumber || 0),
+      sourceTableId: order.source_table_id || null,
+      sourceTableNumber: Number(order.source_table_number || 0) || null,
+      customerTabId: order.customer_tab_id || null,
+      customerTabNumber: Number(order.customerTabNumber || 0) || null,
       orderId,
       type: 'order_ready',
       message: request?.message || itemsList,
@@ -6603,11 +6622,21 @@ const saveQrMode = async ({ qrMode, authorizationPin }, session = null) => {
     ...(currentSettings || {}),
     qrMode: nextMode,
   };
+  await db.batch(createQrModeTransitionStatements({
+    currentMode: currentSettings?.qrMode,
+    nextMode,
+    nextSettings,
+  }), 'write');
 
-  await db.execute({
-    sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('settings', ?, CURRENT_TIMESTAMP)",
-    args: [JSON.stringify(nextSettings)],
-  });
+  const transitionResult = nextMode === 'comanda'
+    ? await db.execute(`
+        SELECT CAST(number AS INTEGER) AS number
+        FROM tables
+        WHERE qr_flow_override = 'mesa_until_close'
+        ORDER BY CAST(number AS INTEGER)
+      `)
+    : { rows: [] };
+  const transitionTables = transitionResult.rows.map((row) => Number(row.number || 0)).filter(Boolean);
 
   await addAuditLog({
     id: createId(),
@@ -6618,6 +6647,7 @@ const saveQrMode = async ({ qrMode, authorizationPin }, session = null) => {
       requestedByName: session?.name || 'Sistema',
       authorizedById: authorizer?.id || '',
       authorizedByName: authorizer?.name || 'Sistema',
+      transitionTables,
     }),
     origin: 'pdv',
     authorId: authorizer?.id || session?.id || '',
@@ -6625,7 +6655,7 @@ const saveQrMode = async ({ qrMode, authorizationPin }, session = null) => {
     timestamp: new Date().toISOString(),
   });
 
-  return { saved: true, settings: nextSettings };
+  return { saved: true, settings: nextSettings, transitionTables };
 };
 
 const regenerateTableQr = async ({ tableNumber, adminPin }, session = null) => {
@@ -7183,19 +7213,52 @@ const validateCoupon = async (data, session) => {
   };
 };
 
-const createServiceRequest = async ({ id, tableId, type, message = '' }) => {
+const createServiceRequest = async ({
+  id,
+  tableId,
+  type,
+  message = '',
+  origin = '',
+  customerTabId = '',
+  customerTabAccessToken = '',
+  sourceTableId = '',
+  sourceTableNumber = '',
+  publicAccessToken = '',
+}) => {
   const requestId = id || createId();
+  const customerTabContext = await verifyCustomerTabOrderContext({
+    tableId,
+    origin,
+    customerTabId,
+    customerTabAccessToken,
+    sourceTableId,
+    sourceTableNumber,
+    publicAccessToken,
+  });
   const tableRes = await db.execute({ sql: "SELECT number FROM tables WHERE id = ? LIMIT 1", args: [tableId] });
   const tableNumber = Number(tableRes.rows[0]?.number || 0);
   await db.execute({
-    sql: "INSERT INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, ?, ?, ?)",
-    args: [requestId, requireString(tableId, 'tableId'), requireString(type, 'type'), 'pending', message],
+    sql: "INSERT INTO service_requests (id, table_id, type, status, message, source_table_id, source_table_number, customer_tab_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    args: [
+      requestId,
+      requireString(tableId, 'tableId'),
+      requireString(type, 'type'),
+      'pending',
+      message,
+      customerTabContext?.sourceTableId || null,
+      customerTabContext?.sourceTableNumber || null,
+      customerTabContext?.customerTabId || null,
+    ],
   });
   return {
     request: {
       id: requestId,
       tableId,
       tableNumber,
+      sourceTableId: customerTabContext?.sourceTableId || null,
+      sourceTableNumber: customerTabContext?.sourceTableNumber || null,
+      customerTabId: customerTabContext?.customerTabId || null,
+      customerTabNumber: customerTabContext?.customerTabNumber || null,
       type,
       message,
       status: 'pending',
@@ -7302,8 +7365,15 @@ const updateTableStatus = async ({ tableId, status }, session) => {
     }
   }
   const clearsOwner = status === 'available' || status === 'paid';
+  const closesPhysicalSession = status === 'available';
   await db.execute({
-    sql: `UPDATE tables SET status = ?, current_seller_id = ${clearsOwner ? 'NULL' : 'current_seller_id'} WHERE id = ?`,
+    sql: `
+      UPDATE tables
+      SET status = ?,
+          current_seller_id = ${clearsOwner ? 'NULL' : 'current_seller_id'}
+          ${closesPhysicalSession ? ", qr_flow_override = NULL, qr_session_revision = COALESCE(qr_session_revision, 1) + 1" : ''}
+      WHERE id = ?
+    `,
     args: [status, tableId],
   });
   return { status, closedCustomerTabs };
@@ -7332,13 +7402,26 @@ const transferTable = async ({ fromTableId, toTableId }, session) => {
   requireString(toTableId, 'toTableId');
   await ensureTableAccess(fromTableId, session);
   await ensureTableAccess(toTableId, session);
-  const ownerRes = await db.execute({ sql: "SELECT current_seller_id FROM tables WHERE id = ? LIMIT 1", args: [fromTableId] });
+  const ownerRes = await db.execute({
+    sql: "SELECT current_seller_id, qr_flow_override FROM tables WHERE id = ? LIMIT 1",
+    args: [fromTableId],
+  });
   const ownerId = ownerRes.rows[0]?.current_seller_id || session?.id || null;
+  const inheritsMesaFlow = ownerRes.rows[0]?.qr_flow_override === 'mesa_until_close';
   await db.batch([
     { sql: "UPDATE orders SET table_id = ? WHERE table_id = ? AND status != 'closed'", args: [toTableId, fromTableId] },
     { sql: "UPDATE service_requests SET table_id = ? WHERE table_id = ? AND status != 'resolved'", args: [toTableId, fromTableId] },
-    { sql: "UPDATE tables SET status = 'available', current_seller_id = NULL WHERE id = ?", args: [fromTableId] },
-    { sql: "UPDATE tables SET status = 'ordering', current_seller_id = ? WHERE id = ?", args: [ownerId, toTableId] },
+    { sql: "UPDATE tables SET status = 'available', current_seller_id = NULL, qr_flow_override = NULL, qr_session_revision = COALESCE(qr_session_revision, 1) + 1 WHERE id = ?", args: [fromTableId] },
+    {
+      sql: `
+        UPDATE tables
+        SET status = 'ordering',
+            current_seller_id = ?,
+            qr_flow_override = CASE WHEN ? THEN 'mesa_until_close' ELSE qr_flow_override END
+        WHERE id = ?
+      `,
+      args: [ownerId, inheritsMesaFlow ? 1 : 0, toTableId],
+    },
   ], 'write');
   return { moved: true };
 };
@@ -7351,16 +7434,26 @@ const joinTables = async ({ tableIds, targetTableId }, session) => {
   }
   await ensureTableAccess(targetTableId, session);
   const sourceIds = tableIds.filter((id) => id !== targetTableId);
-  const ownerRes = await db.execute({
-    sql: `SELECT current_seller_id FROM tables WHERE id IN (${tableIds.map(() => '?').join(',')}) AND current_seller_id IS NOT NULL LIMIT 1`,
+  const tableStateRes = await db.execute({
+    sql: `SELECT id, current_seller_id, qr_flow_override FROM tables WHERE id IN (${tableIds.map(() => '?').join(',')})`,
     args: tableIds,
   });
-  const ownerId = ownerRes.rows[0]?.current_seller_id || session?.id || null;
+  const ownerId = tableStateRes.rows.find((row) => row.current_seller_id)?.current_seller_id || session?.id || null;
+  const inheritsMesaFlow = tableStateRes.rows.some((row) => row.qr_flow_override === 'mesa_until_close');
   const batch = [
     ...sourceIds.map((id) => ({ sql: "UPDATE orders SET table_id = ? WHERE table_id = ? AND status != 'closed'", args: [targetTableId, id] })),
     ...sourceIds.map((id) => ({ sql: "UPDATE service_requests SET table_id = ? WHERE table_id = ? AND status != 'resolved'", args: [targetTableId, id] })),
-    ...sourceIds.map((id) => ({ sql: "UPDATE tables SET status = 'available', current_seller_id = NULL WHERE id = ?", args: [id] })),
-    { sql: "UPDATE tables SET status = 'ordering', current_seller_id = COALESCE(current_seller_id, ?) WHERE id = ?", args: [ownerId, targetTableId] },
+    ...sourceIds.map((id) => ({ sql: "UPDATE tables SET status = 'available', current_seller_id = NULL, qr_flow_override = NULL, qr_session_revision = COALESCE(qr_session_revision, 1) + 1 WHERE id = ?", args: [id] })),
+    {
+      sql: `
+        UPDATE tables
+        SET status = 'ordering',
+            current_seller_id = COALESCE(current_seller_id, ?),
+            qr_flow_override = CASE WHEN ? THEN 'mesa_until_close' ELSE qr_flow_override END
+        WHERE id = ?
+      `,
+      args: [ownerId, inheritsMesaFlow ? 1 : 0, targetTableId],
+    },
   ];
   await db.batch(batch, 'write');
   return { joined: true };
@@ -8405,7 +8498,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
         ],
       })),
       {
-        sql: "UPDATE tables SET status = 'available', last_activity = ? WHERE id = ?",
+        sql: "UPDATE tables SET status = 'available', last_activity = ?, qr_flow_override = NULL, qr_session_revision = COALESCE(qr_session_revision, 1) + 1 WHERE id = ?",
         args: [closedAt.toISOString(), tableId],
       },
       {
@@ -8793,148 +8886,32 @@ const closeCounterSaleWithInventorySync = async (data, session = null) => {
   }
 };
 
-const findCustomerTabByCpf = async (cpf, statuses = ['open', 'paid']) => {
-  const normalizedCpf = normalizeCpf(cpf);
-  const placeholders = statuses.map(() => '?').join(',');
-  const res = await db.execute({
-    sql: `
-      SELECT *
-      FROM customer_tabs
-      WHERE cpf = ? AND status IN (${placeholders})
-      ORDER BY opened_at DESC
-      LIMIT 1
-    `,
-    args: [normalizedCpf, ...statuses],
-  });
-  const row = res.rows[0] || null;
-  if (!row) return null;
-  const totals = await getCustomerTabTotalsByTable([row.table_id]);
-  return sanitizeCustomerTab(row, totals[row.table_id]);
-};
-
-const findAvailableCustomerTabTable = async () => {
-  await ensureTablesUpTo(200);
-  const res = await db.execute(`
-    SELECT t.id, t.number
-    FROM tables t
-    LEFT JOIN customer_tabs ct
-      ON ct.table_id = t.id
-      AND ct.status IN ('open', 'paid')
-    WHERE CAST(t.number AS INTEGER) BETWEEN 1 AND 200
-      AND ct.id IS NULL
-    ORDER BY CAST(t.number AS INTEGER) ASC
-    LIMIT 1
-  `);
-  const table = res.rows[0];
-  if (!table) throw new Error('Todas as comandas técnicas estão ocupadas.');
-  return { id: String(table.id), number: Number(table.number) };
-};
-
-const openCustomerTab = async ({ customerName, phone, cpf, accessToken = '' }) => {
-  const normalizedCpf = normalizeCpf(cpf);
-  if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
-  const safeName = requireString(customerName, 'customerName').trim().slice(0, 120);
-  const safePhone = requireString(phone, 'phone').trim().slice(0, 40);
-
-  const existing = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
-  if (existing) {
-    const existingRow = (await db.execute({
-      sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1",
-      args: [existing.id],
-    })).rows[0];
-    if (existingRow && verifyCustomerTabAccessToken({ token: accessToken, tab: existingRow })) {
-      return {
-        tab: existing,
-        accessToken: createCustomerTabAccessToken(existingRow),
-        recovered: true,
-      };
-    }
-    const error = new Error('Já existe uma comanda ativa para estes dados. Continue no dispositivo em que ela foi aberta ou peça ajuda à equipe.');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  let lastError = null;
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const table = await findAvailableCustomerTabTable();
-    const id = createId();
-    const openedAt = new Date().toISOString();
-    try {
-      await db.batch([
-        {
-          sql: `
-            INSERT INTO customer_tabs (
-              id, cpf, cpf_hash, cpf_last4, customer_name, phone, table_id, table_number, status, opened_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
-          `,
-          args: [id, normalizedCpf, getCpfHash(normalizedCpf), normalizedCpf.slice(-4), safeName, safePhone, table.id, table.number, openedAt],
-        },
-        {
-          sql: "UPDATE tables SET status = 'ordering', last_activity = ?, current_seller_id = NULL WHERE id = ?",
-          args: [openedAt, table.id],
-        },
-        {
-          sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, 'customer_tab_opened', ?, ?, 'qr', 'Cliente QR', ?)",
-          args: [
-            createId(),
-            JSON.stringify({ customerName: safeName, phone: safePhone, cpfLast4: normalizedCpf.slice(-4), tableId: table.id }),
-            String(table.number),
-            openedAt,
-          ],
-        },
-      ], 'write');
-
-      const tab = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
-      const tabRow = (await db.execute({
-        sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1",
-        args: [tab.id],
-      })).rows[0];
-      return {
-        tab,
-        accessToken: createCustomerTabAccessToken(tabRow),
-        recovered: false,
-      };
-    } catch (error) {
-      lastError = error;
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/constraint|unique/i.test(message)) throw error;
-      const racedExisting = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
-      if (racedExisting) {
-        const error = new Error('Uma comanda acabou de ser aberta para estes dados. Continue no dispositivo original ou peça ajuda à equipe.');
-        error.statusCode = 409;
-        throw error;
-      }
-      // Duas pessoas podem clicar no mesmo instante e disputar a mesma mesa técnica.
-      // O índice único protege a base; este retry avança para a próxima comanda livre.
-    }
-  }
-
-  throw lastError || new Error('Não foi possível abrir a comanda agora. Tente novamente.');
-};
-
-const recoverCustomerTab = async ({ cpf, accessToken = '' }) => {
-  const normalizedCpf = normalizeCpf(cpf);
-  if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
-  const tab = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
-  if (!tab) {
-    const error = new Error('Não foi possível recuperar esta comanda neste dispositivo.');
-    error.statusCode = 403;
-    throw error;
-  }
-  const row = (await db.execute({
-    sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1",
-    args: [tab.id],
-  })).rows[0];
-  if (!row || !verifyCustomerTabAccessToken({ token: accessToken, tab: row })) {
-    const error = new Error('Não foi possível recuperar esta comanda neste dispositivo.');
-    error.statusCode = 403;
-    throw error;
-  }
-  return {
-    tab,
-    accessToken: createCustomerTabAccessToken(row),
-  };
-};
+const {
+  createTableAccessToken,
+  openCustomerTab,
+  recoverCustomerTab,
+  resolvePhysicalQrFlow,
+  verifyCustomerTabOrderContext,
+  verifyPublicTableToken,
+} = createQrComandaTransitionServices({
+  db,
+  createSignedToken,
+  decodeSignedToken,
+  getSettings,
+  ensureDatabaseReady,
+  ensureTablesUpTo,
+  isAdminSession,
+  tabletTokenTtlMs: TABLET_TABLE_TOKEN_TTL_MS,
+  normalizeCpf,
+  isValidCpf,
+  requireString,
+  getCpfHash,
+  verifyCustomerTabAccessToken,
+  createCustomerTabAccessToken,
+  createId,
+  getCustomerTabTotalsByTable,
+  sanitizeCustomerTab,
+});
 
 const getCustomerTabOrderItems = async (tableId) => {
   const res = await db.execute({
@@ -9223,6 +9200,7 @@ const handlers = createRouteHandlers({
   lookupDeliveryPostalCode,
   openCash,
   openCustomerTab,
+  resolvePhysicalQrFlow,
   openShift,
   openTable,
   recoverCustomerTab,

@@ -5,6 +5,7 @@ import { useStore, type Seller } from '../../store';
 import { AppApi, setApiSessionToken } from '../../lib/api';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
 import { OrderItemDetails } from '../../components/common/OrderItemDetails';
+import { getOrderLocation } from '../../lib/order-location';
 
 const KITCHEN_SYNC_INTERVAL_MS = 5000;
 
@@ -183,11 +184,12 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
   const isWarning = mins >= 10 && mins < 20;
   const isDanger = mins >= 20;
   const isDelivery = order.origin === 'delivery';
+  const location = getOrderLocation(order);
 
   return (
     <motion.button
       type="button"
-      aria-label={`Abrir pedido ${isDelivery ? 'delivery' : `da mesa ${order.tableNumber}`}`}
+      aria-label={`Abrir pedido ${isDelivery ? 'delivery' : location.compact}`}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
@@ -210,8 +212,11 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
             </div>
           )}
           <h3 className="text-3xl sm:text-6xl font-black italic tracking-tighter leading-none">
-            {isDelivery ? 'Delivery' : `Mesa ${order.tableNumber}`}
+            {isDelivery ? 'Delivery' : location.primary}
           </h3>
+          {!isDelivery && location.secondary && (
+            <p className="mt-2 text-xs sm:text-lg font-black tracking-[0.16em] opacity-55">{location.secondary}</p>
+          )}
         </div>
         <div className="flex items-center gap-2 font-black text-black">
           <Clock size={20} className="sm:w-7 sm:h-7" />
@@ -247,6 +252,7 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
   const [isCompleting, setIsCompleting] = useState(false);
   const [completeError, setCompleteError] = useState('');
   const isDelivery = order.origin === 'delivery';
+  const location = getOrderLocation(order);
 
   const confirmComplete = async () => {
     if (isCompleting) return;
@@ -282,9 +288,11 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
                   </p>
                 )}
                 <h2 className="text-3xl sm:text-6xl font-black italic tracking-tighter text-black leading-none">
-                  {isDelivery ? 'Delivery' : `Mesa ${order.tableNumber}`}
+                  {isDelivery ? 'Delivery' : location.primary}
                 </h2>
-                <p className="text-black/60 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] text-[10px] sm:text-sm truncate">Preparando Agora</p>
+                <p className="text-black/60 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] text-[10px] sm:text-sm truncate">
+                  {!isDelivery && location.secondary ? `${location.secondary} • ` : ''}Preparando agora
+                </p>
              </div>
           </div>
           <button type="button" aria-label="Fechar pedido" onClick={onClose} className="p-4 sm:p-6 bg-gray-100 rounded-full hover:bg-rose-50 text-black transition-all shrink-0">

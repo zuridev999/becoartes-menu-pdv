@@ -18,6 +18,7 @@ export const createRouteHandlers = (services) => ({
   'POST /api/pdv-terminal/authorize': async (body, context) => services.authorizePdvTerminal(body, context),
   'POST /api/tablet/setup-login': async (body, context) => services.validateTabletSetupPin(body, context),
   'POST /api/table-access-token': async (body, context) => services.createTableAccessToken(body, context.session),
+  'POST /api/qr/resolve': async (body) => services.resolvePhysicalQrFlow(body),
   'GET /api/checklist-alerts': async () => services.getChecklistAlertsFromOs(),
   'POST /api/audit-logs/list': async (body) => ({
     auditLogs: await services.getAuditLogs({

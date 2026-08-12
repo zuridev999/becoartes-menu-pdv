@@ -9,7 +9,7 @@ import { CustomerAccountModal } from '../../components/modals/CustomerAccountMod
 import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
 import { getOrderItemsTotal } from '../../lib/totals';
-import { AppApi, CustomerTabApi, setPublicTableAccess } from '../../lib/api';
+import { AppApi, CustomerTabApi, setPublicTableAccess, type QrFlowResolution } from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
@@ -34,38 +34,31 @@ export function QRView() {
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
   const [routeTableNumber, setRouteTableNumber] = useState<number | null>(getRouteTableNumber);
+  const [qrResolution, setQrResolution] = useState<QrFlowResolution | null>(null);
   const [isTableAccessReady, setIsTableAccessReady] = useState(false);
   const [tableAccessError, setTableAccessError] = useState('');
   const [tableAccessRetry, setTableAccessRetry] = useState(0);
   const isCouponRulesPage = window.location.pathname.includes('regulamento-cupom');
 
+  const routeTable = routeTableNumber ? tables.find(t => t.number === routeTableNumber) : null;
+
   useEffect(() => {
-    if (settings.qrMode === 'comanda') return;
     const tableNumber = getRouteTableNumber();
     setRouteTableNumber(tableNumber);
-    if (!tableNumber) return;
-
-    const table = tables.find(t => t.number === tableNumber);
-    if (table && table.id !== currentTableId) {
-      setCurrentTableId(table.id);
-    }
-  }, [currentTableId, setCurrentTableId, settings.qrMode, tables]);
-
-  const routeTable = routeTableNumber ? tables.find(t => t.number === routeTableNumber) : null;
-  const routeTableId = routeTable?.id;
-  const resolvedRouteTableNumber = routeTable?.number;
-
-  useEffect(() => {
-    if (settings.qrMode === 'comanda' || !routeTableNumber) return;
-    if (!routeTableId || !resolvedRouteTableNumber) return;
+    if (!tableNumber || isCouponRulesPage) return;
 
     let cancelled = false;
     setIsTableAccessReady(false);
     setTableAccessError('');
-    AppApi.createTableAccessToken({ origin: 'qr', tableId: routeTableId, tableNumber: resolvedRouteTableNumber })
-      .then((access) => {
+    setQrResolution(null);
+    AppApi.resolveQrFlow(tableNumber)
+      .then((resolution) => {
         if (cancelled) return;
-        setPublicTableAccess(access);
+        setQrResolution(resolution);
+        setPublicTableAccess(resolution.access);
+        if (resolution.flow === 'mesa') {
+          setCurrentTableId(resolution.physicalTable.id);
+        }
         setIsTableAccessReady(true);
       })
       .catch(() => {
@@ -78,7 +71,7 @@ export function QRView() {
     return () => {
       cancelled = true;
     };
-  }, [resolvedRouteTableNumber, routeTableId, routeTableNumber, settings.qrMode, tableAccessRetry]);
+  }, [isCouponRulesPage, setCurrentTableId, settings.qrMode, tableAccessRetry]);
 
   const currentTable = routeTableNumber ? routeTable : tables.find(t => t.id === currentTableId);
 
@@ -101,10 +94,6 @@ export function QRView() {
     );
   }
 
-  if (settings.qrMode === 'comanda') {
-    return <ComandaQRExperience />;
-  }
-
   if (!routeTableNumber) {
     return (
       <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white font-['Outfit']">
@@ -117,6 +106,15 @@ export function QRView() {
           </p>
         </section>
       </main>
+    );
+  }
+
+  if (isTableAccessReady && qrResolution?.flow === 'comanda') {
+    return (
+      <ComandaQRExperience
+        sourceTableId={qrResolution.physicalTable.id}
+        sourceTableNumber={qrResolution.physicalTable.number}
+      />
     );
   }
 
@@ -302,8 +300,14 @@ export function QRView() {
   );
 }
 
-function ComandaQRExperience() {
-  const { currentTableId, tables, setCurrentTableId } = useStore();
+function ComandaQRExperience({
+  sourceTableId,
+  sourceTableNumber,
+}: {
+  sourceTableId: string;
+  sourceTableNumber: number;
+}) {
+  const { currentTableId, tables, setCurrentTableId, syncData } = useStore();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
@@ -324,17 +328,18 @@ function ComandaQRExperience() {
     const savedCpf = localStorage.getItem(CUSTOMER_TAB_CPF_KEY);
     if (!savedCpf) return;
     let cancelled = false;
-    CustomerTabApi.recover(savedCpf)
+    CustomerTabApi.recover(savedCpf, { sourceTableId, sourceTableNumber })
       .then(({ tab: recovered }) => {
         if (cancelled) return;
         setTab(recovered);
         setCurrentTableId(recovered.tableId);
+        void syncData({ includeCatalog: false });
       })
       .catch(() => localStorage.removeItem(CUSTOMER_TAB_CPF_KEY));
     return () => {
       cancelled = true;
     };
-  }, [setCurrentTableId]);
+  }, [setCurrentTableId, sourceTableId, sourceTableNumber, syncData]);
 
   const submit = async () => {
     setError('');
@@ -342,11 +347,17 @@ function ComandaQRExperience() {
     const normalizedCpf = normalizeCpfInput(cpf);
     try {
       const result = recoverMode
-        ? await CustomerTabApi.recover(normalizedCpf)
-        : await CustomerTabApi.open({ customerName, phone, cpf: normalizedCpf });
+        ? await CustomerTabApi.recover(normalizedCpf, { sourceTableId, sourceTableNumber })
+        : await CustomerTabApi.open({
+            customerName,
+            phone,
+            cpf: normalizedCpf,
+            source: { sourceTableId, sourceTableNumber },
+          });
       setTab(result.tab);
       setCurrentTableId(result.tab.tableId);
       localStorage.setItem(CUSTOMER_TAB_CPF_KEY, normalizedCpf);
+      await syncData({ includeCatalog: false });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível abrir sua comanda.');
     } finally {
@@ -450,7 +461,7 @@ function ComandaQRExperience() {
           <div className="min-w-0">
             <p className="text-[8px] font-black uppercase text-gray-500">Comanda {tab.tableNumber}</p>
             <h2 className="text-lg font-black tracking-tighter truncate">{tab.customerName}</h2>
-            <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{tab.cpfMasked}</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Mesa {sourceTableNumber} • {tab.cpfMasked}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -500,9 +511,26 @@ function ComandaQRExperience() {
 
       <AnimatePresence>
         {selectedProduct && <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} tabletLandscape qrMobileFlow />}
-        {isAccountOpen && <CustomerAccountModal onClose={() => setIsAccountOpen(false)} />}
-        {isOrderOpen && <CustomerOrderModal onClose={() => setIsOrderOpen(false)} onSent={() => setIsAccountOpen(true)} origin="qr" />}
-        {isServiceOpen && <ServiceRequestModal onClose={() => setIsServiceOpen(false)} />}
+        {isAccountOpen && (
+          <CustomerAccountModal
+            onClose={() => setIsAccountOpen(false)}
+            locationLabel={`Comanda ${tab.tableNumber} • Mesa ${sourceTableNumber}`}
+          />
+        )}
+        {isOrderOpen && (
+          <CustomerOrderModal
+            onClose={() => setIsOrderOpen(false)}
+            onSent={() => setIsAccountOpen(true)}
+            origin="qr"
+            customerTabContext={{ customerTabId: tab.id, sourceTableId, sourceTableNumber }}
+          />
+        )}
+        {isServiceOpen && (
+          <ServiceRequestModal
+            onClose={() => setIsServiceOpen(false)}
+            customerTabContext={{ customerTabId: tab.id, sourceTableId, sourceTableNumber }}
+          />
+        )}
       </AnimatePresence>
     </div>
   );

@@ -6,8 +6,9 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { usePublicI18n } from '../../lib/public-i18n';
+import type { CustomerTabOrderContext } from '../../lib/api';
 
-export function ServiceRequestModal({ onClose }: { onClose: () => void }) {
+export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: () => void; customerTabContext?: CustomerTabOrderContext }) {
   const { currentTableId, requestService, addNotification } = useStore();
   const { t } = usePublicI18n();
   const [message, setMessage] = useState('');
@@ -23,7 +24,7 @@ export function ServiceRequestModal({ onClose }: { onClose: () => void }) {
   const handleSend = async (type: string, directLabel?: string) => {
     if (!currentTableId) return;
     setIsSending(true);
-    await requestService(currentTableId, type, message || directLabel || '');
+    await requestService(currentTableId, type, message || directLabel || '', customerTabContext);
     addNotification(t('requestSent'));
     setIsSending(false);
     onClose();

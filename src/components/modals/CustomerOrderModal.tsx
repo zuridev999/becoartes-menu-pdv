@@ -5,15 +5,18 @@ import { useStore } from '../../store';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
+import type { CustomerTabOrderContext } from '../../lib/api';
 
 export function CustomerOrderModal({
   onClose,
   onSent,
-  origin = 'tablet'
+  origin = 'tablet',
+  customerTabContext,
 }: {
   onClose: () => void;
   onSent?: () => void;
   origin?: 'tablet' | 'qr';
+  customerTabContext?: CustomerTabOrderContext;
 }) {
   const { currentTableId, tables, removeFromCart, sendToKitchen, addNotification } = useStore();
   const { t, locale } = usePublicI18n();
@@ -36,7 +39,7 @@ export function CustomerOrderModal({
     if (isSending || isSent) return;
     setIsSending(true);
     try {
-      await sendToKitchen(table.id, origin);
+      await sendToKitchen(table.id, origin, undefined, customerTabContext);
       setIsSent(true);
       setTimeout(() => {
         onClose();
