@@ -27,6 +27,7 @@ import {
 import { createPdvTerminalServices, isMobilePdvUserAgent } from './auth/pdv-terminal.mjs';
 import { createDistributedRateLimiter } from './security/distributed-rate-limit.mjs';
 import { createQrComandaTransitionServices, createQrModeTransitionStatements } from './qr-comanda-transition.mjs';
+import { createPublicTableStateService, rethrowCustomerTabWriteError, sanitizePublicCustomerSnapshot } from './public-customer-snapshot.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -2457,9 +2458,11 @@ const filterSnapshotForContext = (snapshot, { view = 'pdv', session = null } = {
   const canViewSales = canSessionWithSettings(session, 'viewSalesTotals', snapshot.savedSettings);
   const canManageTeam = canSessionWithSettings(session, 'manageTeam', snapshot.savedSettings);
 
-  if (safeView === 'tablet' || safeView === 'qr' || safeView === 'delivery') {
+  if (safeView === 'qr' || safeView === 'delivery') return sanitizePublicCustomerSnapshot(snapshot, safeView);
+  if (safeView === 'tablet') {
     return {
       ...snapshot,
+      catalogData: sanitizePublicCustomerSnapshot(snapshot, 'delivery').catalogData,
       sellers: [],
       serviceRequests: [],
       closedBills: [],
@@ -3993,6 +3996,7 @@ const sendToKitchen = async ({
   try {
     await db.batch(batch, 'write');
   } catch (error) {
+    if (/customer_tab_not_active/i.test(String(error?.message || error || ''))) rethrowCustomerTabWriteError(error);
     if (safeClientRequestId && isConstraintError(error)) {
       const duplicateSubmission = await getExistingOrderSubmission(safeClientRequestId);
       if (duplicateSubmission) {
@@ -4049,7 +4053,9 @@ const sendToKitchen = async ({
       createdAt: new Date().toISOString(),
     },
     inventorySync,
-    inventorySyncError: inventorySyncError instanceof Error ? inventorySyncError.message : inventorySyncError ? String(inventorySyncError) : null,
+    inventorySyncError: safeOrigin === 'pdv'
+      ? (inventorySyncError instanceof Error ? inventorySyncError.message : inventorySyncError ? String(inventorySyncError) : null)
+      : null,
   };
 };
 
@@ -7237,19 +7243,15 @@ const createServiceRequest = async ({
   });
   const tableRes = await db.execute({ sql: "SELECT number FROM tables WHERE id = ? LIMIT 1", args: [tableId] });
   const tableNumber = Number(tableRes.rows[0]?.number || 0);
-  await db.execute({
-    sql: "INSERT INTO service_requests (id, table_id, type, status, message, source_table_id, source_table_number, customer_tab_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    args: [
-      requestId,
-      requireString(tableId, 'tableId'),
-      requireString(type, 'type'),
-      'pending',
-      message,
-      customerTabContext?.sourceTableId || null,
-      customerTabContext?.sourceTableNumber || null,
-      customerTabContext?.customerTabId || null,
-    ],
-  });
+  try {
+    await db.execute({
+      sql: "INSERT INTO service_requests (id, table_id, type, status, message, source_table_id, source_table_number, customer_tab_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [requestId, requireString(tableId, 'tableId'), requireString(type, 'type'), 'pending', message,
+        customerTabContext?.sourceTableId || null, customerTabContext?.sourceTableNumber || null, customerTabContext?.customerTabId || null],
+    });
+  } catch (error) {
+    rethrowCustomerTabWriteError(error);
+  }
   return {
     request: {
       id: requestId,
@@ -8904,7 +8906,6 @@ const {
   tabletTokenTtlMs: TABLET_TABLE_TOKEN_TTL_MS,
   normalizeCpf,
   isValidCpf,
-  requireString,
   getCpfHash,
   verifyCustomerTabAccessToken,
   createCustomerTabAccessToken,
@@ -8913,6 +8914,7 @@ const {
   sanitizeCustomerTab,
 });
 
+const getPublicTableState = createPublicTableStateService({ db, verifyCustomerTabOrderContext, verifyPublicTableToken });
 const getCustomerTabOrderItems = async (tableId) => {
   const res = await db.execute({
     sql: `
@@ -9184,6 +9186,7 @@ const handlers = createRouteHandlers({
   getDeliveryPublicConfig,
   getDeliveryQuote,
   getOsLockState,
+  getPublicTableState,
   getPagBankPublicKey,
   getPdvLockState,
   handlePagBankDeliveryWebhook,

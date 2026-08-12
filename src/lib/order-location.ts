@@ -12,12 +12,27 @@ type CustomerTabContext = {
 };
 
 type QrModeTable = {
+  id?: string;
   number: number;
   status: string;
   qrFlowOverride?: 'mesa_until_close' | null;
   customerTab?: unknown;
   orders?: unknown[];
   payments?: Array<{ status?: string }>;
+};
+
+export const preserveCurrentQrTable = <T extends QrModeTable>(
+  snapshotTables: T[],
+  currentTables: T[],
+  currentTableId: string | null,
+  currentView: string,
+) => {
+  if (currentView !== 'qr' || !currentTableId) return snapshotTables;
+  const current = currentTables.find((table) => table.id === currentTableId);
+  if (!current) return snapshotTables;
+  const index = snapshotTables.findIndex((table) => table.id === currentTableId);
+  if (index < 0) return [...snapshotTables, current];
+  return snapshotTables.map((table, tableIndex) => tableIndex === index ? current : table);
 };
 
 export const isTableVisibleForQrMode = (table: QrModeTable, isComandaMode: boolean) => (

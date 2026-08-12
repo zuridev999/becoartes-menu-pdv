@@ -5,7 +5,7 @@ import { getOrderItemsTotal } from './lib/totals';
 import { postOSMessage } from './lib/osBridge';
 import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, hasApiSessionToken, setApiSessionToken, type CashState, type CustomerTabOrderContext } from './lib/api';
 import { operationalRequestError } from './lib/request-timeout';
-import { getCustomerTabLocationContext, getServiceRequestLabel } from './lib/order-location';
+import { getCustomerTabLocationContext, getServiceRequestLabel, preserveCurrentQrTable } from './lib/order-location';
 import type {
   Product, Table, OrderItem, KitchenOrder,
   ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category, CounterSaleInput
@@ -840,7 +840,7 @@ export const useStore = create<AppState>((set, get) => ({
         const currentView = get().activeView;
         const shouldProtectRecentPublicOrders = currentView === 'qr' || currentView === 'tablet';
         const now = Date.now();
-        const finalTables = snapshot.tables.map((newTable: Table) => {
+        const synchronizedTables = snapshot.tables.map((newTable: Table) => {
           const localTable = currentTables.find(t => t.id === newTable.id);
           const pendingClosure = pendingBillClosures.get(newTable.id);
           if (pendingClosure && newTable.status === 'available') {
@@ -873,6 +873,8 @@ export const useStore = create<AppState>((set, get) => ({
             cart: localTable?.cart || [],
           };
         });
+
+        const finalTables = preserveCurrentQrTable(synchronizedTables, currentTables, get().currentTableId, currentView);
 
         set({
           ...(catalogUpdate || {}),
@@ -1240,7 +1242,11 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       const message = getErrorMessage(error);
-      get().addNotification(message ? `Erro ao enviar pedido: ${message}` : "Erro ao enviar pedido. Tente novamente.", "error", tableId);
+      get().addNotification(
+        origin === 'pdv' && message ? `Erro ao enviar pedido: ${message}` : message || 'Não foi possível enviar seu pedido. Tente novamente.',
+        'error',
+        tableId,
+      );
       throw error;
     } finally {
       if (sendingOrderKeys.get(sendKey) === sendPromise) {

@@ -36,9 +36,16 @@ const getTableColumns = async (db, table) => {
 };
 
 const createLegacyTables = async (db) => {
-  const tables = Array.from(new Set(SCHEMA_MIGRATIONS.flatMap((migration) => migration.steps.map((step) => step.table))));
+  const tables = Array.from(new Set(SCHEMA_MIGRATIONS.flatMap((migration) => migration.steps
+    .filter((step) => step.type === 'add_column')
+    .map((step) => step.table))));
   for (const table of tables) {
-    await db.execute(`CREATE TABLE ${quoteIdentifier(table)} (id TEXT PRIMARY KEY)`);
+    const extraColumns = table === 'orders' || table === 'service_requests'
+      ? ', table_id TEXT'
+      : table === 'customer_tabs'
+        ? ', table_id TEXT, status TEXT'
+        : '';
+    await db.execute(`CREATE TABLE ${quoteIdentifier(table)} (id TEXT PRIMARY KEY${extraColumns})`);
   }
 
   await db.execute('ALTER TABLE menu ADD COLUMN category_id TEXT');

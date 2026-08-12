@@ -33,6 +33,7 @@ const PUBLIC_TABLE_ROUTES = new Set([
   'POST /api/audit-logs',
   'POST /api/service-requests',
   'POST /api/tables/request-bill',
+  'POST /api/public-table/state',
 ]);
 
 export const PERMISSION_BY_ROUTE = Object.freeze({

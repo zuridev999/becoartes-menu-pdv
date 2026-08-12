@@ -18,7 +18,7 @@ export function CustomerOrderModal({
   origin?: 'tablet' | 'qr';
   customerTabContext?: CustomerTabOrderContext;
 }) {
-  const { currentTableId, tables, removeFromCart, sendToKitchen, addNotification } = useStore();
+  const { currentTableId, tables, removeFromCart, sendToKitchen } = useStore();
   const { t, locale } = usePublicI18n();
   const [isSending, setIsSending] = useState(false);
   const [isSent, setIsSent] = useState(false);
@@ -47,7 +47,7 @@ export function CustomerOrderModal({
         setIsSent(false);
       }, 1800);
     } catch {
-      addNotification(t('sendOrder'), 'error');
+      // A store já apresenta a mensagem segura e específica da API.
     } finally {
       setIsSending(false);
     }

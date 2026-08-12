@@ -40,7 +40,6 @@ export const createQrComandaTransitionServices = ({
   tabletTokenTtlMs,
   normalizeCpf,
   isValidCpf,
-  requireString,
   getCpfHash,
   verifyCustomerTabAccessToken,
   createCustomerTabAccessToken,
@@ -181,9 +180,7 @@ export const createQrComandaTransitionServices = ({
     const flow = globalMode === 'mesa' || inheritedMesa ? 'mesa' : 'comanda';
     return {
       flow,
-      globalMode,
-      inheritedMesa,
-      physicalTable: { id: String(table.id), number: safeNumber, status: String(table.status || 'available') },
+      physicalTable: { id: String(table.id), number: safeNumber },
       access: await createTableAccessToken({ origin: 'qr', tableId: table.id, tableNumber: safeNumber }),
     };
   };
@@ -285,7 +282,11 @@ export const createQrComandaTransitionServices = ({
       LIMIT 1
     `);
     const table = result.rows[0];
-    if (!table) throw new Error('Todas as comandas técnicas estão ocupadas.');
+    if (!table) {
+      const error = new Error('Não há comandas disponíveis agora. Chame alguém da equipe.');
+      error.statusCode = 409;
+      throw error;
+    }
     return { id: String(table.id), number: Number(table.number) };
   };
 
@@ -302,8 +303,18 @@ export const createQrComandaTransitionServices = ({
     await verifyPhysicalSource({ origin, sourceTableId, sourceTableNumber, publicAccessToken });
     const normalizedCpf = normalizeCpf(cpf);
     if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
-    const safeName = requireString(customerName, 'customerName').trim().slice(0, 120);
-    const safePhone = requireString(phone, 'phone').trim().slice(0, 40);
+    const safeName = String(customerName || '').trim().slice(0, 120);
+    const safePhone = String(phone || '').trim().slice(0, 40);
+    if (safeName.length < 2) {
+      const error = new Error('Informe seu nome para abrir a comanda.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (safePhone.replace(/\D/g, '').length < 10) {
+      const error = new Error('Informe um telefone válido para abrir a comanda.');
+      error.statusCode = 400;
+      throw error;
+    }
     const existing = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
     if (existing) {
       const existingRow = (await db.execute({ sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1", args: [existing.id] })).rows[0];

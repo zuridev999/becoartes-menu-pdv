@@ -1,4 +1,4 @@
-import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
+import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, ModifierGroup, OrderItem, Product, ServiceRequest, Table, TablePayment } from '../types';
 import { createPdvTerminalIdentity, signPdvTerminalChallenge } from './pdv-terminal-browser';
 import { createRequestTimeoutSignal } from './request-timeout';
 
@@ -97,12 +97,9 @@ type PublicTableAccess = {
 
 export type QrFlowResolution = {
   flow: 'mesa' | 'comanda';
-  globalMode: 'mesa' | 'comanda';
-  inheritedMesa: boolean;
   physicalTable: {
     id: string;
     number: number;
-    status: string;
   };
   access: PublicTableAccess;
 };
@@ -846,6 +843,20 @@ export const AppApi = {
 
   resolveQrFlow(tableNumber: number) {
     return postJson<QrFlowResolution>('/api/qr/resolve', { tableNumber });
+  },
+
+  getPublicTableState(input: { tableId: string; tableNumber?: number; customerTabContext?: CustomerTabOrderContext }) {
+    const sourceTableId = input.customerTabContext?.sourceTableId;
+    return postJson<{ table: Table }>('/api/public-table/state', {
+      tableId: input.tableId,
+      tableNumber: input.tableNumber,
+      origin: 'qr',
+      publicAccessToken: getPublicTableAccessToken(sourceTableId || input.tableId, 'qr'),
+      customerTabId: input.customerTabContext?.customerTabId,
+      customerTabAccessToken: input.customerTabContext ? getCustomerTabAccessToken() : undefined,
+      sourceTableId,
+      sourceTableNumber: input.customerTabContext?.sourceTableNumber,
+    }).then(({ table }) => ({ table: hydrateSnapshot({ tables: [table] }).tables[0] }));
   },
 
   fetchAuditLogs(limit = 100, filters: { startDate?: string; endDate?: string; author?: string; action?: string } = {}) {

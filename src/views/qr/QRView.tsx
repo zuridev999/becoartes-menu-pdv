@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ShoppingBag, LayoutDashboard, Bell, FileText, Send, UserRound, Phone, BadgeCheck, QrCode, RefreshCw } from 'lucide-react';
 import { useStore, type Product } from '../../store';
-import type { CustomerTab } from '../../types';
+import type { CustomerTab, Table } from '../../types';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
 import { ProductModal } from '../../components/modals/ProductModal';
 import { CustomerAccountModal } from '../../components/modals/CustomerAccountModal';
@@ -17,6 +17,43 @@ import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
 const CUSTOMER_TAB_CPF_KEY = 'becoartes_customer_tab_cpf';
 
 const normalizeCpfInput = (value: string) => value.replace(/\D/g, '').slice(0, 11);
+
+const applyPublicTableState = (table: Table) => useStore.setState((state) => ({
+  tables: [...state.tables.filter((entry) => entry.id !== table.id), table].sort((a, b) => a.number - b.number),
+}));
+
+const usePublicTablePolling = (input: {
+  tableId: string;
+  tableNumber?: number;
+  customerTabContext?: { customerTabId: string; sourceTableId: string; sourceTableNumber: number };
+} | null) => {
+  const tableId = input?.tableId;
+  const tableNumber = input?.tableNumber;
+  const customerTabId = input?.customerTabContext?.customerTabId;
+  const sourceTableId = input?.customerTabContext?.sourceTableId;
+  const sourceTableNumber = input?.customerTabContext?.sourceTableNumber;
+  useEffect(() => {
+    if (!tableId) return;
+    let cancelled = false;
+    const refresh = () => AppApi.getPublicTableState({
+      tableId,
+      tableNumber,
+      customerTabContext: customerTabId && sourceTableId && sourceTableNumber
+        ? { customerTabId, sourceTableId, sourceTableNumber }
+        : undefined,
+    })
+      .then(({ table }) => { if (!cancelled) applyPublicTableState(table); })
+      .catch(() => undefined);
+    const interval = window.setInterval(refresh, 45_000);
+    const onVisibility = () => { if (document.visibilityState === 'visible') void refresh(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [tableId, tableNumber, customerTabId, sourceTableId, sourceTableNumber]);
+};
 
 const getRouteTableNumber = () => {
   const pathMatch = window.location.pathname.match(/(?:^|\/)mesa\/(\d+)(?:\/)?$/);
@@ -40,6 +77,11 @@ export function QRView() {
   const [tableAccessRetry, setTableAccessRetry] = useState(0);
   const isCouponRulesPage = window.location.pathname.includes('regulamento-cupom');
 
+  usePublicTablePolling(qrResolution?.flow === 'mesa' ? {
+    tableId: qrResolution.physicalTable.id,
+    tableNumber: qrResolution.physicalTable.number,
+  } : null);
+
   const routeTable = routeTableNumber ? tables.find(t => t.number === routeTableNumber) : null;
 
   useEffect(() => {
@@ -52,12 +94,18 @@ export function QRView() {
     setTableAccessError('');
     setQrResolution(null);
     AppApi.resolveQrFlow(tableNumber)
-      .then((resolution) => {
+      .then(async (resolution) => {
         if (cancelled) return;
         setQrResolution(resolution);
         setPublicTableAccess(resolution.access);
         if (resolution.flow === 'mesa') {
           setCurrentTableId(resolution.physicalTable.id);
+          const { table } = await AppApi.getPublicTableState({
+            tableId: resolution.physicalTable.id,
+            tableNumber: resolution.physicalTable.number,
+          });
+          if (cancelled) return;
+          applyPublicTableState(table);
         }
         setIsTableAccessReady(true);
       })
@@ -307,7 +355,7 @@ function ComandaQRExperience({
   sourceTableId: string;
   sourceTableNumber: number;
 }) {
-  const { currentTableId, tables, setCurrentTableId, syncData } = useStore();
+  const { currentTableId, tables, setCurrentTableId } = useStore();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
@@ -324,22 +372,31 @@ function ComandaQRExperience({
     ? tables.find(t => t.id === tab.tableId)
     : tables.find(t => t.id === currentTableId);
 
+  usePublicTablePolling(tab ? {
+    tableId: tab.tableId,
+    customerTabContext: { customerTabId: tab.id, sourceTableId, sourceTableNumber },
+  } : null);
+
   useEffect(() => {
     const savedCpf = localStorage.getItem(CUSTOMER_TAB_CPF_KEY);
     if (!savedCpf) return;
     let cancelled = false;
     CustomerTabApi.recover(savedCpf, { sourceTableId, sourceTableNumber })
-      .then(({ tab: recovered }) => {
+      .then(async ({ tab: recovered }) => {
         if (cancelled) return;
         setTab(recovered);
         setCurrentTableId(recovered.tableId);
-        void syncData({ includeCatalog: false });
+        const { table } = await AppApi.getPublicTableState({
+          tableId: recovered.tableId,
+          customerTabContext: { customerTabId: recovered.id, sourceTableId, sourceTableNumber },
+        });
+        if (!cancelled) applyPublicTableState(table);
       })
       .catch(() => localStorage.removeItem(CUSTOMER_TAB_CPF_KEY));
     return () => {
       cancelled = true;
     };
-  }, [setCurrentTableId, sourceTableId, sourceTableNumber, syncData]);
+  }, [setCurrentTableId, sourceTableId, sourceTableNumber]);
 
   const submit = async () => {
     setError('');
@@ -357,7 +414,11 @@ function ComandaQRExperience({
       setTab(result.tab);
       setCurrentTableId(result.tab.tableId);
       localStorage.setItem(CUSTOMER_TAB_CPF_KEY, normalizedCpf);
-      await syncData({ includeCatalog: false });
+      const { table } = await AppApi.getPublicTableState({
+        tableId: result.tab.tableId,
+        customerTabContext: { customerTabId: result.tab.id, sourceTableId, sourceTableNumber },
+      });
+      applyPublicTableState(table);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível abrir sua comanda.');
     } finally {
@@ -378,7 +439,7 @@ function ComandaQRExperience({
             {recoverMode ? 'Voltar para minha comanda' : 'Abrir minha comanda'}
           </h1>
           <p className="text-xs sm:text-sm font-bold text-zinc-400 leading-relaxed mb-5 sm:mb-7">
-            Use seu CPF para manter seus pedidos juntos, mesmo se trocar de celular. Na saída, a equipe confere por esse CPF.
+            Use seu CPF para identificar sua comanda e continue neste celular até o fechamento. Se trocar de aparelho, peça ajuda à equipe.
           </p>
 
           {error && (
@@ -435,7 +496,7 @@ function ComandaQRExperience({
             }}
             className="mt-3 sm:mt-4 w-full rounded-2xl border border-white/10 bg-white/[0.03] py-4 text-xs font-black uppercase tracking-widest text-zinc-400"
           >
-            {recoverMode ? 'Criar nova comanda' : 'Já tenho comanda'}
+            {recoverMode ? 'Criar nova comanda' : 'Retomar comanda neste celular'}
           </button>
         </div>
         </div>

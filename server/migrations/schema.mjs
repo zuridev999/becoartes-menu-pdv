@@ -7,6 +7,8 @@ const addColumn = (table, column, definition) => ({
   definition,
 });
 
+const executeSql = (sql) => ({ type: 'execute_sql', sql });
+
 export const SCHEMA_MIGRATIONS = [
   {
     id: '20260628_0001_legacy_additive_columns',
@@ -161,6 +163,30 @@ export const SCHEMA_MIGRATIONS = [
       addColumn('service_requests', 'source_table_id', 'TEXT'),
       addColumn('service_requests', 'source_table_number', 'INTEGER'),
       addColumn('service_requests', 'customer_tab_id', 'TEXT'),
+      executeSql(`CREATE TRIGGER IF NOT EXISTS validate_active_customer_tab_order
+        BEFORE INSERT ON orders
+        WHEN NEW.customer_tab_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM customer_tabs ct
+            WHERE ct.id = NEW.customer_tab_id
+              AND ct.table_id = NEW.table_id
+              AND ct.status IN ('open', 'paid')
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'customer_tab_not_active');
+        END`),
+      executeSql(`CREATE TRIGGER IF NOT EXISTS validate_active_customer_tab_service_request
+        BEFORE INSERT ON service_requests
+        WHEN NEW.customer_tab_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM customer_tabs ct
+            WHERE ct.id = NEW.customer_tab_id
+              AND ct.table_id = NEW.table_id
+              AND ct.status IN ('open', 'paid')
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'customer_tab_not_active');
+        END`),
     ],
   },
 ];
@@ -212,9 +238,11 @@ const assertTableExists = async (db, table) => {
 };
 
 const runStep = async (db, step) => {
-  if (step.type !== 'add_column') {
-    throw new Error(`Tipo de migration não suportado: ${step.type}`);
+  if (step.type === 'execute_sql') {
+    await db.execute(step.sql);
+    return;
   }
+  if (step.type !== 'add_column') throw new Error(`Tipo de migration não suportado: ${step.type}`);
 
   await assertTableExists(db, step.table);
   if (await hasColumn(db, step.table, step.column)) return;

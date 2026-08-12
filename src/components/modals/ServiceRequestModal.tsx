@@ -24,10 +24,15 @@ export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: 
   const handleSend = async (type: string, directLabel?: string) => {
     if (!currentTableId) return;
     setIsSending(true);
-    await requestService(currentTableId, type, message || directLabel || '', customerTabContext);
-    addNotification(t('requestSent'));
-    setIsSending(false);
-    onClose();
+    try {
+      await requestService(currentTableId, type, message || directLabel || '', customerTabContext);
+      addNotification(t('requestSent'));
+      onClose();
+    } catch (error) {
+      addNotification(error instanceof Error ? error.message : 'Não foi possível enviar sua solicitação.', 'error');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
