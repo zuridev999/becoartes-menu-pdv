@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.0 - 2026-08-13
+
+- Mantem mesas que ja estavam abertas no fluxo de mesa durante a mudanca para o modo comanda.
+- Abre novas comandas por QR depois do fechamento da mesa e preserva a mesa fisica de origem em pedidos e solicitacoes.
+- Restringe cada cliente a sua propria comanda e remove dados internos das respostas publicas.
+- Protege contra pedidos duplicados, encerramento concorrente, tokens antigos e indisponibilidade de comandas.
+
 ## 1.7.9 - 2026-08-09
 
 - Volta a mostrar todos os itens e escolhas de cada novo pedido QR em "Novas solicitações".
