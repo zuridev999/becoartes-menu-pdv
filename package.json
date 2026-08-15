@@ -1,7 +1,7 @@
 {
   "name": "becoartes-menu-pdv",
   "private": true,
-  "version": "1.8.0",
+  "version": "1.8.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,7 @@
     "lint:baseline": "node scripts/check-eslint-baseline.mjs",
     "test:module-size": "node scripts/check-mega-module-baseline.mjs",
     "typecheck": "tsc -b --pretty false",
-    "test": "node scripts/test-business-time.mjs && node scripts/test-order-location.mjs && node scripts/test-operational-watchdog.mjs && node scripts/test-migrations.mjs && node scripts/test-distributed-rate-limit.mjs && node scripts/test-bff-modules.mjs && node scripts/test-critical-backend.mjs && node scripts/test-qr-comanda-transition.mjs && node scripts/test-pdv-new-order-request.mjs",
+    "test": "node scripts/test-business-time.mjs && node scripts/test-order-location.mjs && node scripts/test-operational-watchdog.mjs && node scripts/test-migrations.mjs && node scripts/test-distributed-rate-limit.mjs && node scripts/test-bff-modules.mjs && node scripts/test-inventory-attention-summary.mjs && node scripts/test-critical-backend.mjs && node scripts/test-qr-comanda-transition.mjs && node scripts/test-pdv-new-order-request.mjs",
     "validate": "npm run test:shared-db-contract && npm run test:module-size && npm run lint:baseline && npm run lint && npm run typecheck && npm test && npm run build",
     "test:shared-db-contract": "node scripts/check-shared-database-contract.mjs",
     "test:business-time": "node scripts/test-business-time.mjs",

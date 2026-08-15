@@ -28,6 +28,7 @@ import { createPdvTerminalServices, isMobilePdvUserAgent } from './auth/pdv-term
 import { createDistributedRateLimiter } from './security/distributed-rate-limit.mjs';
 import { createQrComandaTransitionServices, createQrModeTransitionStatements } from './qr-comanda-transition.mjs';
 import { createPublicTableStateService, rethrowCustomerTabWriteError, sanitizePublicCustomerSnapshot } from './public-customer-snapshot.mjs';
+import { summarizeInventoryAttention } from './inventory/attention-summary.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -2900,6 +2901,75 @@ const safeCreateOSNotification = async ({ title, message, type = 'info', link = 
   }
 };
 
+const upsertInventoryAttentionNotification = async ({ context = null, tableNumber, issues = [], eventId = null }) => {
+  if (!Array.isArray(issues) || issues.length === 0) return { sent: false, reason: 'empty' };
+  try {
+    const osContext = context || await resolveOSContext();
+    const summary = summarizeInventoryAttention(issues, tableNumber);
+    const messagePrefix = `Mesa ${tableNumber}:`;
+    const existing = await db.execute({
+      sql: `
+        SELECT id
+        FROM notificacoes
+        WHERE empresa_id = ?
+          AND lida = 0
+          AND mensagem LIKE ?
+          AND titulo IN ('Itens do PDV sem vínculo de estoque', 'Conversão de estoque pendente no PDV', 'Baixa de estoque pendente no PDV')
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      args: [osContext.empresaId, `${messagePrefix}%`],
+    });
+    const link = `/${osContext.slug}/estoque?origem=pdv&mesa=${encodeURIComponent(String(tableNumber))}${eventId ? `&evento=${encodeURIComponent(String(eventId))}` : ''}`;
+    if (existing.rows?.[0]?.id) {
+      await db.execute({
+        sql: 'UPDATE notificacoes SET titulo = ?, mensagem = ?, tipo = ?, link = ?, created_at = ? WHERE id = ?',
+        args: [summary.title, summary.message, 'alert', link, osTimestamp(), existing.rows[0].id],
+      });
+      return { sent: true, updated: true };
+    }
+    await createOSNotification({
+      empresaId: osContext.empresaId,
+      title: summary.title,
+      message: summary.message,
+      type: 'alert',
+      link,
+    });
+    return { sent: true, updated: false };
+  } catch (error) {
+    console.error('Inventory attention notification skipped:', error);
+    return { sent: false, error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+const resolveInventoryAttentionNotification = async ({ tableNumber, tableId = null, context = null }) => {
+  try {
+    if (tableId) {
+      const unresolved = await db.execute({
+        sql: "SELECT COUNT(*) AS total FROM integration_events WHERE table_id = ? AND status IN ('pending_inventory', 'inventory_processing', 'inventory_attention')",
+        args: [tableId],
+      });
+      if (Number(unresolved.rows?.[0]?.total || 0) > 0) return { resolved: false, reason: 'other_events' };
+    }
+    const osContext = context || await resolveOSContext();
+    await db.execute({
+      sql: `
+        UPDATE notificacoes
+        SET lida = 1
+        WHERE empresa_id = ?
+          AND lida = 0
+          AND mensagem LIKE ?
+          AND titulo IN ('Itens do PDV sem vínculo de estoque', 'Conversão de estoque pendente no PDV', 'Baixa de estoque pendente no PDV')
+      `,
+      args: [osContext.empresaId, `Mesa ${tableNumber}:%`],
+    });
+    return { resolved: true };
+  } catch (error) {
+    console.error('Inventory attention resolution skipped:', error);
+    return { resolved: false, error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
 const getActiveOrderItemsForTable = async (tableId) => {
   const res = await db.execute({
     sql: `
@@ -3298,7 +3368,8 @@ const appendInventoryPlansForSoldItem = async ({
         const stockUnit = row.unidade;
         const convertedUnitQuantity = convertInventoryQuantity(unitQuantity, recipeUnit, stockUnit);
         if (convertedUnitQuantity == null) {
-          result.unmatched.push(`${row.nome || row.ingrediente_nome || name} (unidade incompatível: ${recipeUnit || 'UN'} -> ${stockUnit || 'UN'}; conversão do Produto Mestre necessária)`);
+          const attemptedQuantity = toStockAmount(unitQuantity * requestedQuantity);
+          result.unmatched.push(`${row.nome || row.ingrediente_nome || name} (baixa não realizada: ${attemptedQuantity} ${normalizeInventoryUnit(recipeUnit)}; unidade incompatível: ${recipeUnit || 'UN'} -> ${stockUnit || 'UN'}; conversão do Produto Mestre necessária)`);
           continue;
         }
         const recipeQuantity = toStockAmount(convertedUnitQuantity * requestedQuantity);
@@ -3461,12 +3532,11 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
 
   const notificationTasks = [];
   if (result.unmatched.length > 0) {
-    notificationTasks.push(safeCreateOSNotification({
+    notificationTasks.push(upsertInventoryAttentionNotification({
       context: osContext,
-      title: 'Itens do PDV sem vínculo de estoque',
-      message: `Mesa ${tableNumber}: ${result.unmatched.slice(0, 8).join(', ')}`,
-      type: 'alert',
-      link: `/${slug}/estoque`,
+      tableNumber,
+      issues: result.unmatched,
+      eventId: integrationId,
     }));
   }
   if (result.insufficient.length > 0) {
@@ -3541,6 +3611,12 @@ const reconcileInventoryEvent = async (eventOrId, { includeAttention = false } =
       payload: nextPayload,
       expectedStatuses: ['inventory_processing'],
     });
+    if (status === 'completed') {
+      await resolveInventoryAttentionNotification({
+        tableNumber: payload.tableNumber,
+        tableId: event.table_id || null,
+      });
+    }
     return { skipped: false, status, inventorySync };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -8586,12 +8662,11 @@ const closeBillWithInventorySync = async (data, session = null) => {
     const notificationContext = osContext || null;
     const notificationTasks = [];
     if (result.unmatched.length > 0) {
-      notificationTasks.push(safeCreateOSNotification({
+      notificationTasks.push(upsertInventoryAttentionNotification({
         context: notificationContext,
-        title: 'Itens do PDV sem vínculo de estoque',
-        message: `Mesa ${data.tableNumber}: ${result.unmatched.slice(0, 8).join(', ')}`,
-        type: 'alert',
-        link: `/${slug}/estoque`,
+        tableNumber: data.tableNumber,
+        issues: result.unmatched,
+        eventId: integrationId,
       }));
     }
 

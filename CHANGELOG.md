@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.1 - 2026-08-15
+
+- Diferencia vínculo ausente de conversão de unidade pendente nas notificações de estoque do OS.
+- Agrupa ocorrências repetidas por mesa e item, informa a quantidade que não foi baixada e evita alertas duplicados.
+- Resolve a notificação quando a reconciliação da mesa termina sem outros eventos pendentes.
+
 ## 1.8.0 - 2026-08-13
 
 - Mantem mesas que ja estavam abertas no fluxo de mesa durante a mudanca para o modo comanda.
