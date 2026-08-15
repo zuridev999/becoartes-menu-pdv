@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.2 - 2026-08-15
+
+- Corrige 27 vínculos legados de ficha técnica para a unidade-base real de batata, cachaça, gin, tônica, cheddar, pão e temperos.
+- Consolida alertas históricos repetidos sem reprocessar vendas antigas nem alterar o saldo físico atual.
+- Mantém pendências de vínculo não relacionadas abertas e auditáveis por mesa.
+
 ## 1.8.1 - 2026-08-15
 
 - Diferencia vínculo ausente de conversão de unidade pendente nas notificações de estoque do OS.
