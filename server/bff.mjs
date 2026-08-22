@@ -6850,7 +6850,7 @@ const normalizeCouponCode = (code = '') => String(code)
   .slice(0, 24);
 
 const COUPON_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const COUPON_BENEFITS = new Set(['discount_20', 'free_drink', 'discount_value', 'free_item', 'order_value', 'order_percent', 'category_discount', 'item_discount']);
+const COUPON_BENEFITS = new Set(['discount_20', 'free_drink', 'discount_value', 'free_item', 'order_value', 'order_percent', 'category_discount', 'item_discount', 'identification']);
 
 const generateCouponCode = () => Array.from({ length: 6 }, () => (
   COUPON_ALPHABET[Math.floor(Math.random() * COUPON_ALPHABET.length)]
@@ -6867,9 +6867,10 @@ const isCouponExpired = (validUntil) => {
   return Number.isFinite(timestamp) && Date.now() > timestamp;
 };
 
-const formatCouponBenefit = (benefit) => (
-  benefit === 'free_drink' || benefit === 'free_item' ? '1 drink cortesia' : 'R$30 OFF'
-);
+const formatCouponBenefit = (benefit) => {
+  if (benefit === 'identification') return 'Identificacao';
+  return benefit === 'free_drink' || benefit === 'free_item' ? '1 drink cortesia' : 'R$30 OFF';
+};
 
 const normalizeCouponText = (value = '') => String(value || '')
   .normalize('NFD')
@@ -6966,7 +6967,10 @@ const computeCouponApplication = ({ coupon, subtotalCents, serviceFeeCents, disc
   let appliedCents = 0;
   const label = effectiveRule.label || coupon.benefit_label || '';
 
-  if (type === 'free_item') {
+  if (type === 'identification') {
+    appliedCents = 0;
+    effectiveBenefit = 'identification';
+  } else if (type === 'free_item') {
     appliedCents = 0;
     effectiveBenefit = effectiveBenefit || 'free_item';
   } else if (type === 'order_percent') {
@@ -7191,7 +7195,11 @@ const listCoupons = async () => {
 const createCoupon = async (data, session) => {
   requirePermission(session, 'manageCoupons', await getSettings());
   const amountCents = moneyToCents(data.amount || 0, 'amount');
-  if (amountCents <= 0) throw new Error('Cupom precisa ter valor maior que zero.');
+  const benefitType = normalizeCouponBenefit(data.benefitType || '');
+  if (amountCents < 0) throw new Error('Cupom não pode ter valor negativo.');
+  if (amountCents === 0 && benefitType !== 'identification') {
+    throw new Error('Cupom precisa ter valor maior que zero, exceto cupom de identificação.');
+  }
 
   let code = normalizeCouponCode(data.code || '');
   if (!code) code = generateCouponCode();
@@ -7221,7 +7229,7 @@ const createCoupon = async (data, session) => {
       data.validUntil ? String(data.validUntil) : null,
       data.minOrderValue ? centsToMoney(moneyToCents(data.minOrderValue, 'minOrderValue')) : 0,
       data.whatsappMessage ? String(data.whatsappMessage) : null,
-      data.benefitType ? String(data.benefitType) : null,
+      benefitType || null,
       data.discountType ? String(data.discountType) : null,
       data.targetCategory ? String(data.targetCategory) : null,
       data.targetProductId ? String(data.targetProductId) : null,
@@ -8223,6 +8231,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
 
   const activeOrderItems = await getActiveOrderItemsForTable(tableId);
   let couponRow = null;
+  let isIdentificationCoupon = false;
   if (couponCode || couponCents > 0) {
     if (!couponCode) throw new Error('Informe o código do cupom.');
     const couponRes = await db.execute({
@@ -8257,6 +8266,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
     }
     couponCents = couponApplication.appliedCents;
     data.couponBenefit = couponApplication.selectedBenefit || 'discount_20';
+    isIdentificationCoupon = couponApplication.selectedBenefit === 'identification';
   }
 
   if (payments.length === 0 && totalCents > 0) {
@@ -8597,7 +8607,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
       },
     );
 
-    if (couponRow && data.couponCode) {
+    if (couponRow && data.couponCode && !isIdentificationCoupon) {
       batch.push({
         sql: "UPDATE pdv_coupons SET status = 'redeemed', selected_benefit = ?, used_by_employee_id = ?, used_by_employee = ?, table_number = ?, order_id = ?, redeemed_at = ?, redeemed_table_id = ?, redeemed_closed_bill_id = ? WHERE code = ? AND status = 'active'",
         args: [

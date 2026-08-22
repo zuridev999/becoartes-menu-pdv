@@ -1028,6 +1028,14 @@ export const AdminApi = {
     validUntil?: string;
     minOrderValue?: number;
     whatsappMessage?: string;
+    benefitType?: string;
+    discountType?: string;
+    targetCategory?: string;
+    targetProductId?: string;
+    targetProductName?: string;
+    freeItemName?: string;
+    benefitLabel?: string;
+    ruleJson?: string;
   }) {
     return postJson<{ coupon: Omit<Coupon, 'createdAt' | 'redeemedAt'> & { createdAt: string; redeemedAt?: string | null } }>('/api/coupons/create', input)
       .then(result => ({

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8.3 - 2026-08-22
+
+- Adiciona cupom de identificação reutilizável para registrar a origem de uma mesa sem alterar o valor da conta.
+- Mantém cada uso gravado no fechamento e na auditoria da mesa, sem transformar o identificador em cupom resgatado.
+
 ## 1.8.2 - 2026-08-15
 
 - Corrige 27 vínculos legados de ficha técnica para a unidade-base real de batata, cachaça, gin, tônica, cheddar, pão e temperos.
