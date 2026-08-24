@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.0 - 2026-08-24
+
+- Exibe campanhas próprias da Becoartes no PDV, QR, tablet, cozinha, bar, delivery e telas de acesso.
+- Mantém a faixa fora dos controles operacionais e permite configurar ou alternar campanhas por ambiente.
+
 ## 1.8.3 - 2026-08-22
 
 - Adiciona cupom de identificação reutilizável para registrar a origem de uma mesa sem alterar o valor da conta.
