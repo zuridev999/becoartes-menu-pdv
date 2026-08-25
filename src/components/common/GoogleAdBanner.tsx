@@ -2,31 +2,28 @@ import { useEffect, useRef, useState } from 'react';
 
 const ADSENSE_CLIENT = import.meta.env.VITE_ADSENSE_CLIENT || 'ca-pub-8099608758666537';
 const ADSENSE_SLOT = import.meta.env.VITE_ADSENSE_SLOT || '6877500198';
+const MOBILE_AD_HEIGHT_PROPERTY = '--beco-mobile-ad-height';
+const AD_STATUS_TIMEOUT_MS = 12_000;
 
 type GoogleAdPlacement = 'top' | 'mobile-bottom' | 'operational-bottom';
-
-const scriptId = 'becoartes-adsense-script';
-
-function loadAdSense() {
-  if (document.getElementById(scriptId)) return;
-  const script = document.createElement('script');
-  script.id = scriptId;
-  script.async = true;
-  script.crossOrigin = 'anonymous';
-  script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(ADSENSE_CLIENT)}`;
-  document.head.appendChild(script);
-}
+type GoogleAdStatus = 'pending' | 'filled' | 'unfilled';
 
 export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) {
-  const [isUnfilled, setIsUnfilled] = useState(false);
+  const [status, setStatus] = useState<GoogleAdStatus>('pending');
   const adRef = useRef<HTMLModElement>(null);
+  const containerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    loadAdSense();
     const ad = adRef.current;
     if (!ad) return undefined;
 
-    const syncStatus = () => setIsUnfilled(ad.dataset.adStatus === 'unfilled');
+    const syncStatus = () => {
+      if (ad.dataset.adStatus === 'filled') {
+        setStatus('filled');
+      } else if (ad.dataset.adStatus === 'unfilled' || ad.dataset.adStatus === 'unfill-optimized') {
+        setStatus('unfilled');
+      }
+    };
     const observer = new MutationObserver(syncStatus);
     observer.observe(ad, { attributes: true, attributeFilter: ['data-ad-status'] });
 
@@ -37,23 +34,60 @@ export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) 
       // AdSense can reject a slot while a page is being restored from cache.
     }
 
-    return () => observer.disconnect();
+    const statusTimeout = window.setTimeout(() => {
+      if (!ad.dataset.adStatus) setStatus('unfilled');
+    }, AD_STATUS_TIMEOUT_MS);
+
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(statusTimeout);
+    };
   }, []);
 
-  if (isUnfilled) return null;
+  useEffect(() => {
+    if (placement !== 'mobile-bottom' || status !== 'filled' || !containerRef.current) {
+      if (placement === 'mobile-bottom') {
+        document.documentElement.style.removeProperty(MOBILE_AD_HEIGHT_PROPERTY);
+      }
+      return undefined;
+    }
 
-  const positionClass = placement === 'top'
+    const container = containerRef.current;
+    const syncHeight = () => {
+      const height = Math.ceil(container.getBoundingClientRect().height);
+      document.documentElement.style.setProperty(MOBILE_AD_HEIGHT_PROPERTY, `${height}px`);
+    };
+    const resizeObserver = new ResizeObserver(syncHeight);
+    resizeObserver.observe(container);
+    syncHeight();
+
+    return () => {
+      resizeObserver.disconnect();
+      document.documentElement.style.removeProperty(MOBILE_AD_HEIGHT_PROPERTY);
+    };
+  }, [placement, status]);
+
+  if (status === 'unfilled') return null;
+
+  const filledClass = placement === 'top'
     ? 'relative z-[55] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5'
     : placement === 'mobile-bottom'
       ? 'fixed inset-x-0 bottom-0 z-[140] border-t border-white/10 bg-zinc-950/95 px-2 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] md:hidden'
-      : 'fixed inset-x-0 bottom-0 z-[60] hidden border-t border-white/10 bg-zinc-950/90 px-2 py-1 md:block';
+      : 'fixed bottom-0 left-1/2 z-[60] hidden w-full max-w-3xl -translate-x-1/2 border border-b-0 border-white/10 bg-zinc-950/95 px-2 py-1 md:block';
+  const positionClass = status === 'filled' ? filledClass : 'relative h-0 w-full overflow-hidden';
 
   return (
-    <aside className={positionClass} aria-label="Publicidade">
+    <aside
+      ref={containerRef}
+      className={positionClass}
+      data-ad-placement={placement}
+      data-ad-render-status={status}
+      aria-label="Publicidade"
+    >
       <ins
         data-beco-google-ad
         ref={adRef}
-        className="adsbygoogle mx-auto block min-h-11 w-full max-w-3xl"
+        className="adsbygoogle mx-auto block w-full max-w-3xl"
         style={{ display: 'block' }}
         data-ad-client={ADSENSE_CLIENT}
         data-ad-slot={ADSENSE_SLOT}

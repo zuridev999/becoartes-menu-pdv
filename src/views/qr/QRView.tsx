@@ -277,7 +277,10 @@ export function QRView() {
         </div>
       </div>
 
-      <div className="h-full pt-16 sm:pt-20 pb-[6.5rem] sm:pb-28">
+      <div
+        className="h-full pt-16 sm:pt-20 sm:pb-28"
+        style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
+      >
         <MenuCatalog
           onProductSelect={setSelectedProduct}
           viewMode="list"
@@ -294,7 +297,10 @@ export function QRView() {
       </div>
 
       {/* CTA principal do celular: revisar/enviar pedido quando houver carrinho */}
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50">
+      <div
+        className="fixed left-3 right-3 z-50 sm:left-1/2 sm:right-auto sm:-translate-x-1/2"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem + var(--beco-mobile-ad-height, 0px))' }}
+      >
         <button 
           onClick={handlePrimaryAccountAction}
           className="w-full sm:w-auto glass-card px-5 sm:px-8 py-4 flex items-center justify-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 sm:scale-110 active:scale-95 transition-all"
@@ -540,7 +546,10 @@ function ComandaQRExperience({
         </div>
       </div>
 
-      <div className="h-full pt-20 pb-[6.5rem] sm:pb-28">
+      <div
+        className="h-full pt-20 sm:pb-28"
+        style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
+      >
         <MenuCatalog
           onProductSelect={setSelectedProduct}
           viewMode="grid"
@@ -556,7 +565,10 @@ function ComandaQRExperience({
         />
       </div>
 
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50">
+      <div
+        className="fixed left-3 right-3 z-50 sm:left-1/2 sm:right-auto sm:-translate-x-1/2"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem + var(--beco-mobile-ad-height, 0px))' }}
+      >
         <button onClick={handlePrimaryAccountAction} className="w-full sm:w-auto glass-card px-5 sm:px-8 py-4 flex items-center justify-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 sm:scale-110 active:scale-95 transition-all">
           {hasCartItems ? <Send size={20} className="text-accent" /> : <FileText size={20} className="text-accent" />}
           <div className="text-left">

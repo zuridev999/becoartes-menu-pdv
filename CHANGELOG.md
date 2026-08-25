@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Move o carregador oficial do AdSense para o `head` e autoriza sua cadeia com CSP baseada em nonce.
+- Publica `ads.txt` válido em todos os domínios operacionais e elimina faixas vazias de anúncios não preenchidos.
+- Impede que o banner inferior cubra os botões de conta e checkout no QR e no delivery.
+
 ## 1.9.2 - 2026-08-25
 
 - Remove a publicidade própria de todas as telas operacionais e do cardápio.
