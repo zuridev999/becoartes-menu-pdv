@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.9.3 - 2026-08-25
+
 - Move o carregador oficial do AdSense para o `head` e autoriza sua cadeia com CSP baseada em nonce.
 - Publica `ads.txt` válido em todos os domínios operacionais e elimina faixas vazias de anúncios não preenchidos.
 - Impede que o banner inferior cubra os botões de conta e checkout no QR e no delivery.
