@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-const [indexHtml, component, nginx, adsTxt, qrView, deliveryView, app] = await Promise.all([
+const [indexHtml, component, nginx, staticFiles, adsTxt, qrView, deliveryView, app] = await Promise.all([
   read('index.html'),
   read('src/components/common/GoogleAdBanner.tsx'),
   read('nginx.conf'),
+  read('server/static-files.mjs'),
   read('public/ads.txt'),
   read('src/views/qr/QRView.tsx'),
   read('src/views/delivery/DeliveryView.tsx'),
@@ -25,6 +26,10 @@ assert.match(nginx, /script-src 'nonce-\$request_id' 'strict-dynamic'/);
 assert.match(nginx, /sub_filter '__CSP_NONCE__' \$request_id/);
 assert.match(nginx, /frame-src 'self' https:/);
 assert.match(nginx, /location = \/ads\.txt/);
+assert.match(staticFiles, /randomBytes\(16\)\.toString\('base64'\)/);
+assert.match(staticFiles, /script-src 'nonce-\$\{nonce\}' 'strict-dynamic'/);
+assert.match(staticFiles, /replaceAll\('__CSP_NONCE__', htmlNonce\)/);
+assert.match(staticFiles, /replaceAll\('__CSP_NONCE__', htmlSecurity\.nonce\)/);
 assert.equal(adsTxt.trim(), 'google.com, pub-8099608758666537, DIRECT, f08c47fec0942fa0');
 assert.match(qrView, /var\(--beco-mobile-ad-height, 0px\)/);
 assert.match(deliveryView, /var\(--beco-mobile-ad-height, 0px\)/);

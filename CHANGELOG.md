@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.9.4 - 2026-08-25
+
+- Aplica a CSP com nonce também no BFF Node usado em produção e injeta o nonce real no HTML servido.
+
 ## 1.9.3 - 2026-08-25
 
 - Move o carregador oficial do AdSense para o `head` e autoriza sua cadeia com CSP baseada em nonce.
