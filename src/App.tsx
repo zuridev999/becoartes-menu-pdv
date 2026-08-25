@@ -9,7 +9,6 @@ import { PremiumLoader } from './components/common/Loaders';
 
 import { NotificationDisplay } from './components/common/NotificationDisplay';
 import { ChecklistAlertDisplay } from './components/common/ChecklistAlertDisplay';
-import { HouseAdBanner } from './components/common/HouseAdBanner';
 import { GoogleAdBanner } from './components/common/GoogleAdBanner';
 import { postOSMessage, subscribeOSMessages } from './lib/osBridge';
 import { PublicI18nProvider } from './lib/public-i18n';
@@ -87,7 +86,6 @@ function App() {
       <div className="min-h-screen bg-transparent">
         <NotificationDisplay />
         <ChecklistAlertDisplay />
-        {!isLoading && <HouseAdBanner />}
         {!isLoading && !initError && isPublicMenuView && <GoogleAdBanner placement="top" />}
         {!isLoading && initError && (
           <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white">

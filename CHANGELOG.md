@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.2 - 2026-08-25
+
+- Remove a publicidade própria de todas as telas operacionais e do cardápio.
+- Mantém somente os blocos oficiais do Google AdSense.
+
 ## 1.9.1 - 2026-08-25
 
 - Ativa os blocos reais do AdSense usando o publisher aprovado do site Becoartes.
