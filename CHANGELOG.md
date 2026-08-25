@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.1 - 2026-08-25
+
+- Ativa os blocos reais do AdSense usando o publisher aprovado do site Becoartes.
+- Exibe topo e faixa inferior móvel no QR/delivery, topo no tablet e faixa discreta nas telas operacionais.
+- Mantém as campanhas próprias separadas e oculta slots sem preenchimento para não deixar espaços vazios.
+
 ## 1.9.0 - 2026-08-24
 
 - Exibe campanhas próprias da Becoartes no PDV, QR, tablet, cozinha, bar, delivery e telas de acesso.
