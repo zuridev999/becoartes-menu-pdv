@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.9.7 - 2026-08-25
+
+- Mantém o banner manual responsivo no topo do QR code em celulares e computadores.
+- Mantém o banner superior do PDV sem faixa inferior nessa tela.
+
+## 1.9.6 - 2026-08-25
+
+- Adiciona banner manual responsivo fixado no topo do PDV.
+- Mantém a faixa inferior das telas operacionais fora do PDV.
+
 ## 1.9.5 - 2026-08-25
 
 - Preserva o nonce no script principal gerado pelo Vite para carregar o aplicativo junto com o AdSense.

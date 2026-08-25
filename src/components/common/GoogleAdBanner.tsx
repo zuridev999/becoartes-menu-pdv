@@ -5,7 +5,7 @@ const ADSENSE_SLOT = import.meta.env.VITE_ADSENSE_SLOT || '6877500198';
 const MOBILE_AD_HEIGHT_PROPERTY = '--beco-mobile-ad-height';
 const AD_STATUS_TIMEOUT_MS = 12_000;
 
-type GoogleAdPlacement = 'top' | 'mobile-bottom' | 'operational-bottom';
+type GoogleAdPlacement = 'top' | 'operational-top' | 'mobile-bottom' | 'operational-bottom';
 type GoogleAdStatus = 'pending' | 'filled' | 'unfilled';
 
 export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) {
@@ -69,7 +69,9 @@ export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) 
 
   if (status === 'unfilled') return null;
 
-  const filledClass = placement === 'top'
+  const filledClass = placement === 'operational-top'
+    ? 'sticky top-0 z-[55] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5 backdrop-blur'
+    : placement === 'top'
     ? 'relative z-[55] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5'
     : placement === 'mobile-bottom'
       ? 'fixed inset-x-0 bottom-0 z-[140] border-t border-white/10 bg-zinc-950/95 px-2 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] md:hidden'

@@ -21,6 +21,7 @@ assert.doesNotMatch(component, /document\.createElement\(['"]script['"]\)/);
 assert.match(component, /data-ad-render-status/);
 assert.match(component, /unfill-optimized/);
 assert.match(component, /--beco-mobile-ad-height/);
+assert.match(component, /operational-top/);
 assert.match(component, /relative h-0 w-full overflow-hidden/);
 assert.doesNotMatch(component, /min-h-11/);
 assert.match(nginx, /script-src 'nonce-\$request_id' 'strict-dynamic'/);
@@ -38,6 +39,9 @@ assert.equal(adsTxt.trim(), 'google.com, pub-8099608758666537, DIRECT, f08c47fec
 assert.match(qrView, /var\(--beco-mobile-ad-height, 0px\)/);
 assert.match(deliveryView, /var\(--beco-mobile-ad-height, 0px\)/);
 assert.match(app, /placement="top"/);
+assert.match(app, /placement="operational-top"/);
+assert.match(app, /const isQrView = activeView === 'qr'/);
+assert.match(app, /activeView === 'pdv'/);
 assert.match(app, /placement="mobile-bottom"/);
 assert.match(app, /placement="operational-bottom"/);
 

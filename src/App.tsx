@@ -71,7 +71,9 @@ function App() {
     sessionStorage.setItem(`beco_anim_done_${window.location.hostname}`, 'true');
   };
 
-  const isPublicMenuView = activeView === 'qr' || activeView === 'tablet' || activeView === 'delivery';
+  const isQrView = activeView === 'qr';
+  const isPublicMenuView = isQrView || activeView === 'tablet' || activeView === 'delivery';
+  const isPdvView = activeView === 'pdv';
   const hasOperationalView = ['pdv', 'kitchen', 'admin'].includes(activeView);
 
   return (
@@ -87,6 +89,7 @@ function App() {
         <NotificationDisplay />
         <ChecklistAlertDisplay />
         {!isLoading && !initError && isPublicMenuView && <GoogleAdBanner placement="top" />}
+        {!isLoading && !initError && isPdvView && <GoogleAdBanner placement="operational-top" />}
         {!isLoading && initError && (
           <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white">
             <section className="w-full max-w-md border-y border-white/10 py-8">
@@ -117,7 +120,7 @@ function App() {
 
         {!isLoading && !initError && activeView === 'qr' && <GoogleAdBanner placement="mobile-bottom" />}
         {!isLoading && !initError && activeView === 'delivery' && <GoogleAdBanner placement="mobile-bottom" />}
-        {!isLoading && !initError && hasOperationalView && <GoogleAdBanner placement="operational-bottom" />}
+        {!isLoading && !initError && hasOperationalView && !isPdvView && <GoogleAdBanner placement="operational-bottom" />}
         
         {/* Fallback amigável para URLs desconhecidas */}
         {!isLoading && !initError && !['tablet', 'pdv', 'kitchen', 'admin', 'qr', 'delivery'].includes(activeView) && (
