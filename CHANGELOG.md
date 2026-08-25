@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.9.5 - 2026-08-25
+
+- Preserva o nonce no script principal gerado pelo Vite para carregar o aplicativo junto com o AdSense.
+
 ## 1.9.4 - 2026-08-25
 
 - Aplica a CSP com nonce também no BFF Node usado em produção e injeta o nonce real no HTML servido.

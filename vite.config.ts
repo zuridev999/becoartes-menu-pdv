@@ -4,11 +4,23 @@ import tailwindcss from '@tailwindcss/vite'
 
 const bffDevTarget = process.env.VITE_BFF_DEV_TARGET || 'http://localhost:8080'
 
+const cspNoncePlaceholder = () => ({
+  name: 'becoartes-csp-nonce-placeholder',
+  transformIndexHtml: {
+    order: 'post' as const,
+    handler: (html: string) => html.replace(
+      /<script(?![^>]*\bnonce=)/g,
+      '<script nonce="__CSP_NONCE__"',
+    ),
+  },
+})
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    cspNoncePlaceholder(),
   ],
   build: {
     rollupOptions: {
