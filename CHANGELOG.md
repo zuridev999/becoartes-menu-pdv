@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.9.11 - 2026-08-26
+
+- Remove no celular o espaço reservado pelo cabeçalho do QR que ficava escondido sob o anúncio.
+- Mantém o cabeçalho em telas maiores, posicionado abaixo do banner compacto.
+
 ## 1.9.10 - 2026-08-26
 
 - Limita o banner superior do QR a 320 x 50 pixels para não bloquear o cardápio em celulares.

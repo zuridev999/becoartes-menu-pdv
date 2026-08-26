@@ -242,7 +242,7 @@ export function QRView() {
   return (
     <div className="h-[100dvh] overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
       {/* Header Mobile-Friendly */}
-      <div className="fixed top-0 left-0 right-0 h-16 sm:h-20 glass border-b border-white/5 z-50 flex items-center justify-between px-3 sm:px-6 backdrop-blur-3xl bg-black/50">
+      <div className="fixed left-0 right-0 top-[50px] z-50 hidden h-20 items-center justify-between border-b border-white/5 bg-black/50 px-6 backdrop-blur-3xl sm:flex">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           <div className="w-10 h-10 bg-primary/20 rounded-2xl flex shrink-0 items-center justify-center text-primary">
             <LayoutDashboard size={18} />
@@ -278,7 +278,7 @@ export function QRView() {
       </div>
 
       <div
-        className="h-full pt-16 sm:pt-20 sm:pb-28"
+        className="h-full pt-0 sm:pt-20 sm:pb-28"
         style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
       >
         <MenuCatalog
@@ -520,7 +520,7 @@ function ComandaQRExperience({
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
-      <div className="fixed top-0 left-0 right-0 h-20 glass border-b border-white/5 z-50 flex items-center justify-between px-3 sm:px-6 backdrop-blur-3xl bg-black/60">
+      <div className="fixed left-0 right-0 top-[50px] z-50 hidden h-20 items-center justify-between border-b border-white/5 bg-black/60 px-6 backdrop-blur-3xl sm:flex">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-11 h-11 bg-primary/20 rounded-2xl flex shrink-0 items-center justify-center text-primary">
             <BadgeCheck size={20} />
@@ -547,7 +547,7 @@ function ComandaQRExperience({
       </div>
 
       <div
-        className="h-full pt-20 sm:pb-28"
+        className="h-full pt-0 sm:pt-20 sm:pb-28"
         style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
       >
         <MenuCatalog
