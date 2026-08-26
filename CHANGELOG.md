@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.9.10 - 2026-08-26
+
+- Limita o banner superior do QR a 320 x 50 pixels para não bloquear o cardápio em celulares.
+- Remove o formato responsivo automático desse bloco para impedir criativos verticais grandes.
+
 ## 1.9.9 - 2026-08-26
 
 - Deixa scripts e anúncios externos fora da interceptação do service worker do QR.

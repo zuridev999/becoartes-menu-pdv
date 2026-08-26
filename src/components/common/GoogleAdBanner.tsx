@@ -11,6 +11,7 @@ export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) 
   const [status, setStatus] = useState<GoogleAdStatus>('pending');
   const adRef = useRef<HTMLModElement>(null);
   const containerRef = useRef<HTMLElement>(null);
+  const isCompactTop = placement === 'top';
 
   useEffect(() => {
     const ad = adRef.current;
@@ -65,15 +66,15 @@ export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) 
 
   const filledClass = placement === 'operational-top'
     ? 'sticky top-0 z-[55] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5 backdrop-blur'
-    : placement === 'top'
-    ? 'relative z-[55] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5'
+    : isCompactTop
+    ? 'relative z-[55] flex h-[50px] max-h-[50px] w-full items-center justify-center overflow-hidden bg-zinc-950'
     : placement === 'mobile-bottom'
       ? 'fixed inset-x-0 bottom-0 z-[140] border-t border-white/10 bg-zinc-950/95 px-2 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] md:hidden'
       : 'fixed bottom-0 left-1/2 z-[60] hidden w-full max-w-3xl -translate-x-1/2 border border-b-0 border-white/10 bg-zinc-950/95 px-2 py-1 md:block';
   const pendingClass = placement === 'operational-top'
     ? 'sticky top-0 z-[55] min-h-[50px] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5 backdrop-blur sm:min-h-[90px]'
-    : placement === 'top'
-      ? 'relative z-[55] min-h-[50px] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5 sm:min-h-[90px]'
+    : isCompactTop
+      ? 'relative z-[55] flex h-[50px] max-h-[50px] w-full items-center justify-center overflow-hidden bg-zinc-950'
       : placement === 'mobile-bottom'
         ? 'fixed inset-x-0 bottom-0 z-[140] min-h-[50px] border-t border-white/10 bg-zinc-950/95 px-2 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] md:hidden'
         : 'fixed bottom-0 left-1/2 z-[60] hidden min-h-[90px] w-full max-w-3xl -translate-x-1/2 border border-b-0 border-white/10 bg-zinc-950/95 px-2 py-1 md:block';
@@ -90,12 +91,16 @@ export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) 
       <ins
         data-beco-google-ad
         ref={adRef}
-        className="adsbygoogle mx-auto block w-full max-w-3xl"
-        style={{ display: 'block' }}
+        className={isCompactTop
+          ? 'adsbygoogle mx-auto inline-block !h-[50px] !w-[320px] max-w-full overflow-hidden'
+          : 'adsbygoogle mx-auto block w-full max-w-3xl'}
+        style={isCompactTop
+          ? { display: 'inline-block', width: '320px', height: '50px' }
+          : { display: 'block' }}
         data-ad-client={ADSENSE_CLIENT}
         data-ad-slot={ADSENSE_SLOT}
-        data-ad-format="auto"
-        data-full-width-responsive="true"
+        data-ad-format={isCompactTop ? undefined : 'auto'}
+        data-full-width-responsive={isCompactTop ? undefined : 'true'}
       />
     </aside>
   );
