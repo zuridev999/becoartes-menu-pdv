@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.9.12 - 2026-08-26
+
+- Restaura a barra de mesa, idioma, atendimento e conta imediatamente abaixo do anúncio no QR.
+- Mantém a barra compacta no celular e reserva o restante da tela para o cardápio, sem espaço vazio duplicado.
+
 ## 1.9.11 - 2026-08-26
 
 - Remove no celular o espaço reservado pelo cabeçalho do QR que ficava escondido sob o anúncio.
