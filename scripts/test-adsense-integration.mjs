@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import {
+  applyPageMetadata,
+  createQrRobotsTxt,
+  createQrSitemap,
+  resolvePageMetadata,
+} from '../server/static-files.mjs';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, deliveryView, app] = await Promise.all([
@@ -22,7 +28,9 @@ assert.match(component, /data-ad-render-status/);
 assert.match(component, /unfill-optimized/);
 assert.match(component, /--beco-mobile-ad-height/);
 assert.match(component, /operational-top/);
-assert.match(component, /relative h-0 w-full overflow-hidden/);
+assert.doesNotMatch(component, /relative h-0 w-full overflow-hidden/);
+assert.doesNotMatch(component, /AD_STATUS_TIMEOUT_MS/);
+assert.match(component, /min-h-\[50px\]/);
 assert.doesNotMatch(component, /min-h-11/);
 assert.match(nginx, /script-src 'nonce-\$request_id' 'strict-dynamic'/);
 assert.match(nginx, /sub_filter '__CSP_NONCE__' \$request_id/);
@@ -44,5 +52,34 @@ assert.match(app, /const isQrView = activeView === 'qr'/);
 assert.match(app, /activeView === 'pdv'/);
 assert.match(app, /placement="mobile-bottom"/);
 assert.match(app, /placement="operational-bottom"/);
+assert.doesNotMatch(app, /activeView === 'qr' && <GoogleAdBanner placement="mobile-bottom"/);
+assert.match(staticFiles, /resolvePageMetadata/);
+assert.match(staticFiles, /Cardápio Becoartes \| Mesa/);
+assert.match(staticFiles, /Mediapartners-Google/);
+assert.match(staticFiles, /Google-Display-Ads-Bot/);
+assert.match(staticFiles, /createQrSitemap/);
+assert.match(indexHtml, /<meta name="description"/);
+assert.match(indexHtml, /<meta name="robots"/);
+assert.match(indexHtml, /<link rel="canonical"/);
+
+const tableMetadata = resolvePageMetadata({ host: 'qr.becoartes.com', pathname: '/mesa/22' });
+assert.equal(tableMetadata.title, 'Cardápio Becoartes | Mesa 22');
+assert.equal(tableMetadata.canonical, 'https://qr.becoartes.com/mesa/22');
+assert.equal(tableMetadata.robots, 'index,follow,max-image-preview:large');
+
+const tableHtml = applyPageMetadata(indexHtml, { host: 'qr.becoartes.com', pathname: '/mesa/22' });
+assert.match(tableHtml, /<title>Cardápio Becoartes \| Mesa 22<\/title>/);
+assert.match(tableHtml, /<link rel="canonical" href="https:\/\/qr\.becoartes\.com\/mesa\/22" \/>/);
+assert.match(tableHtml, /<meta name="robots" content="index,follow,max-image-preview:large" \/>/);
+assert.match(tableHtml, /Cardápio digital Becoartes da Mesa 22/);
+
+const qrRobots = createQrRobotsTxt();
+assert.match(qrRobots, /User-agent: Mediapartners-Google\nAllow: \//);
+assert.match(qrRobots, /Sitemap: https:\/\/qr\.becoartes\.com\/sitemap\.xml/);
+
+const qrSitemap = createQrSitemap();
+assert.equal((qrSitemap.match(/<url>/g) || []).length, 50);
+assert.match(qrSitemap, /<loc>https:\/\/qr\.becoartes\.com\/mesa\/22<\/loc>/);
+assert.doesNotMatch(qrSitemap, /mesa\/51/);
 
 console.log('AdSense operacional: integração, CSP, ads.txt e proteção de layout validados.');

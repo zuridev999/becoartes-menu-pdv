@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.9.8 - 2026-08-26
+
+- Mantém o espaço do banner do QR enquanto o Google AdSense processa a solicitação, sem descartá-lo por tempo.
+- Identifica cada rota `/mesa/N` com título, descrição e endereço canônico próprios para o rastreador do AdSense.
+- Publica `robots.txt` e sitemap com as 50 mesas reais e mantém somente um banner manual no QR.
+
 ## 1.9.7 - 2026-08-25
 
 - Mantém o banner manual responsivo no topo do QR code em celulares e computadores.

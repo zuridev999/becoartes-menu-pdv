@@ -118,7 +118,6 @@ function App() {
           {!initError && activeView === 'delivery' && <DeliveryView />}
         </Suspense>
 
-        {!isLoading && !initError && activeView === 'qr' && <GoogleAdBanner placement="mobile-bottom" />}
         {!isLoading && !initError && activeView === 'delivery' && <GoogleAdBanner placement="mobile-bottom" />}
         {!isLoading && !initError && hasOperationalView && !isPdvView && <GoogleAdBanner placement="operational-bottom" />}
         

@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 const ADSENSE_CLIENT = import.meta.env.VITE_ADSENSE_CLIENT || 'ca-pub-8099608758666537';
 const ADSENSE_SLOT = import.meta.env.VITE_ADSENSE_SLOT || '6877500198';
 const MOBILE_AD_HEIGHT_PROPERTY = '--beco-mobile-ad-height';
-const AD_STATUS_TIMEOUT_MS = 12_000;
 
 type GoogleAdPlacement = 'top' | 'operational-top' | 'mobile-bottom' | 'operational-bottom';
 type GoogleAdStatus = 'pending' | 'filled' | 'unfilled';
@@ -34,13 +33,8 @@ export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) 
       // AdSense can reject a slot while a page is being restored from cache.
     }
 
-    const statusTimeout = window.setTimeout(() => {
-      if (!ad.dataset.adStatus) setStatus('unfilled');
-    }, AD_STATUS_TIMEOUT_MS);
-
     return () => {
       observer.disconnect();
-      window.clearTimeout(statusTimeout);
     };
   }, []);
 
@@ -76,7 +70,14 @@ export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) 
     : placement === 'mobile-bottom'
       ? 'fixed inset-x-0 bottom-0 z-[140] border-t border-white/10 bg-zinc-950/95 px-2 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] md:hidden'
       : 'fixed bottom-0 left-1/2 z-[60] hidden w-full max-w-3xl -translate-x-1/2 border border-b-0 border-white/10 bg-zinc-950/95 px-2 py-1 md:block';
-  const positionClass = status === 'filled' ? filledClass : 'relative h-0 w-full overflow-hidden';
+  const pendingClass = placement === 'operational-top'
+    ? 'sticky top-0 z-[55] min-h-[50px] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5 backdrop-blur sm:min-h-[90px]'
+    : placement === 'top'
+      ? 'relative z-[55] min-h-[50px] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5 sm:min-h-[90px]'
+      : placement === 'mobile-bottom'
+        ? 'fixed inset-x-0 bottom-0 z-[140] min-h-[50px] border-t border-white/10 bg-zinc-950/95 px-2 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] md:hidden'
+        : 'fixed bottom-0 left-1/2 z-[60] hidden min-h-[90px] w-full max-w-3xl -translate-x-1/2 border border-b-0 border-white/10 bg-zinc-950/95 px-2 py-1 md:block';
+  const positionClass = status === 'filled' ? filledClass : pendingClass;
 
   return (
     <aside
