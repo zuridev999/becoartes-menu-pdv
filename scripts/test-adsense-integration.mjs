@@ -8,7 +8,7 @@ import {
 } from '../server/static-files.mjs';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, deliveryView, app] = await Promise.all([
+const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, deliveryView, app, serviceWorker] = await Promise.all([
   read('index.html'),
   read('src/components/common/GoogleAdBanner.tsx'),
   read('nginx.conf'),
@@ -18,6 +18,7 @@ const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, del
   read('src/views/qr/QRView.tsx'),
   read('src/views/delivery/DeliveryView.tsx'),
   read('src/App.tsx'),
+  read('public/sw.js'),
 ]);
 
 assert.match(indexHtml, /<meta name="google-adsense-account" content="ca-pub-8099608758666537"/);
@@ -53,6 +54,8 @@ assert.match(app, /activeView === 'pdv'/);
 assert.match(app, /placement="mobile-bottom"/);
 assert.match(app, /placement="operational-bottom"/);
 assert.doesNotMatch(app, /activeView === 'qr' && <GoogleAdBanner placement="mobile-bottom"/);
+assert.match(serviceWorker, /requestUrl\.origin !== self\.location\.origin/);
+assert.match(serviceWorker, /becoartes-kiosk-v1\.9\.9/);
 assert.match(staticFiles, /resolvePageMetadata/);
 assert.match(staticFiles, /Cardápio Becoartes \| Mesa/);
 assert.match(staticFiles, /Mediapartners-Google/);

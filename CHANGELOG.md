@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.9.9 - 2026-08-26
+
+- Deixa scripts e anúncios externos fora da interceptação do service worker do QR.
+- Atualiza o cache offline para distribuir a correção aos aparelhos já instalados.
+
 ## 1.9.8 - 2026-08-26
 
 - Mantém o espaço do banner do QR enquanto o Google AdSense processa a solicitação, sem descartá-lo por tempo.
