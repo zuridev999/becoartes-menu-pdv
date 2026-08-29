@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.9.13 - 2026-08-29
+
+- Remove o bloco de AdSense da tela do PDV para que a autenticação e os controles operacionais continuem acessíveis em telas pequenas.
+
 ## 1.9.12 - 2026-08-26
 
 - Restaura a barra de mesa, idioma, atendimento e conta imediatamente abaixo do anúncio no QR.

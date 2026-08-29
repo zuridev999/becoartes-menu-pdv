@@ -89,7 +89,6 @@ function App() {
         <NotificationDisplay />
         <ChecklistAlertDisplay />
         {!isLoading && !initError && isPublicMenuView && <GoogleAdBanner placement="top" />}
-        {!isLoading && !initError && isPdvView && <GoogleAdBanner placement="operational-top" />}
         {!isLoading && initError && (
           <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white">
             <section className="w-full max-w-md border-y border-white/10 py-8">
