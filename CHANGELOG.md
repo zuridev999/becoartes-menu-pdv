@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.9.14 - 2026-08-29
+
+- Organiza a Venda Balcão no celular em duas etapas: catálogo e pedido/pagamento.
+- Mantém o resumo do pedido acessível e permite voltar para adicionar produtos antes da finalização.
+
 ## 1.9.13 - 2026-08-29
 
 - Remove o bloco de AdSense da tela do PDV para que a autenticação e os controles operacionais continuem acessíveis em telas pequenas.
