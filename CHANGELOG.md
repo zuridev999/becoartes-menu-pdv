@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.9.16 - 2026-08-30
+
+- Libera o PIN operacional para qualquer freelancer com check-in ativo exclusivamente na estação atribuída à vaga, sem cadastro de dispositivo.
+- Exige que o acesso temporário esteja ativo, no horário vigente e na estação correspondente; check-out, expiração ou troca de estação bloqueiam o PIN imediatamente.
+
 ## 1.9.15 - 2026-08-30
 
 - Mantém o PDV operando mesmo quando o caixa ficou aberto por mais de um dia, com aviso de conferência em vez de bloqueio.

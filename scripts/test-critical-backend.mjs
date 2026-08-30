@@ -79,6 +79,8 @@ assert.match(routerSource, /isTrustedTerminalSession/, 'trusted terminal session
 assert.match(routerSource, /isTemporaryOperationAccessAllowed/, 'an emergency operational release must be explicitly time-bounded by the server');
 assert.match(bffSource, /OPERATION_ACCESS_TEMPORARY_UNTIL/, 'temporary operational access must require an explicit expiry variable');
 assert.match(bffSource, /!temporaryOperationAccess/, 'temporary mobile access must not create a permanent trusted terminal');
+assert.match(bffSource, /access\.status !== 'active'/, 'freelancer station access must require an active check-in lifecycle state');
+assert.match(bffSource, /!hasActiveStationAccess/, 'an active freelancer station access must bypass device enrollment only for its allowed station');
 assert.match(routerSource, /bff_request_error/, 'backend errors must include structured route context');
 assert.match(httpSource, /totalBytes > maxBytes/, 'JSON body parsing must enforce a byte limit');
 
@@ -406,6 +408,56 @@ try {
   assert.equal(remotePinOnly.data.seller, null, 'PIN sem terminal confiável continua bloqueado fora da rede autorizada');
   assert.equal(remotePinOnly.data.accessRestricted, true);
 
+  const now = Date.now();
+  const freelancerAccess = {
+    status: 'active',
+    station: 'pdv',
+    startsAt: new Date(now - (5 * 60 * 1000)).toISOString(),
+    endsAt: new Date(now + (5 * 60 * 60 * 1000)).toISOString(),
+  };
+  await testDb.execute({
+    sql: `
+      INSERT OR REPLACE INTO users
+        (id, empresa_id, nome, email, role, funcao, ativo, pin, is_operador, permitir_acesso_remoto, tipo_vinculo, pdv_sell_enabled, freelancer_operational_access, created_at)
+      VALUES (?, ?, ?, ?, 'freelancer', ?, 1, ?, 0, 0, 'Freelancer', 1, ?, ?)
+    `,
+    args: [
+      'freelancer_active_pdv',
+      'empresa_test',
+      'Freelancer de PDV',
+      'freelancer-pdv@example.test',
+      'Atendimento',
+      '4321',
+      JSON.stringify(freelancerAccess),
+      now,
+    ],
+  });
+  const mobileUserAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) Mobile/15E148';
+  const activeFreelancerLogin = await post('/api/auth/login', { pin: '4321', view: 'pdv' }, '', 200, {
+    ...REMOTE_IP_HEADERS,
+    'User-Agent': mobileUserAgent,
+  });
+  assert.ok(activeFreelancerLogin.data.sessionToken, 'freelancer com check-in ativo deve entrar na estação prevista sem cadastrar o dispositivo');
+  assert.equal(activeFreelancerLogin.data.seller.stationAccess, 'pdv', 'acesso temporário deve ficar limitado à estação da vaga');
+
+  const wrongStationFreelancerLogin = await post('/api/auth/login', { pin: '4321', view: 'bar' }, '', 200, {
+    ...REMOTE_IP_HEADERS,
+    'User-Agent': mobileUserAgent,
+  });
+  assert.equal(wrongStationFreelancerLogin.data.seller, null, 'freelancer não pode usar o PIN em uma estação diferente da vaga');
+  assert.equal(wrongStationFreelancerLogin.data.accessRestricted, true);
+
+  await testDb.execute({
+    sql: 'UPDATE users SET freelancer_operational_access = ? WHERE id = ?',
+    args: [JSON.stringify({ ...freelancerAccess, status: 'closed' }), 'freelancer_active_pdv'],
+  });
+  const closedFreelancerLogin = await post('/api/auth/login', { pin: '4321', view: 'pdv' }, '', 200, {
+    ...REMOTE_IP_HEADERS,
+    'User-Agent': mobileUserAgent,
+  });
+  assert.equal(closedFreelancerLogin.data.seller, null, 'checkout encerrado deve bloquear imediatamente o PIN do freelancer');
+  assert.equal(closedFreelancerLogin.data.accessRestricted, true);
+
   const terminalId = '80120304-0506-4708-9010-111213141516';
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const terminalPublicKey = publicKey.export({ format: 'jwk' });
@@ -691,6 +743,9 @@ try {
       'autorizacao_administrativa_do_computador',
       'bloqueio_de_terminal_movel',
       'terminal_pdv_confiavel_sem_dependencia_de_ip',
+      'freelancer_ativo_na_estacao_correta_sem_dispositivo',
+      'freelancer_bloqueado_fora_da_estacao',
+      'freelancer_bloqueado_apos_checkout',
       'pin_admin_emergencia_fecha_caixa',
       'fechamento_bloqueado_notifica_superadmin',
       'pin_invalido_notifica_superadmin',
