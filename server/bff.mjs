@@ -9,7 +9,7 @@ import { createApiHandler } from './routes/api-router.mjs';
 import { createAccessGuards, createRouteAccessEnforcer } from './routes/access-policy.mjs';
 import { createRouteHandlers } from './routes/handlers.mjs';
 import { createStaticHandler } from './static-files.mjs';
-import { businessDateKey, resolveBusinessTimeZone } from './business-time.mjs';
+import { businessDateGapDays, businessDateKey, resolveBusinessTimeZone } from './business-time.mjs';
 import { getPdvPublishBlockers } from './catalog/product-lifecycle.mjs';
 import {
   centsToMoney,
@@ -92,7 +92,6 @@ const AUDIT_LOG_LIMIT = Number(process.env.AUDIT_LOG_LIMIT || 100);
 const CASH_SANDBOX_MODE = process.env.CASH_SANDBOX_MODE === '1';
 const CASH_TABLE = CASH_SANDBOX_MODE ? 'pdv_cash_sandbox' : 'caixa_diario';
 const CASH_MAX_OPEN_HOURS = 18;
-const CASH_MAX_OPEN_SECONDS = CASH_MAX_OPEN_HOURS * 60 * 60;
 const DEFAULT_PAYMENT_METHOD = 'credit';
 const DELIVERY_PAYMENT_PROVIDER = process.env.DELIVERY_PAYMENT_PROVIDER || 'mock';
 const DELIVERY_LOGISTICS_PROVIDER = process.env.DELIVERY_LOGISTICS_PROVIDER || 'disabled';
@@ -1290,21 +1289,42 @@ const getOpenCashRow = async () => {
 
 const getLatestClosedCashRow = async () => {
   const res = await db.execute({
-    sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND status = 'Fechado' ORDER BY updated_at DESC, data DESC, created_at DESC LIMIT 1`,
+    sql: `
+      SELECT *
+      FROM ${CASH_TABLE}
+      WHERE empresa_id = ? AND status = 'Fechado'
+      ORDER BY
+        data DESC,
+        CASE
+          WHEN CAST(updated_at AS INTEGER) >= 1000000000000 THEN CAST(updated_at AS INTEGER) / 1000
+          ELSE CAST(updated_at AS INTEGER)
+        END DESC,
+        CASE
+          WHEN CAST(created_at AS INTEGER) >= 1000000000000 THEN CAST(created_at AS INTEGER) / 1000
+          ELSE CAST(created_at AS INTEGER)
+        END DESC
+      LIMIT 1
+    `,
     args: [OS_EMPRESA_ID],
   });
   return res.rows[0] || null;
 };
 
+const getCashOpeningCarryover = (latestClosedCash, businessDate) => {
+  const gapDays = latestClosedCash
+    ? businessDateGapDays(latestClosedCash.data, businessDate)
+    : null;
+  return {
+    gapDays,
+    mustInherit: gapDays === 0 || gapDays === 1,
+  };
+};
+
 const getCashOpenDurationSeconds = (cash) => Math.max(0, osTimestamp() - toUnixSeconds(cash?.created_at));
 
 const assertCashOperationAllowed = async () => {
-  const openCash = await getOpenCashRow();
-  if (!openCash || getCashOpenDurationSeconds(openCash) < CASH_MAX_OPEN_SECONDS) return;
-
-  const error = new Error('Caixa aberto desde ontem. Feche o caixa e faça uma nova abertura para continuar.');
-  error.statusCode = 423;
-  throw error;
+  // A idade do caixa continua visível para conferência, mas nunca paralisa o PDV.
+  // O fechamento posterior preserva o histórico e a diferença física normalmente.
 };
 
 const getCashState = async () => {
@@ -1320,6 +1340,7 @@ const getCashState = async () => {
   ]);
   const current = mapCashRow(openCashRow || todayRes.rows[0]);
   const lastClosed = mapCashRow(lastClosedRow);
+  const openingCarryover = getCashOpeningCarryover(lastClosedRow, businessDate);
   const openDurationHours = openCashRow ? getCashOpenDurationSeconds(openCashRow) / (60 * 60) : 0;
   const requiresClosing = Boolean(openCashRow) && openDurationHours >= CASH_MAX_OPEN_HOURS;
 
@@ -1328,7 +1349,10 @@ const getCashState = async () => {
     isOpen: current?.status === 'Aberto',
     current,
     lastClosingBalance: lastClosed?.closingBalance || 0,
+    lastClosingBusinessDate: lastClosed?.businessDate || null,
     hasPreviousClosing: Boolean(lastClosed),
+    mustInheritLastClosing: openingCarryover.mustInherit,
+    lastClosingGapDays: openingCarryover.gapDays,
     sandbox: CASH_SANDBOX_MODE,
     requiresClosing,
     openDurationHours,
@@ -7566,15 +7590,18 @@ const openCash = async ({ openingBalance, notes, confirmationPin }) => {
   const now = osTimestamp();
   const requestedOpeningCents = moneyToCents(openingBalance, 'openingBalance');
   const latestClosedCash = await getLatestClosedCashRow();
+  const openingCarryover = getCashOpeningCarryover(latestClosedCash, businessDate);
   const requiredOpeningCents = latestClosedCash
     ? moneyToCents(latestClosedCash.valor_caixa_final || 0, 'lastClosingBalance')
     : requestedOpeningCents;
-  if (latestClosedCash && requestedOpeningCents !== requiredOpeningCents) {
+  if (openingCarryover.mustInherit && requestedOpeningCents !== requiredOpeningCents) {
     const error = new Error(`O caixa deve ser aberto com o valor exato do último fechamento: ${formatMoneyBRL(centsToMoney(requiredOpeningCents))}.`);
     error.statusCode = 409;
     throw error;
   }
-  const normalizedOpeningBalance = centsToMoney(requiredOpeningCents);
+  const normalizedOpeningBalance = centsToMoney(
+    openingCarryover.mustInherit ? requiredOpeningCents : requestedOpeningCents,
+  );
   const responsibleId = await resolveCashResponsibleId(effectiveSession);
   const cashId = existingCash?.id || createId();
 
@@ -7632,6 +7659,11 @@ const openCash = async ({ openingBalance, notes, confirmationPin }) => {
       cashId,
       cashDate: businessDate,
       openingBalance: normalizedOpeningBalance,
+      lastClosingBalance: latestClosedCash ? centsToMoney(requiredOpeningCents) : null,
+      lastClosingDate: latestClosedCash?.data || null,
+      carryoverRequired: openingCarryover.mustInherit,
+      carryoverGapDays: openingCarryover.gapDays,
+      carryoverWaivedReason: latestClosedCash && !openingCarryover.mustInherit ? 'closing_older_than_one_day' : null,
       reopened: Boolean(existingCash),
       adminOverride: cashActor.override,
       sandbox: CASH_SANDBOX_MODE,

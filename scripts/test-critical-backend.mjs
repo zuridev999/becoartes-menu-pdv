@@ -46,8 +46,9 @@ assert.match(bffSource, /if \(hasBlockingShortage && !adminOverride\)/, 'only a 
 assert.match(bffSource, /action: 'cash_close_blocked'/, 'blocked cash closings must leave a persistent audit trail');
 assert.match(bffSource, /action: 'cash_close_failed'/, 'failed cash closing attempts must leave a persistent audit trail');
 assert.match(bffSource, /title: closeTitle[\s\S]*controle-dinheiro/, 'successful cash closings must notify the OS control-money route');
-assert.match(bffSource, /getLatestClosedCashRow[\s\S]*ORDER BY updated_at DESC, data DESC, created_at DESC/, 'cash opening must use the latest completed closing');
-assert.match(bffSource, /requestedOpeningCents !== requiredOpeningCents/, 'cash opening must reject a balance different from the previous closing');
+assert.match(bffSource, /getLatestClosedCashRow[\s\S]*ORDER BY\s+data DESC/, 'cash opening must prioritize the latest business date over mixed timestamp units');
+assert.match(bffSource, /openingCarryover\.mustInherit && requestedOpeningCents !== requiredOpeningCents/, 'cash opening must reject a changed balance only for a recent closing');
+assert.doesNotMatch(bffSource, /statusCode = 423/, 'an overdue open cash must never lock operational routes');
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
 assert.match(bffSource, /pdv_terminals/, 'PDV terminals must persist a public-key identity');
 assert.match(bffSource, /terminalProof\.valid/, 'trusted terminals must require a verified challenge signature');
@@ -256,6 +257,58 @@ try {
   assert.equal(Number(successNotification.count), 1, 'successful cash close must notify the OS');
 
   const testDb = createClient({ url: dbUrl });
+  const rejectedRecentOpening = await post('/api/cash/open', {
+    openingBalance: 73.25,
+    notes: 'Fechamento recente ainda deve ser herdado',
+    confirmationPin: '0719',
+  }, admin.sessionToken, 409);
+  assert.match(rejectedRecentOpening.error || '', /valor exato do último fechamento/);
+
+  const currentBusinessDate = closedCash.data.cashState.businessDate;
+  const staleDate = new Date(`${currentBusinessDate}T12:00:00Z`);
+  staleDate.setUTCDate(staleDate.getUTCDate() - 2);
+  const staleBusinessDate = staleDate.toISOString().slice(0, 10);
+  await testDb.execute({
+    sql: 'UPDATE pdv_cash_sandbox SET data = ?, updated_at = ? WHERE id = ?',
+    args: [staleBusinessDate, Date.now(), openedAudit.cash_id],
+  });
+
+  const staleCarryoverOpening = await post('/api/cash/open', {
+    openingBalance: 73.25,
+    notes: 'Valor físico após intervalo maior que um dia',
+    confirmationPin: '0719',
+  }, admin.sessionToken);
+  assert.equal(staleCarryoverOpening.data.cashState.current.openingBalance, 73.25, 'stale closing must allow the current physical opening balance');
+  assert.equal(staleCarryoverOpening.data.cashState.mustInheritLastClosing, false, 'closing older than one day must not force carryover');
+  const staleCashId = staleCarryoverOpening.data.cashState.current.id;
+  const staleOpeningAudit = await getScalar(`
+    SELECT
+      json_extract(details, '$.carryoverRequired') AS carryover_required,
+      json_extract(details, '$.carryoverWaivedReason') AS waived_reason
+    FROM audit_logs
+    WHERE action = 'cash_opened' AND json_extract(details, '$.cashId') = '${staleCashId}'
+    LIMIT 1
+  `);
+  assert.equal(Number(staleOpeningAudit.carryover_required), 0, 'waived carryover must be explicit in the audit log');
+  assert.equal(staleOpeningAudit.waived_reason, 'closing_older_than_one_day');
+
+  await testDb.execute({
+    sql: 'UPDATE pdv_cash_sandbox SET created_at = ? WHERE id = ?',
+    args: [Math.floor(Date.now() / 1000) - (48 * 60 * 60), staleCashId],
+  });
+  const operationWithOverdueCash = await post('/api/tables/open', { tableId: '1', wasAvailable: true }, admin.sessionToken);
+  assert.equal(operationWithOverdueCash.ok, true, 'cash older than one day must not lock the PDV operation');
+  await testDb.execute("UPDATE tables SET status = 'available', current_seller_id = NULL WHERE id = '1'");
+
+  const closedStaleCarryover = await post('/api/cash/close', {
+    closingBalance: 73.25,
+    notes: 'Fechamento do teste de intervalo',
+    confirmationPin: '1122',
+  }, cashier.sessionToken);
+  assert.equal(closedStaleCarryover.data.cashState.lastClosingBalance, 73.25, 'latest business date must win even when an older row has a millisecond timestamp');
+  assert.equal(closedStaleCarryover.data.cashState.lastClosingBusinessDate, currentBusinessDate);
+  await testDb.execute({ sql: 'DELETE FROM pdv_cash_sandbox WHERE id = ?', args: [openedAudit.cash_id] });
+
   const resetCash = async () => testDb.execute({
     sql: "UPDATE pdv_cash_sandbox SET status = 'Aberto', saldo_inicial = 108.35, entradas_dinheiro = 0, saidas_dinheiro = 0, valor_caixa_final = 0, updated_at = ? WHERE empresa_id = ?",
     args: [Math.floor(Date.now() / 1000), 'empresa_test'],

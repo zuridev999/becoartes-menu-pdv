@@ -60,7 +60,10 @@ export type CashState = {
   openDurationHours?: number;
   sandbox?: boolean;
   lastClosingBalance: number;
+  lastClosingBusinessDate?: string | null;
   hasPreviousClosing: boolean;
+  mustInheritLastClosing?: boolean;
+  lastClosingGapDays?: number | null;
   current: null | {
     id: string;
     businessDate: string;

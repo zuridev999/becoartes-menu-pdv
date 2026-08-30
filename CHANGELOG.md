@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.9.15 - 2026-08-30
+
+- Mantém o PDV operando mesmo quando o caixa ficou aberto por mais de um dia, com aviso de conferência em vez de bloqueio.
+- Exige a herança do fechamento somente para fechamento de hoje ou ontem; após intervalo maior, permite informar o valor físico atual com auditoria.
+- Corrige a seleção do último fechamento quando o histórico mistura timestamps em segundos e milissegundos.
+
 ## 1.9.14 - 2026-08-29
 
 - Organiza a Venda Balcão no celular em duas etapas: catálogo e pedido/pagamento.
