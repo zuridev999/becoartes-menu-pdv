@@ -1,4 +1,4 @@
-import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, ModifierGroup, OrderItem, Product, ServiceRequest, TablePayment } from '../types';
+import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, ModifierGroup, OrderItem, Product, ServiceRequest, Table, TablePayment } from '../types';
 import { createPdvTerminalIdentity, signPdvTerminalChallenge } from './pdv-terminal-browser';
 import { createRequestTimeoutSignal } from './request-timeout';
 
@@ -96,6 +96,21 @@ type PublicTableAccess = {
   tableNumber: number;
   origin: 'tablet' | 'qr';
   expiresAt?: string | null;
+};
+
+export type QrFlowResolution = {
+  flow: 'mesa' | 'comanda';
+  physicalTable: {
+    id: string;
+    number: number;
+  };
+  access: PublicTableAccess;
+};
+
+export type CustomerTabOrderContext = {
+  customerTabId: string;
+  sourceTableId: string;
+  sourceTableNumber: number;
 };
 
 const getSessionToken = () => {
@@ -271,9 +286,14 @@ const hydrateCustomerTab = (tab: CustomerTab) => ({
 });
 
 export const CustomerTabApi = {
-  open(input: { customerName: string; phone: string; cpf: string }) {
+  open(input: { customerName: string; phone: string; cpf: string; source?: Omit<CustomerTabOrderContext, 'customerTabId'> }) {
+    const sourceToken = input.source ? getPublicTableAccessToken(input.source.sourceTableId, 'qr') : '';
     return postJson<{ tab: CustomerTab; accessToken: string }>('/api/customer-tabs/open', {
       ...input,
+      source: undefined,
+      sourceTableId: input.source?.sourceTableId,
+      sourceTableNumber: input.source?.sourceTableNumber,
+      publicAccessToken: sourceToken,
       accessToken: getCustomerTabAccessToken(),
       origin: 'qr',
     }).then(result => {
@@ -282,9 +302,13 @@ export const CustomerTabApi = {
     });
   },
 
-  recover(cpf: string) {
+  recover(cpf: string, source?: Omit<CustomerTabOrderContext, 'customerTabId'>) {
+    const sourceToken = source ? getPublicTableAccessToken(source.sourceTableId, 'qr') : '';
     return postJson<{ tab: CustomerTab; accessToken: string }>('/api/customer-tabs/recover', {
       cpf,
+      sourceTableId: source?.sourceTableId,
+      sourceTableNumber: source?.sourceTableNumber,
+      publicAccessToken: sourceToken,
       accessToken: getCustomerTabAccessToken(),
       origin: 'qr',
     }).then(result => {
@@ -330,11 +354,24 @@ export const OperationalApi = {
     origin: 'tablet' | 'pdv' | 'qr';
     sellerId: string | null;
     clientRequestId?: string;
+    customerTabContext?: CustomerTabOrderContext;
     items: OrderItem[];
   }) {
+    const sourceToken = input.customerTabContext
+      ? getPublicTableAccessToken(input.customerTabContext.sourceTableId, 'qr')
+      : '';
     return postJson<SendToKitchenResult>('/api/orders/send-to-kitchen', {
       ...input,
-      publicAccessToken: input.origin === 'pdv' ? undefined : getPublicTableAccessToken(input.tableId, input.origin),
+      customerTabContext: undefined,
+      customerTabId: input.customerTabContext?.customerTabId,
+      customerTabAccessToken: input.customerTabContext ? getCustomerTabAccessToken() : undefined,
+      sourceTableId: input.customerTabContext?.sourceTableId,
+      sourceTableNumber: input.customerTabContext?.sourceTableNumber,
+      publicAccessToken: input.origin === 'pdv'
+        ? undefined
+        : input.customerTabContext
+          ? sourceToken
+          : getPublicTableAccessToken(input.tableId, input.origin),
     });
   },
 
@@ -799,12 +836,30 @@ export const AppApi = {
     });
   },
 
-  validateTabletSetupPin(pin: string) {
-    return postJson<{ valid: boolean; sessionToken?: string | null; seller?: any | null }>('/api/tablet/setup-login', { pin });
+  validateTabletSetupPin(pin: string, station?: 'kitchen' | 'bar') {
+    return postJson<{ valid: boolean; sessionToken?: string | null; seller?: any | null }>('/api/tablet/setup-login', { pin, station });
   },
 
   createTableAccessToken(input: { origin: 'tablet' | 'qr'; tableId?: string; tableNumber?: number }) {
     return postJson<PublicTableAccess>('/api/table-access-token', input);
+  },
+
+  resolveQrFlow(tableNumber: number) {
+    return postJson<QrFlowResolution>('/api/qr/resolve', { tableNumber });
+  },
+
+  getPublicTableState(input: { tableId: string; tableNumber?: number; customerTabContext?: CustomerTabOrderContext }) {
+    const sourceTableId = input.customerTabContext?.sourceTableId;
+    return postJson<{ table: Table }>('/api/public-table/state', {
+      tableId: input.tableId,
+      tableNumber: input.tableNumber,
+      origin: 'qr',
+      publicAccessToken: getPublicTableAccessToken(sourceTableId || input.tableId, 'qr'),
+      customerTabId: input.customerTabContext?.customerTabId,
+      customerTabAccessToken: input.customerTabContext ? getCustomerTabAccessToken() : undefined,
+      sourceTableId,
+      sourceTableNumber: input.customerTabContext?.sourceTableNumber,
+    }).then(({ table }) => ({ table: hydrateSnapshot({ tables: [table] }).tables[0] }));
   },
 
   fetchAuditLogs(limit = 100, filters: { startDate?: string; endDate?: string; author?: string; action?: string } = {}) {
@@ -904,7 +959,7 @@ export const AdminApi = {
   },
 
   setQrMode(qrMode: 'mesa' | 'comanda', authorizationPin?: string) {
-    return postJson<{ saved: boolean; settings: unknown }>('/api/settings/qr-mode', { qrMode, authorizationPin });
+    return postJson<{ saved: boolean; settings: unknown; transitionTables: number[] }>('/api/settings/qr-mode', { qrMode, authorizationPin });
   },
 
   addSeller(seller: unknown) {
@@ -976,6 +1031,14 @@ export const AdminApi = {
     validUntil?: string;
     minOrderValue?: number;
     whatsappMessage?: string;
+    benefitType?: string;
+    discountType?: string;
+    targetCategory?: string;
+    targetProductId?: string;
+    targetProductName?: string;
+    freeItemName?: string;
+    benefitLabel?: string;
+    ruleJson?: string;
   }) {
     return postJson<{ coupon: Omit<Coupon, 'createdAt' | 'redeemedAt'> & { createdAt: string; redeemedAt?: string | null } }>('/api/coupons/create', input)
       .then(result => ({
@@ -1005,10 +1068,20 @@ export const OpsApi = {
     });
   },
 
-  createServiceRequest(input: { id?: string; tableId: string; type: string; message?: string }) {
+  createServiceRequest(input: { id?: string; tableId: string; type: string; message?: string; customerTabContext?: CustomerTabOrderContext }) {
+    const sourceToken = input.customerTabContext
+      ? getPublicTableAccessToken(input.customerTabContext.sourceTableId, 'qr')
+      : '';
     return postJson<{ request: Omit<ServiceRequest, 'createdAt'> & { createdAt: string } }>('/api/service-requests', {
       ...input,
-      ...getPublicTableAccessPayload(input.tableId),
+      customerTabContext: undefined,
+      customerTabId: input.customerTabContext?.customerTabId,
+      customerTabAccessToken: input.customerTabContext ? getCustomerTabAccessToken() : undefined,
+      sourceTableId: input.customerTabContext?.sourceTableId,
+      sourceTableNumber: input.customerTabContext?.sourceTableNumber,
+      ...(input.customerTabContext
+        ? { origin: 'qr', publicAccessToken: sourceToken }
+        : getPublicTableAccessPayload(input.tableId)),
     })
       .then(result => ({
         request: {

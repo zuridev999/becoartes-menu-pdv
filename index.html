@@ -8,8 +8,19 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="google-adsense-account" content="ca-pub-8099608758666537" />
+    <meta name="description" content="Sistema operacional Becoartes." />
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="canonical" href="https://pdv.becoartes.com/" />
+    <script
+      id="becoartes-adsense-script"
+      nonce="__CSP_NONCE__"
+      async
+      crossorigin="anonymous"
+      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8099608758666537"
+    ></script>
     <title>Becoartes PDV</title>
-    <script>
+    <script nonce="__CSP_NONCE__">
       // Restaura o tema salvo antes do React montar (evita flash).
       try {
         if (localStorage.getItem('pdv-theme') === 'light') {
@@ -19,7 +30,18 @@
 
       const becoHost = window.location.hostname;
       if (becoHost.startsWith('qr.')) {
-        document.title = 'Becoartes Pedidos';
+        const tableMatch = window.location.pathname.match(/^\/mesa\/(\d+)\/?$/);
+        const tableNumber = tableMatch?.[1];
+        const pageTitle = tableNumber ? `Cardápio Becoartes | Mesa ${tableNumber}` : 'Cardápio Becoartes';
+        const pageDescription = tableNumber
+          ? `Cardápio digital Becoartes da Mesa ${tableNumber}. Consulte pratos, bebidas e acompanhe sua comanda.`
+          : 'Cardápio digital Becoartes. Escaneie o QR code identificado na mesa para consultar e pedir.';
+        document.title = pageTitle;
+        document.querySelector('meta[name="description"]')?.setAttribute('content', pageDescription);
+        document.querySelector('meta[name="robots"]')?.setAttribute('content', 'index,follow,max-image-preview:large');
+        document.querySelector('link[rel="canonical"]')?.setAttribute('href', tableNumber
+          ? `https://qr.becoartes.com/mesa/${tableNumber}`
+          : 'https://qr.becoartes.com/');
       } else if (becoHost.startsWith('tablet.')) {
         document.title = 'Becoartes Tablet';
       } else if (becoHost.startsWith('coz.')) {
@@ -53,7 +75,9 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="root">
+      <noscript>Ative o JavaScript para acessar o sistema Becoartes.</noscript>
+    </div>
+    <script nonce="__CSP_NONCE__" type="module" src="/src/main.tsx"></script>
   </body>
 </html>

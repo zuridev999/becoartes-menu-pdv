@@ -9,6 +9,7 @@ import { PremiumLoader } from './components/common/Loaders';
 
 import { NotificationDisplay } from './components/common/NotificationDisplay';
 import { ChecklistAlertDisplay } from './components/common/ChecklistAlertDisplay';
+import { GoogleAdBanner } from './components/common/GoogleAdBanner';
 import { postOSMessage, subscribeOSMessages } from './lib/osBridge';
 import { PublicI18nProvider } from './lib/public-i18n';
 
@@ -70,6 +71,11 @@ function App() {
     sessionStorage.setItem(`beco_anim_done_${window.location.hostname}`, 'true');
   };
 
+  const isQrView = activeView === 'qr';
+  const isPublicMenuView = isQrView || activeView === 'tablet' || activeView === 'delivery';
+  const isPdvView = activeView === 'pdv';
+  const hasOperationalView = ['pdv', 'kitchen', 'admin'].includes(activeView);
+
   return (
     <AntigravityErrorBoundary>
       <AnimatePresence>
@@ -82,6 +88,8 @@ function App() {
       <div className="min-h-screen bg-transparent">
         <NotificationDisplay />
         <ChecklistAlertDisplay />
+        {!isLoading && !initError && isPublicMenuView && <GoogleAdBanner placement="top" />}
+        {!isLoading && !initError && isPdvView && <GoogleAdBanner placement="operational-top" />}
         {!isLoading && initError && (
           <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white">
             <section className="w-full max-w-md border-y border-white/10 py-8">
@@ -109,6 +117,9 @@ function App() {
           {!initError && activeView === 'admin' && <AdminView />}
           {!initError && activeView === 'delivery' && <DeliveryView />}
         </Suspense>
+
+        {!isLoading && !initError && activeView === 'delivery' && <GoogleAdBanner placement="mobile-bottom" />}
+        {!isLoading && !initError && hasOperationalView && !isPdvView && <GoogleAdBanner placement="operational-bottom" />}
         
         {/* Fallback amigável para URLs desconhecidas */}
         {!isLoading && !initError && !['tablet', 'pdv', 'kitchen', 'admin', 'qr', 'delivery'].includes(activeView) && (

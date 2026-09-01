@@ -141,10 +141,10 @@ const seedCatalogAndStock = async () => {
       args: ['stock_test', 'empresa_test', 'Produto Teste', 10, Math.floor(Date.now() / 1000)],
     },
     {
-      sql: "INSERT OR REPLACE INTO tables (id, number, status, current_seller_id) VALUES ('1', '1', 'available', NULL), ('2', '2', 'available', NULL)",
+      sql: "INSERT OR REPLACE INTO tables (id, number, status, current_seller_id) VALUES ('1', '1', 'available', NULL), ('2', '2', 'available', NULL), ('3', '3', 'available', NULL)",
     },
     {
-      sql: "UPDATE tables SET status = 'available', current_seller_id = NULL WHERE id IN ('1', '2')",
+      sql: "UPDATE tables SET status = 'available', current_seller_id = NULL WHERE id IN ('1', '2', '3')",
     },
     {
       sql: `
@@ -634,6 +634,48 @@ try {
   const afterCancelRetryStock = await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'");
   assert.equal(Number(afterCancelRetryStock.quantidade_atual), 9, 'retry do cancelamento não pode devolver o estoque duas vezes');
 
+  const identificationCoupon = await post('/api/coupons/create', {
+    code: 'JOAO',
+    amount: 0,
+    benefitType: 'identification',
+    benefitLabel: 'Identificacao hostess: Joao',
+    ruleJson: JSON.stringify({ type: 'identification', label: 'Identificacao hostess: Joao' }),
+  }, admin.sessionToken);
+  assert.equal(identificationCoupon.ok, true, 'cupom de identificação sem desconto deve ser criado');
+
+  const validatedIdentificationCoupon = await post('/api/coupons/validate', {
+    code: 'JOAO',
+    tableId: '3',
+    subtotal: 100,
+    serviceFee: 10,
+    discount: 0,
+  }, admin.sessionToken);
+  assert.equal(validatedIdentificationCoupon.data.coupon.appliedAmount, 0, 'identificação não pode alterar o valor da conta');
+  assert.equal(validatedIdentificationCoupon.data.coupon.selectedBenefit, 'identification');
+
+  const identificationClosePayload = {
+    tableId: '3',
+    tableNumber: 3,
+    sellerId: 'seller_test',
+    sellerName: 'Vendedor Teste',
+    subtotal: 100,
+    serviceFee: 10,
+    discount: 0,
+    couponCode: 'JOAO',
+    couponAmount: 0,
+    couponBenefit: 'identification',
+    total: 110,
+    payments: [{ id: 'identification_payment', method: 'pix', amount: 110 }],
+  };
+  const identificationClosed = await post('/api/bills/close', identificationClosePayload, admin.sessionToken);
+  assert.equal(identificationClosed.ok, true, 'conta com identificação deve fechar normalmente');
+  const identificationCouponAfterClose = await getScalar("SELECT status FROM pdv_coupons WHERE code = 'JOAO'");
+  assert.equal(identificationCouponAfterClose.status, 'active', 'identificação deve continuar disponível após o fechamento');
+  const identificationBill = await getScalar("SELECT coupon_code, coupon_amount, coupon_benefit FROM closed_bills WHERE table_number = 3 ORDER BY closed_at DESC LIMIT 1");
+  assert.equal(identificationBill.coupon_code, 'JOAO', 'fechamento deve registrar o código de identificação');
+  assert.equal(Number(identificationBill.coupon_amount), 0, 'identificação não deve criar desconto');
+  assert.equal(identificationBill.coupon_benefit, 'identification');
+
   const closePayload = {
     tableId: '1',
     tableNumber: 1,
@@ -740,6 +782,7 @@ try {
       'retry_cancelamento_idempotente',
       'venda_balcao_com_estoque_pendente',
       'reconciliacao_estoque_idempotente',
+      'cupom_identificacao_reutilizavel_sem_desconto',
     ],
   }, null, 2));
 } catch (error) {

@@ -5,17 +5,20 @@ import { useStore } from '../../store';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
+import type { CustomerTabOrderContext } from '../../lib/api';
 
 export function CustomerOrderModal({
   onClose,
   onSent,
-  origin = 'tablet'
+  origin = 'tablet',
+  customerTabContext,
 }: {
   onClose: () => void;
   onSent?: () => void;
   origin?: 'tablet' | 'qr';
+  customerTabContext?: CustomerTabOrderContext;
 }) {
-  const { currentTableId, tables, removeFromCart, sendToKitchen, addNotification } = useStore();
+  const { currentTableId, tables, removeFromCart, sendToKitchen } = useStore();
   const { t, locale } = usePublicI18n();
   const [isSending, setIsSending] = useState(false);
   const [isSent, setIsSent] = useState(false);
@@ -36,7 +39,7 @@ export function CustomerOrderModal({
     if (isSending || isSent) return;
     setIsSending(true);
     try {
-      await sendToKitchen(table.id, origin);
+      await sendToKitchen(table.id, origin, undefined, customerTabContext);
       setIsSent(true);
       setTimeout(() => {
         onClose();
@@ -44,7 +47,7 @@ export function CustomerOrderModal({
         setIsSent(false);
       }, 1800);
     } catch {
-      addNotification(t('sendOrder'), 'error');
+      // A store já apresenta a mensagem segura e específica da API.
     } finally {
       setIsSending(false);
     }

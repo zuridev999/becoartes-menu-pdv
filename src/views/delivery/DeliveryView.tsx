@@ -667,11 +667,17 @@ export function DeliveryView() {
         </div>
       </div>
 
-      <div className="h-full pt-16 sm:pt-20 pb-[6.5rem] sm:pb-28">
+      <div
+        className="h-full pt-16 sm:pt-20 sm:pb-28"
+        style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
+      >
         <MenuCatalog onProductSelect={setSelectedProduct} viewMode="grid" surface="delivery" />
       </div>
 
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50">
+      <div
+        className="fixed left-3 right-3 z-50 sm:left-1/2 sm:right-auto sm:-translate-x-1/2"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem + var(--beco-mobile-ad-height, 0px))' }}
+      >
         <button
           onClick={() => setIsCheckoutOpen(true)}
           disabled={cart.length === 0}

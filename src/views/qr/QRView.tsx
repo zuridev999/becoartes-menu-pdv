@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ShoppingBag, LayoutDashboard, Bell, FileText, Send, UserRound, Phone, BadgeCheck, QrCode, RefreshCw } from 'lucide-react';
 import { useStore, type Product } from '../../store';
-import type { CustomerTab } from '../../types';
+import type { CustomerTab, Table } from '../../types';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
 import { ProductModal } from '../../components/modals/ProductModal';
 import { CustomerAccountModal } from '../../components/modals/CustomerAccountModal';
 import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
 import { getOrderItemsTotal } from '../../lib/totals';
-import { AppApi, CustomerTabApi, setPublicTableAccess } from '../../lib/api';
+import { AppApi, CustomerTabApi, setPublicTableAccess, type QrFlowResolution } from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
@@ -17,6 +17,43 @@ import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
 const CUSTOMER_TAB_CPF_KEY = 'becoartes_customer_tab_cpf';
 
 const normalizeCpfInput = (value: string) => value.replace(/\D/g, '').slice(0, 11);
+
+const applyPublicTableState = (table: Table) => useStore.setState((state) => ({
+  tables: [...state.tables.filter((entry) => entry.id !== table.id), table].sort((a, b) => a.number - b.number),
+}));
+
+const usePublicTablePolling = (input: {
+  tableId: string;
+  tableNumber?: number;
+  customerTabContext?: { customerTabId: string; sourceTableId: string; sourceTableNumber: number };
+} | null) => {
+  const tableId = input?.tableId;
+  const tableNumber = input?.tableNumber;
+  const customerTabId = input?.customerTabContext?.customerTabId;
+  const sourceTableId = input?.customerTabContext?.sourceTableId;
+  const sourceTableNumber = input?.customerTabContext?.sourceTableNumber;
+  useEffect(() => {
+    if (!tableId) return;
+    let cancelled = false;
+    const refresh = () => AppApi.getPublicTableState({
+      tableId,
+      tableNumber,
+      customerTabContext: customerTabId && sourceTableId && sourceTableNumber
+        ? { customerTabId, sourceTableId, sourceTableNumber }
+        : undefined,
+    })
+      .then(({ table }) => { if (!cancelled) applyPublicTableState(table); })
+      .catch(() => undefined);
+    const interval = window.setInterval(refresh, 45_000);
+    const onVisibility = () => { if (document.visibilityState === 'visible') void refresh(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [tableId, tableNumber, customerTabId, sourceTableId, sourceTableNumber]);
+};
 
 const getRouteTableNumber = () => {
   const pathMatch = window.location.pathname.match(/(?:^|\/)mesa\/(\d+)(?:\/)?$/);
@@ -34,38 +71,42 @@ export function QRView() {
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
   const [routeTableNumber, setRouteTableNumber] = useState<number | null>(getRouteTableNumber);
+  const [qrResolution, setQrResolution] = useState<QrFlowResolution | null>(null);
   const [isTableAccessReady, setIsTableAccessReady] = useState(false);
   const [tableAccessError, setTableAccessError] = useState('');
   const [tableAccessRetry, setTableAccessRetry] = useState(0);
   const isCouponRulesPage = window.location.pathname.includes('regulamento-cupom');
 
-  useEffect(() => {
-    if (settings.qrMode === 'comanda') return;
-    const tableNumber = getRouteTableNumber();
-    setRouteTableNumber(tableNumber);
-    if (!tableNumber) return;
-
-    const table = tables.find(t => t.number === tableNumber);
-    if (table && table.id !== currentTableId) {
-      setCurrentTableId(table.id);
-    }
-  }, [currentTableId, setCurrentTableId, settings.qrMode, tables]);
+  usePublicTablePolling(qrResolution?.flow === 'mesa' ? {
+    tableId: qrResolution.physicalTable.id,
+    tableNumber: qrResolution.physicalTable.number,
+  } : null);
 
   const routeTable = routeTableNumber ? tables.find(t => t.number === routeTableNumber) : null;
-  const routeTableId = routeTable?.id;
-  const resolvedRouteTableNumber = routeTable?.number;
 
   useEffect(() => {
-    if (settings.qrMode === 'comanda' || !routeTableNumber) return;
-    if (!routeTableId || !resolvedRouteTableNumber) return;
+    const tableNumber = getRouteTableNumber();
+    setRouteTableNumber(tableNumber);
+    if (!tableNumber || isCouponRulesPage) return;
 
     let cancelled = false;
     setIsTableAccessReady(false);
     setTableAccessError('');
-    AppApi.createTableAccessToken({ origin: 'qr', tableId: routeTableId, tableNumber: resolvedRouteTableNumber })
-      .then((access) => {
+    setQrResolution(null);
+    AppApi.resolveQrFlow(tableNumber)
+      .then(async (resolution) => {
         if (cancelled) return;
-        setPublicTableAccess(access);
+        setQrResolution(resolution);
+        setPublicTableAccess(resolution.access);
+        if (resolution.flow === 'mesa') {
+          setCurrentTableId(resolution.physicalTable.id);
+          const { table } = await AppApi.getPublicTableState({
+            tableId: resolution.physicalTable.id,
+            tableNumber: resolution.physicalTable.number,
+          });
+          if (cancelled) return;
+          applyPublicTableState(table);
+        }
         setIsTableAccessReady(true);
       })
       .catch(() => {
@@ -78,7 +119,7 @@ export function QRView() {
     return () => {
       cancelled = true;
     };
-  }, [resolvedRouteTableNumber, routeTableId, routeTableNumber, settings.qrMode, tableAccessRetry]);
+  }, [isCouponRulesPage, setCurrentTableId, settings.qrMode, tableAccessRetry]);
 
   const currentTable = routeTableNumber ? routeTable : tables.find(t => t.id === currentTableId);
 
@@ -101,10 +142,6 @@ export function QRView() {
     );
   }
 
-  if (settings.qrMode === 'comanda') {
-    return <ComandaQRExperience />;
-  }
-
   if (!routeTableNumber) {
     return (
       <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white font-['Outfit']">
@@ -117,6 +154,15 @@ export function QRView() {
           </p>
         </section>
       </main>
+    );
+  }
+
+  if (isTableAccessReady && qrResolution?.flow === 'comanda') {
+    return (
+      <ComandaQRExperience
+        sourceTableId={qrResolution.physicalTable.id}
+        sourceTableNumber={qrResolution.physicalTable.number}
+      />
     );
   }
 
@@ -194,9 +240,9 @@ export function QRView() {
   };
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
+    <div className="flex h-[calc(100dvh-50px)] flex-col overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
       {/* Header Mobile-Friendly */}
-      <div className="fixed top-0 left-0 right-0 h-16 sm:h-20 glass border-b border-white/5 z-50 flex items-center justify-between px-3 sm:px-6 backdrop-blur-3xl bg-black/50">
+      <div className="relative z-50 flex h-14 shrink-0 items-center justify-between border-b border-white/5 bg-black/50 px-3 backdrop-blur-3xl sm:h-20 sm:px-6">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           <div className="w-10 h-10 bg-primary/20 rounded-2xl flex shrink-0 items-center justify-center text-primary">
             <LayoutDashboard size={18} />
@@ -231,7 +277,10 @@ export function QRView() {
         </div>
       </div>
 
-      <div className="h-full pt-16 sm:pt-20 pb-[6.5rem] sm:pb-28">
+      <div
+        className="min-h-0 flex-1 sm:pb-28"
+        style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
+      >
         <MenuCatalog
           onProductSelect={setSelectedProduct}
           viewMode="list"
@@ -248,7 +297,10 @@ export function QRView() {
       </div>
 
       {/* CTA principal do celular: revisar/enviar pedido quando houver carrinho */}
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50">
+      <div
+        className="fixed left-3 right-3 z-50 sm:left-1/2 sm:right-auto sm:-translate-x-1/2"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem + var(--beco-mobile-ad-height, 0px))' }}
+      >
         <button 
           onClick={handlePrimaryAccountAction}
           className="w-full sm:w-auto glass-card px-5 sm:px-8 py-4 flex items-center justify-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 sm:scale-110 active:scale-95 transition-all"
@@ -302,7 +354,13 @@ export function QRView() {
   );
 }
 
-function ComandaQRExperience() {
+function ComandaQRExperience({
+  sourceTableId,
+  sourceTableNumber,
+}: {
+  sourceTableId: string;
+  sourceTableNumber: number;
+}) {
   const { currentTableId, tables, setCurrentTableId } = useStore();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
@@ -320,21 +378,31 @@ function ComandaQRExperience() {
     ? tables.find(t => t.id === tab.tableId)
     : tables.find(t => t.id === currentTableId);
 
+  usePublicTablePolling(tab ? {
+    tableId: tab.tableId,
+    customerTabContext: { customerTabId: tab.id, sourceTableId, sourceTableNumber },
+  } : null);
+
   useEffect(() => {
     const savedCpf = localStorage.getItem(CUSTOMER_TAB_CPF_KEY);
     if (!savedCpf) return;
     let cancelled = false;
-    CustomerTabApi.recover(savedCpf)
-      .then(({ tab: recovered }) => {
+    CustomerTabApi.recover(savedCpf, { sourceTableId, sourceTableNumber })
+      .then(async ({ tab: recovered }) => {
         if (cancelled) return;
         setTab(recovered);
         setCurrentTableId(recovered.tableId);
+        const { table } = await AppApi.getPublicTableState({
+          tableId: recovered.tableId,
+          customerTabContext: { customerTabId: recovered.id, sourceTableId, sourceTableNumber },
+        });
+        if (!cancelled) applyPublicTableState(table);
       })
       .catch(() => localStorage.removeItem(CUSTOMER_TAB_CPF_KEY));
     return () => {
       cancelled = true;
     };
-  }, [setCurrentTableId]);
+  }, [setCurrentTableId, sourceTableId, sourceTableNumber]);
 
   const submit = async () => {
     setError('');
@@ -342,11 +410,21 @@ function ComandaQRExperience() {
     const normalizedCpf = normalizeCpfInput(cpf);
     try {
       const result = recoverMode
-        ? await CustomerTabApi.recover(normalizedCpf)
-        : await CustomerTabApi.open({ customerName, phone, cpf: normalizedCpf });
+        ? await CustomerTabApi.recover(normalizedCpf, { sourceTableId, sourceTableNumber })
+        : await CustomerTabApi.open({
+            customerName,
+            phone,
+            cpf: normalizedCpf,
+            source: { sourceTableId, sourceTableNumber },
+          });
       setTab(result.tab);
       setCurrentTableId(result.tab.tableId);
       localStorage.setItem(CUSTOMER_TAB_CPF_KEY, normalizedCpf);
+      const { table } = await AppApi.getPublicTableState({
+        tableId: result.tab.tableId,
+        customerTabContext: { customerTabId: result.tab.id, sourceTableId, sourceTableNumber },
+      });
+      applyPublicTableState(table);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível abrir sua comanda.');
     } finally {
@@ -367,7 +445,7 @@ function ComandaQRExperience() {
             {recoverMode ? 'Voltar para minha comanda' : 'Abrir minha comanda'}
           </h1>
           <p className="text-xs sm:text-sm font-bold text-zinc-400 leading-relaxed mb-5 sm:mb-7">
-            Use seu CPF para manter seus pedidos juntos, mesmo se trocar de celular. Na saída, a equipe confere por esse CPF.
+            Use seu CPF para identificar sua comanda e continue neste celular até o fechamento. Se trocar de aparelho, peça ajuda à equipe.
           </p>
 
           {error && (
@@ -424,7 +502,7 @@ function ComandaQRExperience() {
             }}
             className="mt-3 sm:mt-4 w-full rounded-2xl border border-white/10 bg-white/[0.03] py-4 text-xs font-black uppercase tracking-widest text-zinc-400"
           >
-            {recoverMode ? 'Criar nova comanda' : 'Já tenho comanda'}
+            {recoverMode ? 'Criar nova comanda' : 'Retomar comanda neste celular'}
           </button>
         </div>
         </div>
@@ -441,8 +519,8 @@ function ComandaQRExperience() {
   const handlePrimaryAccountAction = () => hasCartItems ? setIsOrderOpen(true) : setIsAccountOpen(true);
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
-      <div className="fixed top-0 left-0 right-0 h-20 glass border-b border-white/5 z-50 flex items-center justify-between px-3 sm:px-6 backdrop-blur-3xl bg-black/60">
+    <div className="flex h-[calc(100dvh-50px)] flex-col overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
+      <div className="relative z-50 flex h-16 shrink-0 items-center justify-between border-b border-white/5 bg-black/60 px-3 backdrop-blur-3xl sm:h-20 sm:px-6">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-11 h-11 bg-primary/20 rounded-2xl flex shrink-0 items-center justify-center text-primary">
             <BadgeCheck size={20} />
@@ -450,7 +528,7 @@ function ComandaQRExperience() {
           <div className="min-w-0">
             <p className="text-[8px] font-black uppercase text-gray-500">Comanda {tab.tableNumber}</p>
             <h2 className="text-lg font-black tracking-tighter truncate">{tab.customerName}</h2>
-            <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{tab.cpfMasked}</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Mesa {sourceTableNumber} • {tab.cpfMasked}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -468,7 +546,10 @@ function ComandaQRExperience() {
         </div>
       </div>
 
-      <div className="h-full pt-20 pb-[6.5rem] sm:pb-28">
+      <div
+        className="min-h-0 flex-1 sm:pb-28"
+        style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
+      >
         <MenuCatalog
           onProductSelect={setSelectedProduct}
           viewMode="grid"
@@ -484,7 +565,10 @@ function ComandaQRExperience() {
         />
       </div>
 
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50">
+      <div
+        className="fixed left-3 right-3 z-50 sm:left-1/2 sm:right-auto sm:-translate-x-1/2"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem + var(--beco-mobile-ad-height, 0px))' }}
+      >
         <button onClick={handlePrimaryAccountAction} className="w-full sm:w-auto glass-card px-5 sm:px-8 py-4 flex items-center justify-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 sm:scale-110 active:scale-95 transition-all">
           {hasCartItems ? <Send size={20} className="text-accent" /> : <FileText size={20} className="text-accent" />}
           <div className="text-left">
@@ -500,9 +584,26 @@ function ComandaQRExperience() {
 
       <AnimatePresence>
         {selectedProduct && <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} tabletLandscape qrMobileFlow />}
-        {isAccountOpen && <CustomerAccountModal onClose={() => setIsAccountOpen(false)} />}
-        {isOrderOpen && <CustomerOrderModal onClose={() => setIsOrderOpen(false)} onSent={() => setIsAccountOpen(true)} origin="qr" />}
-        {isServiceOpen && <ServiceRequestModal onClose={() => setIsServiceOpen(false)} />}
+        {isAccountOpen && (
+          <CustomerAccountModal
+            onClose={() => setIsAccountOpen(false)}
+            locationLabel={`Comanda ${tab.tableNumber} • Mesa ${sourceTableNumber}`}
+          />
+        )}
+        {isOrderOpen && (
+          <CustomerOrderModal
+            onClose={() => setIsOrderOpen(false)}
+            onSent={() => setIsAccountOpen(true)}
+            origin="qr"
+            customerTabContext={{ customerTabId: tab.id, sourceTableId, sourceTableNumber }}
+          />
+        )}
+        {isServiceOpen && (
+          <ServiceRequestModal
+            onClose={() => setIsServiceOpen(false)}
+            customerTabContext={{ customerTabId: tab.id, sourceTableId, sourceTableNumber }}
+          />
+        )}
       </AnimatePresence>
     </div>
   );

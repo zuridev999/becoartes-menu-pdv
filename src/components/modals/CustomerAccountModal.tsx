@@ -20,7 +20,7 @@ const paymentOptions: Array<{
   { method: 'debit', labelKey: 'payDebit', descriptionKey: 'debitDescription', icon: Landmark },
 ];
 
-export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
+export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () => void; locationLabel?: string }) {
   const { currentTableId, tables, settings, addNotification } = useStore();
   const { t, locale } = usePublicI18n();
   const [loadingMethod, setLoadingMethod] = useState<PaymentMethod | null>(null);
@@ -86,7 +86,7 @@ export function CustomerAccountModal({ onClose }: { onClose: () => void }) {
             <div>
               <h2 className="mb-1 text-3xl font-black italic tracking-tighter sm:text-5xl">{t('account')}</h2>
               <p className="text-gray-500 font-black uppercase tracking-widest text-xs flex items-center gap-2">
-                <LayoutDashboard size={14} /> {t('table')} {table.number}
+                <LayoutDashboard size={14} /> {locationLabel || `${t('table')} ${table.number}`}
               </p>
             </div>
           </div>

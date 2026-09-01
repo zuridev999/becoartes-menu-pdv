@@ -1,4 +1,4 @@
-const CACHE_NAME = 'becoartes-kiosk-v1.4.74';
+const CACHE_NAME = 'becoartes-kiosk-v1.9.12';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -35,6 +35,12 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const requestUrl = new URL(event.request.url);
+
+  // Recursos de terceiros devem seguir direto pelo navegador. Interceptá-los
+  // aqui pode transformar uma falha transitória em erro definitivo de rede.
+  if (requestUrl.origin !== self.location.origin) return;
+
   // Strategy: Network First, falling back to cache
   // This avoids the "blank screen" hash mismatch issue
   if (event.request.mode === 'navigate') {

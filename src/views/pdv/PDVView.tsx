@@ -25,6 +25,7 @@ import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { AdminApi, AppApi, CustomerTabApi, type PdvLockState } from '../../lib/api';
 import type { ReceiptData } from '../../lib/receiptPrint';
 import { businessDateKey, businessWeekday } from '../../lib/business-time';
+import { getOrderLocation, getPhysicalTablesPendingTransition, isTableVisibleForQrMode } from '../../lib/order-location';
 
 const CANCEL_REASONS = [
   { code: 'cliente_desistiu', label: 'Cliente desistiu' },
@@ -209,6 +210,7 @@ export function PDVView() {
   const [receiptPreview, setReceiptPreview] = useState<ReceiptData | null>(null);
   const [isSwitchingQrMode, setIsSwitchingQrMode] = useState(false);
   const [showQrModePinDialog, setShowQrModePinDialog] = useState(false);
+  const [showQrModeTransitionDialog, setShowQrModeTransitionDialog] = useState(false);
   const [customerTabSearch, setCustomerTabSearch] = useState('');
   const [customerTabResults, setCustomerTabResults] = useState<CustomerTab[]>([]);
   const [isCustomerTabSearching, setIsCustomerTabSearching] = useState(false);
@@ -438,14 +440,11 @@ export function PDVView() {
   const canAccessTable = (table: TableType) => (
     canViewOtherOperatorTables || !table.currentSellerId || table.currentSellerId === currentSeller.id
   );
-  // Ao desligar o modo comanda, mantemos as comandas já abertas no mapa para permitir a baixa.
-  const isTableActive = (table: TableType) => (
-    table.status !== 'available' || Boolean(table.customerTab)
-  );
   const visibleTables = tables
-    .filter(table => isComandaMode || table.number <= 50 || isTableActive(table))
+    .filter(table => isTableVisibleForQrMode(table, isComandaMode))
     .filter(canAccessTable);
   const activeVisibleTables = visibleTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested' || t.customerTab);
+  const physicalTablesPendingTransition = getPhysicalTablesPendingTransition(tables);
   const activeTablesCount = activeVisibleTables.length;
   const visibleTableNumbers = new Set(visibleTables.map(table => Number(table.number || 0)));
   const servedTablesToday = new Set<string>();
@@ -482,7 +481,15 @@ export function PDVView() {
     try {
       const result = await AdminApi.setQrMode(nextMode, authorizationPin);
       setSettingsFromQrModeResult(result.settings, nextMode);
-      addNotification(nextMode === 'comanda' ? 'Modo comanda ativado no QR.' : 'Modo mesa ativado no QR.', 'info');
+      const inherited = result.transitionTables || [];
+      addNotification(
+        nextMode === 'comanda'
+          ? inherited.length > 0
+            ? `Modo comanda ativado. ${inherited.length} mesa(s) continuam como mesa até o fechamento: ${inherited.join(', ')}.`
+            : 'Modo comanda ativado. Novos acessos já abrirão comandas.'
+          : 'Modo mesa ativado no QR.',
+        'info',
+      );
       setShowQrModePinDialog(false);
       await syncData({ includeCatalog: false });
     } catch (error) {
@@ -493,7 +500,7 @@ export function PDVView() {
     }
   };
 
-  const switchQrMode = async () => {
+  const continueQrModeSwitch = async () => {
     if (!canUseQrModeSwitch || isSwitchingQrMode) return;
     if (!canSwitchQrModeDirectly) {
       setShowQrModePinDialog(true);
@@ -504,6 +511,15 @@ export function PDVView() {
     } catch {
       // A notificação já foi exibida em submitQrModeSwitch.
     }
+  };
+
+  const switchQrMode = async () => {
+    if (!canUseQrModeSwitch || isSwitchingQrMode) return;
+    if (!isComandaMode && physicalTablesPendingTransition.length > 0) {
+      setShowQrModeTransitionDialog(true);
+      return;
+    }
+    await continueQrModeSwitch();
   };
 
   const runCustomerTabSearch = async (query = customerTabSearch) => {
@@ -1049,6 +1065,7 @@ export function PDVView() {
                 {visibleRequests.map((req) => {
                   const isResolved = req.status === 'resolved';
                   const isOrderActionable = req.type === 'order_ready' || req.type === 'new_order';
+                  const location = getOrderLocation(req);
                   return (
                     <motion.div 
                       key={req.id} 
@@ -1061,7 +1078,7 @@ export function PDVView() {
                     >
                       <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                          <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center font-black italic text-xl shadow-inner shrink-0 ${isResolved ? 'bg-emerald-500 text-white' : 'bg-white/20 text-white'}`}>
-                           {req.tableNumber}
+                           {req.sourceTableNumber || req.tableNumber}
                          </div>
                          <div className="min-w-0">
                            <div className="flex items-center gap-2 mb-1">
@@ -1085,12 +1102,19 @@ export function PDVView() {
                              {new Date(req.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • 
                              {isResolved ? 'Atendimento Concluído' : (req.type === 'order_ready' ? 'Retirar na Cozinha' : (req.type === 'new_order' ? 'Preparar Bebidas/Drinks' : (req.message || 'Aguardando atendimento')))}
                            </p>
+                           {location.secondary && (
+                             <p className="mt-1 text-[9px] font-black uppercase tracking-[0.16em] text-white/65">
+                               {location.compact}
+                             </p>
+                           )}
                            {isOrderActionable && (
                              <div className="mt-3">
                                <OrderItemDetails
                                  items={req.items}
                                  fallbackMessage={req.message}
                                  compact
+                                 maxItems={req.type === 'new_order' ? req.items?.length : undefined}
+                                 maxModifiers={req.type === 'new_order' ? Number.POSITIVE_INFINITY : undefined}
                                />
                                <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-white/40 uppercase">
                                  Ver movimento completo <ChevronRight size={8} />
@@ -1752,6 +1776,23 @@ export function PDVView() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {showQrModeTransitionDialog && (
+          <ActionDialog
+            isOpen
+            title="Ativar modo comanda?"
+            description={`${physicalTablesPendingTransition.length} mesa(s) continuarão funcionando normalmente até o fechamento: ${physicalTablesPendingTransition.join(', ')}. Os demais QRs passarão a abrir comandas.`}
+            cancelLabel="Manter modo mesa"
+            confirmLabel="Ativar modo comanda"
+            confirmDisabled={isSwitchingQrMode}
+            onClose={() => setShowQrModeTransitionDialog(false)}
+            onConfirm={async () => {
+              await continueQrModeSwitch();
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {showQrModePinDialog && (
           <ActionDialog
             isOpen
@@ -1943,7 +1984,14 @@ export function PDVView() {
                     : 'bg-rose-600'
               }`}>
                 <div>
-                  <h2 className="text-3xl sm:text-4xl font-black italic tracking-tighter text-white">Mesa <span className="text-white/60">{selectedRequestForDetails.tableNumber}</span></h2>
+                  <h2 className="text-3xl sm:text-4xl font-black italic tracking-tighter text-white">
+                    {getOrderLocation(selectedRequestForDetails).primary}
+                  </h2>
+                  {getOrderLocation(selectedRequestForDetails).secondary && (
+                    <p className="mt-1 text-xs font-black uppercase tracking-[0.18em] text-white/70">
+                      {getOrderLocation(selectedRequestForDetails).secondary}
+                    </p>
+                  )}
                   <p className="text-white/80 font-black uppercase tracking-widest text-[10px] mt-1 flex items-center gap-2">
                     <Clock size={12} /> {new Date(selectedRequestForDetails.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • {selectedRequestForDetails.status === 'resolved' ? 'Atendimento concluído' : 'Aguardando atendimento'}
                   </p>
