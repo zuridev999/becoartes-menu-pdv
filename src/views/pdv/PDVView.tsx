@@ -347,10 +347,10 @@ export function PDVView() {
   }, [currentSeller]);
 
   useEffect(() => {
-    if (cashDialog !== 'open' || !cashState?.hasPreviousClosing) return;
+    if (cashDialog !== 'open' || !cashState?.mustInheritLastClosing) return;
     const cents = Math.round(Number(cashState.lastClosingBalance || 0) * 100);
     setCashValue(formatMoneyInput(String(cents)));
-  }, [cashDialog, cashState?.hasPreviousClosing, cashState?.lastClosingBalance]);
+  }, [cashDialog, cashState?.mustInheritLastClosing, cashState?.lastClosingBalance]);
 
   if (!currentSeller) {
     return <PdvTerminalLogin />;
@@ -438,8 +438,12 @@ export function PDVView() {
   const canAccessTable = (table: TableType) => (
     canViewOtherOperatorTables || !table.currentSellerId || table.currentSellerId === currentSeller.id
   );
+  // Ao desligar o modo comanda, mantemos as comandas já abertas no mapa para permitir a baixa.
+  const isTableActive = (table: TableType) => (
+    table.status !== 'available' || Boolean(table.customerTab)
+  );
   const visibleTables = tables
-    .filter(table => (isComandaMode ? table.number <= 200 : table.number <= 50))
+    .filter(table => isComandaMode || table.number <= 50 || isTableActive(table))
     .filter(canAccessTable);
   const activeVisibleTables = visibleTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested' || t.customerTab);
   const activeTablesCount = activeVisibleTables.length;
@@ -872,29 +876,17 @@ export function PDVView() {
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="fixed inset-x-4 sm:inset-x-8 top-48 sm:top-64 bottom-8 z-30 flex items-center justify-center pointer-events-none"
+          className="mb-5 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-5 py-4"
         >
-          <div className="pointer-events-auto max-w-xl w-full glass-card border-rose-400/35 p-10 text-center shadow-2xl shadow-black/40">
-            <div className="w-20 h-20 rounded-[2rem] bg-rose-400/10 text-rose-300 flex items-center justify-center mx-auto mb-6">
-              <LockKeyhole size={38} />
-            </div>
-            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-rose-300 mb-3">Operação bloqueada</p>
-            <h2 className="text-4xl font-black tracking-tight mb-4">Caixa aberto desde ontem</h2>
-            <p className="text-sm font-bold text-zinc-500 leading-relaxed mb-8">
-              Este caixa está aberto há mais de 18 horas. Feche o caixa e faça uma nova abertura para continuar.
-            </p>
-            <button
-              onClick={() => setCashDialog('close')}
-              className="btn-beco btn-beco-purple px-10 py-5 rounded-2xl font-black uppercase tracking-widest"
-            >
-              Fechar caixa
-            </button>
-          </div>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300">Caixa pendente de fechamento</p>
+          <p className="mt-1 text-sm font-bold text-zinc-300">
+            Aberto há mais de 18 horas. A operação continua liberada; feche quando fizer a conferência física.
+          </p>
         </motion.div>
       )}
 
       <div className={`grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-8 min-h-[calc(100vh-220px)] xl:h-[calc(100vh-200px)] transition-all duration-300 ${
-        (isCashOpen || canPreviewTablesWithClosedCash) && !isCashOverdue ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
+        isCashOpen || canPreviewTablesWithClosedCash ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
       }`}>
         {/* LEFT: MAPA DE MESAS */}
         <div className="xl:col-span-8 flex flex-col gap-5 xl:gap-6 xl:overflow-y-auto xl:pr-4 custom-scrollbar min-w-0">
@@ -1694,7 +1686,7 @@ export function PDVView() {
                   <input
                     value={cashValue}
                     onChange={(event) => setCashValue(formatMoneyInput(event.target.value))}
-                    readOnly={cashDialog === 'open' && Boolean(cashState?.hasPreviousClosing)}
+                    readOnly={cashDialog === 'open' && Boolean(cashState?.mustInheritLastClosing)}
                     placeholder="R$ 0,00"
                     inputMode="numeric"
                     className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-5 sm:px-6 py-5 sm:py-6 outline-none text-3xl sm:text-4xl font-black text-accent focus:border-primary/60 read-only:cursor-not-allowed read-only:opacity-80"
@@ -1707,8 +1699,10 @@ export function PDVView() {
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-2">Último fechamento</p>
                     <p className="text-xl font-black text-white">{formatCurrency(cashState?.lastClosingBalance || 0)}</p>
                     <p className="mt-2 text-xs font-bold text-zinc-500">
-                      {cashState?.hasPreviousClosing
-                        ? 'A abertura herda obrigatoriamente o valor físico do último fechamento.'
+                      {cashState?.mustInheritLastClosing
+                        ? 'A abertura herda o valor físico do fechamento de hoje ou de ontem.'
+                        : cashState?.hasPreviousClosing
+                          ? 'Como passou mais de um dia, confira a gaveta e informe o valor físico atual.'
                         : 'Primeiro caixa: informe o fundo inicial para começar o histórico.'}
                     </p>
                   </div>

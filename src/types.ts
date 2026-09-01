@@ -26,6 +26,9 @@ export interface Modifier {
   name: string;
   price: number;
   status: 'active' | 'inactive';
+  linkedProductId?: string;
+  productCode?: number;
+  inheritedUnavailable?: boolean;
 }
 
 export interface ModifierGroup {
@@ -52,6 +55,7 @@ export interface Product {
   sortOrder: number;
   schedule?: ScheduleConfig;
   modifierGroups: ModifierGroup[];
+  productCode?: number;
   erpCode?: string;
   remoteStockId?: string;
   stockQuantity?: number | null;

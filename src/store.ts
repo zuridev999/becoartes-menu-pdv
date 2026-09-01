@@ -5,6 +5,7 @@ import { getOrderItemsTotal } from './lib/totals';
 import { postOSMessage } from './lib/osBridge';
 import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, hasApiSessionToken, setApiSessionToken, type CashState } from './lib/api';
 import { operationalRequestError } from './lib/request-timeout';
+import { attachModifierGroupsToMenu, sortProductsByCatalogOrder } from './lib/catalog-menu';
 import type {
   Product, Table, OrderItem, KitchenOrder,
   ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category, CounterSaleInput
@@ -48,6 +49,7 @@ const getCartSubmissionKey = (origin: string, tableId: string, cart: OrderItem[]
     notes: item.notes || '',
     selectedModifiers: (item.selectedModifiers || []).map((modifier) => ({
       id: modifier.id,
+      linkedProductId: modifier.linkedProductId || '',
       name: modifier.name,
       price: modifier.price,
     })),
@@ -76,52 +78,6 @@ const persistSellerSession = (seller: Seller) => {
   localStorage.setItem(SELLER_SESSION_STORAGE_KEY, JSON.stringify(sessionSeller));
   return sessionSeller;
 };
-
-const attachModifierGroupsToMenu = (
-  menuItems: Product[],
-  modifierGroups: ModifierGroup[],
-  productMapping: Record<string, string[]>,
-  categoryMapping: Record<string, string[]>
-) => {
-  const groupById: Record<string, ModifierGroup> = {};
-  modifierGroups.forEach(group => {
-    groupById[group.id] = group;
-  });
-
-  return menuItems.map(item => {
-    const productGroupIds = productMapping[item.id] || [];
-    const categoryGroupIds = categoryMapping[item.categoryId] || [];
-    // A escolha específica do produto vem antes dos adicionais herdados da categoria.
-    // Para bebidas com sabor obrigatório, isso evita que o cliente adicione extras
-    // antes de definir a variação que será preparada.
-    const allGroupIds = Array.from(new Set([...productGroupIds, ...categoryGroupIds]));
-
-    return {
-      ...item,
-      modifierGroups: allGroupIds
-        .map(groupId => groupById[groupId] ? {
-          ...groupById[groupId],
-          modifiers: (groupById[groupId].modifiers || []).filter(modifier => modifier.status !== 'inactive')
-        } : null)
-        .filter(group => group && group.modifiers.length > 0)
-    };
-  });
-};
-
-const sortProductsByCatalogOrder = (menuItems: Product[], categories: Category[]) => {
-  const categoryOrder = new Map(categories.map((category, index) => [category.id, Number(category.sortOrder ?? index)]));
-  return menuItems
-    .map((item, index) => ({ item, index }))
-    .sort((a, b) => {
-      const categoryDiff = (categoryOrder.get(a.item.categoryId) ?? 9999) - (categoryOrder.get(b.item.categoryId) ?? 9999);
-      if (categoryDiff !== 0) return categoryDiff;
-      const orderDiff = Number(a.item.sortOrder ?? 0) - Number(b.item.sortOrder ?? 0);
-      if (orderDiff !== 0) return orderDiff;
-      return a.index - b.index;
-    })
-    .map(({ item }) => item);
-};
-
 
 export interface AppState {
   menu: Product[];

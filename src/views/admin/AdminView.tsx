@@ -50,6 +50,7 @@ import { getDefaultPublicCopy, getPublicLanguages } from '../../lib/public-i18n'
 import type { PublicLanguageConfig } from '../../types';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
+import { ModifierOptionEditor } from './ModifierOptionEditor';
 import type { ClosedBill, ScheduleConfig, Seller } from '../../types';
 
 type AdminDialog = {
@@ -2154,7 +2155,11 @@ export function AdminView() {
             <div className="glass rounded-[2rem] sm:rounded-[3rem] border-white/5 overflow-hidden max-h-[60vh] overflow-y-auto custom-scrollbar">
               {categories.map((cat) => {
                 const items = menu.filter(p => p.categoryId === cat.id);
-                const filteredItems = items.filter((p: any) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+                const normalizedSearch = searchTerm.trim().toLowerCase();
+                const filteredItems = items.filter((p: any) => (
+                  p.name.toLowerCase().includes(normalizedSearch)
+                  || String(p.productCode || '').includes(normalizedSearch)
+                ));
                 if (filteredItems.length === 0 && (items.length > 0 || !searchTerm)) return null;
                 if (items.length === 0) return null;
                 return (
@@ -2196,6 +2201,7 @@ export function AdminView() {
                           <div className="min-w-0">
                             <p className="font-black text-base sm:text-xl tracking-tight leading-tight break-words">{p.name}</p>
                             <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1">
+                              {p.productCode && <span className="px-2 py-0.5 bg-white/5 text-zinc-400 rounded text-[9px] font-black uppercase">#{p.productCode}</span>}
                               <span className="text-xs font-black text-gray-400">R$ {typeof p.price === 'number' ? p.price.toFixed(2) : p.price}</span>
                               {p.cost > 0 && <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 rounded text-[9px] font-black uppercase">Lucro R$ {(p.price - p.cost).toFixed(2)}</span>}
                               {p.deliveryVisible === false && <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 rounded text-[9px] font-black uppercase">Delivery off</span>}
@@ -2278,6 +2284,7 @@ export function AdminView() {
                               image: editingProduct.image || '',
                               visible: false,
                               deliveryVisible: editingProduct.deliveryVisible !== false,
+                              productCode: undefined,
                               erpCode: '',
                               remoteStockId: '',
                               sortOrder: Math.max(-1, ...menu.filter(product => product.categoryId === editingProduct.categoryId).map(product => Number(product.sortOrder ?? 0))) + 1,
@@ -2336,7 +2343,8 @@ export function AdminView() {
                 </div>
                 <div className="space-y-8">
                   <ConfigInput label="Nome do Produto" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} placeholder="Ex: Suco de Laranja 400ml" disabled={!canEditProductFields} />
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 sm:gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-5 sm:gap-6">
+                    <ConfigInput label="Código" value={editingProduct.productCode || 'Automático'} onChange={() => undefined} disabled />
                     <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">Categoria</label>
                       <div className="relative group">
@@ -2619,33 +2627,18 @@ export function AdminView() {
                       <h4 className="text-xl font-black mb-8 flex items-center gap-3"><Plus size={20} className="text-primary"/> Opções de Escolha</h4>
                       <div className="space-y-3">
                         {group.modifiers.map((m, idx) => (
-                          <div key={m.id || idx} className={`flex items-center gap-4 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all ${m.status === 'inactive' ? 'opacity-45 grayscale' : ''}`}>
-                            <input
-                              value={m.name}
-                              autoComplete="off"
-                              autoCorrect="off"
-                              spellCheck={false}
-                              onChange={(e) => {
+                          <div key={m.id || idx} className={`grid grid-cols-1 gap-3 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center ${m.status === 'inactive' ? 'opacity-45 grayscale' : ''}`}>
+                            <ModifierOptionEditor
+                              modifier={m}
+                              products={menu}
+                              siblingModifiers={group.modifiers}
+                              index={idx}
+                              onChange={(nextModifier) => {
                                 const newMods = [...group.modifiers];
-                                newMods[idx] = { ...m, name: e.target.value };
+                                newMods[idx] = nextModifier;
                                 updateModifierGroup(group.id, { modifiers: newMods });
                               }}
-                              className="flex-1 bg-transparent outline-none font-bold text-sm"
                             />
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-black text-gray-500 uppercase">R$</span>
-                              <input
-                                type="number"
-                                autoComplete="off"
-                                value={m.price}
-                                onChange={(e) => {
-                                  const newMods = [...group.modifiers];
-                                  newMods[idx] = { ...m, price: Number(e.target.value) || 0 };
-                                  updateModifierGroup(group.id, { modifiers: newMods });
-                                }}
-                                className="w-20 bg-transparent outline-none font-bold text-sm text-right"
-                              />
-                            </div>
                             <button
                               type="button"
                               onClick={() => {
@@ -2653,7 +2646,7 @@ export function AdminView() {
                                 newMods[idx] = { ...m, status: m.status === 'inactive' ? 'active' : 'inactive' };
                                 updateModifierGroup(group.id, { modifiers: newMods });
                               }}
-                              title={m.status === 'inactive' ? 'Mostrar no tablet' : 'Ocultar do tablet'}
+                              title={m.status === 'inactive' ? 'Ativar adicional' : 'Desativar adicional'}
                               className={`p-2 rounded-lg transition-all ${
                                 m.status === 'inactive'
                                   ? 'text-gray-500 hover:bg-white/10 hover:text-white'
@@ -2670,7 +2663,7 @@ export function AdminView() {
                         ))}
                         <button
                           onClick={() => {
-                            const newMods = [...group.modifiers, { id: createId(), name: '', price: 0, status: 'inactive' as const }];
+                            const newMods = [...group.modifiers, { id: createId(), name: '', price: 0, status: 'active' as const }];
                             updateModifierGroup(group.id, { modifiers: newMods });
                           }}
                           className="w-full p-4 glass border-dashed border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white/5 text-primary transition-all"

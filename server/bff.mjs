@@ -9,8 +9,9 @@ import { createApiHandler } from './routes/api-router.mjs';
 import { createAccessGuards, createRouteAccessEnforcer } from './routes/access-policy.mjs';
 import { createRouteHandlers } from './routes/handlers.mjs';
 import { createStaticHandler } from './static-files.mjs';
-import { businessDateKey, resolveBusinessTimeZone } from './business-time.mjs';
+import { businessDateGapDays, businessDateKey, resolveBusinessTimeZone } from './business-time.mjs';
 import { getPdvPublishBlockers } from './catalog/product-lifecycle.mjs';
+import { backfillCanonicalProductData, persistCanonicalMenuProduct, saveCanonicalModifierGroup } from './catalog/product-governance.mjs';
 import {
   centsToMoney,
   formatMoneyBRL,
@@ -89,7 +90,6 @@ const AUDIT_LOG_LIMIT = Number(process.env.AUDIT_LOG_LIMIT || 100);
 const CASH_SANDBOX_MODE = process.env.CASH_SANDBOX_MODE === '1';
 const CASH_TABLE = CASH_SANDBOX_MODE ? 'pdv_cash_sandbox' : 'caixa_diario';
 const CASH_MAX_OPEN_HOURS = 18;
-const CASH_MAX_OPEN_SECONDS = CASH_MAX_OPEN_HOURS * 60 * 60;
 const DEFAULT_PAYMENT_METHOD = 'credit';
 const DELIVERY_PAYMENT_PROVIDER = process.env.DELIVERY_PAYMENT_PROVIDER || 'mock';
 const DELIVERY_LOGISTICS_PROVIDER = process.env.DELIVERY_LOGISTICS_PROVIDER || 'disabled';
@@ -823,9 +823,9 @@ const createTableAccessToken = async ({ origin, tableId = '', tableNumber = '' }
 const ensureDatabase = async () => {
   await db.batch([
     "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, schedule_config TEXT, sort_order INTEGER DEFAULT 0, visible INTEGER DEFAULT 1)",
-    "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, delivery_visible INTEGER DEFAULT 1, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0, sort_order INTEGER DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category TEXT, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, delivery_visible INTEGER DEFAULT 1, product_code INTEGER, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0, sort_order INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS modifier_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, min_choices INTEGER DEFAULT 0, max_choices INTEGER DEFAULT 1, is_required INTEGER DEFAULT 0, status TEXT DEFAULT 'active')",
-    "CREATE TABLE IF NOT EXISTS modifiers (id TEXT PRIMARY KEY, group_id TEXT, name TEXT NOT NULL, price REAL NOT NULL, status TEXT DEFAULT 'active', sort_order INTEGER DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS modifiers (id TEXT PRIMARY KEY, group_id TEXT, linked_product_id TEXT, name TEXT NOT NULL, price REAL NOT NULL, status TEXT DEFAULT 'active', sort_order INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS product_modifier_groups (product_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(product_id, group_id))",
     "CREATE TABLE IF NOT EXISTS category_modifier_groups (category_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(category_id, group_id))",
     "CREATE TABLE IF NOT EXISTS tables (id TEXT PRIMARY KEY, number TEXT NOT NULL, status TEXT NOT NULL, last_activity DATETIME DEFAULT CURRENT_TIMESTAMP, current_seller_id TEXT)",
@@ -861,6 +861,8 @@ const ensureDatabase = async () => {
 
   await runSchemaMigrations(db);
 
+  await backfillCanonicalProductData(db);
+
   const indexes = [
     "CREATE INDEX IF NOT EXISTS idx_orders_table_status ON orders(table_id, status)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_client_request_id ON orders(client_request_id) WHERE client_request_id IS NOT NULL",
@@ -868,6 +870,7 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)",
     "CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id)",
     "CREATE INDEX IF NOT EXISTS idx_menu_category_sort ON menu(category_id, sort_order)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_product_code_unique ON menu(product_code) WHERE product_code IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_pdv_terminals_status ON pdv_terminals(status)",
     "CREATE INDEX IF NOT EXISTS idx_stock_empresa_nome ON estoque_produtos(empresa_id, ativo, nome)",
     "CREATE INDEX IF NOT EXISTS idx_stock_mov_empresa_created ON estoque_movimentacoes(empresa_id, created_at)",
@@ -876,6 +879,7 @@ const ensureDatabase = async () => {
     "CREATE INDEX IF NOT EXISTS idx_category_modifiers_category ON category_modifier_groups(category_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_modifiers_product ON product_modifier_groups(product_id)",
     "CREATE INDEX IF NOT EXISTS idx_modifiers_group_status ON modifiers(group_id, status, sort_order)",
+    "CREATE INDEX IF NOT EXISTS idx_modifiers_linked_product ON modifiers(linked_product_id)",
     "CREATE INDEX IF NOT EXISTS idx_category_modifiers_group ON category_modifier_groups(group_id)",
     "CREATE INDEX IF NOT EXISTS idx_product_modifiers_group ON product_modifier_groups(group_id)",
     "CREATE INDEX IF NOT EXISTS idx_integration_events_type_status ON integration_events(type, status)",
@@ -1123,6 +1127,7 @@ const getMenu = async () => {
     deliveryVisible: row.delivery_visible !== 0,
     sortOrder: Number(row.sort_order || 0),
     schedule: parseJsonObject(row.schedule_config),
+    productCode: Number(row.product_code || 0) || null,
     erpCode: row.erp_code || '',
     remoteStockId: row.remote_stock_id || '',
     stockQuantity: row.remote_stock_id ? Number(row.stock_quantity || 0) : null,
@@ -1165,6 +1170,9 @@ const getModifierData = async () => {
       NULL as modifier_price,
       NULL as modifier_status,
       NULL as modifier_sort_order,
+      NULL as linked_product_id,
+      NULL as linked_product_code,
+      NULL as inherited_unavailable,
       NULL as scope,
       NULL as scope_id,
       0 as link_sort_order
@@ -1183,19 +1191,19 @@ const getModifierData = async () => {
       mg.is_required,
       mg.status as group_status,
       m.id as modifier_id,
-      m.name as modifier_name,
-      m.price as modifier_price,
-      CASE
-        WHEN linked_menu.id IS NOT NULL AND linked_menu.visible <> 1 THEN 'inactive'
-        ELSE m.status
-      END as modifier_status,
+      COALESCE(linked_menu.name, m.name) as modifier_name,
+      COALESCE(linked_menu.price, m.price) as modifier_price,
+      m.status as modifier_status,
       m.sort_order as modifier_sort_order,
+      m.linked_product_id,
+      linked_menu.product_code as linked_product_code,
+      CASE WHEN linked_menu.id IS NOT NULL AND linked_menu.visible <> 1 THEN 1 ELSE 0 END as inherited_unavailable,
       NULL as scope,
       NULL as scope_id,
       0 as link_sort_order
     FROM modifiers m
     JOIN modifier_groups mg ON m.group_id = mg.id
-    LEFT JOIN menu linked_menu ON linked_menu.id = m.id
+    LEFT JOIN menu linked_menu ON linked_menu.id = m.linked_product_id
     WHERE mg.status = 'active'
 
     UNION ALL
@@ -1214,6 +1222,9 @@ const getModifierData = async () => {
       NULL as modifier_price,
       NULL as modifier_status,
       NULL as modifier_sort_order,
+      NULL as linked_product_id,
+      NULL as linked_product_code,
+      NULL as inherited_unavailable,
       'product' as scope,
       pmg.product_id as scope_id,
       pmg.sort_order as link_sort_order
@@ -1237,6 +1248,9 @@ const getModifierData = async () => {
       NULL as modifier_price,
       NULL as modifier_status,
       NULL as modifier_sort_order,
+      NULL as linked_product_id,
+      NULL as linked_product_code,
+      NULL as inherited_unavailable,
       'category' as scope,
       cmg.category_id as scope_id,
       cmg.sort_order as link_sort_order
@@ -1271,6 +1285,9 @@ const getModifierData = async () => {
         price: Number(row.modifier_price || 0),
         status: row.modifier_status || 'active',
         sortOrder: Number(row.modifier_sort_order || 0),
+        linkedProductId: row.linked_product_id || '',
+        productCode: Number(row.linked_product_code || 0) || null,
+        inheritedUnavailable: Number(row.inherited_unavailable || 0) === 1,
       });
       return;
     }
@@ -1364,21 +1381,42 @@ const getOpenCashRow = async () => {
 
 const getLatestClosedCashRow = async () => {
   const res = await db.execute({
-    sql: `SELECT * FROM ${CASH_TABLE} WHERE empresa_id = ? AND status = 'Fechado' ORDER BY updated_at DESC, data DESC, created_at DESC LIMIT 1`,
+    sql: `
+      SELECT *
+      FROM ${CASH_TABLE}
+      WHERE empresa_id = ? AND status = 'Fechado'
+      ORDER BY
+        data DESC,
+        CASE
+          WHEN CAST(updated_at AS INTEGER) >= 1000000000000 THEN CAST(updated_at AS INTEGER) / 1000
+          ELSE CAST(updated_at AS INTEGER)
+        END DESC,
+        CASE
+          WHEN CAST(created_at AS INTEGER) >= 1000000000000 THEN CAST(created_at AS INTEGER) / 1000
+          ELSE CAST(created_at AS INTEGER)
+        END DESC
+      LIMIT 1
+    `,
     args: [OS_EMPRESA_ID],
   });
   return res.rows[0] || null;
 };
 
+const getCashOpeningCarryover = (latestClosedCash, businessDate) => {
+  const gapDays = latestClosedCash
+    ? businessDateGapDays(latestClosedCash.data, businessDate)
+    : null;
+  return {
+    gapDays,
+    mustInherit: gapDays === 0 || gapDays === 1,
+  };
+};
+
 const getCashOpenDurationSeconds = (cash) => Math.max(0, osTimestamp() - toUnixSeconds(cash?.created_at));
 
 const assertCashOperationAllowed = async () => {
-  const openCash = await getOpenCashRow();
-  if (!openCash || getCashOpenDurationSeconds(openCash) < CASH_MAX_OPEN_SECONDS) return;
-
-  const error = new Error('Caixa aberto desde ontem. Feche o caixa e faça uma nova abertura para continuar.');
-  error.statusCode = 423;
-  throw error;
+  // A idade do caixa continua visível para conferência, mas nunca paralisa o PDV.
+  // O fechamento posterior preserva o histórico e a diferença física normalmente.
 };
 
 const getCashState = async () => {
@@ -1394,6 +1432,7 @@ const getCashState = async () => {
   ]);
   const current = mapCashRow(openCashRow || todayRes.rows[0]);
   const lastClosed = mapCashRow(lastClosedRow);
+  const openingCarryover = getCashOpeningCarryover(lastClosedRow, businessDate);
   const openDurationHours = openCashRow ? getCashOpenDurationSeconds(openCashRow) / (60 * 60) : 0;
   const requiresClosing = Boolean(openCashRow) && openDurationHours >= CASH_MAX_OPEN_HOURS;
 
@@ -1402,7 +1441,10 @@ const getCashState = async () => {
     isOpen: current?.status === 'Aberto',
     current,
     lastClosingBalance: lastClosed?.closingBalance || 0,
+    lastClosingBusinessDate: lastClosed?.businessDate || null,
     hasPreviousClosing: Boolean(lastClosed),
+    mustInheritLastClosing: openingCarryover.mustInherit,
+    lastClosingGapDays: openingCarryover.gapDays,
     sandbox: CASH_SANDBOX_MODE,
     requiresClosing,
     openDurationHours,
@@ -1770,7 +1812,7 @@ const splitItemsByProductionStation = (items = []) => {
       result[modifierStation].push({
         ...item,
         id: `${item.id}:${modifier.id || normalizeProductionText(modifier.name || 'modifier')}`,
-        productId: modifier.id || item.productId,
+        productId: modifier.linkedProductId || modifier.id || item.productId,
         name: modifier.name || 'Adicional',
         price: Number(modifier.price || 0),
         selectedModifiers: [],
@@ -2593,7 +2635,11 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
   ]);
   const visibleTables = savedSettings?.qrMode === 'comanda'
     ? tables
-    : tables.filter((table) => Number(table.number || 0) <= 50);
+    : tables.filter((table) => (
+      Number(table.number || 0) <= 50
+      || table.status !== 'available'
+      || Boolean(table.customerTab)
+    ));
 
   return filterSnapshotForContext({
     catalogData,
@@ -3418,7 +3464,7 @@ const syncPdvOrderItemsToInventory = async ({ items, integrationId, tableNumber,
         result,
         orderId: item.orderId,
         orderItemId: item.id,
-        productId: modifier.id,
+        productId: modifier.linkedProductId || modifier.id,
         name: modifier.name,
         quantity: item.quantity,
         reason,
@@ -6220,12 +6266,27 @@ const assertPdvProductCanBePublished = async (product) => {
   throw error;
 };
 
+const allocateProductCode = async () => {
+  const result = await db.execute(`
+    SELECT COALESCE(MAX(product_code), 99) + 1 AS next_code
+    FROM menu
+    WHERE product_code BETWEEN 100 AND 9999
+  `);
+  const nextCode = Math.max(100, Number(result.rows?.[0]?.next_code || 100));
+  if (!Number.isInteger(nextCode) || nextCode > 9999) {
+    const error = new Error('Não há mais códigos de produto disponíveis entre 100 e 9999.');
+    error.statusCode = 409;
+    throw error;
+  }
+  return nextCode;
+};
+
 const upsertProduct = async ({ product }, session = null) => {
   const p = product || {};
   const productId = requireString(p.id, 'product.id');
   const settings = await getSettings();
   const existing = await db.execute({
-    sql: "SELECT name, description, price, cost, category_id, image, visible, delivery_visible, erp_code, remote_stock_id, schedule_config, sort_order FROM menu WHERE id = ? LIMIT 1",
+    sql: "SELECT name, description, price, cost, category_id, image, visible, delivery_visible, product_code, erp_code, remote_stock_id, schedule_config, sort_order FROM menu WHERE id = ? LIMIT 1",
     args: [productId],
   });
   const currentProduct = existing.rows[0] || null;
@@ -6284,24 +6345,14 @@ const upsertProduct = async ({ product }, session = null) => {
     });
   }
 
-  await db.execute({
-    sql: "INSERT OR REPLACE INTO menu (id, name, description, price, category, category_id, image, visible, delivery_visible, erp_code, remote_stock_id, schedule_config, cost, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    args: [
-      productId,
-      requireString(p.name, 'product.name'),
-      p.description || '',
-      requireNumber(p.price, 'product.price'),
-      p.categoryId || '',
-      p.categoryId || '',
-      p.image || '',
-      p.visible ? 1 : 0,
-      p.deliveryVisible === false ? 0 : 1,
-      p.erpCode || null,
-      p.remoteStockId || null,
-      p.schedule ? JSON.stringify(p.schedule) : null,
-      Number(p.cost || 0),
-      Number(p.sortOrder || 0),
-    ],
+  const productCode = await persistCanonicalMenuProduct({
+    db,
+    productId,
+    product: p,
+    currentProduct,
+    allocateProductCode,
+    requireString,
+    requireNumber,
   });
 
   if (Array.isArray(p.modifierGroups)) {
@@ -6315,7 +6366,7 @@ const upsertProduct = async ({ product }, session = null) => {
     await db.batch(batch, 'write');
   }
 
-  return { catalogVersion: await bumpCatalogVersion() };
+  return { catalogVersion: await bumpCatalogVersion(), productCode };
 };
 
 const ensureCmvForMenuProduct = async ({ productId }, session = null) => {
@@ -6488,42 +6539,9 @@ const reorderCatalogProducts = async ({ items }, session = null) => {
   return { catalogVersion: await bumpCatalogVersion() };
 };
 
-const saveModifierGroup = async ({ group }) => {
-  const safeGroup = group || {};
-  const groupId = requireString(safeGroup.id, 'group.id');
-  await db.execute({
-    sql: "INSERT OR REPLACE INTO modifier_groups (id, name, description, min_choices, max_choices, is_required, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    args: [
-      groupId,
-      requireString(safeGroup.name, 'group.name'),
-      safeGroup.description || '',
-      Number(safeGroup.minChoices || 0),
-      Number(safeGroup.maxChoices || 1),
-      safeGroup.isRequired ? 1 : 0,
-      safeGroup.status || 'active',
-    ],
-  });
-
-  if (Array.isArray(safeGroup.modifiers)) {
-    const batch = [
-      { sql: "DELETE FROM modifiers WHERE group_id = ?", args: [groupId] },
-      ...safeGroup.modifiers.map((modifier, index) => ({
-        sql: "INSERT INTO modifiers (id, group_id, name, price, status, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
-        args: [
-          modifier.id || createId(),
-          groupId,
-          requireString(modifier.name, 'modifier.name'),
-          Number(modifier.price || 0),
-          modifier.status || 'active',
-          index,
-        ],
-      })),
-    ];
-    await db.batch(batch, 'write');
-  }
-
-  return { catalogVersion: await bumpCatalogVersion() };
-};
+const saveModifierGroup = ({ group }) => saveCanonicalModifierGroup({
+  db, group, createId, requireString, bumpCatalogVersion,
+});
 
 const deleteModifierGroup = async ({ id }) => {
   requireString(id, 'id');
@@ -7375,15 +7393,18 @@ const openCash = async ({ openingBalance, notes, confirmationPin }) => {
   const now = osTimestamp();
   const requestedOpeningCents = moneyToCents(openingBalance, 'openingBalance');
   const latestClosedCash = await getLatestClosedCashRow();
+  const openingCarryover = getCashOpeningCarryover(latestClosedCash, businessDate);
   const requiredOpeningCents = latestClosedCash
     ? moneyToCents(latestClosedCash.valor_caixa_final || 0, 'lastClosingBalance')
     : requestedOpeningCents;
-  if (latestClosedCash && requestedOpeningCents !== requiredOpeningCents) {
+  if (openingCarryover.mustInherit && requestedOpeningCents !== requiredOpeningCents) {
     const error = new Error(`O caixa deve ser aberto com o valor exato do último fechamento: ${formatMoneyBRL(centsToMoney(requiredOpeningCents))}.`);
     error.statusCode = 409;
     throw error;
   }
-  const normalizedOpeningBalance = centsToMoney(requiredOpeningCents);
+  const normalizedOpeningBalance = centsToMoney(
+    openingCarryover.mustInherit ? requiredOpeningCents : requestedOpeningCents,
+  );
   const responsibleId = await resolveCashResponsibleId(effectiveSession);
   const cashId = existingCash?.id || createId();
 
@@ -7441,6 +7462,11 @@ const openCash = async ({ openingBalance, notes, confirmationPin }) => {
       cashId,
       cashDate: businessDate,
       openingBalance: normalizedOpeningBalance,
+      lastClosingBalance: latestClosedCash ? centsToMoney(requiredOpeningCents) : null,
+      lastClosingDate: latestClosedCash?.data || null,
+      carryoverRequired: openingCarryover.mustInherit,
+      carryoverGapDays: openingCarryover.gapDays,
+      carryoverWaivedReason: latestClosedCash && !openingCarryover.mustInherit ? 'closing_older_than_one_day' : null,
       reopened: Boolean(existingCash),
       adminOverride: cashActor.override,
       sandbox: CASH_SANDBOX_MODE,
@@ -7913,6 +7939,7 @@ const syncBeveragesFromInventory = async () => {
   }
 
   const batch = [];
+  let nextProductCode = await allocateProductCode();
   for (const row of stockRes.rows) {
     const remoteId = row.id;
     const existing = await db.execute({
@@ -7926,7 +7953,7 @@ const syncBeveragesFromInventory = async () => {
       });
     } else {
       batch.push({
-        sql: "INSERT INTO menu (id, name, description, price, category_id, image, visible, erp_code, remote_stock_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        sql: "INSERT INTO menu (id, name, description, price, category_id, image, visible, product_code, erp_code, remote_stock_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         args: [
           createId(),
           row.nome,
@@ -7935,6 +7962,7 @@ const syncBeveragesFromInventory = async () => {
           categoryId,
           'https://images.unsplash.com/photo-1544145945-f904253db0ad?w=400',
           1,
+          nextProductCode++,
           null,
           remoteId,
         ],
@@ -8214,7 +8242,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
               result,
               orderId: item.orderId,
               orderItemId: item.id,
-              productId: modifier.id,
+              productId: modifier.linkedProductId || modifier.id,
               name: modifier.name,
               quantity: item.quantity,
               reason: baseReason,
@@ -8808,7 +8836,8 @@ const findAvailableCustomerTabTable = async () => {
     LEFT JOIN customer_tabs ct
       ON ct.table_id = t.id
       AND ct.status IN ('open', 'paid')
-    WHERE CAST(t.number AS INTEGER) BETWEEN 1 AND 200
+    -- Faixa reservada para comandas tecnicas; as mesas fisicas ficam em 1-50.
+    WHERE CAST(t.number AS INTEGER) BETWEEN 106 AND 200
       AND ct.id IS NULL
     ORDER BY CAST(t.number AS INTEGER) ASC
     LIMIT 1

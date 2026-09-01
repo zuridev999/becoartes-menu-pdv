@@ -86,7 +86,10 @@ export function ChecklistAlertDisplay() {
   }, []);
 
   const visibleAlerts = useMemo(() => (
-    alerts.filter((alert) => !isSnoozed(alert.id, nowMs))
+    alerts.filter((alert) => (
+      /^(fim de tarde|fim da tarde)$/i.test(String(alert.periodo || '').trim())
+      && !isSnoozed(alert.id, nowMs)
+    ))
   ), [alerts, nowMs]);
 
   const alert = visibleAlerts[0];

@@ -18,6 +18,7 @@ export const ProductSchema = z.object({
   deliveryVisible: z.boolean().default(true),
   sortOrder: z.number().default(0),
   modifierGroups: z.array(z.any()).default([]),
+  productCode: z.number().int().min(100).max(9999).nullish(),
   erpCode: z.string().nullish(),
   remoteStockId: z.string().nullish(),
   schedule: z.any().optional(),

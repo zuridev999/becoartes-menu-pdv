@@ -46,8 +46,9 @@ assert.match(bffSource, /if \(hasBlockingShortage && !adminOverride\)/, 'only a 
 assert.match(bffSource, /action: 'cash_close_blocked'/, 'blocked cash closings must leave a persistent audit trail');
 assert.match(bffSource, /action: 'cash_close_failed'/, 'failed cash closing attempts must leave a persistent audit trail');
 assert.match(bffSource, /title: closeTitle[\s\S]*controle-dinheiro/, 'successful cash closings must notify the OS control-money route');
-assert.match(bffSource, /getLatestClosedCashRow[\s\S]*ORDER BY updated_at DESC, data DESC, created_at DESC/, 'cash opening must use the latest completed closing');
-assert.match(bffSource, /requestedOpeningCents !== requiredOpeningCents/, 'cash opening must reject a balance different from the previous closing');
+assert.match(bffSource, /getLatestClosedCashRow[\s\S]*ORDER BY\s+data DESC/, 'cash opening must prioritize the latest business date over mixed timestamp units');
+assert.match(bffSource, /openingCarryover\.mustInherit && requestedOpeningCents !== requiredOpeningCents/, 'cash opening must reject a changed balance only for a recent closing');
+assert.doesNotMatch(bffSource, /statusCode = 423/, 'an overdue open cash must never lock operational routes');
 assert.match(bffSource, /getChecklistAlertsFromOs/, 'checklist alerts must use the authenticated BFF proxy');
 assert.match(bffSource, /pdv_terminals/, 'PDV terminals must persist a public-key identity');
 assert.match(bffSource, /terminalProof\.valid/, 'trusted terminals must require a verified challenge signature');
@@ -183,6 +184,7 @@ const orderItem = (id, quantity = 1) => ({
 });
 
 let child;
+let stderr = '';
 
 try {
   rmSync(dbFile, { force: true });
@@ -192,7 +194,6 @@ try {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  let stderr = '';
   child.stderr.on('data', (chunk) => {
     stderr += chunk.toString();
   });
@@ -205,6 +206,82 @@ try {
   assert.equal(Number(migrationLedger.count) > 0, true, 'empty database bootstrap should apply versioned migrations');
   await seedCatalogAndStock();
   const cashier = await login('1122');
+
+  const linkedProduct = {
+    id: 'prod_linked_modifier',
+    name: 'Coca Canônica',
+    description: '',
+    price: 10.9,
+    categoryId: 'cat_test',
+    image: '',
+    visible: false,
+    deliveryVisible: true,
+    sortOrder: 1,
+    modifierGroups: [],
+    cost: 0,
+    remoteStockId: 'stock_test',
+  };
+  const createdLinkedProduct = await post('/api/catalog/product', { product: linkedProduct }, admin.sessionToken);
+  assert.equal(Number(createdLinkedProduct.data.productCode), 100, 'first canonical product code must start at 100');
+  const linkedProductRow = await getScalar('SELECT product_code FROM menu WHERE id = ?', [linkedProduct.id]);
+  assert.equal(Number(linkedProductRow.product_code), 100, 'canonical product code must persist on menu');
+
+  await post('/api/catalog/modifier-group', {
+    group: {
+      id: 'group_linked_product',
+      name: 'Adicionais vinculados',
+      minChoices: 0,
+      maxChoices: 1,
+      isRequired: false,
+      status: 'active',
+      modifiers: [{
+        id: 'modifier_linked_product',
+        linkedProductId: linkedProduct.id,
+        name: 'Nome duplicado proibido',
+        price: 999,
+        status: 'active',
+      }],
+    },
+  }, admin.sessionToken);
+  const linkedModifierRow = await getScalar('SELECT linked_product_id, name, price FROM modifiers WHERE id = ?', ['modifier_linked_product']);
+  assert.equal(linkedModifierRow.linked_product_id, linkedProduct.id, 'modifier must persist its canonical product link');
+  assert.equal(linkedModifierRow.name, linkedProduct.name, 'linked modifier name must come from the product');
+  assert.equal(Number(linkedModifierRow.price), linkedProduct.price, 'linked modifier price must come from the product');
+  const linkedSnapshot = await fetchJson('/api/app/init?view=pdv', { token: admin.sessionToken, headers: AUTHORIZED_IP_HEADERS });
+  const linkedSnapshotModifier = linkedSnapshot.data.catalogData.modifierGroups
+    .find((group) => group.id === 'group_linked_product')
+    ?.modifiers.find((modifier) => modifier.id === 'modifier_linked_product');
+  assert.equal(linkedSnapshotModifier.inheritedUnavailable, true, 'hidden product must hide every linked modifier occurrence');
+
+  const secondProduct = { ...linkedProduct, id: 'prod_second_code', name: 'Segundo produto', productCode: 100 };
+  const createdSecondProduct = await post('/api/catalog/product', { product: secondProduct }, admin.sessionToken);
+  assert.equal(Number(createdSecondProduct.data.productCode), 101, 'client must not choose or reuse a canonical product code');
+
+  await post('/api/catalog/product', {
+    product: { ...linkedProduct, visible: true, productCode: 999 },
+  }, admin.sessionToken);
+  const immutableProductCode = await getScalar('SELECT product_code FROM menu WHERE id = ?', [linkedProduct.id]);
+  assert.equal(Number(immutableProductCode.product_code), 100, 'canonical product code must be immutable on edits');
+  const visibleSnapshot = await fetchJson('/api/app/init?view=pdv', { token: admin.sessionToken, headers: AUTHORIZED_IP_HEADERS });
+  const visibleLinkedModifier = visibleSnapshot.data.catalogData.modifierGroups
+    .find((group) => group.id === 'group_linked_product')
+    ?.modifiers.find((modifier) => modifier.id === 'modifier_linked_product');
+  assert.equal(visibleLinkedModifier.inheritedUnavailable, false, 'showing the master product must restore linked modifier availability');
+
+  await post('/api/catalog/modifier-group', {
+    group: {
+      id: 'group_duplicate_link',
+      name: 'Duplicidade bloqueada',
+      minChoices: 0,
+      maxChoices: 2,
+      isRequired: false,
+      status: 'active',
+      modifiers: [
+        { id: 'duplicate_link_1', linkedProductId: linkedProduct.id, status: 'active' },
+        { id: 'duplicate_link_2', linkedProductId: linkedProduct.id, status: 'active' },
+      ],
+    },
+  }, admin.sessionToken, 409);
 
   const openedCash = await post('/api/cash/open', {
     openingBalance: 108.35,
@@ -256,6 +333,58 @@ try {
   assert.equal(Number(successNotification.count), 1, 'successful cash close must notify the OS');
 
   const testDb = createClient({ url: dbUrl });
+  const rejectedRecentOpening = await post('/api/cash/open', {
+    openingBalance: 73.25,
+    notes: 'Fechamento recente ainda deve ser herdado',
+    confirmationPin: '0719',
+  }, admin.sessionToken, 409);
+  assert.match(rejectedRecentOpening.error || '', /valor exato do último fechamento/);
+
+  const currentBusinessDate = closedCash.data.cashState.businessDate;
+  const staleDate = new Date(`${currentBusinessDate}T12:00:00Z`);
+  staleDate.setUTCDate(staleDate.getUTCDate() - 2);
+  const staleBusinessDate = staleDate.toISOString().slice(0, 10);
+  await testDb.execute({
+    sql: 'UPDATE pdv_cash_sandbox SET data = ?, updated_at = ? WHERE id = ?',
+    args: [staleBusinessDate, Date.now(), openedAudit.cash_id],
+  });
+
+  const staleCarryoverOpening = await post('/api/cash/open', {
+    openingBalance: 73.25,
+    notes: 'Valor físico após intervalo maior que um dia',
+    confirmationPin: '0719',
+  }, admin.sessionToken);
+  assert.equal(staleCarryoverOpening.data.cashState.current.openingBalance, 73.25, 'stale closing must allow the current physical opening balance');
+  assert.equal(staleCarryoverOpening.data.cashState.mustInheritLastClosing, false, 'closing older than one day must not force carryover');
+  const staleCashId = staleCarryoverOpening.data.cashState.current.id;
+  const staleOpeningAudit = await getScalar(`
+    SELECT
+      json_extract(details, '$.carryoverRequired') AS carryover_required,
+      json_extract(details, '$.carryoverWaivedReason') AS waived_reason
+    FROM audit_logs
+    WHERE action = 'cash_opened' AND json_extract(details, '$.cashId') = '${staleCashId}'
+    LIMIT 1
+  `);
+  assert.equal(Number(staleOpeningAudit.carryover_required), 0, 'waived carryover must be explicit in the audit log');
+  assert.equal(staleOpeningAudit.waived_reason, 'closing_older_than_one_day');
+
+  await testDb.execute({
+    sql: 'UPDATE pdv_cash_sandbox SET created_at = ? WHERE id = ?',
+    args: [Math.floor(Date.now() / 1000) - (48 * 60 * 60), staleCashId],
+  });
+  const operationWithOverdueCash = await post('/api/tables/open', { tableId: '1', wasAvailable: true }, admin.sessionToken);
+  assert.equal(operationWithOverdueCash.ok, true, 'cash older than one day must not lock the PDV operation');
+  await testDb.execute("UPDATE tables SET status = 'available', current_seller_id = NULL WHERE id = '1'");
+
+  const closedStaleCarryover = await post('/api/cash/close', {
+    closingBalance: 73.25,
+    notes: 'Fechamento do teste de intervalo',
+    confirmationPin: '1122',
+  }, cashier.sessionToken);
+  assert.equal(closedStaleCarryover.data.cashState.lastClosingBalance, 73.25, 'latest business date must win even when an older row has a millisecond timestamp');
+  assert.equal(closedStaleCarryover.data.cashState.lastClosingBusinessDate, currentBusinessDate);
+  await testDb.execute({ sql: 'DELETE FROM pdv_cash_sandbox WHERE id = ?', args: [openedAudit.cash_id] });
+
   const resetCash = async () => testDb.execute({
     sql: "UPDATE pdv_cash_sandbox SET status = 'Aberto', saldo_inicial = 108.35, entradas_dinheiro = 0, saidas_dinheiro = 0, valor_caixa_final = 0, updated_at = ? WHERE empresa_id = ?",
     args: [Math.floor(Date.now() / 1000), 'empresa_test'],
@@ -615,6 +744,7 @@ try {
   }, null, 2));
 } catch (error) {
   console.error(error);
+  if (typeof stderr === 'string' && stderr.trim()) console.error(stderr.trim());
   process.exitCode = 1;
 } finally {
   if (child && !child.killed) child.kill('SIGTERM');

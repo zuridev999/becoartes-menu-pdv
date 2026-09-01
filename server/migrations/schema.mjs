@@ -149,6 +149,15 @@ export const SCHEMA_MIGRATIONS = [
       addColumn('estoque_movimentacoes', 'custo_fonte', 'TEXT'),
     ],
   },
+  {
+    id: '20260808_0001_canonical_product_codes_and_modifiers',
+    description: 'Give menu products a human code and link modifier options to canonical products.',
+    steps: [
+      addColumn('menu', 'category', 'TEXT'),
+      addColumn('menu', 'product_code', 'INTEGER'),
+      addColumn('modifiers', 'linked_product_id', 'TEXT'),
+    ],
+  },
 ];
 
 const quoteIdentifier = (value) => {

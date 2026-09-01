@@ -21,3 +21,19 @@ export const businessDateKey = (date = new Date(), timeZone = DEFAULT_BUSINESS_T
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 };
+
+export const businessDateGapDays = (earlierDateKey, laterDateKey) => {
+  const parseDateKey = (value) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
+    if (!match) return null;
+    const timestamp = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    const parsed = new Date(timestamp);
+    if (businessDateKey(parsed, 'UTC') !== match[0]) return null;
+    return timestamp;
+  };
+
+  const earlier = parseDateKey(earlierDateKey);
+  const later = parseDateKey(laterDateKey);
+  if (earlier === null || later === null) return null;
+  return Math.round((later - earlier) / 86_400_000);
+};
