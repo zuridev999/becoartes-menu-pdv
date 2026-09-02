@@ -2635,7 +2635,7 @@ const getAppSnapshotWithRetry = async (options) => {
   }
 };
 
-const getChecklistAlertsFromOs = async () => {
+const getChecklistAlertsFromOs = async (session = null) => {
   if (!OS_OPERATIONAL_ALERTS_TOKEN) {
     return { success: false, degraded: true, alerts: [] };
   }
@@ -2643,7 +2643,10 @@ const getChecklistAlertsFromOs = async () => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 6000);
   try {
-    const response = await fetch(OS_CHECKLIST_ALERTS_URL, {
+    const requestUrl = new URL(OS_CHECKLIST_ALERTS_URL);
+    const sessionUserId = String(session?.id || '').replace(/^os:/, '');
+    if (/^[0-9a-f-]{36}$/i.test(sessionUserId)) requestUrl.searchParams.set('userId', sessionUserId);
+    const response = await fetch(requestUrl, {
       headers: { 'x-operational-alerts-token': OS_OPERATIONAL_ALERTS_TOKEN },
       signal: controller.signal,
       cache: 'no-store',

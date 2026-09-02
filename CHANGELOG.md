@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.9.19 - 2026-09-02
+
+- Mostra no PDV um alerta individual sonoro para o usuario autenticado enquanto o checklist de abertura ligado ao ponto estiver pendente.
+- Permite confirmar o aviso e o reapresenta apos cinco minutos ate a validacao, consultando o OS a cada quinze segundos.
+- Encaminha a identidade assinada da sessao ao OS para impedir alertas de outro colaborador no mesmo terminal.
+
 ## 1.9.18 - 2026-09-02
 
 - Limita o comercial superior do PDV a 320 x 50 pixels também na operação.

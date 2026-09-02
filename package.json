@@ -1,7 +1,7 @@
 {
   "name": "becoartes-menu-pdv",
   "private": true,
-  "version": "1.9.18",
+  "version": "1.9.19",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +16,7 @@
     "test:shared-db-contract": "node scripts/check-shared-database-contract.mjs",
     "test:business-time": "node scripts/test-business-time.mjs",
     "test:adsense": "node scripts/test-adsense-integration.mjs",
+    "test:checklist-opening-alert": "node scripts/test-checklist-opening-alert.mjs",
     "audit:ui": "node scripts/audit_ui_actions.mjs",
     "profile:prod": "node scripts/profile_prod.mjs",
     "preview": "vite preview",

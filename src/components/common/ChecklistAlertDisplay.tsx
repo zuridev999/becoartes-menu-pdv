@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, ClipboardCheck, Clock, X } from 'lucide-react';
+import { AlertTriangle, BellRing, ClipboardCheck, Clock, Volume2, X } from 'lucide-react';
 import { AppApi } from '../../lib/api';
 
 type ChecklistAlert = {
@@ -19,6 +19,20 @@ type ChecklistAlertResponse = {
   success: boolean;
   alerts?: ChecklistAlert[];
   stockAudit?: StockAuditAlert | null;
+  openingValidation?: OpeningValidationAlert | null;
+};
+
+type OpeningValidationAlert = {
+  id: string;
+  userId: string;
+  userName: string;
+  phase: 'opening';
+  complete: boolean;
+  total: number;
+  completed: number;
+  pending: number;
+  pointRecordedAt?: string | null;
+  message: string;
 };
 
 type StockAuditAlert = {
@@ -34,8 +48,9 @@ type StockAuditAlert = {
 
 const BEFORE_DUE_SNOOZE_MS = 30 * 60 * 1000;
 const OVERDUE_SNOOZE_MS = 2 * 60 * 1000;
-const POLL_MS = 60 * 1000;
+const POLL_MS = 15 * 1000;
 const STOCK_AUDIT_SNOOZE_MS = 60 * 60 * 1000;
+const OPENING_VALIDATION_SNOOZE_MS = 5 * 60 * 1000;
 function getSnoozeKey(alertId: string) {
   return `beco_pdv_checklist_alert_snooze_${alertId}`;
 }
@@ -54,6 +69,7 @@ function getAlertDueMs(alert: ChecklistAlert) {
 export function ChecklistAlertDisplay() {
   const [alerts, setAlerts] = useState<ChecklistAlert[]>([]);
   const [stockAudit, setStockAudit] = useState<StockAuditAlert | null>(null);
+  const [openingValidation, setOpeningValidation] = useState<OpeningValidationAlert | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -65,18 +81,20 @@ export function ChecklistAlertDisplay() {
         if (!cancelled && payload.success) {
           setAlerts(payload.alerts || []);
           setStockAudit(payload.stockAudit || null);
+          setOpeningValidation(payload.openingValidation || null);
         }
       } catch {
         if (!cancelled) {
           setAlerts([]);
           setStockAudit(null);
+          setOpeningValidation(null);
         }
       }
     }
 
     loadAlerts();
     const pollTimer = window.setInterval(loadAlerts, POLL_MS);
-    const wakeTimer = window.setInterval(() => setNowMs(Date.now()), 30 * 1000);
+    const wakeTimer = window.setInterval(() => setNowMs(Date.now()), 10 * 1000);
 
     return () => {
       cancelled = true;
@@ -94,7 +112,32 @@ export function ChecklistAlertDisplay() {
 
   const alert = visibleAlerts[0];
   const stockAuditVisible = stockAudit?.shouldDisplay && !isSnoozed(stockAudit.id, nowMs) ? stockAudit : null;
-  if (!stockAuditVisible && !alert) return null;
+  const openingValidationVisible = openingValidation && !isSnoozed(`opening:${openingValidation.id}`, nowMs)
+    ? openingValidation
+    : null;
+
+  useEffect(() => {
+    if (!openingValidationVisible) return;
+    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass();
+    const startAt = context.currentTime;
+    [0, 0.18, 0.36].forEach((offset) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, startAt + offset);
+      gain.gain.exponentialRampToValueAtTime(0.18, startAt + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + offset + 0.12);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(startAt + offset);
+      oscillator.stop(startAt + offset + 0.13);
+    });
+    window.setTimeout(() => void context.close(), 800);
+  }, [openingValidationVisible?.id]);
+
+  if (!openingValidationVisible && !stockAuditVisible && !alert) return null;
 
   function snoozeAlert() {
     const now = Date.now();
@@ -107,6 +150,40 @@ export function ChecklistAlertDisplay() {
     if (!stockAuditVisible) return;
     localStorage.setItem(getSnoozeKey(stockAuditVisible.id), String(Date.now() + STOCK_AUDIT_SNOOZE_MS));
     setNowMs(Date.now());
+  }
+
+  function acknowledgeOpeningValidation() {
+    if (!openingValidationVisible) return;
+    localStorage.setItem(getSnoozeKey(`opening:${openingValidationVisible.id}`), String(Date.now() + OPENING_VALIDATION_SNOOZE_MS));
+    setNowMs(Date.now());
+  }
+
+  if (openingValidationVisible) {
+    const progress = openingValidationVisible.total > 0
+      ? Math.round((openingValidationVisible.completed / openingValidationVisible.total) * 100)
+      : 0;
+    return (
+      <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/85 p-5 font-['Outfit'] backdrop-blur-sm">
+        <motion.section
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="opening-checklist-alert-title"
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-lg overflow-hidden rounded-2xl border border-amber-300/40 bg-zinc-950 text-white shadow-2xl shadow-black"
+        >
+          <div className="h-2 bg-zinc-800"><div className="h-full bg-amber-400" style={{ width: `${progress}%` }} /></div>
+          <div className="px-6 py-8 text-center sm:px-9">
+            <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-400 text-black"><BellRing size={30} /></span>
+            <p className="mt-5 text-[11px] font-black uppercase tracking-[0.24em] text-amber-300">Ponto ainda não validado</p>
+            <h2 id="opening-checklist-alert-title" className="mt-2 text-2xl font-black leading-tight">Termine o checklist de abertura para validar seu ponto.</h2>
+            <p className="mt-3 text-sm font-semibold text-zinc-300">{openingValidationVisible.userName}: {openingValidationVisible.completed}/{openingValidationVisible.total} respostas concluídas.</p>
+            <p className="mt-2 flex items-center justify-center gap-2 text-xs font-bold text-zinc-500"><Volume2 size={15} />Este aviso retorna em 5 minutos enquanto a abertura estiver pendente.</p>
+            <button type="button" autoFocus onClick={acknowledgeOpeningValidation} className="mt-7 h-14 w-full rounded-xl bg-amber-400 text-sm font-black uppercase tracking-[0.16em] text-black transition hover:bg-amber-300 focus:outline-none focus:ring-4 focus:ring-amber-300/30">OK</button>
+          </div>
+        </motion.section>
+      </div>
+    );
   }
 
   if (stockAuditVisible) {
