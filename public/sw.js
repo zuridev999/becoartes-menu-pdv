@@ -1,4 +1,4 @@
-const CACHE_NAME = 'becoartes-kiosk-v1.9.12';
+const CACHE_NAME = 'becoartes-kiosk-v1.9.18';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

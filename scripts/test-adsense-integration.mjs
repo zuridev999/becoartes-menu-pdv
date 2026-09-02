@@ -8,7 +8,7 @@ import {
 } from '../server/static-files.mjs';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, deliveryView, app, serviceWorker] = await Promise.all([
+const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, pdvView, deliveryView, app, serviceWorker] = await Promise.all([
   read('index.html'),
   read('src/components/common/GoogleAdBanner.tsx'),
   read('nginx.conf'),
@@ -16,6 +16,7 @@ const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, del
   read('vite.config.ts'),
   read('public/ads.txt'),
   read('src/views/qr/QRView.tsx'),
+  read('src/views/pdv/PDVView.tsx'),
   read('src/views/delivery/DeliveryView.tsx'),
   read('src/App.tsx'),
   read('public/sw.js'),
@@ -29,6 +30,7 @@ assert.match(component, /data-ad-render-status/);
 assert.match(component, /unfill-optimized/);
 assert.match(component, /--beco-mobile-ad-height/);
 assert.match(component, /operational-top/);
+assert.match(component, /placement === 'top' \|\| placement === 'operational-top'/);
 assert.doesNotMatch(component, /relative h-0 w-full overflow-hidden/);
 assert.doesNotMatch(component, /AD_STATUS_TIMEOUT_MS/);
 assert.match(component, /min-h-\[50px\]/);
@@ -47,6 +49,8 @@ assert.match(viteConfig, /<script nonce="__CSP_NONCE__"/);
 assert.equal(adsTxt.trim(), 'google.com, pub-8099608758666537, DIRECT, f08c47fec0942fa0');
 assert.match(qrView, /var\(--beco-mobile-ad-height, 0px\)/);
 assert.equal((qrView.match(/h-\[calc\(100dvh-50px\)\]/g) || []).length, 2);
+assert.match(pdvView, /h-\[calc\(100dvh-50px\)\]/);
+assert.match(pdvView, /overflow-y-auto overscroll-contain custom-scrollbar/);
 assert.equal((qrView.match(/className="min-h-0 flex-1 sm:pb-28"/g) || []).length, 2);
 assert.doesNotMatch(qrView, /top-\[50px\][^"\n]*hidden/);
 assert.match(qrView, /h-14 shrink-0/);
@@ -62,7 +66,7 @@ assert.match(serviceWorker, /requestUrl\.origin !== self\.location\.origin/);
 assert.match(component, /width: '320px', height: '50px'/);
 assert.match(component, /!h-\[50px\] !w-\[320px\]/);
 assert.match(component, /data-ad-format=\{isCompactTop \? undefined : 'auto'\}/);
-assert.match(serviceWorker, /becoartes-kiosk-v1\.9\.12/);
+assert.match(serviceWorker, /becoartes-kiosk-v1\.9\.18/);
 assert.match(staticFiles, /resolvePageMetadata/);
 assert.match(staticFiles, /Cardápio Becoartes \| Mesa/);
 assert.match(staticFiles, /Mediapartners-Google/);

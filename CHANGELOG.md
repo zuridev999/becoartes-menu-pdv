@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.9.18 - 2026-09-02
+
+- Limita o comercial superior do PDV a 320 x 50 pixels também na operação.
+- Reserva a altura correta abaixo do anúncio e restaura a rolagem até o fim da tela em celulares.
+
 ## 1.9.12 - 2026-08-26
 
 - Restaura a barra de mesa, idioma, atendimento e conta imediatamente abaixo do anúncio no QR.

@@ -11,7 +11,7 @@ export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) 
   const [status, setStatus] = useState<GoogleAdStatus>('pending');
   const adRef = useRef<HTMLModElement>(null);
   const containerRef = useRef<HTMLElement>(null);
-  const isCompactTop = placement === 'top';
+  const isCompactTop = placement === 'top' || placement === 'operational-top';
 
   useEffect(() => {
     const ad = adRef.current;
@@ -64,16 +64,12 @@ export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) 
 
   if (status === 'unfilled') return null;
 
-  const filledClass = placement === 'operational-top'
-    ? 'sticky top-0 z-[55] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5 backdrop-blur'
-    : isCompactTop
+  const filledClass = isCompactTop
     ? 'relative z-[55] flex h-[50px] max-h-[50px] w-full items-center justify-center overflow-hidden bg-zinc-950'
     : placement === 'mobile-bottom'
       ? 'fixed inset-x-0 bottom-0 z-[140] border-t border-white/10 bg-zinc-950/95 px-2 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] md:hidden'
       : 'fixed bottom-0 left-1/2 z-[60] hidden w-full max-w-3xl -translate-x-1/2 border border-b-0 border-white/10 bg-zinc-950/95 px-2 py-1 md:block';
-  const pendingClass = placement === 'operational-top'
-    ? 'sticky top-0 z-[55] min-h-[50px] w-full border-b border-white/10 bg-zinc-950/95 px-3 py-1.5 backdrop-blur sm:min-h-[90px]'
-    : isCompactTop
+  const pendingClass = isCompactTop
       ? 'relative z-[55] flex h-[50px] max-h-[50px] w-full items-center justify-center overflow-hidden bg-zinc-950'
       : placement === 'mobile-bottom'
         ? 'fixed inset-x-0 bottom-0 z-[140] min-h-[50px] border-t border-white/10 bg-zinc-950/95 px-2 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] md:hidden'

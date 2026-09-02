@@ -612,7 +612,7 @@ export function PDVView() {
 
   return (
     <div 
-      className="h-[100dvh] min-h-screen bg-transparent text-white font-['Outfit'] p-4 sm:p-6 xl:p-8 relative overflow-x-hidden overflow-y-auto custom-scrollbar"
+      className="h-[calc(100dvh-50px)] min-h-0 bg-transparent text-white font-['Outfit'] p-4 sm:p-6 xl:p-8 relative overflow-x-hidden overflow-y-auto overscroll-contain custom-scrollbar"
       onClick={() => {
         if (hasPanicAlert) {
           setHasPanicAlert(false);
