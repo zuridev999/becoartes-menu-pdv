@@ -373,6 +373,7 @@ const getValidFreelancerOperationalAccess = (row, view) => {
   if (!station || !isFreelancerUserRow(row)) return null;
   const access = parseFreelancerOperationalAccess(row?.freelancer_operational_access);
   if (!access || normalizeOperationalView(access.station) !== station) return null;
+  if (String(access.status || '').toLowerCase() !== 'active') return null;
   const startsAt = Date.parse(access.startsAt || '');
   const endsAt = Date.parse(access.endsAt || '');
   const now = Date.now();
@@ -2749,7 +2750,8 @@ const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, termi
         })
         : '';
 
-    if ((isMobilePdvRequest && !isAdminSession(safeSeller) && !temporaryOperationAccess) || (!operationAccessAllowed && !terminalProof.valid && !canAccessOutsideOperationIp(safeSeller))) {
+    const hasActiveFreelancerStationAccess = Boolean(safeSeller.stationAccess);
+    if ((isMobilePdvRequest && !isAdminSession(safeSeller) && !temporaryOperationAccess && !hasActiveFreelancerStationAccess) || (!operationAccessAllowed && !terminalProof.valid && !canAccessOutsideOperationIp(safeSeller))) {
       blockedNonAdminMatch = true;
       if (req && isOperationIpRestricted()) {
         console.warn(`Blocked non-admin login outside operation IP: ${getClientIp(req)} seller=${seller.id}`);
