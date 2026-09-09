@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine as build
+FROM node:20-alpine AS build
 WORKDIR /app
 ARG VITE_OS_EMPRESA_ID
 ARG VITE_OS_TENANT_SLUG
@@ -18,9 +18,9 @@ ENV VITE_APP_COMMIT=$VITE_APP_COMMIT
 ENV VITE_APP_BUILD_DATE=$VITE_APP_BUILD_DATE
 ENV VITE_BUSINESS_TIME_ZONE=$VITE_BUSINESS_TIME_ZONE
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 COPY . .
-RUN npm run build
+RUN npm run build && npm prune --omit=dev && npm audit --omit=dev --audit-level=high
 
 FROM node:20-alpine
 WORKDIR /app

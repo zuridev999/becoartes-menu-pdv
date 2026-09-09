@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.10.2 - 2026-09-09
+
+- Remove dependências de desenvolvimento da imagem final e bloqueia o build quando a auditoria de produção encontra vulnerabilidade alta.
+
 ## 1.10.1 - 2026-09-09
 
 - Atualiza o processamento de imagens para a versão corrigida do Sharp e zera a auditoria de vulnerabilidades de produção.
