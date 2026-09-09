@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useStore } from './store';
 import { AnimatePresence } from 'framer-motion';
 import { RefreshCw, TriangleAlert } from 'lucide-react';
@@ -66,10 +66,10 @@ function App() {
     });
   }, [setActiveView, syncData]);
 
-  const handleAnimationComplete = () => {
+  const handleAnimationComplete = useCallback(() => {
     setAnimationFinished(true);
     sessionStorage.setItem(`beco_anim_done_${window.location.hostname}`, 'true');
-  };
+  }, []);
 
   const isQrView = activeView === 'qr';
   const isPublicMenuView = isQrView || activeView === 'tablet' || activeView === 'delivery';

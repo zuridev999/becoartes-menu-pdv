@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.10.3 - 2026-09-09
+
+- Impede que o carregador inicial permaneça sobre o QR, PDV, tablet, cozinha e bar após os dados estarem prontos.
+
 ## 1.10.2 - 2026-09-09
 
 - Remove dependências de desenvolvimento da imagem final e bloqueia o build quando a auditoria de produção encontra vulnerabilidade alta.
