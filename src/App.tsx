@@ -71,8 +71,7 @@ function App() {
     sessionStorage.setItem(`beco_anim_done_${window.location.hostname}`, 'true');
   }, []);
 
-  const isQrView = activeView === 'qr';
-  const isPublicMenuView = isQrView || activeView === 'tablet' || activeView === 'delivery';
+  const isPublicTopAdView = activeView === 'tablet' || activeView === 'delivery';
   const isPdvView = activeView === 'pdv';
   const hasOperationalView = ['pdv', 'kitchen', 'admin'].includes(activeView);
 
@@ -88,7 +87,7 @@ function App() {
       <div className="min-h-screen bg-transparent">
         <NotificationDisplay />
         <ChecklistAlertDisplay />
-        {!isLoading && !initError && isPublicMenuView && <GoogleAdBanner placement="top" />}
+        {!isLoading && !initError && isPublicTopAdView && <GoogleAdBanner placement="top" />}
         {!isLoading && !initError && isPdvView && <GoogleAdBanner placement="operational-top" />}
         {!isLoading && initError && (
           <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white">

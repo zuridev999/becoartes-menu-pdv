@@ -13,6 +13,7 @@ import { AppApi, CustomerTabApi, setPublicTableAccess, type QrFlowResolution } f
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
+import { GoogleAdBanner } from '../../components/common/GoogleAdBanner';
 
 const CUSTOMER_TAB_CPF_KEY = 'becoartes_customer_tab_cpf';
 
@@ -286,6 +287,7 @@ export function QRView() {
           viewMode="list"
           navigationMode="continuous"
           presentation="compact-menu"
+          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" />}
           footerContent={(
             <footer className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center shadow-2xl shadow-black/20">
               <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
@@ -555,6 +557,7 @@ function ComandaQRExperience({
           viewMode="grid"
           navigationMode="continuous"
           presentation="compact-menu"
+          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" />}
           footerContent={(
             <footer className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center shadow-2xl shadow-black/20">
               <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.24em] text-zinc-500">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Search, ChevronRight, Plus, Utensils } from 'lucide-react';
 import { useStore, type Product } from '../../store';
@@ -14,6 +14,7 @@ interface MenuCatalogProps {
   surface?: 'default' | 'delivery';
   presentation?: 'default' | 'compact-menu';
   footerContent?: ReactNode;
+  afterIntroContent?: ReactNode;
 }
 
 const featuredCategoryCopy: Record<string, Record<string, { label: string; subtitle?: string }>> = {
@@ -62,7 +63,7 @@ const hasVolumeAwareMatch = (haystack: string, term: string) => {
   return normalizedHaystack.includes(normalizedTerm);
 };
 
-export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', surface = 'default', presentation = 'default', footerContent }: MenuCatalogProps) {
+export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode = 'sidebar', surface = 'default', presentation = 'default', footerContent, afterIntroContent }: MenuCatalogProps) {
   const { menu, categories: dbCategories } = useStore();
   const { t, locale, catalogText } = usePublicI18n();
   const availableCategories = useMemo(() => dbCategories
@@ -306,7 +307,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
 	           </div>
          ) : navigationMode === 'continuous' && (viewMode === 'grid' || isCompactMenu) ? (
            <div className="space-y-10 pb-4">
-             {menuByCategory.map(({ category, products }) => (
+             {menuByCategory.map(({ category, products }, categoryIndex) => (
                <section
                  key={category}
                  ref={(node) => { categorySectionRefs.current[category] = node; }}
@@ -320,7 +321,16 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
                    )}
                  </div>
                  <div className={isCompactMenu ? 'space-y-3' : gridClassName}>
-                   {products.map(isCompactMenu ? renderCompactProduct : renderGridProduct)}
+                   {products.map((product, productIndex) => (
+                     <Fragment key={product.id}>
+                       {isCompactMenu ? renderCompactProduct(product) : renderGridProduct(product)}
+                       {afterIntroContent && categoryIndex === 0 && productIndex === Math.min(2, products.length - 1) && (
+                         <div className="col-span-full py-2 sm:py-3" data-menu-inline-ad>
+                           {afterIntroContent}
+                         </div>
+                       )}
+                     </Fragment>
+                   ))}
                  </div>
                </section>
              ))}

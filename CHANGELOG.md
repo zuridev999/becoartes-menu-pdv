@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.10.4 - 2026-09-09
+
+- Move o anúncio do QR para dentro do cardápio, depois dos três primeiros produtos, para que mesa, categorias e itens apareçam antes da publicidade.
+- Troca o banner estreito de 320 x 50 pixels por um bloco retangular responsivo, sem adicionar vignette nem ocupar carrinho, pedido ou pagamento.
+
 ## 1.10.3 - 2026-09-09
 
 - Impede que o carregador inicial permaneça sobre o QR, PDV, tablet, cozinha e bar após os dados estarem prontos.
