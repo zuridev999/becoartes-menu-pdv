@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.10.1 - 2026-09-09
+
+- Atualiza o processamento de imagens para a versão corrigida do Sharp e zera a auditoria de vulnerabilidades de produção.
+
 ## 1.10.0 - 2026-09-09
 
 - Prepara PDV, cozinha, bar, tablet, QR e delivery para o libSQL definitivo na KVM8.
