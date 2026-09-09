@@ -7,7 +7,13 @@ const MOBILE_AD_HEIGHT_PROPERTY = '--beco-mobile-ad-height';
 type GoogleAdPlacement = 'top' | 'operational-top' | 'mobile-bottom' | 'operational-bottom' | 'qr-menu-inline';
 type GoogleAdStatus = 'pending' | 'filled' | 'unfilled';
 
-export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) {
+export function GoogleAdBanner({
+  placement,
+  onViewportVisibilityChange,
+}: {
+  placement: GoogleAdPlacement;
+  onViewportVisibilityChange?: (visible: boolean) => void;
+}) {
   const [status, setStatus] = useState<GoogleAdStatus>('pending');
   const adRef = useRef<HTMLModElement>(null);
   const containerRef = useRef<HTMLElement>(null);
@@ -62,6 +68,21 @@ export function GoogleAdBanner({ placement }: { placement: GoogleAdPlacement }) 
       document.documentElement.style.removeProperty(MOBILE_AD_HEIGHT_PROPERTY);
     };
   }, [placement, status]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!isQrMenuInline || !container || !onViewportVisibilityChange) return undefined;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      onViewportVisibilityChange(entry.isIntersecting && entry.intersectionRatio >= 0.2);
+    }, { threshold: [0, 0.2, 0.5] });
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+      onViewportVisibilityChange(false);
+    };
+  }, [isQrMenuInline, onViewportVisibilityChange]);
 
   if (status === 'unfilled') return null;
 

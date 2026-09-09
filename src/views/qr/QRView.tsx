@@ -71,6 +71,7 @@ export function QRView() {
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
+  const [isInlineAdVisible, setIsInlineAdVisible] = useState(false);
   const [routeTableNumber, setRouteTableNumber] = useState<number | null>(getRouteTableNumber);
   const [qrResolution, setQrResolution] = useState<QrFlowResolution | null>(null);
   const [isTableAccessReady, setIsTableAccessReady] = useState(false);
@@ -287,7 +288,7 @@ export function QRView() {
           viewMode="list"
           navigationMode="continuous"
           presentation="compact-menu"
-          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" />}
+          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" onViewportVisibilityChange={setIsInlineAdVisible} />}
           footerContent={(
             <footer className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center shadow-2xl shadow-black/20">
               <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
@@ -300,7 +301,7 @@ export function QRView() {
 
       {/* CTA principal do celular: revisar/enviar pedido quando houver carrinho */}
       <div
-        className="fixed left-3 right-3 z-50 sm:left-1/2 sm:right-auto sm:-translate-x-1/2"
+        className={`fixed left-3 right-3 z-50 transition duration-200 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 ${isInlineAdVisible ? 'pointer-events-none translate-y-4 opacity-0' : ''}`}
         style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem + var(--beco-mobile-ad-height, 0px))' }}
       >
         <button 
@@ -368,6 +369,7 @@ function ComandaQRExperience({
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
+  const [isInlineAdVisible, setIsInlineAdVisible] = useState(false);
   const [tab, setTab] = useState<CustomerTab | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
@@ -557,7 +559,7 @@ function ComandaQRExperience({
           viewMode="grid"
           navigationMode="continuous"
           presentation="compact-menu"
-          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" />}
+          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" onViewportVisibilityChange={setIsInlineAdVisible} />}
           footerContent={(
             <footer className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center shadow-2xl shadow-black/20">
               <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
@@ -569,7 +571,7 @@ function ComandaQRExperience({
       </div>
 
       <div
-        className="fixed left-3 right-3 z-50 sm:left-1/2 sm:right-auto sm:-translate-x-1/2"
+        className={`fixed left-3 right-3 z-50 transition duration-200 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 ${isInlineAdVisible ? 'pointer-events-none translate-y-4 opacity-0' : ''}`}
         style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem + var(--beco-mobile-ad-height, 0px))' }}
       >
         <button onClick={handlePrimaryAccountAction} className="w-full sm:w-auto glass-card px-5 sm:px-8 py-4 flex items-center justify-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 sm:scale-110 active:scale-95 transition-all">

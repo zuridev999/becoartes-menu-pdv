@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.10.5 - 2026-09-09
+
+- Oculta temporariamente o botão flutuante da conta enquanto o anúncio interno do QR está visível, mantendo o anúncio longe de controles clicáveis e preservando o acesso à conta pelo cabeçalho.
+
 ## 1.10.4 - 2026-09-09
 
 - Move o anúncio do QR para dentro do cardápio, depois dos três primeiros produtos, para que mesa, categorias e itens apareçam antes da publicidade.
