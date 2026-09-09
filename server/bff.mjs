@@ -842,7 +842,10 @@ const ensureDatabase = async () => {
 let databaseReadyPromise = null;
 const ensureDatabaseReady = () => {
   if (!databaseReadyPromise) {
-    databaseReadyPromise = ensureDatabase().catch((error) => {
+    const initialize = process.env.BFF_DATABASE_BOOTSTRAP === 'validate'
+      ? () => db.execute('SELECT (SELECT count(*) FROM menu) AS menu_count, (SELECT count(*) FROM users) AS users_count, (SELECT count(*) FROM sellers) AS sellers_count')
+      : ensureDatabase;
+    databaseReadyPromise = initialize().catch((error) => {
       databaseReadyPromise = null;
       throw error;
     });
@@ -1758,7 +1761,7 @@ const splitItemsByProductionStation = (items = []) => {
   );
 };
 
-const getKitchenOrders = async (view = 'pdv') => {
+const loadKitchenOrders = async (view = 'pdv', materialize = false) => {
   const stationFilter = view === 'bar' ? 'bar' : view === 'kitchen' ? 'kitchen' : null;
   const [ordersRes, itemsRes, nowRes] = await Promise.all([
     db.execute(`
@@ -1820,7 +1823,7 @@ const getKitchenOrders = async (view = 'pdv') => {
         id: ticketId,
         orderId: row.id,
         station,
-        status: row.status,
+        status: 'pending',
         createdAt: row.created_at,
       };
       ticketStatements.push({
@@ -1830,7 +1833,7 @@ const getKitchenOrders = async (view = 'pdv') => {
     }
   });
 
-  if (ticketStatements.length > 0) {
+  if (materialize && ticketStatements.length > 0) {
     await db.batch(ticketStatements, 'write');
   }
 
@@ -1884,6 +1887,9 @@ const getKitchenOrders = async (view = 'pdv') => {
   };
 };
 
+const getKitchenOrders = (view = 'pdv') => loadKitchenOrders(view);
+const ensureProductionTickets = () => loadKitchenOrders('pdv', true);
+
 const materializeNewOrderRequests = async () => {
   await db.execute(`
     INSERT OR IGNORE INTO service_requests (
@@ -1924,7 +1930,6 @@ const materializeNewOrderRequests = async () => {
 };
 
 const getServiceRequests = async () => {
-  await materializeNewOrderRequests();
   const res = await db.execute({
     sql: `
       SELECT
@@ -2414,7 +2419,6 @@ const sanitizeCustomerTab = (row, totals = null) => {
 };
 
 const getTables = async () => {
-  await ensureTablesUpTo(200);
   const tableRes = await db.execute("SELECT * FROM tables ORDER BY CAST(number AS INTEGER) ASC");
 
   const ordersByTable = await getActiveOrdersByTable();
@@ -2489,7 +2493,10 @@ const ensureDefaultSellers = async () => {
 let defaultSellersReadyPromise = null;
 const ensureDefaultSellersReady = () => {
   if (!defaultSellersReadyPromise) {
-    defaultSellersReadyPromise = ensureDefaultSellers().catch((error) => {
+    const initialize = process.env.BFF_DATABASE_BOOTSTRAP === 'validate'
+      ? () => db.execute('SELECT id FROM sellers LIMIT 1')
+      : ensureDefaultSellers;
+    defaultSellersReadyPromise = initialize().catch((error) => {
       defaultSellersReadyPromise = null;
       throw error;
     });
@@ -6199,6 +6206,8 @@ const updateOrderStatus = async ({ orderId, status }) => {
   const safeStatus = ['pending', 'preparing', 'ready', 'closed'].includes(status) ? status : null;
   if (!safeStatus) throw new Error('Status inválido.');
 
+  await ensureProductionTickets();
+
   const ticketRes = await db.execute({
     sql: "SELECT id, order_id FROM production_tickets WHERE id = ? LIMIT 1",
     args: [orderId],
@@ -9381,6 +9390,15 @@ const serveStatic = createStaticHandler({
   securityHeaders,
   mimeTypes,
 });
+
+// Bootstrap is an explicit startup writer, not a side effect of the first GET.
+await ensureDatabaseReady();
+await ensureDefaultSellersReady();
+if (process.env.BFF_DATABASE_BOOTSTRAP !== 'validate') {
+  await ensureTablesUpTo(200);
+  await ensureProductionTickets();
+  await materializeNewOrderRequests();
+}
 
 createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);

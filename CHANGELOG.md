@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.10.0 - 2026-09-09
+
+- Prepara PDV, cozinha, bar, tablet, QR e delivery para o libSQL definitivo na KVM8.
+- Remove materializações e inicializações de escrita dos caminhos de leitura do BFF.
+- Mantém as inicializações necessárias em startup e nos fluxos explícitos de mutação.
+
 ## 1.9.19 - 2026-09-02
 
 - Mostra no PDV um alerta individual sonoro para o usuario autenticado enquanto o checklist de abertura ligado ao ponto estiver pendente.
