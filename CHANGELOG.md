@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.11.4 - 2026-09-12
+
+- Restaura integralmente o layout de rolagem do QR usado na versão 1.10.5 e mantém somente o isolamento dos alertas de checklist.
+
 ## 1.11.3 - 2026-09-12
 
 - Limita explicitamente o painel do cardápio à área abaixo do cabeçalho e mantém o catálogo contido no pai, garantindo arraste vertical real no QR.
