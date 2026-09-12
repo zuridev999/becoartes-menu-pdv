@@ -12,7 +12,11 @@ type ChecklistAlert = {
   pendente: number;
   atrasados: number;
   horario: string;
+  deadline?: string;
   dataOperacional: string;
+  kind?: 'checklist' | 'trash_collection';
+  title?: string;
+  message?: string;
 };
 
 type ChecklistAlertResponse = {
@@ -60,7 +64,7 @@ function isSnoozed(alertId: string, nowMs: number) {
 }
 
 function getAlertDueMs(alert: ChecklistAlert) {
-  const [hour, minute] = String(alert.horario || '').split(':').map(Number);
+  const [hour, minute] = String(alert.deadline || alert.horario || '').split(':').map(Number);
   if (!alert.dataOperacional || Number.isNaN(hour) || Number.isNaN(minute)) return Date.now();
 
   return new Date(`${alert.dataOperacional}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`).getTime();
@@ -111,6 +115,7 @@ export function ChecklistAlertDisplay() {
   ), [alerts, nowMs]);
 
   const alert = visibleAlerts[0];
+  const trashAlertId = alert?.kind === 'trash_collection' ? alert.id : null;
   const stockAuditVisible = stockAudit?.shouldDisplay && !isSnoozed(stockAudit.id, nowMs) ? stockAudit : null;
   const openingValidationVisible = openingValidation && !isSnoozed(`opening:${openingValidation.id}`, nowMs)
     ? openingValidation
@@ -136,6 +141,27 @@ export function ChecklistAlertDisplay() {
     });
     window.setTimeout(() => void context.close(), 800);
   }, [openingValidationVisible?.id]);
+
+  useEffect(() => {
+    if (!trashAlertId) return;
+    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass();
+    const startAt = context.currentTime;
+    [0, 0.24].forEach((offset) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.frequency.value = 740;
+      gain.gain.setValueAtTime(0.0001, startAt + offset);
+      gain.gain.exponentialRampToValueAtTime(0.14, startAt + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + offset + 0.16);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(startAt + offset);
+      oscillator.stop(startAt + offset + 0.17);
+    });
+    window.setTimeout(() => void context.close(), 700);
+  }, [trashAlertId]);
 
   if (!openingValidationVisible && !stockAuditVisible && !alert) return null;
 
@@ -260,7 +286,7 @@ export function ChecklistAlertDisplay() {
             <div className="min-w-0 flex-1">
               <p className="text-[10px] font-black uppercase tracking-[0.28em] text-amber-300">Checklist pendente</p>
               <h3 className="mt-1 text-lg font-black uppercase italic tracking-tight text-white">
-                {alert.periodo} em {alert.percentual}%
+                {alert.title || `${alert.periodo} em ${alert.percentual}%`}
               </h3>
               <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] font-bold uppercase tracking-widest text-zinc-400">
                 <span className="flex items-center gap-1.5">
@@ -273,8 +299,11 @@ export function ChecklistAlertDisplay() {
                 </span>
               </div>
               <p className="mt-3 text-xs font-bold leading-relaxed text-zinc-300">
-                Ainda faltam {alert.pendente} item(ns). Antes do horário o aviso pausa por 30 minutos; depois do horário ele volta em 2 minutos.
+                {alert.message || `Ainda faltam ${alert.pendente} item(ns). Antes do horário o aviso pausa por 30 minutos; depois do horário ele volta em 2 minutos.`}
               </p>
+              {alert.kind === 'trash_collection' ? (
+                <p className="mt-2 text-[10px] font-black uppercase tracking-[0.18em] text-amber-300">Prazo da coleta: 19h</p>
+              ) : null}
             </div>
             <button
               onClick={snoozeAlert}

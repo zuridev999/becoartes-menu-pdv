@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.11.0 - 2026-09-12
+
+- Destaca no PDV o lembrete de coleta do lixo às segundas, quartas e sextas, com prazo explícito de 19h.
+- Usa a mensagem e o prazo enviados pelo catálogo canônico do OS e mantém o aviso até a confirmação do checklist.
+
 ## Unreleased
 
 ## 1.10.5 - 2026-09-09

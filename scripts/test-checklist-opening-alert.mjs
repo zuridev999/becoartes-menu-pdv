@@ -14,5 +14,9 @@ assert.match(component, /POLL_MS = 15 \* 1000/, 'A conclusão deve sumir rapidam
 assert.match(component, /role="alertdialog"/, 'O alerta individual precisa ocupar a atenção do operador.');
 assert.match(component, /AudioContext/, 'O alerta precisa emitir sinal sonoro.');
 assert.match(component, /Termine o checklist de abertura para validar seu ponto\./, 'A mensagem operacional precisa ser inequívoca.');
+assert.match(component, /alert\.deadline \|\| alert\.horario/, 'O lembrete de lixo deve respeitar o prazo próprio das 19h.');
+assert.match(component, /trash_collection/, 'O PDV deve destacar o lembrete específico de coleta do lixo.');
+assert.match(component, /Prazo da coleta: 19h/, 'O prazo da coleta precisa ficar explícito no aviso.');
+assert.match(component, /trashAlertId/, 'O lembrete de coleta precisa disparar o sinal sonoro próprio.');
 
 console.log('PDV opening checklist alert regression: OK');
