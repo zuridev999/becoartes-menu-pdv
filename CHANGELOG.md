@@ -1,11 +1,16 @@
 # Changelog
 
+## Unreleased
+
+## 1.11.1 - 2026-09-12
+
+- Restaura a rolagem vertical do cardápio QR em telas móveis e desktop, limitando a área pública à altura real da viewport.
+- Impede que alertas e consultas de checklist sejam montados nos domínios QR, tablet e delivery; permanecem restritos às telas operacionais.
+
 ## 1.11.0 - 2026-09-12
 
 - Destaca no PDV o lembrete de coleta do lixo às segundas, quartas e sextas, com prazo explícito de 19h.
 - Usa a mensagem e o prazo enviados pelo catálogo canônico do OS e mantém o aviso até a confirmação do checklist.
-
-## Unreleased
 
 ## 1.10.5 - 2026-09-09
 

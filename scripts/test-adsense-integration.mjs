@@ -54,10 +54,11 @@ assert.equal((qrView.match(/afterIntroContent=\{<GoogleAdBanner placement="qr-me
 assert.equal((qrView.match(/pointer-events-none translate-y-4 opacity-0/g) || []).length, 2);
 assert.match(component, /new IntersectionObserver/);
 assert.match(component, /entry\.intersectionRatio >= 0\.2/);
-assert.equal((qrView.match(/h-\[calc\(100dvh-50px\)\]/g) || []).length, 2);
+assert.equal((qrView.match(/flex h-full min-h-0 flex-col overflow-hidden/g) || []).length, 2);
+assert.equal((qrView.match(/min-h-0 flex-1 overflow-hidden sm:pb-28/g) || []).length, 2);
+assert.match(app, /activeView === 'qr'[\s\S]*h-\[100dvh\] min-h-0 overflow-hidden/);
 assert.match(pdvView, /h-\[calc\(100dvh-50px\)\]/);
 assert.match(pdvView, /overflow-y-auto overscroll-contain custom-scrollbar/);
-assert.equal((qrView.match(/className="min-h-0 flex-1 sm:pb-28"/g) || []).length, 2);
 assert.doesNotMatch(qrView, /top-\[50px\][^"\n]*hidden/);
 assert.match(qrView, /h-14 shrink-0/);
 assert.match(deliveryView, /var\(--beco-mobile-ad-height, 0px\)/);

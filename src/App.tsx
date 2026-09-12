@@ -74,6 +74,9 @@ function App() {
   const isPublicTopAdView = activeView === 'tablet' || activeView === 'delivery';
   const isPdvView = activeView === 'pdv';
   const hasOperationalView = ['pdv', 'kitchen', 'admin'].includes(activeView);
+  const appFrameClassName = activeView === 'qr'
+    ? 'h-[100dvh] min-h-0 overflow-hidden bg-transparent'
+    : 'min-h-screen bg-transparent';
 
   return (
     <AntigravityErrorBoundary>
@@ -84,9 +87,9 @@ function App() {
       </AnimatePresence>
 
       <PublicI18nProvider settings={settings}>
-      <div className="min-h-screen bg-transparent">
+      <div className={appFrameClassName}>
         <NotificationDisplay />
-        <ChecklistAlertDisplay />
+        {!isLoading && !initError && hasOperationalView && <ChecklistAlertDisplay />}
         {!isLoading && !initError && isPublicTopAdView && <GoogleAdBanner placement="top" />}
         {!isLoading && !initError && isPdvView && <GoogleAdBanner placement="operational-top" />}
         {!isLoading && initError && (

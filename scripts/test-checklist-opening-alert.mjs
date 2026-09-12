@@ -5,6 +5,7 @@ const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), '
 const handler = read('server/routes/handlers.mjs');
 const bff = read('server/bff.mjs');
 const component = read('src/components/common/ChecklistAlertDisplay.tsx');
+const app = read('src/App.tsx');
 
 assert.match(handler, /getChecklistAlertsFromOs\(context\.session\)/, 'O proxy precisa usar a sessão do operador atual.');
 assert.ok(bff.includes("replace(/^os:/, '')"), 'O ID assinado pelo OS precisa ser normalizado.');
@@ -18,5 +19,7 @@ assert.match(component, /alert\.deadline \|\| alert\.horario/, 'O lembrete de li
 assert.match(component, /trash_collection/, 'O PDV deve destacar o lembrete específico de coleta do lixo.');
 assert.match(component, /Prazo da coleta: 19h/, 'O prazo da coleta precisa ficar explícito no aviso.');
 assert.match(component, /trashAlertId/, 'O lembrete de coleta precisa disparar o sinal sonoro próprio.');
+assert.match(app, /hasOperationalView && <ChecklistAlertDisplay \/>/, 'Alertas de checklist devem existir somente nas telas operacionais.');
+assert.match(app, /\['pdv', 'kitchen', 'admin'\]\.includes\(activeView\)/, 'QR, tablet e delivery não podem montar alertas de checklist.');
 
 console.log('PDV opening checklist alert regression: OK');
