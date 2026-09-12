@@ -164,6 +164,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const canApplyDiscount = can(currentSeller, 'applyDiscount', settings.pdvPermissions, settings.pdvUserPermissions);
   const canEditServiceFee = can(currentSeller, 'editServiceFee', settings.pdvPermissions, settings.pdvUserPermissions);
   const isAdminSeller = currentSeller?.permission === 'admin';
+  const canLowerServiceFee = Boolean(currentSeller?.id && currentSeller.status === 'active');
+  const canEditServiceFeeControls = canEditServiceFee || canLowerServiceFee;
   const canLaunchPayment = can(currentSeller, 'launchPayment', settings.pdvPermissions, settings.pdvUserPermissions);
   const canSplitPayment = can(currentSeller, 'splitPayment', settings.pdvPermissions, settings.pdvUserPermissions);
   const canChangePaymentMethod = can(currentSeller, 'changePaymentMethod', settings.pdvPermissions, settings.pdvUserPermissions);
@@ -193,15 +195,20 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     return acc + (itemPrice * o.quantity);
   }, 0));
 
-  const maxServiceFeeAmount = calculateServiceFee(subtotal, MAX_SERVICE_FEE_PERCENT);
+  const maxEditableServiceFeePercent = isAdminSeller
+    ? Number.POSITIVE_INFINITY
+    : canEditServiceFee
+      ? MAX_SERVICE_FEE_PERCENT
+      : defaultServiceFeePercent;
+  const maxEditableServiceFeeAmount = calculateServiceFee(subtotal, maxEditableServiceFeePercent);
   const requestedPercent = parseFlexibleDecimal(serviceFeePercentInput) ?? 0;
   const requestedAmount = parseFlexibleDecimal(serviceFeeAmountInput) ?? 0;
   const feeValue = serviceFeeInputMode === 'amount'
-    ? roundMoney(Math.min(isAdminSeller ? Number.MAX_SAFE_INTEGER : maxServiceFeeAmount, Math.max(0, requestedAmount)))
+    ? roundMoney(Math.min(isAdminSeller ? Number.MAX_SAFE_INTEGER : maxEditableServiceFeeAmount, Math.max(0, requestedAmount)))
     : calculateServiceFee(
       subtotal,
       requestedPercent,
-      isAdminSeller ? Number.POSITIVE_INFINITY : MAX_SERVICE_FEE_PERCENT,
+      maxEditableServiceFeePercent,
     );
   const serviceFeePercent = subtotal > 0 ? roundMoney((feeValue / subtotal) * 100) : 0;
   const rawDiscountAmount = discountType === 'fixed'
@@ -484,13 +491,13 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
 
   const normalizeServiceFeePercentInput = () => {
     const parsed = parseFlexibleDecimal(serviceFeePercentInput) ?? 0;
-    const safePercent = clampServiceFeePercent(parsed, isAdminSeller ? Number.POSITIVE_INFINITY : MAX_SERVICE_FEE_PERCENT);
+    const safePercent = clampServiceFeePercent(parsed, maxEditableServiceFeePercent);
     setServiceFeePercentInput(formatPercent(safePercent).replace('.', ','));
   };
 
   const normalizeServiceFeeAmountInput = () => {
     const parsed = parseFlexibleDecimal(serviceFeeAmountInput) ?? 0;
-    const safeAmount = roundMoney(Math.min(isAdminSeller ? Number.MAX_SAFE_INTEGER : maxServiceFeeAmount, Math.max(0, parsed)));
+    const safeAmount = roundMoney(Math.min(isAdminSeller ? Number.MAX_SAFE_INTEGER : maxEditableServiceFeeAmount, Math.max(0, parsed)));
     setServiceFeeAmountInput(safeAmount.toFixed(2).replace('.', ','));
   };
 
@@ -560,7 +567,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                        <span className="text-base sm:text-lg">Taxa de serviço ({formatPercent(serviceFeePercent)}%)</span>
                        <span className="text-xl sm:text-2xl text-white">R$ {feeValue.toFixed(2)}</span>
                     </div>
-                    {canEditServiceFee ? (
+                    {canEditServiceFeeControls ? (
                       <>
 	                        <div className="flex items-center gap-1.5" role="group" aria-label="Modo de edição da taxa de serviço">
 	                          <button
@@ -607,8 +614,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
 	                        </div>
 	                        <p className="text-[10px] font-bold text-gray-500">
                           {serviceFeeInputMode === 'percent'
-                            ? `Valor equivalente: R$ ${feeValue.toFixed(2)}${isAdminSeller ? '' : ` (limite ${MAX_SERVICE_FEE_PERCENT}%)`}`
-                            : `Percentual equivalente: ${formatPercent(serviceFeePercent)}%${isAdminSeller ? '' : ` (limite ${MAX_SERVICE_FEE_PERCENT}%)`}`}
+                            ? `Valor equivalente: R$ ${feeValue.toFixed(2)}${isAdminSeller ? '' : ` (limite ${formatPercent(maxEditableServiceFeePercent)}%)`}`
+                            : `Percentual equivalente: ${formatPercent(serviceFeePercent)}%${isAdminSeller ? '' : ` (limite ${formatPercent(maxEditableServiceFeePercent)}%)`}`}
                         </p>
                         {serviceFeePercent > 0 && (
                           <button
