@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Plus, Menu, Printer } from 'lucide-react';
 import { useStore, type Seller, type Table as TableType } from '../../store';
-import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
+import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, parseFlexibleDecimal, roundMoney } from '../../lib/billing';
 import { can } from '../../lib/permissions';
 import { AdminApi, OperationalApi, hasApiSessionToken, setApiSessionToken, type SellerCandidate } from '../../lib/api';
 import { ActionDialog } from '../common/ActionDialog';
@@ -18,6 +18,7 @@ interface Payment {
 }
 
 type PaymentMethod = Payment['method'];
+type ServiceFeeInputMode = 'percent' | 'amount';
 
 const SELF_SERVICE_SELLER = {
   id: 'self-service',
@@ -110,7 +111,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const { closeBill, settings, sellers, currentSeller, addNotification } = useStore();
   const [selectedSellerId, setSelectedSellerId] = useState<string>(SELF_SERVICE_SELLER.id);
   const defaultServiceFeePercent = clampServiceFeePercent(Number(settings.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
-  const [serviceFeePercent, setServiceFeePercent] = useState(defaultServiceFeePercent);
+  const [serviceFeeInputMode, setServiceFeeInputMode] = useState<ServiceFeeInputMode>('percent');
+  const [serviceFeePercentInput, setServiceFeePercentInput] = useState(formatPercent(defaultServiceFeePercent).replace('.', ','));
+  const [serviceFeeAmountInput, setServiceFeeAmountInput] = useState('');
   const [discountValue, setDiscountValue] = useState(0);
   const [discountType, setDiscountType] = useState<'fixed' | 'percent'>('fixed');
   const [discountReason] = useState('');
@@ -160,6 +163,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     : sellerOptions.find(s => s.id === selectedSellerId);
   const canApplyDiscount = can(currentSeller, 'applyDiscount', settings.pdvPermissions, settings.pdvUserPermissions);
   const canEditServiceFee = can(currentSeller, 'editServiceFee', settings.pdvPermissions, settings.pdvUserPermissions);
+  const isAdminSeller = currentSeller?.permission === 'admin';
   const canLaunchPayment = can(currentSeller, 'launchPayment', settings.pdvPermissions, settings.pdvUserPermissions);
   const canSplitPayment = can(currentSeller, 'splitPayment', settings.pdvPermissions, settings.pdvUserPermissions);
   const canChangePaymentMethod = can(currentSeller, 'changePaymentMethod', settings.pdvPermissions, settings.pdvUserPermissions);
@@ -189,7 +193,17 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     return acc + (itemPrice * o.quantity);
   }, 0));
 
-  const feeValue = calculateServiceFee(subtotal, serviceFeePercent);
+  const maxServiceFeeAmount = calculateServiceFee(subtotal, MAX_SERVICE_FEE_PERCENT);
+  const requestedPercent = parseFlexibleDecimal(serviceFeePercentInput) ?? 0;
+  const requestedAmount = parseFlexibleDecimal(serviceFeeAmountInput) ?? 0;
+  const feeValue = serviceFeeInputMode === 'amount'
+    ? roundMoney(Math.min(isAdminSeller ? Number.MAX_SAFE_INTEGER : maxServiceFeeAmount, Math.max(0, requestedAmount)))
+    : calculateServiceFee(
+      subtotal,
+      requestedPercent,
+      isAdminSeller ? Number.POSITIVE_INFINITY : MAX_SERVICE_FEE_PERCENT,
+    );
+  const serviceFeePercent = subtotal > 0 ? roundMoney((feeValue / subtotal) * 100) : 0;
   const rawDiscountAmount = discountType === 'fixed'
     ? discountValue
     : subtotal * (Math.min(100, Math.max(0, discountValue)) / 100);
@@ -307,8 +321,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   }, [remaining]);
 
   useEffect(() => {
-    setServiceFeePercent(defaultServiceFeePercent);
-  }, [defaultServiceFeePercent]);
+    setServiceFeePercentInput(formatPercent(defaultServiceFeePercent).replace('.', ','));
+    setServiceFeeAmountInput(calculateServiceFee(subtotal, defaultServiceFeePercent).toFixed(2).replace('.', ','));
+  }, [defaultServiceFeePercent, subtotal]);
 
   useEffect(() => {
     setPayments(table.payments || []);
@@ -457,6 +472,28 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     });
   };
 
+  const handleServiceFeeModeChange = (mode: ServiceFeeInputMode) => {
+    if (mode === serviceFeeInputMode) return;
+    if (mode === 'percent') {
+      setServiceFeePercentInput(formatPercent(serviceFeePercent).replace('.', ','));
+    } else {
+      setServiceFeeAmountInput(feeValue.toFixed(2).replace('.', ','));
+    }
+    setServiceFeeInputMode(mode);
+  };
+
+  const normalizeServiceFeePercentInput = () => {
+    const parsed = parseFlexibleDecimal(serviceFeePercentInput) ?? 0;
+    const safePercent = clampServiceFeePercent(parsed, isAdminSeller ? Number.POSITIVE_INFINITY : MAX_SERVICE_FEE_PERCENT);
+    setServiceFeePercentInput(formatPercent(safePercent).replace('.', ','));
+  };
+
+  const normalizeServiceFeeAmountInput = () => {
+    const parsed = parseFlexibleDecimal(serviceFeeAmountInput) ?? 0;
+    const safeAmount = roundMoney(Math.min(isAdminSeller ? Number.MAX_SAFE_INTEGER : maxServiceFeeAmount, Math.max(0, parsed)));
+    setServiceFeeAmountInput(safeAmount.toFixed(2).replace('.', ','));
+  };
+
   const handleFinish = () => {
     if (hasInvalidOverpayment || hasPendingCouponChoice || remaining > 0 || !selectedSeller || !canLaunchPayment || !canCloseBill) return;
     void closeBill({
@@ -518,37 +555,69 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
 
               <div className="mt-4 lg:mt-6 space-y-3 pt-4 lg:pt-6 border-t border-white/10 text-sm">
                  <div className="flex justify-between text-gray-400 font-bold"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>
-	                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
+                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
                     <div className="flex justify-between text-gray-200 font-black items-center gap-4">
                        <span className="text-base sm:text-lg">Taxa de serviço ({formatPercent(serviceFeePercent)}%)</span>
                        <span className="text-xl sm:text-2xl text-white">R$ {feeValue.toFixed(2)}</span>
                     </div>
                     {canEditServiceFee ? (
                       <>
-	                        <div className="flex items-center gap-1.5">
-	                          {[0, 1, 5, 10, 13].map((percent) => (
-	                            <button
-	                              key={percent}
-	                              onClick={() => setServiceFeePercent(percent)}
-	                              className={`h-10 w-10 rounded-xl text-[10px] font-black border transition-all ${serviceFeePercent === percent ? 'bg-primary text-white border-primary' : 'border-white/10 text-gray-400 hover:text-white'}`}
-	                            >
-	                              {percent}%
-	                            </button>
-	                          ))}
-	                          <input
-	                            type="number"
-	                            min={0}
-	                            max={MAX_SERVICE_FEE_PERCENT}
-	                            step={0.01}
-	                            value={serviceFeePercent}
-	                            onChange={(e) => setServiceFeePercent(clampServiceFeePercent(Number(e.target.value)))}
-	                            aria-label="Taxa de serviço personalizada"
-	                            className="h-10 w-10 rounded-xl border border-white/10 bg-white/[0.05] px-1 text-center text-[10px] font-black text-primary outline-none focus:border-primary"
-	                          />
+	                        <div className="flex items-center gap-1.5" role="group" aria-label="Modo de edição da taxa de serviço">
+	                          <button
+	                            type="button"
+	                            onClick={() => handleServiceFeeModeChange('percent')}
+	                            className={`h-10 px-3 rounded-xl text-[10px] font-black border transition-all ${serviceFeeInputMode === 'percent' ? 'bg-primary text-white border-primary' : 'border-white/10 text-gray-400 hover:text-white'}`}
+	                          >
+	                            %
+	                          </button>
+	                          <button
+	                            type="button"
+	                            onClick={() => handleServiceFeeModeChange('amount')}
+	                            className={`h-10 px-3 rounded-xl text-[10px] font-black border transition-all ${serviceFeeInputMode === 'amount' ? 'bg-primary text-white border-primary' : 'border-white/10 text-gray-400 hover:text-white'}`}
+	                          >
+	                            R$
+	                          </button>
+                          {serviceFeeInputMode === 'percent' ? [0, 1, 5, 10, 13].map((percent) => (
+                            <button
+                              key={percent}
+                              type="button"
+                              onClick={() => setServiceFeePercentInput(String(percent))}
+	                              className={`h-10 w-10 rounded-xl text-[10px] font-black border transition-all ${serviceFeeInputMode === 'percent' && serviceFeePercent === percent ? 'bg-primary text-white border-primary' : 'border-white/10 text-gray-400 hover:text-white'}`}
+                            >
+                              {percent}%
+                            </button>
+                          )) : null}
+                          <input
+                            type="text"
+                            min={0}
+                            step={0.01}
+                            inputMode="decimal"
+                            value={serviceFeeInputMode === 'percent' ? serviceFeePercentInput : serviceFeeAmountInput}
+                            onChange={(e) => {
+                              const nextValue = e.target.value.replace(/[^0-9.,]/g, '');
+                              if (serviceFeeInputMode === 'percent') setServiceFeePercentInput(nextValue);
+                              else setServiceFeeAmountInput(nextValue);
+                            }}
+                            onBlur={serviceFeeInputMode === 'percent' ? normalizeServiceFeePercentInput : normalizeServiceFeeAmountInput}
+                            aria-label={serviceFeeInputMode === 'percent' ? 'Percentual da taxa de serviço' : 'Valor em reais da taxa de serviço'}
+                            placeholder={serviceFeeInputMode === 'percent' ? '7,12' : '10,35'}
+                            className="h-10 min-w-24 rounded-xl border border-white/10 bg-white/[0.05] px-2 text-center text-[10px] font-black text-primary outline-none focus:border-primary"
+                          />
+	                          <span className="text-[10px] font-black text-gray-500">{serviceFeeInputMode === 'percent' ? '%' : 'R$'}</span>
 	                        </div>
+	                        <p className="text-[10px] font-bold text-gray-500">
+                          {serviceFeeInputMode === 'percent'
+                            ? `Valor equivalente: R$ ${feeValue.toFixed(2)}${isAdminSeller ? '' : ` (limite ${MAX_SERVICE_FEE_PERCENT}%)`}`
+                            : `Percentual equivalente: ${formatPercent(serviceFeePercent)}%${isAdminSeller ? '' : ` (limite ${MAX_SERVICE_FEE_PERCENT}%)`}`}
+                        </p>
                         {serviceFeePercent > 0 && (
                           <button
-                            onClick={() => setServiceFeePercent(0)}
+                            type="button"
+                            onClick={() => {
+                              setServiceFeePercentInput('0');
+                              setServiceFeeAmountInput('0,00');
+                              setServiceFeeInputMode('percent');
+                            }}
                             className="w-full py-2 rounded-xl border border-amber-500/20 text-amber-300 text-[10px] font-black uppercase tracking-widest hover:bg-amber-500/10"
                           >
                             Remover taxa de serviço

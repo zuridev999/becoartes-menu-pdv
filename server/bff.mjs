@@ -8259,7 +8259,8 @@ const closeBillWithInventorySync = async (data, session = null) => {
   const defaultServiceFeeCents = Math.round(subtotalCents * (defaultServiceFeePercent / 100));
   const maxServiceFeeCents = Math.round(subtotalCents * (MAX_SERVICE_FEE_PERCENT / 100));
 
-  if (serviceFeeCents > maxServiceFeeCents) {
+  const isAdminSession = normalizePermission(session?.permission) === 'admin';
+  if (serviceFeeCents > maxServiceFeeCents && !isAdminSession) {
     throw new Error(`Taxa de serviço não pode passar de ${MAX_SERVICE_FEE_PERCENT}%.`);
   }
 
