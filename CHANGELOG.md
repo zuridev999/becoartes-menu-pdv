@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.11.5 - 2026-09-12
+
+- Corrige o arraste vertical por toque no QR ao limitar o catálogo à altura real do celular e criar uma área interna de rolagem, sem alterar o desenho da tela.
+
 ## 1.11.4 - 2026-09-12
 
 - Restaura integralmente o layout de rolagem do QR usado na versão 1.10.5 e mantém somente o isolamento dos alertas de checklist.
