@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.11.3 - 2026-09-12
+
+- Limita explicitamente o painel do cardápio à área abaixo do cabeçalho e mantém o catálogo contido no pai, garantindo arraste vertical real no QR.
+
 ## 1.11.2 - 2026-09-12
 
 - Ancora o QR diretamente à viewport para manter a área interna rolável mesmo em navegadores que calculam incorretamente unidades dinâmicas de altura.

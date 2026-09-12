@@ -8,7 +8,7 @@ import {
 } from '../server/static-files.mjs';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, pdvView, deliveryView, app, serviceWorker] = await Promise.all([
+const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, menuCatalog, pdvView, deliveryView, app, serviceWorker] = await Promise.all([
   read('index.html'),
   read('src/components/common/GoogleAdBanner.tsx'),
   read('nginx.conf'),
@@ -16,6 +16,7 @@ const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, pdv
   read('vite.config.ts'),
   read('public/ads.txt'),
   read('src/views/qr/QRView.tsx'),
+  read('src/components/shared/MenuCatalog.tsx'),
   read('src/views/pdv/PDVView.tsx'),
   read('src/views/delivery/DeliveryView.tsx'),
   read('src/App.tsx'),
@@ -54,8 +55,10 @@ assert.equal((qrView.match(/afterIntroContent=\{<GoogleAdBanner placement="qr-me
 assert.equal((qrView.match(/pointer-events-none translate-y-4 opacity-0/g) || []).length, 2);
 assert.match(component, /new IntersectionObserver/);
 assert.match(component, /entry\.intersectionRatio >= 0\.2/);
-assert.equal((qrView.match(/flex h-full min-h-0 flex-col overflow-hidden/g) || []).length, 2);
-assert.equal((qrView.match(/min-h-0 flex-1 overflow-hidden sm:pb-28/g) || []).length, 2);
+assert.equal((qrView.match(/flex h-full max-h-full min-h-0 flex-col overflow-hidden/g) || []).length, 2);
+assert.match(qrView, /h-\[calc\(100%-3\.5rem\)\][^"\n]*max-h-\[calc\(100%-3\.5rem\)\][^"\n]*flex-none overflow-hidden/);
+assert.match(qrView, /h-\[calc\(100%-4rem\)\][^"\n]*max-h-\[calc\(100%-4rem\)\][^"\n]*flex-none overflow-hidden/);
+assert.match(menuCatalog, /flex h-full max-h-full min-h-0 overflow-hidden/);
 assert.match(app, /activeView === 'qr'[\s\S]*fixed inset-0 overflow-hidden/);
 assert.match(pdvView, /h-\[calc\(100dvh-50px\)\]/);
 assert.match(pdvView, /overflow-y-auto overscroll-contain custom-scrollbar/);

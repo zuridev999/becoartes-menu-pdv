@@ -221,7 +221,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
   );
 
   return (
-    <div className={`flex h-full min-h-0 overflow-hidden ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'flex-col' : 'max-md:flex-col'}`}>
+    <div className={`flex h-full max-h-full min-h-0 overflow-hidden ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'flex-col' : 'max-md:flex-col'}`}>
       {/* Sidebar de Categorias */}
       <div className={`${navigationMode === 'menu' || navigationMode === 'continuous' ? 'w-full shrink-0 glass border-b border-white/5 pt-3 sm:pt-5 pb-3 px-3 sm:px-5 z-30' : 'w-full md:w-72 shrink-0 glass border-b md:border-b-0 md:border-r border-white/5 flex flex-col pt-3 md:pt-10 pb-3 md:pb-8 px-3 md:px-4 z-30'}`}>
         {(navigationMode === 'menu' || navigationMode === 'continuous') && (
