@@ -75,7 +75,7 @@ function App() {
   const isPdvView = activeView === 'pdv';
   const hasOperationalView = ['pdv', 'kitchen', 'admin'].includes(activeView);
   const appFrameClassName = activeView === 'qr'
-    ? 'h-[100dvh] min-h-0 overflow-hidden bg-transparent'
+    ? 'fixed inset-0 overflow-hidden bg-transparent'
     : 'min-h-screen bg-transparent';
 
   return (

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.11.2 - 2026-09-12
+
+- Ancora o QR diretamente à viewport para manter a área interna rolável mesmo em navegadores que calculam incorretamente unidades dinâmicas de altura.
+
 ## 1.11.1 - 2026-09-12
 
 - Restaura a rolagem vertical do cardápio QR em telas móveis e desktop, limitando a área pública à altura real da viewport.

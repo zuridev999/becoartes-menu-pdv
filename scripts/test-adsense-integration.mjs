@@ -56,7 +56,7 @@ assert.match(component, /new IntersectionObserver/);
 assert.match(component, /entry\.intersectionRatio >= 0\.2/);
 assert.equal((qrView.match(/flex h-full min-h-0 flex-col overflow-hidden/g) || []).length, 2);
 assert.equal((qrView.match(/min-h-0 flex-1 overflow-hidden sm:pb-28/g) || []).length, 2);
-assert.match(app, /activeView === 'qr'[\s\S]*h-\[100dvh\] min-h-0 overflow-hidden/);
+assert.match(app, /activeView === 'qr'[\s\S]*fixed inset-0 overflow-hidden/);
 assert.match(pdvView, /h-\[calc\(100dvh-50px\)\]/);
 assert.match(pdvView, /overflow-y-auto overscroll-contain custom-scrollbar/);
 assert.doesNotMatch(qrView, /top-\[50px\][^"\n]*hidden/);
