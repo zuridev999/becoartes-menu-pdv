@@ -171,10 +171,33 @@ try {
 
   const commandSource = await request('/api/qr/resolve', {
     method: 'POST',
-    body: { tableNumber: 2 },
+    body: { tableNumber: 2, visitId: 'visit_qr_test_20260915' },
   });
   assert.equal(commandSource.data.flow, 'comanda');
   assert.ok(commandSource.data.access?.token);
+  const menuEvent = {
+    visitId: 'visit_qr_test_20260915',
+    event: 'menu_visible',
+    tableId: commandSource.data.physicalTable.id,
+    tableNumber: 2,
+    origin: 'qr',
+    publicAccessToken: commandSource.data.access.token,
+  };
+  const recordedMenuEvent = await request('/api/qr/analytics/event', {
+    method: 'POST',
+    body: menuEvent,
+  });
+  assert.equal(recordedMenuEvent.data.recorded, true);
+  const duplicateMenuEvent = await request('/api/qr/analytics/event', {
+    method: 'POST',
+    body: menuEvent,
+  });
+  assert.equal(duplicateMenuEvent.data.recorded, false, 'o mesmo evento não deve duplicar na mesma sessão');
+  await request('/api/qr/analytics/event', {
+    method: 'POST',
+    expectedStatus: 401,
+    body: { ...menuEvent, publicAccessToken: 'token-invalido' },
+  });
   for (const invalidNumber of [0, 51, 999999]) {
     const invalidQr = await request('/api/qr/resolve', {
       method: 'POST',
@@ -262,6 +285,7 @@ try {
     sourceTableId: commandSource.data.physicalTable.id,
     sourceTableNumber: 2,
     publicAccessToken: commandSource.data.access.token,
+    qrVisitId: 'visit_qr_test_20260915',
     items: [{
       id: 'item_qr_transition',
       productId: 'prod_test',
@@ -279,6 +303,15 @@ try {
   assert.equal(order.data.request.sourceTableNumber, 2);
   assert.equal(order.data.request.customerTabNumber, opened.data.tab.tableNumber);
   assert.equal(order.data.inventorySyncError, null, 'QR não deve receber detalhe técnico de estoque');
+  const funnel = await request('/api/qr/analytics/funnel', {
+    token: adminToken,
+    headers: allowedHeaders,
+  });
+  const funnelToday = funnel.data.days.at(-1);
+  assert.ok(funnelToday, 'o funil deve retornar o dia do teste');
+  assert.equal(Number(funnelToday.qrVisits), 1);
+  assert.equal(Number(funnelToday.menuVisible), 1);
+  assert.equal(Number(funnelToday.orderSent), 1);
 
   const commandState = await request('/api/public-table/state', {
     method: 'POST',

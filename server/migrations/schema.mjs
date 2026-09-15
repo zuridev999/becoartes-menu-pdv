@@ -198,6 +198,26 @@ export const SCHEMA_MIGRATIONS = [
         END`),
     ],
   },
+  {
+    id: '20260915_0001_qr_analytics_funnel',
+    description: 'Record privacy-safe QR sessions and daily funnel events separately from technical access logs.',
+    steps: [
+      executeSql(`CREATE TABLE IF NOT EXISTS qr_analytics_events (
+        id TEXT PRIMARY KEY,
+        visit_id TEXT NOT NULL,
+        event TEXT NOT NULL,
+        table_id TEXT,
+        table_number INTEGER NOT NULL,
+        product_id TEXT NOT NULL DEFAULT '',
+        business_date TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        UNIQUE (visit_id, event, table_number, product_id, business_date)
+      )`),
+      executeSql('CREATE INDEX IF NOT EXISTS idx_qr_analytics_business_event ON qr_analytics_events(business_date, event)'),
+      executeSql('CREATE INDEX IF NOT EXISTS idx_qr_analytics_visit ON qr_analytics_events(visit_id, business_date)'),
+    ],
+  },
 ];
 
 const quoteIdentifier = (value) => {

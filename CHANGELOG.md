@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.12.0 - 2026-09-15
+
+- Separa acessos técnicos do Nginx de visitas reais ao QR com um `visit_id` persistente por sessão de 30 minutos.
+- Registra, sem dados pessoais, o funil diário de cardápio visível, produto aberto, início do pedido, pedido enviado e comanda aberta.
+- Protege a coleta pública pelo token assinado da mesa, evita duplicidade por etapa e restringe o relatório consolidado a usuários com permissão de faturamento.
+
 ## 1.11.5 - 2026-09-12
 
 - Corrige o arraste vertical por toque no QR ao limitar o catálogo à altura real do celular e criar uma área interna de rolagem, sem alterar o desenho da tela.

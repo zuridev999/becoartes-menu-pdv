@@ -1,4 +1,4 @@
-export const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'v1.11.7';
+export const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'v1.12.0';
 
 export const APP_COMMIT = import.meta.env.VITE_APP_COMMIT || '';
 

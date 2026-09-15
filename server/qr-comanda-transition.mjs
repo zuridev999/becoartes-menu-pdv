@@ -46,6 +46,7 @@ export const createQrComandaTransitionServices = ({
   createId,
   getCustomerTabTotalsByTable,
   sanitizeCustomerTab,
+  recordQrAnalyticsEvent = async () => ({ recorded: false }),
 }) => {
   const getTableById = async (tableId) => {
     const result = await db.execute({
@@ -149,7 +150,7 @@ export const createQrComandaTransitionServices = ({
     return Boolean(row && (Number(row.active_status) || Number(row.has_orders) || Number(row.has_payments)));
   };
 
-  const resolvePhysicalQrFlow = async ({ tableNumber }) => {
+  const resolvePhysicalQrFlow = async ({ tableNumber, visitId = '' }) => {
     await ensureDatabaseReady();
     const safeNumber = Math.trunc(Number(tableNumber || 0));
     if (!Number.isFinite(safeNumber) || safeNumber < 1 || safeNumber > 50) {
@@ -178,11 +179,24 @@ export const createQrComandaTransitionServices = ({
     }
 
     const flow = globalMode === 'mesa' || inheritedMesa ? 'mesa' : 'comanda';
-    return {
+    const response = {
       flow,
       physicalTable: { id: String(table.id), number: safeNumber },
       access: await createTableAccessToken({ origin: 'qr', tableId: table.id, tableNumber: safeNumber }),
     };
+    if (visitId) {
+      try {
+        await recordQrAnalyticsEvent({
+          visitId,
+          event: 'qr_visit_started',
+          tableId: table.id,
+          tableNumber: safeNumber,
+        });
+      } catch (error) {
+        console.warn('Falha não bloqueante ao registrar entrada do QR:', error);
+      }
+    }
+    return response;
   };
 
   const verifyCustomerTabOrderContext = async ({

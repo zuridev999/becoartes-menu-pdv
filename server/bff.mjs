@@ -28,6 +28,7 @@ import {
 import { createPdvTerminalServices, isMobilePdvUserAgent } from './auth/pdv-terminal.mjs';
 import { createDistributedRateLimiter } from './security/distributed-rate-limit.mjs';
 import { createQrComandaTransitionServices, createQrModeTransitionStatements } from './qr-comanda-transition.mjs';
+import { createQrAnalyticsService } from './qr-analytics.mjs';
 import { createPublicTableStateService, rethrowCustomerTabWriteError, sanitizePublicCustomerSnapshot } from './public-customer-snapshot.mjs';
 import { summarizeInventoryAttention } from './inventory/attention-summary.mjs';
 
@@ -195,6 +196,7 @@ const convertInventoryQuantity = (quantity, fromUnit, toUnit) => {
   return null;
 };
 const getBusinessDate = () => businessDateKey(new Date(), BUSINESS_TIME_ZONE);
+const { recordQrAnalyticsEvent, getQrAnalyticsFunnel } = createQrAnalyticsService({ db, createId, getBusinessDate });
 const formatMoneyForNotification = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const hashToken = (value) => createHash('sha256').update(String(value || '')).digest('hex');
 const hashDeliveryCustomerCode = (value) => createHmac('sha256', DELIVERY_CUSTOMER_CODE_SECRET)
@@ -4025,6 +4027,7 @@ const sendToKitchen = async ({
   sourceTableId = '',
   sourceTableNumber = '',
   publicAccessToken = '',
+  qrVisitId = '',
 }, session = null) => {
   requireString(orderId, 'orderId');
   requireString(tableId, 'tableId');
@@ -4038,9 +4041,26 @@ const sendToKitchen = async ({
     sourceTableNumber,
     publicAccessToken,
   });
+  const recordOrderSentAnalytics = async () => {
+    if (safeOrigin !== 'qr' || !qrVisitId) return;
+    try {
+      const analyticsTableId = customerTabContext?.sourceTableId || tableId;
+      const analyticsTableNumber = Number(customerTabContext?.sourceTableNumber || 0)
+        || Number((await db.execute({ sql: 'SELECT number FROM tables WHERE id = ? LIMIT 1', args: [analyticsTableId] })).rows[0]?.number || 0);
+      await recordQrAnalyticsEvent({
+        visitId: qrVisitId,
+        event: 'order_sent',
+        tableId: analyticsTableId,
+        tableNumber: analyticsTableNumber,
+      });
+    } catch (error) {
+      console.warn('Falha não bloqueante ao registrar pedido no funil do QR:', error);
+    }
+  };
   const safeClientRequestId = normalizeText(clientRequestId || orderId).slice(0, 120);
   const existingSubmission = await getExistingOrderSubmission(safeClientRequestId);
   if (existingSubmission) {
+    await recordOrderSentAnalytics();
     return orderSubmissionDuplicateResponse(existingSubmission, tableId, Array.isArray(items) ? items : []);
   }
   const settings = await getSettings();
@@ -4134,11 +4154,14 @@ const sendToKitchen = async ({
     if (safeClientRequestId && isConstraintError(error)) {
       const duplicateSubmission = await getExistingOrderSubmission(safeClientRequestId);
       if (duplicateSubmission) {
+        await recordOrderSentAnalytics();
         return orderSubmissionDuplicateResponse(duplicateSubmission, tableId, safeItems);
       }
     }
     throw error;
   }
+
+  await recordOrderSentAnalytics();
 
   let inventorySync = null;
   let inventorySyncError = null;
@@ -9041,6 +9064,7 @@ const {
   createId,
   getCustomerTabTotalsByTable,
   sanitizeCustomerTab,
+  recordQrAnalyticsEvent,
 });
 
 const getPublicTableState = createPublicTableStateService({ db, verifyCustomerTabOrderContext, verifyPublicTableToken });
@@ -9316,6 +9340,7 @@ const handlers = createRouteHandlers({
   getDeliveryQuote,
   getOsLockState,
   getPublicTableState,
+  getQrAnalyticsFunnel,
   getPagBankPublicKey,
   getPdvLockState,
   handlePagBankDeliveryWebhook,
@@ -9333,6 +9358,7 @@ const handlers = createRouteHandlers({
   openCash,
   openCustomerTab,
   resolvePhysicalQrFlow,
+  recordQrAnalyticsEvent,
   openShift,
   openTable,
   recoverCustomerTab,

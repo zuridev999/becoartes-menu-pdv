@@ -19,6 +19,17 @@ export const createRouteHandlers = (services) => ({
   'POST /api/tablet/setup-login': async (body, context) => services.validateTabletSetupPin(body, context),
   'POST /api/table-access-token': async (body, context) => services.createTableAccessToken(body, context.session),
   'POST /api/qr/resolve': async (body) => services.resolvePhysicalQrFlow(body),
+  'POST /api/qr/analytics/event': async (body) => services.recordQrAnalyticsEvent({
+    visitId: body.visitId,
+    event: body.event,
+    tableId: body.tableId,
+    tableNumber: body.tableNumber,
+    productId: body.productId,
+  }),
+  'GET /api/qr/analytics/funnel': async (_body, context) => services.getQrAnalyticsFunnel({
+    from: context.url.searchParams.get('from') || '',
+    to: context.url.searchParams.get('to') || '',
+  }),
   'POST /api/public-table/state': async (body) => services.getPublicTableState(body),
   'GET /api/checklist-alerts': async (_body, context) => services.getChecklistAlertsFromOs(context.session),
   'POST /api/audit-logs/list': async (body) => ({

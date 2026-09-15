@@ -34,6 +34,7 @@ const PUBLIC_TABLE_ROUTES = new Set([
   'POST /api/service-requests',
   'POST /api/tables/request-bill',
   'POST /api/public-table/state',
+  'POST /api/qr/analytics/event',
 ]);
 
 export const PERMISSION_BY_ROUTE = Object.freeze({
@@ -57,6 +58,7 @@ export const PERMISSION_BY_ROUTE = Object.freeze({
   'POST /api/qrcodes/regenerate': 'managePDVPermissions',
   'POST /api/service-requests/clear': 'manageSettings',
   'POST /api/audit-logs/list': 'viewSalesTotals',
+  'GET /api/qr/analytics/funnel': 'viewSalesTotals',
   'POST /api/sellers': 'managePDVUsers',
   'POST /api/sellers/update': 'managePDVUsers',
   'POST /api/sellers/pin': 'managePDVUsers',

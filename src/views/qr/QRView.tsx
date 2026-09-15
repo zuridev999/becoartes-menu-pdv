@@ -14,6 +14,7 @@ import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
 import { GoogleAdBanner } from '../../components/common/GoogleAdBanner';
+import { getQrVisitId } from '../../lib/qr-analytics';
 
 const CUSTOMER_TAB_CPF_KEY = 'becoartes_customer_tab_cpf';
 
@@ -64,6 +65,15 @@ const getRouteTableNumber = () => {
   return Number.isFinite(tableNumber) && tableNumber > 0 ? tableNumber : null;
 };
 
+const fireQrAnalytics = (input: {
+  event: 'menu_visible' | 'product_opened' | 'order_started' | 'comanda_opened';
+  tableId: string;
+  tableNumber: number;
+  productId?: string;
+}) => {
+  void AppApi.recordQrAnalyticsEvent({ ...input, visitId: getQrVisitId() }).catch(() => undefined);
+};
+
 export function QRView() {
   const { currentTableId, tables, setCurrentTableId, settings } = useStore();
   const { t } = usePublicI18n();
@@ -95,7 +105,7 @@ export function QRView() {
     setIsTableAccessReady(false);
     setTableAccessError('');
     setQrResolution(null);
-    AppApi.resolveQrFlow(tableNumber)
+    AppApi.resolveQrFlow(tableNumber, getQrVisitId())
       .then(async (resolution) => {
         if (cancelled) return;
         setQrResolution(resolution);
@@ -122,6 +132,15 @@ export function QRView() {
       cancelled = true;
     };
   }, [isCouponRulesPage, setCurrentTableId, settings.qrMode, tableAccessRetry]);
+
+  useEffect(() => {
+    if (!isTableAccessReady || !qrResolution) return;
+    fireQrAnalytics({
+      event: 'menu_visible',
+      tableId: qrResolution.physicalTable.id,
+      tableNumber: qrResolution.physicalTable.number,
+    });
+  }, [isTableAccessReady, qrResolution]);
 
   const currentTable = routeTableNumber ? routeTable : tables.find(t => t.id === currentTableId);
 
@@ -235,10 +254,25 @@ export function QRView() {
   const hasAccountItems = accountCount > 0;
   const handlePrimaryAccountAction = () => {
     if (hasCartItems) {
+      if (qrResolution) fireQrAnalytics({
+        event: 'order_started',
+        tableId: qrResolution.physicalTable.id,
+        tableNumber: qrResolution.physicalTable.number,
+      });
       setIsOrderOpen(true);
       return;
     }
     setIsAccountOpen(true);
+  };
+
+  const handleProductSelect = (product: Product) => {
+    if (qrResolution) fireQrAnalytics({
+      event: 'product_opened',
+      tableId: qrResolution.physicalTable.id,
+      tableNumber: qrResolution.physicalTable.number,
+      productId: product.id,
+    });
+    setSelectedProduct(product);
   };
 
   return (
@@ -284,7 +318,7 @@ export function QRView() {
         style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
       >
         <MenuCatalog
-          onProductSelect={setSelectedProduct}
+          onProductSelect={handleProductSelect}
           viewMode="list"
           navigationMode="continuous"
           presentation="compact-menu"
@@ -387,6 +421,20 @@ function ComandaQRExperience({
     tableId: tab.tableId,
     customerTabContext: { customerTabId: tab.id, sourceTableId, sourceTableNumber },
   } : null);
+
+  useEffect(() => {
+    if (!tab) return;
+    fireQrAnalytics({
+      event: 'comanda_opened',
+      tableId: sourceTableId,
+      tableNumber: sourceTableNumber,
+    });
+    fireQrAnalytics({
+      event: 'menu_visible',
+      tableId: sourceTableId,
+      tableNumber: sourceTableNumber,
+    });
+  }, [sourceTableId, sourceTableNumber, tab]);
 
   useEffect(() => {
     const savedCpf = localStorage.getItem(CUSTOMER_TAB_CPF_KEY);
@@ -521,7 +569,19 @@ function ComandaQRExperience({
   const accountCount = currentTable.orders.length || 0;
   const hasCartItems = cartCount > 0;
   const hasAccountItems = accountCount > 0;
-  const handlePrimaryAccountAction = () => hasCartItems ? setIsOrderOpen(true) : setIsAccountOpen(true);
+  const handlePrimaryAccountAction = () => {
+    if (hasCartItems) {
+      fireQrAnalytics({ event: 'order_started', tableId: sourceTableId, tableNumber: sourceTableNumber });
+      setIsOrderOpen(true);
+      return;
+    }
+    setIsAccountOpen(true);
+  };
+
+  const handleProductSelect = (product: Product) => {
+    fireQrAnalytics({ event: 'product_opened', tableId: sourceTableId, tableNumber: sourceTableNumber, productId: product.id });
+    setSelectedProduct(product);
+  };
 
   return (
     <div className="flex h-[calc(100dvh-50px)] max-h-[calc(100dvh-50px)] min-h-0 flex-col overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
@@ -556,7 +616,7 @@ function ComandaQRExperience({
         style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
       >
         <MenuCatalog
-          onProductSelect={setSelectedProduct}
+          onProductSelect={handleProductSelect}
           viewMode="grid"
           navigationMode="continuous"
           presentation="compact-menu"

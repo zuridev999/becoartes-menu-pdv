@@ -1,6 +1,7 @@
 import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, ModifierGroup, OrderItem, Product, ServiceRequest, Table, TablePayment } from '../types';
 import { createPdvTerminalIdentity, signPdvTerminalChallenge } from './pdv-terminal-browser';
 import { createRequestTimeoutSignal } from './request-timeout';
+import { getQrVisitId } from './qr-analytics';
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
 const TABLE_ACCESS_TOKEN_STORAGE_KEY = 'beco_public_table_access';
@@ -367,6 +368,7 @@ export const OperationalApi = {
       customerTabAccessToken: input.customerTabContext ? getCustomerTabAccessToken() : undefined,
       sourceTableId: input.customerTabContext?.sourceTableId,
       sourceTableNumber: input.customerTabContext?.sourceTableNumber,
+      qrVisitId: input.origin === 'qr' ? getQrVisitId() : undefined,
       publicAccessToken: input.origin === 'pdv'
         ? undefined
         : input.customerTabContext
@@ -844,8 +846,23 @@ export const AppApi = {
     return postJson<PublicTableAccess>('/api/table-access-token', input);
   },
 
-  resolveQrFlow(tableNumber: number) {
-    return postJson<QrFlowResolution>('/api/qr/resolve', { tableNumber });
+  resolveQrFlow(tableNumber: number, visitId = getQrVisitId()) {
+    return postJson<QrFlowResolution>('/api/qr/resolve', { tableNumber, visitId });
+  },
+
+  recordQrAnalyticsEvent(input: {
+    event: 'menu_visible' | 'product_opened' | 'order_started' | 'comanda_opened';
+    tableId: string;
+    tableNumber: number;
+    productId?: string;
+    visitId?: string;
+  }) {
+    return postJson<{ recorded: boolean }>('/api/qr/analytics/event', {
+      ...input,
+      visitId: input.visitId || getQrVisitId(),
+      origin: 'qr',
+      publicAccessToken: getPublicTableAccessToken(input.tableId, 'qr'),
+    });
   },
 
   getPublicTableState(input: { tableId: string; tableNumber?: number; customerTabContext?: CustomerTabOrderContext }) {
