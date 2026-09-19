@@ -565,6 +565,18 @@ try {
   assert.equal(orderRequest.items[0].selectedModifiers[0].name, 'Limão');
   assert.equal(orderRequest.items[0].notes, 'Pouco açúcar');
 
+  const deliveredCompletion = await post('/api/orders/status', {
+    orderId: 'order_partial:kitchen',
+    status: 'ready',
+    completionMode: 'delivered',
+  }, admin.sessionToken);
+  assert.equal(deliveredCompletion.ok, true);
+  assert.equal(deliveredCompletion.data.request.status, 'resolved', 'bar delivery must not create a pending PDV alert');
+  const deliveredRequest = await getScalar("SELECT status FROM service_requests WHERE id = 'order_ready_order_partial'");
+  assert.equal(deliveredRequest.status, 'resolved', 'delivered orders must remain available only in the attended history');
+  const deliveredTicket = await getScalar("SELECT status FROM production_tickets WHERE id = 'order_partial:kitchen'");
+  assert.equal(deliveredTicket.status, 'ready', 'the production ticket must leave the active station after delivery');
+
   const partial = await post('/api/table-payments', {
     id: 'partial_1',
     tableId: '1',
@@ -778,6 +790,7 @@ try {
       'pin_invalido_notifica_superadmin',
       'fechamento_concluido_notifica_superadmin',
       'pagamento_parcial',
+      'pedido_entregue_sem_alerta_pendente_no_pdv',
       'retry_pagamento_parcial',
       'fechamento',
       'retry_fechamento',

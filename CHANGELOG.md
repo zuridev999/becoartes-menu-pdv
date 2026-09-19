@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.16.0 - 2026-09-19
+
+- Separa no Bar as ações “Pronto para retirar” e “Já entregue ao cliente”.
+- Envia aviso ao PDV somente quando outra pessoa ainda precisa retirar ou entregar o pedido.
+- Mantém pedidos já entregues fora da fila pendente e disponíveis no histórico de atendidos.
+- Mostra no painel principal do PDV somente solicitações que ainda exigem ação.
+
 ## 1.15.0 - 2026-09-19
 
 - Permite recuperar uma comanda ativa em outro navegador ou celular com um código de três dígitos enviado pelo WhatsApp via Zuri.

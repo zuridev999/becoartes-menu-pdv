@@ -8,7 +8,7 @@ import {
   PlusCircle,
   LayoutDashboard,
   LogOut,
-  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag, Search, Printer, Sun, Moon
+  Settings, Soup, Bell, Check, Trash2, Wallet, Sparkles, Clock, AlertTriangle, ChevronRight, ExternalLink, LockKeyhole, ShoppingBag, Search, Printer, Sun, Moon, History
 } from 'lucide-react';
 import { useStore, type OrderItem, type Product, type Table as TableType } from '../../store';
 import type { CustomerTab } from '../../types';
@@ -29,6 +29,7 @@ import { businessDateKey, businessWeekday } from '../../lib/business-time';
 import { getOrderLocation, getPhysicalTablesPendingTransition, isTableVisibleForQrMode } from '../../lib/order-location';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { buildPdvCatalogCategories, getPdvCategoriesById, getPdvProductCategoryId } from '../../lib/pdv-catalog';
+import { RequestHistoryToggle } from '../../components/pdv/RequestHistoryToggle';
 
 const CANCEL_REASONS = [
   { code: 'cliente_desistiu', label: 'Cliente desistiu' },
@@ -216,6 +217,7 @@ export function PDVView() {
   const [customerTabResults, setCustomerTabResults] = useState<CustomerTab[]>([]);
   const [isCustomerTabSearching, setIsCustomerTabSearching] = useState(false);
   const [isFinalizingCustomerTab, setIsFinalizingCustomerTab] = useState<string | null>(null);
+  const [showResolvedRequests, setShowResolvedRequests] = useState(false);
 
   // Filtra solicitações das últimas 2 horas para manter a tela limpa
   const now = new Date();
@@ -224,13 +226,16 @@ export function PDVView() {
     const diffHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
     return diffHours < 2;
   });
+  const pendingRequests = visibleRequests.filter(req => req.status !== 'resolved');
+  const resolvedRequests = visibleRequests.filter(req => req.status === 'resolved');
+  const panelRequests = showResolvedRequests ? resolvedRequests : pendingRequests;
   const permissionOverrides = settings.pdvPermissions;
   const userPermissionOverrides = settings.pdvUserPermissions;
   const canClearResolvedRequests = can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides);
 
   // Referência para o container de scroll da lista de solicitações
   const listRef = useRef<HTMLDivElement>(null);
-  const prevRequestsLength = useRef(visibleRequests.length);
+  const prevPendingRequestsLength = useRef(pendingRequests.length);
 
   useEffect(() => {
     setIsEmbedded(window.self !== window.top);
@@ -245,18 +250,18 @@ export function PDVView() {
 
   // Auto-scroll para o topo quando uma nova solicitação chega
   useEffect(() => {
-    if (visibleRequests.length > prevRequestsLength.current) {
+    if (pendingRequests.length > prevPendingRequestsLength.current) {
+      setShowResolvedRequests(false);
       listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
-    prevRequestsLength.current = visibleRequests.length;
-  }, [visibleRequests.length]);
+    prevPendingRequestsLength.current = pendingRequests.length;
+  }, [pendingRequests.length]);
 
   // Verificação de Modo Pânico (5 minutos) - considerando apenas as visíveis
   useEffect(() => {
     const checkPanic = () => {
       const nowCheck = new Date();
-      const hasOldAlert = visibleRequests.some(req => {
-        if (req.status === 'resolved') return false;
+      const hasOldAlert = pendingRequests.some(req => {
         const createdAt = req.createdAt instanceof Date ? req.createdAt : new Date(req.createdAt);
         const diffMinutes = (nowCheck.getTime() - createdAt.getTime()) / (1000 * 60);
         return diffMinutes >= 5;
@@ -272,12 +277,12 @@ export function PDVView() {
 
     const interval = setInterval(checkPanic, 5000);
     return () => clearInterval(interval);
-  }, [visibleRequests, isPanicDismissed]);
+  }, [pendingRequests, isPanicDismissed]);
 
   // Se o número de solicitações visíveis mudar, reseta o dismiss
   useEffect(() => {
     setIsPanicDismissed(false);
-  }, [visibleRequests.length]);
+  }, [pendingRequests.length]);
 
   // Auto-sync para o PDV em tempo real
   useEffect(() => {
@@ -1115,19 +1120,19 @@ export function PDVView() {
             </div>
           )}
           {/* SOLICITAÇÕES DE SERVIÇO */}
-          {visibleRequests.length > 0 && (
+          {panelRequests.length > 0 && (
             <div className="solid-panel flex-1 flex flex-col min-h-0 border-b border-white/5 relative z-10">
-              <div className={`p-5 sm:p-8 border-b border-white/20 flex justify-between items-center ${visibleRequests.some(r => r.status !== 'resolved') ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'} shrink-0`}>
+              <div className={`p-5 sm:p-8 border-b border-white/20 flex justify-between items-center ${showResolvedRequests ? 'bg-emerald-700' : 'bg-rose-600 animate-pulse'} shrink-0`}>
                 <h3 className="text-xs sm:text-sm font-black uppercase tracking-[0.16em] sm:tracking-[0.2em] flex items-center gap-3 text-white">
-                  <Bell size={16} className={visibleRequests.some(r => r.status !== 'resolved') ? 'animate-bounce' : ''} /> 
-                  {visibleRequests.some(r => r.status !== 'resolved') ? 'Novas Solicitações' : 'Solicitações Atendidas'}
+                  {showResolvedRequests ? <History size={16} /> : <Bell size={16} className="animate-bounce" />}
+                  {showResolvedRequests ? 'Atendidos Recentemente' : 'Novas Solicitações'}
                 </h3>
                 <span className="bg-white text-zinc-900 px-3 py-1 rounded-full text-xs font-black shadow-xl">
-                  {visibleRequests.filter(r => r.status !== 'resolved').length || visibleRequests.length}
+                  {panelRequests.length}
                 </span>
               </div>
               <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar bg-[#0d0d0f]">
-                {visibleRequests.map((req) => {
+                {panelRequests.map((req) => {
                   const isResolved = req.status === 'resolved';
                   const isOrderActionable = req.type === 'order_ready' || req.type === 'new_order';
                   const location = getOrderLocation(req);
@@ -1222,6 +1227,13 @@ export function PDVView() {
               </div>
             </div>
           )}
+
+          <RequestHistoryToggle
+            pendingCount={pendingRequests.length}
+            resolvedCount={resolvedRequests.length}
+            showingResolved={showResolvedRequests}
+            onToggle={() => setShowResolvedRequests(current => !current)}
+          />
 
         </div>
       </div>

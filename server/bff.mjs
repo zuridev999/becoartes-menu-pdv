@@ -5923,7 +5923,7 @@ const createDeliveryCheckout = async ({ orderId, customer, items, payment }) => 
   };
 };
 
-const createOrderReadyRequest = async (orderId) => {
+const createOrderReadyRequest = async (orderId, { alreadyDelivered = false } = {}) => {
   const orderRes = await db.execute({
     sql: `
       SELECT
@@ -5986,8 +5986,15 @@ const createOrderReadyRequest = async (orderId) => {
 
   await db.execute({
     sql: "INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message, source_table_id, source_table_number, customer_tab_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    args: [id, order.table_id, 'order_ready', 'pending', itemsList, order.source_table_id || null, order.source_table_number || null, order.customer_tab_id || null],
+    args: [id, order.table_id, 'order_ready', alreadyDelivered ? 'resolved' : 'pending', itemsList, order.source_table_id || null, order.source_table_number || null, order.customer_tab_id || null],
   });
+
+  if (alreadyDelivered) {
+    await db.execute({
+      sql: "UPDATE service_requests SET status = 'resolved' WHERE id = ?",
+      args: [id],
+    });
+  }
 
   const requestRes = await db.execute({
     sql: "SELECT id, table_id, type, status, message, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at FROM service_requests WHERE id = ? LIMIT 1",
@@ -6014,10 +6021,11 @@ const createOrderReadyRequest = async (orderId) => {
   };
 };
 
-const updateOrderStatus = async ({ orderId, status }) => {
+const updateOrderStatus = async ({ orderId, status, completionMode = 'notify' }) => {
   requireString(orderId, 'orderId');
   const safeStatus = ['pending', 'preparing', 'ready', 'closed'].includes(status) ? status : null;
   if (!safeStatus) throw new Error('Status inválido.');
+  const alreadyDelivered = completionMode === 'delivered';
 
   await ensureProductionTickets();
 
@@ -6046,7 +6054,7 @@ const updateOrderStatus = async ({ orderId, status }) => {
       args: [ticket.order_id],
     });
 
-    return createOrderReadyRequest(ticket.order_id);
+    return createOrderReadyRequest(ticket.order_id, { alreadyDelivered });
   }
 
   await db.execute({
@@ -6055,7 +6063,7 @@ const updateOrderStatus = async ({ orderId, status }) => {
   });
 
   if (safeStatus !== 'ready') return { request: null };
-  return createOrderReadyRequest(orderId);
+  return createOrderReadyRequest(orderId, { alreadyDelivered });
 };
 
 const bumpCatalogVersion = async () => {

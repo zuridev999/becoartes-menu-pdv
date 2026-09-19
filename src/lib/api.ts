@@ -444,8 +444,12 @@ export const OperationalApi = {
     });
   },
 
-  updateOrderStatus(orderId: string, status: 'pending' | 'preparing' | 'ready' | 'closed') {
-    return postJson<UpdateOrderStatusResult>('/api/orders/status', { orderId, status })
+  updateOrderStatus(
+    orderId: string,
+    status: 'pending' | 'preparing' | 'ready' | 'closed',
+    completionMode: 'notify' | 'delivered' = 'notify',
+  ) {
+    return postJson<UpdateOrderStatusResult>('/api/orders/status', { orderId, status, completionMode })
       .then(result => ({
         ...result,
         request: hydrateServiceRequest(result.request),

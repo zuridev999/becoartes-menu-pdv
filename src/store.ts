@@ -157,7 +157,7 @@ export interface AppState {
   closeBill: (data: Omit<ClosedBill, 'id' | 'closedAt'>) => Promise<boolean>;
   closeCounterSale: (data: CounterSaleInput) => Promise<boolean>;
   updateTableStatus: (tableId: string, status: Table['status']) => Promise<boolean>;
-  updateKitchenOrderStatus: (orderId: string, status: KitchenOrder['status']) => void;
+  updateKitchenOrderStatus: (orderId: string, status: KitchenOrder['status'], completionMode?: 'notify' | 'delivered') => Promise<void>;
   addNotification: (message: string, type?: 'info' | 'error' | 'order' | 'service', tableId?: string) => void;
   clearNotification: (id: string) => void;
 
@@ -1212,8 +1212,8 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  updateKitchenOrderStatus: async (orderId, status) => {
-    const result = await OperationalApi.updateOrderStatus(orderId, status);
+  updateKitchenOrderStatus: async (orderId, status, completionMode = 'notify') => {
+    const result = await OperationalApi.updateOrderStatus(orderId, status, completionMode);
 
     // Se o pedido ficou pronto, cria uma solicitação de serviço automática para o PDV
     if (status === 'ready') {
@@ -1229,7 +1229,7 @@ export const useStore = create<AppState>((set, get) => ({
           type: 'order_ready',
           message: result.request.message || itemsList,
           items: result.request.items?.length ? result.request.items : order.items,
-          status: 'pending',
+          status: result.request.status,
           createdAt: result.request.createdAt
         };
 
@@ -1240,13 +1240,15 @@ export const useStore = create<AppState>((set, get) => ({
           ]
         }));
 
-        postOSMessage('table_alert', {
-          tableId: order.tableId,
-          tableNumber: order.tableNumber,
-          alertType: 'order_ready',
-          message: `Pedido da Mesa ${order.tableNumber} está PRONTO!`,
-          createdAt: new Date().toISOString()
-        });
+        if (newRequest.status !== 'resolved') {
+          postOSMessage('table_alert', {
+            tableId: order.tableId,
+            tableNumber: order.tableNumber,
+            alertType: 'order_ready',
+            message: `Pedido da Mesa ${order.tableNumber} está PRONTO!`,
+            createdAt: new Date().toISOString()
+          });
+        }
       }
     }
 

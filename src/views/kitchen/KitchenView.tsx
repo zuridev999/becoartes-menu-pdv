@@ -247,8 +247,19 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
   );
 }
 
-function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, onClose: () => void, onComplete: () => Promise<void> | void }) {
+function KitchenOrderDetailModal({
+  order,
+  onClose,
+  onComplete,
+  isBar,
+}: {
+  order: any;
+  onClose: () => void;
+  onComplete: (completionMode: 'notify' | 'delivered') => Promise<void> | void;
+  isBar: boolean;
+}) {
   const [showConfirm, setShowConfirm] = useState(false);
+  const [completionMode, setCompletionMode] = useState<'notify' | 'delivered'>('notify');
   const [isCompleting, setIsCompleting] = useState(false);
   const [completeError, setCompleteError] = useState('');
   const isDelivery = order.origin === 'delivery';
@@ -259,7 +270,7 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
     setIsCompleting(true);
     setCompleteError('');
     try {
-      await onComplete();
+      await onComplete(completionMode);
     } catch (error) {
       setCompleteError(error instanceof Error ? error.message : 'Erro ao finalizar pedido.');
     } finally {
@@ -311,13 +322,41 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
         </div>
 
         <div className="p-4 sm:p-10 bg-gray-50 border-t border-gray-100">
-           <button
-             type="button"
-             onClick={() => setShowConfirm(true)}
-             className="w-full py-5 sm:py-8 bg-black text-white rounded-[1.5rem] sm:rounded-[2rem] text-lg sm:text-3xl font-black uppercase tracking-widest shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-3 sm:gap-4"
-           >
-             <CheckCircle2 size={28} className="sm:w-9 sm:h-9" /> Finalizar Pedido
-           </button>
+          {isBar ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setCompletionMode('notify');
+                  setShowConfirm(true);
+                }}
+                className="py-5 sm:py-7 bg-amber-400 text-black rounded-[1.5rem] sm:rounded-[2rem] text-base sm:text-xl font-black uppercase tracking-widest shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-3"
+              >
+                <CheckCircle2 size={26} /> Pronto para retirar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCompletionMode('delivered');
+                  setShowConfirm(true);
+                }}
+                className="py-5 sm:py-7 bg-emerald-500 text-black rounded-[1.5rem] sm:rounded-[2rem] text-base sm:text-xl font-black uppercase tracking-widest shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-3"
+              >
+                <CheckCircle2 size={26} /> Já entregue ao cliente
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setCompletionMode('notify');
+                setShowConfirm(true);
+              }}
+              className="w-full py-5 sm:py-8 bg-black text-white rounded-[1.5rem] sm:rounded-[2rem] text-lg sm:text-3xl font-black uppercase tracking-widest shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-3 sm:gap-4"
+            >
+              <CheckCircle2 size={28} className="sm:w-9 sm:h-9" /> Finalizar Pedido
+            </button>
+          )}
         </div>
 
         <AnimatePresence>
@@ -330,7 +369,14 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
                  <div className="w-16 h-16 sm:w-24 sm:h-24 bg-black/5 text-black rounded-full flex items-center justify-center mx-auto mb-6 sm:mb-8">
                     <AlertCircle size={42} className="sm:w-[60px] sm:h-[60px]" />
                  </div>
-                 <h3 className="text-3xl sm:text-5xl font-black mb-8 sm:mb-12 leading-tight text-black">Confirmar finalização de todos os itens?</h3>
+                 <h3 className="text-3xl sm:text-5xl font-black mb-4 leading-tight text-black">
+                   {completionMode === 'delivered' ? 'Confirmar que já foi entregue?' : 'Avisar o PDV que está pronto?'}
+                 </h3>
+                 <p className="mb-8 sm:mb-12 text-sm sm:text-lg font-bold text-black/55">
+                   {completionMode === 'delivered'
+                     ? 'O pedido sairá do Bar e não ficará pendente no PDV.'
+                     : 'O pedido sairá do Bar e aparecerá no PDV para retirada e entrega.'}
+                 </p>
                  {completeError && (
                    <p className="mb-6 rounded-2xl bg-rose-50 border-2 border-rose-100 px-5 py-4 text-sm font-black text-rose-600 uppercase tracking-widest">
                      {completeError}
@@ -343,7 +389,7 @@ function KitchenOrderDetailModal({ order, onClose, onComplete }: { order: any, o
                       disabled={isCompleting}
                       className="py-5 sm:py-8 bg-black text-white rounded-[1.5rem] sm:rounded-[2rem] text-base sm:text-xl font-black uppercase tracking-widest shadow-lg disabled:opacity-50"
                     >
-                      {isCompleting ? 'Finalizando...' : 'Sim, finalizar'}
+                      {isCompleting ? 'Finalizando...' : completionMode === 'delivered' ? 'Sim, já foi entregue' : 'Sim, avisar o PDV'}
                     </button>
                     <button
                       type="button"
@@ -611,8 +657,9 @@ export function KitchenView() {
           <KitchenOrderDetailModal 
             order={selectedOrder} 
             onClose={() => setSelectedOrder(null)}
-            onComplete={async () => {
-              await updateKitchenOrderStatus(selectedOrder.id, 'ready');
+            isBar={stationLabel === 'bar'}
+            onComplete={async (completionMode) => {
+              await updateKitchenOrderStatus(selectedOrder.id, 'ready', completionMode);
               await syncData();
               setSelectedOrder(null);
             }}
