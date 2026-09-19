@@ -429,6 +429,7 @@ html {
 
 .comanda-input::placeholder { color: #71717a; }
 .comanda-input:focus { border-color: rgba(250, 204, 21, 0.75); box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.11); }
+.comanda-search-input { padding-left: 3rem; }
 
 .comanda-primary-button {
   min-height: 3.5rem;

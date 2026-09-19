@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.14.1 - 2026-09-19
+
+- Corrige o espaçamento do campo de CPF ou telefone para impedir a sobreposição da lupa sobre os primeiros números.
+
 ## 1.14.0 - 2026-09-19
 
 - Publica a conferência de saída em `comanda.becoartes.com`, protegida por PIN e isolada da sessão do PDV.

@@ -188,7 +188,7 @@ export function ComandaView() {
                   value={identifier}
                   onChange={(event) => setIdentifier(event.target.value.replace(/\D/g, '').slice(0, 11))}
                   placeholder="Digite CPF ou telefone"
-                  className="comanda-input w-full pl-11"
+                  className="comanda-input comanda-search-input w-full"
                 />
               </div>
               <button type="submit" disabled={isSearching} className="comanda-primary-button shrink-0 px-5 sm:px-7">
