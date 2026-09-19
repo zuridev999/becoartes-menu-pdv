@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import {
   createAccessGuards,
   createRouteAccessEnforcer,
@@ -14,6 +15,7 @@ import {
   moneyToCents,
   normalizePaymentsFingerprint,
 } from '../server/domain/money.mjs';
+import { sendZuriWhatsAppMessage } from '../server/notifications/zuri-whatsapp.mjs';
 
 const bffSource = readFileSync(new URL('../server/bff.mjs', import.meta.url), 'utf8');
 assert.equal(moneyToCents('R$ 1.234,56'), 123456);
@@ -41,6 +43,30 @@ assert.doesNotMatch(
   /const recoverCustomerTab = async \(\{ cpf \}\)/,
   'CPF alone must not recover a customer tab.',
 );
+
+let receivedZuriHost = '';
+const zuriProbe = createServer((req, res) => {
+  receivedZuriHost = String(req.headers.host || '');
+  req.resume();
+  req.on('end', () => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ success: true, messageId: 'probe-message-id' }));
+  });
+});
+await new Promise((resolve) => zuriProbe.listen(0, '127.0.0.1', resolve));
+try {
+  const address = zuriProbe.address();
+  const result = await sendZuriWhatsAppMessage({
+    bridgeUrl: `http://127.0.0.1:${address.port}`,
+    bridgeHostHeader: 'localhost',
+    phone: '11999999999',
+    message: 'teste local',
+  });
+  assert.equal(result.messageId, 'probe-message-id');
+  assert.equal(receivedZuriHost, 'localhost', 'internal bridge proxy must preserve the loopback-only Host policy');
+} finally {
+  await new Promise((resolve, reject) => zuriProbe.close((error) => error ? reject(error) : resolve()));
+}
 
 const hashedPin = hashPin('9071');
 assert.match(hashedPin, /^scrypt:[a-f0-9]{32}:[a-f0-9]{64}$/);
