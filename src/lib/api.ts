@@ -190,6 +190,12 @@ const saveCustomerTabAccessToken = (token?: string | null) => {
   else localStorage.removeItem(CUSTOMER_TAB_ACCESS_TOKEN_STORAGE_KEY);
 };
 
+export const hasCustomerTabDeviceAccess = () => Boolean(getCustomerTabAccessToken());
+
+export const clearCustomerTabDeviceAccess = () => {
+  saveCustomerTabAccessToken(null);
+};
+
 const getDeliveryTrackingToken = (orderId: string) => {
   if (typeof localStorage === 'undefined') return '';
   try {
@@ -316,6 +322,20 @@ export const CustomerTabApi = {
       cpf,
       sourceTableId: source?.sourceTableId,
       sourceTableNumber: source?.sourceTableNumber,
+      publicAccessToken: sourceToken,
+      accessToken: getCustomerTabAccessToken(),
+      origin: 'qr',
+    }).then(result => {
+      saveCustomerTabAccessToken(result.accessToken);
+      return { tab: hydrateCustomerTab(result.tab) };
+    });
+  },
+
+  recoverCurrent(source: Omit<CustomerTabOrderContext, 'customerTabId'>) {
+    const sourceToken = getPublicTableAccessToken(source.sourceTableId, 'qr');
+    return postJson<{ tab: CustomerTab; accessToken: string }>('/api/customer-tabs/recover', {
+      sourceTableId: source.sourceTableId,
+      sourceTableNumber: source.sourceTableNumber,
       publicAccessToken: sourceToken,
       accessToken: getCustomerTabAccessToken(),
       origin: 'qr',

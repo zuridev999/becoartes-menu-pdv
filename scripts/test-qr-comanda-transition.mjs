@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +12,7 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const dbFile = join(tmpdir(), `becoartes-qr-comanda-${process.pid}.db`);
 const dbUrl = `file:${dbFile}`;
 const allowedHeaders = { 'X-Forwarded-For': '10.0.0.5' };
+const sessionSecret = 'qr-comanda-transition-test-secret';
 
 const createValidCpf = (base) => {
   const digits = String(base).replace(/\D/g, '').padStart(9, '0').slice(-9).split('').map(Number);
@@ -33,7 +35,7 @@ const env = {
   DEFAULT_MANAGER_PIN: '135790',
   DEFAULT_OPERATOR_PIN: '246801',
   TABLET_SETUP_PIN: '975310',
-  BFF_SESSION_SECRET: 'qr-comanda-transition-test-secret',
+  BFF_SESSION_SECRET: sessionSecret,
   OS_EMPRESA_ID: 'empresa_test',
   OS_SYSTEM_USER_ID: 'user_test',
   ALLOWED_OPERATION_IPS: '10.0.0.5',
@@ -298,6 +300,59 @@ try {
   });
   assert.ok(opened.data.accessToken, 'comanda deve devolver token de posse');
   assert.ok(Number(opened.data.tab.tableNumber) >= 51, 'comanda técnica jamais pode ocupar mesa física 1-50');
+  const accessClaims = JSON.parse(Buffer.from(opened.data.accessToken.split('.')[0], 'base64url').toString('utf8'));
+  assert.equal(
+    Number(accessClaims.exp) - Number(accessClaims.iat),
+    30 * 24 * 60 * 60 * 1000,
+    'credencial do aparelho deve permanecer válida durante a janela operacional estendida',
+  );
+
+  const alternateCommandSource = await request('/api/qr/resolve', {
+    method: 'POST',
+    body: { tableNumber: 7 },
+  });
+  assert.equal(alternateCommandSource.data.flow, 'comanda');
+  const recoveredOnAnotherQr = await request('/api/customer-tabs/recover', {
+    method: 'POST',
+    body: {
+      origin: 'qr',
+      sourceTableId: alternateCommandSource.data.physicalTable.id,
+      sourceTableNumber: 7,
+      publicAccessToken: alternateCommandSource.data.access.token,
+      accessToken: opened.data.accessToken,
+    },
+  });
+  assert.equal(recoveredOnAnotherQr.data.tab.id, opened.data.tab.id, 'outro QR no mesmo aparelho deve retomar a mesma comanda');
+  assert.ok(recoveredOnAnotherQr.data.accessToken, 'retomada deve renovar a credencial do aparelho');
+  const legacyClaims = {
+    ...accessClaims,
+    iat: Date.now() - (13 * 60 * 60 * 1000),
+    exp: Date.now() - 1,
+  };
+  const legacyPayload = Buffer.from(JSON.stringify(legacyClaims)).toString('base64url');
+  const legacySignature = createHmac('sha256', sessionSecret).update(legacyPayload).digest('base64url');
+  const recoveredLegacyDevice = await request('/api/customer-tabs/recover', {
+    method: 'POST',
+    body: {
+      origin: 'qr',
+      sourceTableId: alternateCommandSource.data.physicalTable.id,
+      sourceTableNumber: 7,
+      publicAccessToken: alternateCommandSource.data.access.token,
+      accessToken: `${legacyPayload}.${legacySignature}`,
+    },
+  });
+  assert.equal(recoveredLegacyDevice.data.tab.id, opened.data.tab.id, 'credencial antiga do mesmo aparelho deve ganhar a nova janela');
+  await request('/api/customer-tabs/recover', {
+    method: 'POST',
+    expectedStatus: 403,
+    body: {
+      origin: 'qr',
+      sourceTableId: alternateCommandSource.data.physicalTable.id,
+      sourceTableNumber: 7,
+      publicAccessToken: alternateCommandSource.data.access.token,
+      accessToken: 'credencial-invalida',
+    },
+  });
 
   const orderBody = {
     orderId: 'order_qr_transition',
@@ -465,6 +520,17 @@ try {
   assert.doesNotMatch(missingOwnership.error, /sql|sqlite|trigger|customer_tab|stack|internal/i);
 
   await db.execute({ sql: "UPDATE customer_tabs SET status = 'closed' WHERE id = ?", args: [secondTab.data.tab.id] });
+  await request('/api/customer-tabs/recover', {
+    method: 'POST',
+    expectedStatus: 403,
+    body: {
+      origin: 'qr',
+      sourceTableId: alternateCommandSource.data.physicalTable.id,
+      sourceTableNumber: 7,
+      publicAccessToken: alternateCommandSource.data.access.token,
+      accessToken: secondTab.data.accessToken,
+    },
+  });
   await assert.rejects(
     () => db.execute({
       sql: "INSERT INTO orders (id, table_id, total, status, origin, customer_tab_id) VALUES ('race_order', ?, 10, 'pending', 'qr', ?)",
@@ -582,6 +648,10 @@ try {
       'kitchen_and_pdv_receive_both_locations',
       'service_requests_keep_physical_source',
       'customer_tab_ownership_required',
+      'same_device_recovers_across_physical_qrs_without_cpf',
+      'device_credential_extended_and_rotated',
+      'legacy_12h_device_credential_gets_migration_window',
+      'closed_customer_tab_revokes_device_recovery',
       'public_snapshot_has_no_internal_data',
       'public_sync_has_no_internal_data',
       'authorized_table_state_is_scoped',

@@ -662,7 +662,7 @@ const decodeSignedToken = (token = '') => {
   }
 };
 
-const CUSTOMER_TAB_ACCESS_TTL_MS = 12 * 60 * 60 * 1000;
+const CUSTOMER_TAB_ACCESS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const DELIVERY_ORDER_TRACKING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const createCustomerTabAccessToken = (tab) => createSignedToken({
@@ -677,7 +677,11 @@ const createCustomerTabAccessToken = (tab) => createSignedToken({
 const verifyCustomerTabAccessToken = ({ token = '', tab }) => {
   const decoded = decodeSignedToken(token);
   if (!decoded || decoded.typ !== 'customer_tab_access') return false;
-  if (!decoded.exp || Number(decoded.exp) < Date.now()) return false;
+  const issuedAt = Number(decoded.iat || 0);
+  const validUntil = issuedAt > 0
+    ? issuedAt + CUSTOMER_TAB_ACCESS_TTL_MS
+    : Number(decoded.exp || 0);
+  if (!validUntil || validUntil < Date.now()) return false;
   return (
     String(decoded.tabId || '') === String(tab?.id || '')
     && String(decoded.tableId || '') === String(tab?.table_id || tab?.tableId || '')

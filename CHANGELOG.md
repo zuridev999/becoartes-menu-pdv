@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.14.2 - 2026-09-19
+
+- Retoma automaticamente a mesma comanda no mesmo celular ao escanear qualquer outro QR físico.
+- Troca a dependência do CPF salvo no navegador por uma credencial opaca vinculada à comanda ativa.
+- Amplia e renova a credencial do aparelho, mantendo o bloqueio imediato quando a comanda é encerrada.
+- Remove o botão de retomada manual que exigia uma credencial invisível e não ajudava em outro aparelho.
+
 ## 1.14.1 - 2026-09-19
 
 - Corrige o espaçamento do campo de CPF ou telefone para impedir a sobreposição da lupa sobre os primeiros números.

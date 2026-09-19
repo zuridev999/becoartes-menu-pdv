@@ -285,6 +285,19 @@ export const createQrComandaTransitionServices = ({
     return sanitizeCustomerTab(row, totals[row.table_id]);
   };
 
+  const findCustomerTabByAccessToken = async (accessToken) => {
+    const claims = decodeSignedToken(accessToken);
+    if (!claims || claims.typ !== 'customer_tab_access' || !claims.tabId) return null;
+    const result = await db.execute({
+      sql: "SELECT * FROM customer_tabs WHERE id = ? AND status IN ('open', 'paid') LIMIT 1",
+      args: [String(claims.tabId)],
+    });
+    const row = result.rows[0] || null;
+    if (!row || !verifyCustomerTabAccessToken({ token: accessToken, tab: row })) return null;
+    const totals = await getCustomerTabTotalsByTable([row.table_id]);
+    return { row, tab: sanitizeCustomerTab(row, totals[row.table_id]) };
+  };
+
   const findAvailableCustomerTabTable = async () => {
     await ensureTablesUpTo(200);
     const result = await db.execute(`
@@ -379,7 +392,7 @@ export const createQrComandaTransitionServices = ({
   };
 
   const recoverCustomerTab = async ({
-    cpf,
+    cpf = '',
     accessToken = '',
     origin = '',
     sourceTableId = '',
@@ -388,15 +401,20 @@ export const createQrComandaTransitionServices = ({
   }) => {
     await verifyPhysicalSource({ origin, sourceTableId, sourceTableNumber, publicAccessToken });
     const normalizedCpf = normalizeCpf(cpf);
-    if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
-    const tab = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
-    if (!tab) {
-      const error = new Error('Não foi possível recuperar esta comanda neste dispositivo.');
-      error.statusCode = 403;
-      throw error;
+    let row = null;
+    let tab = null;
+    if (normalizedCpf) {
+      if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
+      tab = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
+      if (tab) {
+        row = (await db.execute({ sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1", args: [tab.id] })).rows[0] || null;
+      }
+    } else {
+      const recovered = await findCustomerTabByAccessToken(accessToken);
+      row = recovered?.row || null;
+      tab = recovered?.tab || null;
     }
-    const row = (await db.execute({ sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1", args: [tab.id] })).rows[0];
-    if (!row || !verifyCustomerTabAccessToken({ token: accessToken, tab: row })) {
+    if (!row || !tab || !verifyCustomerTabAccessToken({ token: accessToken, tab: row })) {
       const error = new Error('Não foi possível recuperar esta comanda neste dispositivo.');
       error.statusCode = 403;
       throw error;

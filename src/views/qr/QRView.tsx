@@ -9,14 +9,19 @@ import { CustomerAccountModal } from '../../components/modals/CustomerAccountMod
 import { CustomerOrderModal } from '../../components/modals/CustomerOrderModal';
 import { ServiceRequestModal } from '../../components/modals/ServiceRequestModal';
 import { getOrderItemsTotal } from '../../lib/totals';
-import { AppApi, CustomerTabApi, setPublicTableAccess, type QrFlowResolution } from '../../lib/api';
+import {
+  AppApi,
+  clearCustomerTabDeviceAccess,
+  CustomerTabApi,
+  hasCustomerTabDeviceAccess,
+  setPublicTableAccess,
+  type QrFlowResolution,
+} from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
 import { GoogleAdBanner } from '../../components/common/GoogleAdBanner';
 import { getQrVisitId } from '../../lib/qr-analytics';
-
-const CUSTOMER_TAB_CPF_KEY = 'becoartes_customer_tab_cpf';
 
 const normalizeCpfInput = (value: string) => value.replace(/\D/g, '').slice(0, 11);
 
@@ -409,7 +414,7 @@ function ComandaQRExperience({
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
   const [cpf, setCpf] = useState('');
-  const [recoverMode, setRecoverMode] = useState(false);
+  const [isRecoveringDevice, setIsRecoveringDevice] = useState(hasCustomerTabDeviceAccess);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -437,10 +442,14 @@ function ComandaQRExperience({
   }, [sourceTableId, sourceTableNumber, tab]);
 
   useEffect(() => {
-    const savedCpf = localStorage.getItem(CUSTOMER_TAB_CPF_KEY);
-    if (!savedCpf) return;
+    localStorage.removeItem('becoartes_customer_tab_cpf');
+    if (!hasCustomerTabDeviceAccess()) {
+      setIsRecoveringDevice(false);
+      return;
+    }
     let cancelled = false;
-    CustomerTabApi.recover(savedCpf, { sourceTableId, sourceTableNumber })
+    setIsRecoveringDevice(true);
+    CustomerTabApi.recoverCurrent({ sourceTableId, sourceTableNumber })
       .then(async ({ tab: recovered }) => {
         if (cancelled) return;
         setTab(recovered);
@@ -451,7 +460,16 @@ function ComandaQRExperience({
         });
         if (!cancelled) applyPublicTableState(table);
       })
-      .catch(() => localStorage.removeItem(CUSTOMER_TAB_CPF_KEY));
+      .catch((requestError) => {
+        const message = requestError instanceof Error ? requestError.message : 'Não foi possível retomar sua comanda agora.';
+        if (message === 'Não foi possível recuperar esta comanda neste dispositivo.') {
+          clearCustomerTabDeviceAccess();
+        }
+        if (!cancelled) setError(message);
+      })
+      .finally(() => {
+        if (!cancelled) setIsRecoveringDevice(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -462,17 +480,14 @@ function ComandaQRExperience({
     setIsSubmitting(true);
     const normalizedCpf = normalizeCpfInput(cpf);
     try {
-      const result = recoverMode
-        ? await CustomerTabApi.recover(normalizedCpf, { sourceTableId, sourceTableNumber })
-        : await CustomerTabApi.open({
-            customerName,
-            phone,
-            cpf: normalizedCpf,
-            source: { sourceTableId, sourceTableNumber },
-          });
+      const result = await CustomerTabApi.open({
+        customerName,
+        phone,
+        cpf: normalizedCpf,
+        source: { sourceTableId, sourceTableNumber },
+      });
       setTab(result.tab);
       setCurrentTableId(result.tab.tableId);
-      localStorage.setItem(CUSTOMER_TAB_CPF_KEY, normalizedCpf);
       const { table } = await AppApi.getPublicTableState({
         tableId: result.tab.tableId,
         customerTabContext: { customerTabId: result.tab.id, sourceTableId, sourceTableNumber },
@@ -485,6 +500,19 @@ function ComandaQRExperience({
     }
   };
 
+  if (isRecoveringDevice) {
+    return (
+      <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white font-['Outfit']">
+        <section className="w-full max-w-md border-y border-primary/25 py-10">
+          <RefreshCw className="mx-auto h-10 w-10 animate-spin text-primary" aria-hidden="true" />
+          <p className="mt-5 text-[10px] font-black uppercase tracking-[0.24em] text-primary">Mesmo aparelho</p>
+          <h1 className="mt-2 text-3xl font-black">Retomando sua comanda</h1>
+          <p className="mt-3 text-sm font-semibold text-zinc-400">Estamos conectando este QR à comanda que já está neste celular.</p>
+        </section>
+      </main>
+    );
+  }
+
   if (!tab || !currentTable) {
     return (
       <div className="h-[100dvh] overflow-y-auto custom-scrollbar overscroll-contain bg-[#0a0a0c] text-white font-['Outfit'] px-4 py-[calc(env(safe-area-inset-top)+1rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)]">
@@ -495,7 +523,7 @@ function ComandaQRExperience({
           </div>
           <p className="text-[10px] font-black uppercase tracking-[0.32em] text-primary mb-3">Modo comanda</p>
           <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter mb-3">
-            {recoverMode ? 'Voltar para minha comanda' : 'Abrir minha comanda'}
+            Abrir minha comanda
           </h1>
           <p className="text-xs sm:text-sm font-bold text-zinc-400 leading-relaxed mb-5 sm:mb-7">
             Use seu CPF para identificar sua comanda e continue neste celular até o fechamento. Se trocar de aparelho, peça ajuda à equipe.
@@ -508,24 +536,20 @@ function ComandaQRExperience({
           )}
 
           <div className="space-y-3 sm:space-y-4">
-            {!recoverMode && (
-              <>
-                <label className="block">
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Nome</span>
-                  <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
-                    <UserRound size={18} className="text-primary" />
-                    <input name="name" autoComplete="name" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="Seu nome" />
-                  </div>
-                </label>
-                <label className="block">
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Telefone</span>
-                  <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
-                    <Phone size={18} className="text-primary" />
-                    <input name="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="WhatsApp" />
-                  </div>
-                </label>
-              </>
-            )}
+            <label className="block">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Nome</span>
+              <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
+                <UserRound size={18} className="text-primary" />
+                <input name="name" autoComplete="name" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="Seu nome" />
+              </div>
+            </label>
+            <label className="block">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Telefone</span>
+              <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
+                <Phone size={18} className="text-primary" />
+                <input name="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="WhatsApp" />
+              </div>
+            </label>
             <label className="block">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">CPF</span>
               <input
@@ -542,20 +566,10 @@ function ComandaQRExperience({
 
           <button
             onClick={submit}
-            disabled={isSubmitting || cpf.length < 11 || (!recoverMode && (!customerName.trim() || !phone.trim()))}
+            disabled={isSubmitting || cpf.length < 11 || !customerName.trim() || !phone.trim()}
             className="mt-5 sm:mt-7 w-full btn-beco btn-beco-purple py-4 sm:py-5 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40 disabled:grayscale"
           >
-            {isSubmitting ? 'Validando...' : recoverMode ? 'Entrar na minha comanda' : 'Abrir comanda'}
-          </button>
-
-          <button
-            onClick={() => {
-              setRecoverMode(!recoverMode);
-              setError('');
-            }}
-            className="mt-3 sm:mt-4 w-full rounded-2xl border border-white/10 bg-white/[0.03] py-4 text-xs font-black uppercase tracking-widest text-zinc-400"
-          >
-            {recoverMode ? 'Criar nova comanda' : 'Retomar comanda neste celular'}
+            {isSubmitting ? 'Validando...' : 'Abrir comanda'}
           </button>
         </div>
         </div>
