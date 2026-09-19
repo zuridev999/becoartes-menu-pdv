@@ -2,6 +2,7 @@ const PUBLIC_BOOTSTRAP_ROUTES = new Set([
   'GET /api/app/init',
   'POST /api/app/sync',
   'POST /api/auth/login',
+  'POST /api/comanda/access',
   'POST /api/tablet/setup-login',
   'POST /api/pdv-terminal/challenge',
   'POST /api/pdv-terminal/authorize',
@@ -87,6 +88,7 @@ export const PERMISSION_BY_ROUTE = Object.freeze({
   'GET /api/delivery/order-detail': 'viewSalesTotals',
   'GET /api/closed-bills': 'viewSalesTotals',
   'GET /api/customer-tabs/lookup': 'viewSalesTotals',
+  'GET /api/comanda/customer-tabs/lookup': 'viewSalesTotals',
   'POST /api/customer-tabs/finalize': 'closeBill',
 });
 

@@ -19,6 +19,7 @@ const KitchenView = lazy(() => import('./views/kitchen/KitchenView').then(module
 const AdminView = lazy(() => import('./views/admin/AdminView').then(module => ({ default: module.AdminView })));
 const QRView = lazy(() => import('./views/qr/QRView').then(module => ({ default: module.QRView })));
 const DeliveryView = lazy(() => import('./views/delivery/DeliveryView').then(module => ({ default: module.DeliveryView })));
+const ComandaView = lazy(() => import('./views/comanda/ComandaView').then(module => ({ default: module.ComandaView })));
 
 function App() {
   const { 
@@ -115,13 +116,14 @@ function App() {
           {!initError && activeView === 'kitchen' && <KitchenView />}
           {!initError && activeView === 'admin' && <AdminView />}
           {!initError && activeView === 'delivery' && <DeliveryView />}
+          {!initError && activeView === 'comanda' && <ComandaView />}
         </Suspense>
 
         {!isLoading && !initError && activeView === 'delivery' && <GoogleAdBanner placement="mobile-bottom" />}
         {!isLoading && !initError && hasOperationalView && !isPdvView && <GoogleAdBanner placement="operational-bottom" />}
         
         {/* Fallback amigável para URLs desconhecidas */}
-        {!isLoading && !initError && !['tablet', 'pdv', 'kitchen', 'admin', 'qr', 'delivery'].includes(activeView) && (
+        {!isLoading && !initError && !['tablet', 'pdv', 'kitchen', 'admin', 'qr', 'delivery', 'comanda'].includes(activeView) && (
           <div className="flex flex-col items-center justify-center h-screen text-center p-12">
             <h2 className="text-4xl font-black italic mb-4 text-white">Módulo não encontrado</h2>
             <p className="text-gray-500 mb-8">O hostname <span className="text-primary font-bold">{window.location.hostname}</span> não está mapeado para nenhum módulo operacional.</p>

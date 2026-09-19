@@ -97,7 +97,7 @@ export interface AppState {
   fetchAuditLogs: () => Promise<void>;
   syncData: (options?: { includeCatalog?: boolean }) => Promise<void>;
   addAuditLog: (log: { action: string; details?: any; table_number?: string; origin?: string; author_name?: string } | string, details?: string, tableNumber?: string, origin?: string) => Promise<void>;
-  activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | 'delivery' | '';
+  activeView: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | 'delivery' | 'comanda' | '';
   adminTab: AdminTab;
   adminMode: 'menu' | 'settings';
   isLoading: boolean;
@@ -115,7 +115,7 @@ export interface AppState {
   currentTableId: string | null;
   setCurrentTableId: (id: string | null) => void;
   init: () => Promise<void>;
-  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | 'delivery', tab?: AdminTab, mode?: 'menu' | 'settings') => void;
+  setActiveView: (view: 'tablet' | 'pdv' | 'admin' | 'kitchen' | 'qr' | 'delivery' | 'comanda', tab?: AdminTab, mode?: 'menu' | 'settings') => void;
   toggleProductVisibility: (id: string) => void;
   toggleProductDeliveryVisibility: (id: string) => void;
   toggleCategoryVisibility: (id: string) => void;
@@ -430,7 +430,7 @@ export const useStore = create<AppState>((set, get) => ({
       } else if (fullPath.startsWith('admin/settings') || fullPath.startsWith('admin/config')) {
         initialView = 'admin';
         initialAdminMode = 'settings';
-      } else if (['tablet', 'pdv', 'admin', 'kitchen', 'qr', 'delivery'].includes(fullPath)) {
+      } else if (['tablet', 'pdv', 'admin', 'kitchen', 'qr', 'delivery', 'comanda'].includes(fullPath)) {
         initialView = fullPath;
       } else if (fullPath === 'bar') {
         initialView = 'kitchen';
@@ -440,6 +440,7 @@ export const useStore = create<AppState>((set, get) => ({
       else if (hostname.startsWith('tablet.')) initialView = 'tablet';
       else if (hostname.startsWith('qr.')) initialView = 'qr';
       else if (hostname.startsWith('delivery.')) initialView = 'delivery';
+      else if (hostname.startsWith('comanda.')) initialView = 'comanda';
       else {
         initialView = 'tablet';
       }

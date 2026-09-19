@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.14.0 - 2026-09-19
+
+- Publica a conferência de saída em `comanda.becoartes.com`, protegida por PIN e isolada da sessão do PDV.
+- Restringe a consulta a CPF ou telefone, bloqueia pesquisa por nome e mantém fora da tela a fila de novas solicitações.
+- Corrige o campo numérico para aceitar no máximo 11 dígitos sem misturar máscaras de telefone e documento.
+
 ## 1.13.0 - 2026-09-19
 
 - Reorganiza Venda Balcão e abertura de mesas com cards responsivos, fotos do catálogo e categorias operacionais mais claras.

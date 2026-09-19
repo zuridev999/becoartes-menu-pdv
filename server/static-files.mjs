@@ -50,6 +50,16 @@ export const resolvePageMetadata = ({ host, pathname }) => {
     };
   }
 
+  if (hostname === 'comanda.becoartes.com') {
+    return {
+      title: 'Comanda Becoartes | Conferir saída',
+      description: 'Conferência de comanda Becoartes por CPF ou telefone.',
+      canonical: 'https://comanda.becoartes.com/',
+      robots: 'noindex,nofollow',
+      fallback: 'Ative o JavaScript para acessar a conferência de comanda Becoartes.',
+    };
+  }
+
   return {
     title: 'Becoartes PDV',
     description: 'Sistema operacional Becoartes.',

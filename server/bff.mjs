@@ -49,6 +49,7 @@ const DELIVERY_OS_CRM_SYNC = process.env.DELIVERY_OS_CRM_SYNC || 'disabled';
 const DELIVERY_OS_CRM_URL = process.env.DELIVERY_OS_CRM_URL || 'https://os.becoartes.com/api/delivery/clientes';
 const DELIVERY_OS_SYNC_SECRET = process.env.DELIVERY_OS_SYNC_SECRET || '';
 const BOOTSTRAP_ADMIN_PIN = process.env.BOOTSTRAP_ADMIN_PIN || process.env.VITE_BOOTSTRAP_ADMIN_PIN || '';
+const COMANDA_ACCESS_PIN = String(process.env.COMANDA_ACCESS_PIN || '').trim();
 const requireRuntimeSecret = (name, value) => {
   const normalized = String(value || '').trim();
   if (!normalized) throw new Error(`Missing required runtime secret: ${name}`);
@@ -332,6 +333,7 @@ const dedupeSellersByIdentity = (sellers = []) => {
 };
 const normalizePermission = (permission) => {
   if (permission === 'admin') return 'admin';
+  if (permission === 'comanda') return 'comanda';
   if (permission === 'manager' || permission === 'standard') return 'manager';
   return 'operator';
 };
@@ -593,6 +595,9 @@ const permissionsByProfile = {
     accessFullReports: false,
     accessSensitiveData: false,
   },
+  comanda: {
+    viewSalesTotals: true,
+  },
 };
 
 const getEffectiveSessionPermissions = (session, settings = null) => {
@@ -723,7 +728,7 @@ const parseCookies = (header = '') => Object.fromEntries(
 
 const getSessionFromRequest = (req) => {
   const cookies = parseCookies(req.headers.cookie);
-  const token = String(req.headers['x-beco-session'] || cookies.beco_session || '');
+  const token = String(req.headers['x-beco-comanda-session'] || req.headers['x-beco-session'] || cookies.beco_session || '');
   if (!token.includes('.')) return null;
 
   const [payload, signature] = token.split('.');
@@ -928,7 +933,7 @@ const throwIpRestricted = (req) => {
 };
 
 const isPinRateLimited = async (req, pathname) => {
-  if (!['/api/auth/login', '/api/tablet/setup-login', '/api/pdv-terminal/authorize', '/api/cash/open', '/api/cash/close'].includes(pathname)) return false;
+  if (!['/api/auth/login', '/api/tablet/setup-login', '/api/comanda/access', '/api/pdv-terminal/authorize', '/api/cash/open', '/api/cash/close'].includes(pathname)) return false;
 
   const bucket = await distributedRateLimiter.consume({
     scope: 'pin',
@@ -2784,6 +2789,24 @@ const login = async ({ pin, sellerId, view, terminalId, terminalPublicKey, termi
   }
 
   return { seller: null, sessionToken: null, accessRestricted: blockedNonAdminMatch };
+};
+
+const authorizeComandaAccess = async ({ pin }) => {
+  const safePin = String(pin || '').trim();
+  if (!COMANDA_ACCESS_PIN || !safeSecretEqual(safePin, COMANDA_ACCESS_PIN)) {
+    return { authorized: false, sessionToken: null };
+  }
+  const inspector = {
+    id: 'comanda-exit',
+    name: 'Conferência de saída',
+    role: 'saída',
+    permission: 'comanda',
+    allowRemote: true,
+  };
+  return {
+    authorized: true,
+    sessionToken: createSessionToken(inspector),
+  };
 };
 
 const validateTabletSetupPin = async ({ pin, station }, { operationAccessAllowed = true } = {}) => {
@@ -9274,6 +9297,14 @@ const lookupCustomerTabs = async ({ query = '' }) => {
   return { tabs: res.rows.map((row) => sanitizeCustomerTab(row, totals[row.table_id])) };
 };
 
+const lookupCustomerTabsByIdentifier = async ({ query = '' }) => {
+  const safeQuery = String(query || '').trim();
+  if (!/^\d+$/.test(safeQuery)) {
+    throw new Error('Informe apenas CPF ou telefone.');
+  }
+  return lookupCustomerTabs({ query: safeQuery });
+};
+
 const finalizeCustomerTab = async ({ tabId }, session) => {
   requireString(tabId, 'tabId');
   const res = await db.execute({ sql: "SELECT * FROM customer_tabs WHERE id = ? LIMIT 1", args: [tabId] });
@@ -9373,6 +9404,8 @@ const handlers = createRouteHandlers({
   login,
   loginDeliveryCustomer,
   lookupCustomerTabs,
+  lookupCustomerTabsByIdentifier,
+  authorizeComandaAccess,
   lookupDeliveryPostalCode,
   openCash,
   openCustomerTab,

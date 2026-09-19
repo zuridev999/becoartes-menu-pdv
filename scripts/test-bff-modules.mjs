@@ -35,6 +35,7 @@ assert.match(bffSource, /customerOwnsOrder/, 'Delivery customer sessions must be
 assert.match(bffSource, /Acesso ao pedido não autorizado/, 'Delivery order reads must fail closed.');
 assert.match(bffSource, /typ:\s*'customer_tab_access'/, 'Customer tabs must use signed possession credentials.');
 assert.match(bffSource, /verifyCustomerTabAccessToken/, 'Customer tab reads and payments must verify possession.');
+assert.match(bffSource, /if \(permission === 'comanda'\) return 'comanda'/, 'Comanda sessions must retain their scoped permission.');
 assert.doesNotMatch(
   bffSource,
   /const recoverCustomerTab = async \(\{ cpf \}\)/,
@@ -56,15 +57,17 @@ const services = new Proxy({}, {
 });
 const handlers = createRouteHandlers(services);
 
-assert.equal(Object.keys(handlers).length, 93, 'route registry lost or duplicated operational endpoints');
+assert.equal(Object.keys(handlers).length, 95, 'route registry lost or duplicated operational endpoints');
 for (const route of [
   'GET /api/app/init',
   'POST /api/pdv-terminal/challenge',
   'POST /api/pdv-terminal/authorize',
+  'POST /api/comanda/access',
   'POST /api/qr/resolve',
   'POST /api/tables/qr-mode',
   'POST /api/qr/analytics/event',
   'GET /api/qr/analytics/funnel',
+  'GET /api/comanda/customer-tabs/lookup',
   'POST /api/orders/send-to-kitchen',
   'POST /api/bills/close',
   'POST /api/counter-sales/close',
@@ -156,6 +159,7 @@ allowedPermissions.add('managePDVUsers');
 await enforce('POST /api/sellers', {}, { id: 'admin' });
 assert.equal(PERMISSION_BY_ROUTE['POST /api/sellers'], 'managePDVUsers');
 assert.equal(PERMISSION_BY_ROUTE['POST /api/inventory/reconcile-pending'], 'manageSettings');
+assert.equal(PERMISSION_BY_ROUTE['GET /api/comanda/customer-tabs/lookup'], 'viewSalesTotals');
 
 publicTableTokenValid = true;
 await enforce('POST /api/service-requests', {

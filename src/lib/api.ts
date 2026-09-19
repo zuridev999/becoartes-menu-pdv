@@ -4,6 +4,7 @@ import { createRequestTimeoutSignal } from './request-timeout';
 import { getQrVisitId } from './qr-analytics';
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
+const COMANDA_SESSION_TOKEN_STORAGE_KEY = 'beco_comanda_session_token';
 const TABLE_ACCESS_TOKEN_STORAGE_KEY = 'beco_public_table_access';
 const CUSTOMER_TAB_ACCESS_TOKEN_STORAGE_KEY = 'beco_customer_tab_access_token';
 const DELIVERY_TRACKING_TOKEN_STORAGE_KEY = 'beco_delivery_tracking_tokens';
@@ -119,6 +120,11 @@ const getSessionToken = () => {
   return localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || '';
 };
 
+const getComandaSessionToken = () => {
+  if (typeof localStorage === 'undefined') return '';
+  return localStorage.getItem(COMANDA_SESSION_TOKEN_STORAGE_KEY) || '';
+};
+
 export const hasApiSessionToken = () => Boolean(getSessionToken());
 
 export const setApiSessionToken = (token: string | null) => {
@@ -215,12 +221,13 @@ const getCurrentView = () => {
   if (path.startsWith('admin')) return 'admin';
   if (path.startsWith('delivery')) return 'delivery';
   if (path.startsWith('qr/') || path.startsWith('mesa/')) return 'qr';
-  if (['tablet', 'pdv', 'kitchen', 'bar', 'qr', 'delivery'].includes(path)) return path;
+  if (['tablet', 'pdv', 'kitchen', 'bar', 'qr', 'delivery', 'comanda'].includes(path)) return path;
   if (host.startsWith('tablet.')) return 'tablet';
   if (host.startsWith('coz.')) return 'kitchen';
   if (host.startsWith('bar.')) return 'bar';
   if (host.startsWith('qr.')) return 'qr';
   if (host.startsWith('delivery.')) return 'delivery';
+  if (host.startsWith('comanda.')) return 'comanda';
   return 'pdv';
 };
 
@@ -344,6 +351,22 @@ export const CustomerTabApi = {
       ...input,
       accessToken: getCustomerTabAccessToken(),
     });
+  },
+};
+
+export const ComandaApi = {
+  access(pin: string) {
+    return postJson<{ authorized: boolean; sessionToken?: string | null }>('/api/comanda/access', { pin }).then((result) => {
+      if (result.sessionToken) localStorage.setItem(COMANDA_SESSION_TOKEN_STORAGE_KEY, result.sessionToken);
+      return result;
+    });
+  },
+
+  lookup(identifier: string) {
+    const q = encodeURIComponent(identifier);
+    return getJson<{ tabs: CustomerTab[] }>(`/api/comanda/customer-tabs/lookup?q=${q}`, {
+      headers: { 'X-Beco-Comanda-Session': getComandaSessionToken() },
+    }).then(result => ({ tabs: result.tabs.map(hydrateCustomerTab) }));
   },
 };
 
