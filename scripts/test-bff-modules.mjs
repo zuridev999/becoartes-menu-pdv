@@ -56,12 +56,13 @@ const services = new Proxy({}, {
 });
 const handlers = createRouteHandlers(services);
 
-assert.equal(Object.keys(handlers).length, 92, 'route registry lost or duplicated operational endpoints');
+assert.equal(Object.keys(handlers).length, 93, 'route registry lost or duplicated operational endpoints');
 for (const route of [
   'GET /api/app/init',
   'POST /api/pdv-terminal/challenge',
   'POST /api/pdv-terminal/authorize',
   'POST /api/qr/resolve',
+  'POST /api/tables/qr-mode',
   'POST /api/qr/analytics/event',
   'GET /api/qr/analytics/funnel',
   'POST /api/orders/send-to-kitchen',

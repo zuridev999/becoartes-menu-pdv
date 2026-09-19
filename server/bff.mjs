@@ -29,6 +29,7 @@ import { createPdvTerminalServices, isMobilePdvUserAgent } from './auth/pdv-term
 import { createDistributedRateLimiter } from './security/distributed-rate-limit.mjs';
 import { createQrComandaTransitionServices, createQrModeTransitionStatements } from './qr-comanda-transition.mjs';
 import { createQrAnalyticsService } from './qr-analytics.mjs';
+import { createQrOrderAuditService } from './qr-order-audit.mjs';
 import { createPublicTableStateService, rethrowCustomerTabWriteError, sanitizePublicCustomerSnapshot } from './public-customer-snapshot.mjs';
 import { summarizeInventoryAttention } from './inventory/attention-summary.mjs';
 
@@ -4014,6 +4015,8 @@ const orderSubmissionDuplicateResponse = (order, tableId, items = []) => {
 
 const isConstraintError = (error) => /constraint|unique|primary key/i.test(String(error?.message || error || ''));
 
+const buildQrOrderAuditStatement = createQrOrderAuditService({ db, createId });
+
 const sendToKitchen = async ({
   orderId,
   tableId,
@@ -4028,7 +4031,7 @@ const sendToKitchen = async ({
   sourceTableNumber = '',
   publicAccessToken = '',
   qrVisitId = '',
-}, session = null) => {
+}, session = null, req = null) => {
   requireString(orderId, 'orderId');
   requireString(tableId, 'tableId');
   const safeOrigin = origin === 'tablet' || origin === 'qr' ? origin : 'pdv';
@@ -4077,6 +4080,17 @@ const sendToKitchen = async ({
     isPublicOrigin: safeOrigin === 'tablet' || safeOrigin === 'qr',
   });
 
+  const qrOrderAuditStatement = await buildQrOrderAuditStatement({
+    origin: safeOrigin,
+    orderId,
+    clientRequestId: safeClientRequestId,
+    qrVisitId,
+    sourceIp: getClientIp(req),
+    userAgent: req?.headers?.['user-agent'],
+    tableId,
+    customerTabContext,
+  });
+
   const batch = [
     {
       sql: "INSERT INTO orders (id, table_id, total, status, origin, created_by_id, client_request_id, source_table_id, source_table_number, customer_tab_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -4114,6 +4128,7 @@ const sendToKitchen = async ({
   const requestId = `new_order_${orderId}`;
   const inventoryEventId = `pdv_order_${orderId}`;
   const itemsList = safeItems.map((item) => `${item.quantity}x ${item.name}`).join(', ');
+  if (qrOrderAuditStatement) batch.push(qrOrderAuditStatement);
   batch.push({
     sql: "INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message, source_table_id, source_table_number, customer_tab_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     args: [
@@ -7512,7 +7527,7 @@ const updateTableStatus = async ({ tableId, status }, session) => {
       UPDATE tables
       SET status = ?,
           current_seller_id = ${clearsOwner ? 'NULL' : 'current_seller_id'}
-          ${closesPhysicalSession ? ", qr_flow_override = NULL, qr_session_revision = COALESCE(qr_session_revision, 1) + 1" : ''}
+          ${closesPhysicalSession ? ", qr_flow_override = CASE WHEN qr_flow_override = 'mesa' THEN 'mesa' ELSE NULL END, qr_session_revision = COALESCE(qr_session_revision, 1) + 1" : ''}
       WHERE id = ?
     `,
     args: [status, tableId],
@@ -7548,17 +7563,17 @@ const transferTable = async ({ fromTableId, toTableId }, session) => {
     args: [fromTableId],
   });
   const ownerId = ownerRes.rows[0]?.current_seller_id || session?.id || null;
-  const inheritsMesaFlow = ownerRes.rows[0]?.qr_flow_override === 'mesa_until_close';
+  const inheritsMesaFlow = ['mesa', 'mesa_until_close'].includes(ownerRes.rows[0]?.qr_flow_override);
   await db.batch([
     { sql: "UPDATE orders SET table_id = ? WHERE table_id = ? AND status != 'closed'", args: [toTableId, fromTableId] },
     { sql: "UPDATE service_requests SET table_id = ? WHERE table_id = ? AND status != 'resolved'", args: [toTableId, fromTableId] },
-    { sql: "UPDATE tables SET status = 'available', current_seller_id = NULL, qr_flow_override = NULL, qr_session_revision = COALESCE(qr_session_revision, 1) + 1 WHERE id = ?", args: [fromTableId] },
+    { sql: "UPDATE tables SET status = 'available', current_seller_id = NULL, qr_flow_override = CASE WHEN qr_flow_override = 'mesa' THEN 'mesa' ELSE NULL END, qr_session_revision = COALESCE(qr_session_revision, 1) + 1 WHERE id = ?", args: [fromTableId] },
     {
       sql: `
         UPDATE tables
         SET status = 'ordering',
             current_seller_id = ?,
-            qr_flow_override = CASE WHEN ? THEN 'mesa_until_close' ELSE qr_flow_override END
+            qr_flow_override = CASE WHEN qr_flow_override = 'mesa' THEN 'mesa' WHEN ? THEN 'mesa_until_close' ELSE qr_flow_override END
         WHERE id = ?
       `,
       args: [ownerId, inheritsMesaFlow ? 1 : 0, toTableId],
@@ -7580,17 +7595,17 @@ const joinTables = async ({ tableIds, targetTableId }, session) => {
     args: tableIds,
   });
   const ownerId = tableStateRes.rows.find((row) => row.current_seller_id)?.current_seller_id || session?.id || null;
-  const inheritsMesaFlow = tableStateRes.rows.some((row) => row.qr_flow_override === 'mesa_until_close');
+  const inheritsMesaFlow = tableStateRes.rows.some((row) => ['mesa', 'mesa_until_close'].includes(row.qr_flow_override));
   const batch = [
     ...sourceIds.map((id) => ({ sql: "UPDATE orders SET table_id = ? WHERE table_id = ? AND status != 'closed'", args: [targetTableId, id] })),
     ...sourceIds.map((id) => ({ sql: "UPDATE service_requests SET table_id = ? WHERE table_id = ? AND status != 'resolved'", args: [targetTableId, id] })),
-    ...sourceIds.map((id) => ({ sql: "UPDATE tables SET status = 'available', current_seller_id = NULL, qr_flow_override = NULL, qr_session_revision = COALESCE(qr_session_revision, 1) + 1 WHERE id = ?", args: [id] })),
+    ...sourceIds.map((id) => ({ sql: "UPDATE tables SET status = 'available', current_seller_id = NULL, qr_flow_override = CASE WHEN qr_flow_override = 'mesa' THEN 'mesa' ELSE NULL END, qr_session_revision = COALESCE(qr_session_revision, 1) + 1 WHERE id = ?", args: [id] })),
     {
       sql: `
         UPDATE tables
         SET status = 'ordering',
             current_seller_id = COALESCE(current_seller_id, ?),
-            qr_flow_override = CASE WHEN ? THEN 'mesa_until_close' ELSE qr_flow_override END
+            qr_flow_override = CASE WHEN qr_flow_override = 'mesa' THEN 'mesa' WHEN ? THEN 'mesa_until_close' ELSE qr_flow_override END
         WHERE id = ?
       `,
       args: [ownerId, inheritsMesaFlow ? 1 : 0, targetTableId],
@@ -8653,7 +8668,7 @@ const closeBillWithInventorySync = async (data, session = null) => {
         ],
       })),
       {
-        sql: "UPDATE tables SET status = 'available', last_activity = ?, qr_flow_override = NULL, qr_session_revision = COALESCE(qr_session_revision, 1) + 1 WHERE id = ?",
+        sql: "UPDATE tables SET status = 'available', last_activity = ?, qr_flow_override = CASE WHEN qr_flow_override = 'mesa' THEN 'mesa' ELSE NULL END, qr_session_revision = COALESCE(qr_session_revision, 1) + 1 WHERE id = ?",
         args: [closedAt.toISOString(), tableId],
       },
       {
@@ -9045,6 +9060,7 @@ const {
   openCustomerTab,
   recoverCustomerTab,
   resolvePhysicalQrFlow,
+  setPhysicalTableMode,
   verifyCustomerTabOrderContext,
   verifyPublicTableToken,
 } = createQrComandaTransitionServices({
@@ -9065,6 +9081,9 @@ const {
   getCustomerTabTotalsByTable,
   sanitizeCustomerTab,
   recordQrAnalyticsEvent,
+  ensureTableAccess,
+  requirePermission: (...args) => requirePermission(...args),
+  addAuditLog,
 });
 
 const getPublicTableState = createPublicTableStateService({ db, verifyCustomerTabOrderContext, verifyPublicTableToken });
@@ -9358,6 +9377,7 @@ const handlers = createRouteHandlers({
   openCash,
   openCustomerTab,
   resolvePhysicalQrFlow,
+  setPhysicalTableMode,
   recordQrAnalyticsEvent,
   openShift,
   openTable,

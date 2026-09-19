@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 1.13.0 - 2026-09-19
+
+- Reorganiza Venda Balcão e abertura de mesas com cards responsivos, fotos do catálogo e categorias operacionais mais claras.
+- Reconstrói a finalização de conta para celular e desktop, simplifica desconto e taxa de serviço, e elimina a confirmação intermediária de pagamento.
+- Valida a digitação monetária, bloqueia excesso em cartão ou Pix e calcula troco em dinheiro na Venda Balcão.
+- Permite manter mesas físicas específicas no fluxo tradicional quando o modo comanda estiver ativo, sem interromper contas abertas.
+- Remove do PDV o aviso de auditoria de estoque e mantém a barra de rolagem operacional sempre visível.
+- Registra no histórico técnico de cada pedido QR o IP, o dispositivo/navegador e a visita associada, sem alterar o esquema do banco.
+
 ## 1.12.0 - 2026-09-15
 
 - Separa acessos técnicos do Nginx de visitas reais ao QR com um `visit_id` persistente por sessão de 30 minutos.

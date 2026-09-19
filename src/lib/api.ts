@@ -979,6 +979,10 @@ export const AdminApi = {
     return postJson<{ saved: boolean; settings: unknown; transitionTables: number[] }>('/api/settings/qr-mode', { qrMode, authorizationPin });
   },
 
+  setPhysicalTableMode(tableId: string, traditional: boolean) {
+    return postJson<{ tableId: string; qrFlowOverride: 'mesa' | 'mesa_until_close' | null }>('/api/tables/qr-mode', { tableId, traditional });
+  },
+
   addSeller(seller: unknown) {
     return postJson<{ saved: boolean }>('/api/sellers', { seller });
   },

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, 
@@ -22,10 +22,13 @@ import { PdvTerminalLogin } from '../../components/auth/PdvTerminalLogin';
 import { PdvTicker } from '../../components/pdv/PdvTicker';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
+import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, MAX_SERVICE_FEE_PERCENT } from '../../lib/billing';
 import { AdminApi, AppApi, CustomerTabApi, type PdvLockState } from '../../lib/api';
 import type { ReceiptData } from '../../lib/receiptPrint';
 import { businessDateKey, businessWeekday } from '../../lib/business-time';
 import { getOrderLocation, getPhysicalTablesPendingTransition, isTableVisibleForQrMode } from '../../lib/order-location';
+import { applyImageFallback, getImageSrc } from '../../lib/image';
+import { buildPdvCatalogCategories, getPdvCategoriesById, getPdvProductCategoryId } from '../../lib/pdv-catalog';
 
 const CANCEL_REASONS = [
   { code: 'cliente_desistiu', label: 'Cliente desistiu' },
@@ -185,13 +188,9 @@ export function PDVView() {
   const [showProductMenu, setShowProductMenu] = useState(false);
   const [showCounterSale, setShowCounterSale] = useState(false);
   const [showSalesBreakdown, setShowSalesBreakdown] = useState(false);
-  const [showManualLog, setShowManualLog] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<string | null>(categories[0]?.id || null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showOnlyActive, setShowOnlyActive] = useState(true);
-  const [logAction, setLogAction] = useState('');
-  const [logDetails, setLogDetails] = useState('');
-  const [logTable, setLogTable] = useState('');
   const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableId: string; tableNumber: number } | null>(null);
   const [cancelReasonCode, setCancelReasonCode] = useState('');
   const [cancelReasonNotes, setCancelReasonNotes] = useState('');
@@ -209,6 +208,8 @@ export function PDVView() {
   const [pdvLockState, setPdvLockState] = useState<PdvLockState | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<ReceiptData | null>(null);
   const [isSwitchingQrMode, setIsSwitchingQrMode] = useState(false);
+  const [isSavingTableMode, setIsSavingTableMode] = useState(false);
+  const [showPhysicalTables, setShowPhysicalTables] = useState(false);
   const [showQrModePinDialog, setShowQrModePinDialog] = useState(false);
   const [showQrModeTransitionDialog, setShowQrModeTransitionDialog] = useState(false);
   const [customerTabSearch, setCustomerTabSearch] = useState('');
@@ -317,13 +318,6 @@ export function PDVView() {
   }, [syncData]);
 
   useEffect(() => {
-    if (!categories.length) return;
-    if (!activeCategory || !categories.some(category => category.id === activeCategory)) {
-      setActiveCategory(categories[0].id);
-    }
-  }, [categories, activeCategory]);
-
-  useEffect(() => {
     if (!currentSeller) {
       setPdvLockState(null);
       return;
@@ -354,6 +348,31 @@ export function PDVView() {
     setCashValue(formatMoneyInput(String(cents)));
   }, [cashDialog, cashState?.mustInheritLastClosing, cashState?.lastClosingBalance]);
 
+  const canSellUnavailableProduct = can(currentSeller, 'sellUnavailableProduct', permissionOverrides, userPermissionOverrides);
+  const pdvCategoriesById = useMemo(() => getPdvCategoriesById(categories), [categories]);
+  const pdvProducts = useMemo(
+    () => menu.filter(product => product.visible || canSellUnavailableProduct),
+    [canSellUnavailableProduct, menu],
+  );
+  const pdvCategories = useMemo(
+    () => buildPdvCatalogCategories(categories, pdvProducts),
+    [categories, pdvProducts],
+  );
+  const pdvProductsForActiveCategory = useMemo(
+    () => pdvProducts.filter(product => getPdvProductCategoryId(product, pdvCategoriesById) === activeCategory),
+    [activeCategory, pdvCategoriesById, pdvProducts],
+  );
+
+  useEffect(() => {
+    if (!pdvCategories.length) {
+      if (activeCategory !== null) setActiveCategory(null);
+      return;
+    }
+    if (!activeCategory || !pdvCategories.some(category => category.id === activeCategory)) {
+      setActiveCategory(pdvCategories[0].id);
+    }
+  }, [activeCategory, pdvCategories]);
+
   if (!currentSeller) {
     return <PdvTerminalLogin />;
   }
@@ -365,6 +384,9 @@ export function PDVView() {
 
   const handlePrintOpenTableReceipt = (table: TableType) => {
     const subtotal = getOrderItemsTotal(table.orders || []);
+    const serviceFeePercent = clampServiceFeePercent(Number(settings.serviceTax ?? MAX_SERVICE_FEE_PERCENT));
+    const serviceFee = calculateServiceFee(subtotal, serviceFeePercent);
+    const total = calculateBillTotal({ subtotal, serviceFee, discount: 0 });
     setReceiptPreview({
       title: `Mesa ${table.number}`,
       subtitle: 'CONTA ABERTA',
@@ -372,8 +394,9 @@ export function PDVView() {
       sellerName: currentSeller?.name,
       items: table.orders || [],
       subtotal,
-      serviceFee: 0,
-      total: subtotal,
+      serviceFee,
+      serviceFeePercent,
+      total,
     });
   };
 
@@ -422,7 +445,6 @@ export function PDVView() {
   const canViewOtherOperatorTables = can(currentSeller, 'viewOtherOperatorTables', permissionOverrides, userPermissionOverrides);
   const canAddOrderItem = can(currentSeller, 'addOrderItem', permissionOverrides, userPermissionOverrides);
   const canSendOrderToProduction = can(currentSeller, 'sendOrderToProduction', permissionOverrides, userPermissionOverrides);
-  const canSellUnavailableProduct = can(currentSeller, 'sellUnavailableProduct', permissionOverrides, userPermissionOverrides);
   const canAddItems = canAddOrderItem && canSendOrderToProduction;
   const canResolveServiceRequests = can(currentSeller, 'resolveServiceRequest', permissionOverrides, userPermissionOverrides);
   const currentSellerPermission = currentSeller?.permission === 'admin'
@@ -441,12 +463,15 @@ export function PDVView() {
     canViewOtherOperatorTables || !table.currentSellerId || table.currentSellerId === currentSeller.id
   );
   const visibleTables = tables
-    .filter(table => isTableVisibleForQrMode(table, isComandaMode))
+    .filter(table => isComandaMode && showPhysicalTables
+      ? table.number >= 1 && table.number <= 50
+      : isTableVisibleForQrMode(table, isComandaMode))
     .filter(canAccessTable);
-  const activeVisibleTables = visibleTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested' || t.customerTab);
+  const operationalTables = tables.filter(table => isTableVisibleForQrMode(table, isComandaMode)).filter(canAccessTable);
+  const activeVisibleTables = operationalTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested' || t.customerTab);
   const physicalTablesPendingTransition = getPhysicalTablesPendingTransition(tables);
   const activeTablesCount = activeVisibleTables.length;
-  const visibleTableNumbers = new Set(visibleTables.map(table => Number(table.number || 0)));
+  const visibleTableNumbers = new Set(operationalTables.map(table => Number(table.number || 0)));
   const servedTablesToday = new Set<string>();
   todayBills.forEach((bill) => {
     const tableNumber = Number(bill.tableNumber || 0);
@@ -459,7 +484,7 @@ export function PDVView() {
     if (tableNumber > 0) servedTablesToday.add(`mesa:${tableNumber}`);
   });
   const servedTablesTodayCount = servedTablesToday.size;
-  const openTablesAmount = visibleTables.reduce((sum, table) => {
+  const openTablesAmount = operationalTables.reduce((sum, table) => {
     const ordersTotal = getOrderItemsTotal(table.orders || []);
     const paymentsTotal = (table.payments || []).reduce((acc, payment) => acc + Number(payment.amount || 0), 0);
     const customerBalance = Number(table.customerTab?.totals?.balance ?? NaN);
@@ -472,6 +497,26 @@ export function PDVView() {
   const parseMoneyValue = (value: string) => {
     const digits = value.replace(/\D/g, '');
     return (Number(digits) || 0) / 100;
+  };
+
+  const saveTraditionalTableMode = async (table: TableType, traditional: boolean) => {
+    if (isSavingTableMode) return;
+    setIsSavingTableMode(true);
+    try {
+      const result = await AdminApi.setPhysicalTableMode(table.id, traditional);
+      useStore.setState(state => ({ tables: state.tables.map(item => item.id === result.tableId ? { ...item, qrFlowOverride: result.qrFlowOverride } : item) }));
+      setSelectedTable(current => current?.id === result.tableId ? { ...current, qrFlowOverride: result.qrFlowOverride } : current);
+      addNotification(traditional
+        ? `Mesa ${table.number} mantida no modo tradicional.`
+        : result.qrFlowOverride === 'mesa_until_close'
+          ? `Mesa ${table.number} seguirá o modo comanda depois de fechar esta conta.`
+          : `Mesa ${table.number} voltou a seguir o modo comanda.`, 'info');
+      await syncData({ includeCatalog: false });
+    } catch (error) {
+      addNotification(error instanceof Error ? error.message : 'Não foi possível alterar o modo desta mesa.', 'error');
+    } finally {
+      setIsSavingTableMode(false);
+    }
   };
 
   const submitQrModeSwitch = async (authorizationPin?: string) => {
@@ -580,9 +625,9 @@ export function PDVView() {
     }
     setSelectedTable(table);
     setCurrentTableId(table.id);
-    if (table.status === 'available') {
+    if (table.status === 'available' && !(isComandaMode && table.number <= 50)) {
       setShowProductMenu(true);
-      if (categories.length > 0) setActiveCategory(categories[0].id);
+      if (pdvCategories.length > 0) setActiveCategory(pdvCategories[0].id);
     }
   };
 
@@ -612,7 +657,7 @@ export function PDVView() {
 
   return (
     <div 
-      className="h-[calc(100dvh-50px)] min-h-0 bg-transparent text-white font-['Outfit'] p-4 sm:p-6 xl:p-8 relative overflow-x-hidden overflow-y-auto overscroll-contain custom-scrollbar"
+      className="h-[calc(100dvh-50px)] min-h-0 bg-transparent text-white font-['Outfit'] p-4 sm:p-6 xl:p-8 relative overflow-x-hidden overflow-y-scroll overscroll-contain custom-scrollbar"
       onClick={() => {
         if (hasPanicAlert) {
           setHasPanicAlert(false);
@@ -832,20 +877,35 @@ export function PDVView() {
           <Wallet size={16} />
           {cashActionLabel}
         </button>
-        {/* Venda balcão: ação principal do turno — destaque amarelo, canto direito. */}
-        <button
-          onClick={() => setShowCounterSale(true)}
-          disabled={!isCashOpen || !canAddOrderItem || !canLaunchPayment || !canCloseBill}
-          className={`ml-auto flex h-12 items-center gap-2.5 rounded-xl px-6 text-[11px] font-black uppercase tracking-[0.16em] transition-all ${
-            isCashOpen && canAddOrderItem && canLaunchPayment && canCloseBill
-              ? 'bg-gradient-to-b from-yellow-300 to-amber-400 text-black shadow-lg shadow-amber-400/30 hover:brightness-105 hover:shadow-amber-400/45 active:scale-[0.98]'
-              : 'cursor-not-allowed border border-white/5 bg-white/[0.02] opacity-40 text-zinc-600'
-          }`}
-          title="Venda balcão"
-        >
-          <ShoppingBag size={18} />
-          Venda balcão
-        </button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => { setShowOnlyActive(false); if (isComandaMode) setShowPhysicalTables(true); }}
+            disabled={!canOpenTable || !canAddItems || (!isCashOpen && !canPreviewTablesWithClosedCash)}
+            className={`flex h-12 items-center gap-2.5 rounded-xl border px-5 text-[11px] font-black uppercase tracking-[0.16em] transition-all ${
+              canOpenTable && canAddItems && (isCashOpen || canPreviewTablesWithClosedCash)
+                ? 'border-violet-400/35 bg-violet-500/15 text-violet-200 shadow-lg shadow-violet-950/20 hover:bg-violet-500/25 active:scale-[0.98]'
+                : 'cursor-not-allowed border-white/5 bg-white/[0.02] opacity-40 text-zinc-600'
+            }`}
+            title="Mostrar as mesas para abrir um atendimento"
+          >
+            <LayoutDashboard size={17} />
+            Abrir mesa
+          </button>
+          {/* Venda balcão: ação principal do turno — destaque amarelo, canto direito. */}
+          <button
+            onClick={() => setShowCounterSale(true)}
+            disabled={!isCashOpen || !canAddOrderItem || !canLaunchPayment || !canCloseBill}
+            className={`flex h-12 items-center gap-2.5 rounded-xl px-6 text-[11px] font-black uppercase tracking-[0.16em] transition-all ${
+              isCashOpen && canAddOrderItem && canLaunchPayment && canCloseBill
+                ? 'bg-gradient-to-b from-yellow-300 to-amber-400 text-black shadow-lg shadow-amber-400/30 hover:brightness-105 hover:shadow-amber-400/45 active:scale-[0.98]'
+                : 'cursor-not-allowed border border-white/5 bg-white/[0.02] opacity-40 text-zinc-600'
+            }`}
+            title="Venda balcão"
+          >
+            <ShoppingBag size={18} />
+            Venda balcão
+          </button>
+        </div>
       </div>
 
       {isEmbedded && (
@@ -911,6 +971,11 @@ export function PDVView() {
               <LayoutDashboard size={14} className="text-primary" /> Mapa de Mesas
             </h2>
             <div className="flex flex-wrap gap-3 sm:gap-4">
+              {isComandaMode && (
+                <button type="button" onClick={() => { setShowPhysicalTables(value => !value); setShowOnlyActive(false); }} className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-primary">
+                  {showPhysicalTables ? 'Ver comandas' : 'Mesas físicas'}
+                </button>
+              )}
               <button 
                 onClick={() => setShowOnlyActive(!showOnlyActive)}
                 className={`px-5 sm:px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${showOnlyActive ? 'bg-primary text-black' : 'bg-white/5 text-zinc-500'}`}
@@ -1158,22 +1223,6 @@ export function PDVView() {
             </div>
           )}
 
-          <div className="p-5 sm:p-8 border-t border-white/5 space-y-4 shrink-0 bg-[#0d0d0f]/50 mt-auto">
-             <button 
-               onClick={() => {
-                 setShowOnlyActive(false);
-               }}
-               className="w-full btn-beco bg-zinc-800 hover:bg-zinc-700 py-6 font-black uppercase tracking-widest text-xs rounded-2xl flex items-center justify-center gap-3"
-             >
-               <LayoutDashboard size={18} /> Abrir Mesa
-             </button>
-             <button 
-               onClick={() => setShowManualLog(true)}
-               className="w-full btn-beco btn-beco-purple py-6 font-black uppercase tracking-widest text-xs rounded-2xl flex items-center justify-center gap-3"
-             >
-               <PlusCircle size={18} /> Novo Lançamento Manual
-             </button>
-          </div>
         </div>
       </div>
 
@@ -1186,10 +1235,29 @@ export function PDVView() {
             exit={{ x: 600 }}
             className="fixed inset-y-0 right-0 w-full sm:w-[500px] bg-[#0d0d0f] border-l border-white/10 z-[300] shadow-2xl p-4 sm:p-7 lg:p-9 flex flex-col"
           >
-            <div className="flex justify-between items-center mb-6 sm:mb-8">
+            <div className="flex shrink-0 justify-between items-center mb-4">
               <h2 className="text-4xl sm:text-5xl font-black italic tracking-tighter">Mesa <span className="text-primary">{selectedTable.number}</span></h2>
               <button type="button" aria-label="Fechar mesa" onClick={() => setSelectedTable(null)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all"><X size={24}/></button>
             </div>
+
+            {isComandaMode && managedTable.number >= 1 && managedTable.number <= 50 && !managedTable.customerTab && (
+              <div className="mb-5 shrink-0 rounded-2xl border border-primary/25 bg-primary/5 p-3">
+                <label className="flex cursor-pointer items-center justify-between gap-3 text-sm font-bold">
+                  <span>Manter em modo mesa tradicional</span>
+                  <input type="checkbox" role="switch" checked={managedTable.qrFlowOverride === 'mesa'}
+                    onChange={event => void saveTraditionalTableMode(managedTable, event.target.checked)}
+                    disabled={isSavingTableMode || !can(currentSeller, 'updateTableStatus', permissionOverrides, userPermissionOverrides)}
+                    className="h-6 w-6 shrink-0 cursor-pointer accent-violet-500 disabled:opacity-40" />
+                </label>
+                <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+                  {isSavingTableMode ? 'Salvando…' : managedTable.qrFlowOverride === 'mesa'
+                    ? 'O QR desta mesa abre a conta tradicional. A preferência continua após o fechamento.'
+                    : managedTable.qrFlowOverride === 'mesa_until_close'
+                      ? 'Esta conta continua tradicional até fechar. Depois, o QR volta ao modo comanda.'
+                      : 'O QR desta mesa segue o modo comanda.'}
+                </p>
+              </div>
+            )}
 
             {managedTable?.status === 'available' ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center px-4 sm:px-12">
@@ -1197,12 +1265,14 @@ export function PDVView() {
                   <PlusCircle size={48} />
                 </div>
                 <h3 className="text-2xl font-black italic tracking-tight mb-4">Mesa disponível</h3>
-                <p className="text-zinc-500 text-sm font-medium mb-12">Inicie um novo atendimento para adicionar itens e gerenciar esta mesa.</p>
+                <p className="text-zinc-500 text-sm font-medium mb-12">{isComandaMode && managedTable.number <= 50 && !managedTable.qrFlowOverride
+                  ? 'Ative a chave acima para abrir uma conta tradicional nesta mesa.'
+                  : 'Inicie um novo atendimento para adicionar itens e gerenciar esta mesa.'}</p>
                 <button 
                   onClick={() => canOpenTable && canAddItems && setShowProductMenu(true)}
-                  disabled={!canOpenTable || !canAddItems}
+                  disabled={!canOpenTable || !canAddItems || (isComandaMode && managedTable.number <= 50 && !managedTable.qrFlowOverride)}
                   className={`w-full btn-beco py-8 text-xl font-black rounded-3xl ${
-                    canOpenTable && canAddItems
+                    canOpenTable && canAddItems && !(isComandaMode && managedTable.number <= 50 && !managedTable.qrFlowOverride)
                       ? 'btn-beco-purple'
                       : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
                   }`}
@@ -1368,7 +1438,7 @@ export function PDVView() {
             <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-8 overflow-hidden min-h-0">
                {/* CATEGORIES */}
                <div className="w-full lg:w-64 flex lg:flex-col gap-3 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto pb-2 lg:pb-0 lg:pr-2 custom-scrollbar shrink-0">
-                  {categories.map(cat => (
+                  {pdvCategories.map(cat => (
                     <button 
                       key={cat.id}
                       onClick={() => setActiveCategory(cat.id)}
@@ -1378,17 +1448,14 @@ export function PDVView() {
                           : 'bg-[#121214] border border-white/10 text-zinc-400 hover:text-white hover:bg-[#1a1a1e]'
                       }`}
                     >
-                      {cat.name}
+                      {cat.label}
                     </button>
                   ))}
                </div>
 
-               <div className="flex-1 overflow-y-auto lg:pr-4 custom-scrollbar min-h-0">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-                    {menu
-                      .filter(p => p.visible || canSellUnavailableProduct)
-                      .filter(p => !activeCategory || p.categoryId === activeCategory)
-                      .map(product => (
+               <div className="min-w-0 flex-1 overflow-y-auto lg:pr-4 custom-scrollbar min-h-0">
+                  <div className="mx-auto grid min-w-0 w-full grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                    {pdvProductsForActiveCategory.map(product => (
                       <motion.button
                         key={product.id}
                         whileHover={{ x: 6 }}
@@ -1408,33 +1475,36 @@ export function PDVView() {
                           });
                         }}
                         disabled={!canAddOrderItem}
-                        className={`bg-[#121214] border border-white/10 rounded-3xl p-4 sm:p-6 flex justify-between items-center gap-3 group relative overflow-hidden text-left transition-all shadow-lg ${
+                        className={`min-w-0 w-full bg-[#121214] border border-white/10 rounded-3xl p-3 sm:p-4 flex items-center gap-3 group relative overflow-hidden text-left transition-all shadow-lg ${
                           canAddOrderItem
                             ? 'hover:bg-[#1a1a1e]'
                             : 'opacity-40 grayscale cursor-not-allowed'
                         }`}
                       >
-                         <div className="flex items-center gap-4 min-w-0">
-                           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-black transition-all shrink-0">
-                              {product.modifierGroups?.length ? <Sparkles size={20} /> : <Plus size={20} />}
-                           </div>
-                           <div className="min-w-0">
-                             <h4 className="text-lg sm:text-xl font-bold italic tracking-tight leading-none text-white truncate">{product.name}</h4>
-                             <div className="flex flex-wrap items-center gap-2 mt-2">
-                               <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">
-                                 {product.categoryName || product.categoryId}
-                               </span>
-                               <span className={`text-[10px] font-black uppercase tracking-widest ${
-                                 product.modifierGroups?.length ? 'text-primary' : 'text-zinc-600'
-                               }`}>
-                                 {getModifierGroupsLabel(product)}
-                               </span>
-                             </div>
-                           </div>
+                         <div className="relative order-2 h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 sm:h-24 sm:w-24">
+                           <img
+                             src={getImageSrc(product.image)}
+                             alt={product.name}
+                             onError={applyImageFallback}
+                             className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+                           />
+                           <span className="absolute bottom-1.5 right-1.5 flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-black shadow-lg shadow-black/30">
+                             {product.modifierGroups?.length ? <Sparkles size={17} /> : <Plus size={18} strokeWidth={3} />}
+                           </span>
                          </div>
-                         
-                         <div className="flex items-center gap-6 shrink-0">
-                           <span className="text-base sm:text-lg font-black italic tracking-tighter text-emerald-400 whitespace-nowrap">{formatCurrency(product.price)}</span>
+                         <div className="flex min-w-0 flex-1 flex-col self-stretch py-0.5">
+                           <h4 className="line-clamp-2 break-words text-base font-bold italic leading-tight tracking-tight text-white sm:text-lg">{product.name}</h4>
+                           <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
+                             <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">
+                               {pdvCategories.find(category => category.id === activeCategory)?.label}
+                             </span>
+                             <span className={`text-[9px] font-black uppercase tracking-widest ${
+                               product.modifierGroups?.length ? 'text-primary' : 'text-zinc-600'
+                             }`}>
+                               {getModifierGroupsLabel(product)}
+                             </span>
+                           </div>
+                           <span className="pt-2 text-base font-black italic tracking-tighter text-emerald-400 whitespace-nowrap sm:text-lg">{formatCurrency(product.price)}</span>
                          </div>
                       </motion.button>
                     ))}
@@ -1899,69 +1969,6 @@ export function PDVView() {
               setSelectedTable(null);
             }} 
           />
-        )}
-      </AnimatePresence>
-
-      {/* MANUAL LOG MODAL */}
-      <AnimatePresence>
-        {showManualLog && (
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[600] flex items-center justify-center p-3 sm:p-8 lg:p-12"
-          >
-            <div className="absolute inset-0 bg-black/90 backdrop-blur-3xl" onClick={() => setShowManualLog(false)} />
-            <div className="glass-card w-full max-w-xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto custom-scrollbar p-5 sm:p-8 lg:p-12 relative z-10 border-white/10 shadow-2xl">
-               <div className="flex justify-between items-center mb-8 sm:mb-12">
-                  <h2 className="text-2xl sm:text-3xl font-black italic tracking-tighter uppercase">Novo <span className="text-primary">Lançamento</span></h2>
-                  <button type="button" aria-label="Fechar lançamento manual" onClick={() => setShowManualLog(false)} className="p-4 glass rounded-2xl hover:text-rose-500"><X size={20}/></button>
-               </div>
-
-               <div className="space-y-6">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2 block">Ação / Título</label>
-                    <input 
-                      value={logAction} onChange={(e) => setLogAction(e.target.value)}
-                      className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-lg bg-transparent"
-                      placeholder="Ex: Sangria de Caixa, Entrada Manual..."
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2 block">Detalhes / Observações</label>
-                    <textarea 
-                      value={logDetails} onChange={(e) => setLogDetails(e.target.value)}
-                      className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-lg bg-transparent h-32"
-                      placeholder="Descreva o motivo do lançamento..."
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2 block">Mesa Relacionada (Opcional)</label>
-                    <input 
-                      value={logTable} onChange={(e) => setLogTable(e.target.value)}
-                      className="w-full glass p-5 rounded-2xl border-white/10 outline-none font-bold text-lg bg-transparent"
-                      placeholder="Ex: 12"
-                    />
-                  </div>
-               </div>
-
-               <button 
-                  onClick={async () => {
-                    await addAuditLog({
-                      action: logAction || 'Lançamento Manual',
-                      details: logDetails,
-                      table_number: logTable,
-                      origin: 'pdv'
-                    });
-                    setShowManualLog(false);
-                    setLogAction('');
-                    setLogDetails('');
-                    setLogTable('');
-                  }}
-                  className="w-full btn-beco btn-beco-purple py-5 sm:py-8 text-base sm:text-xl font-black rounded-3xl mt-8 sm:mt-12"
-               >
-                  REGISTRAR LANÇAMENTO
-               </button>
-            </div>
-          </motion.div>
         )}
       </AnimatePresence>
 

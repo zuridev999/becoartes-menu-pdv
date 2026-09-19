@@ -95,7 +95,7 @@ export interface Table {
   capacity?: number;
   lastActivity?: Date;
   currentSellerId?: string;
-  qrFlowOverride?: 'mesa_until_close' | null;
+  qrFlowOverride?: 'mesa' | 'mesa_until_close' | null;
   qrSessionRevision?: number;
 }
 

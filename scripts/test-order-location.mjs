@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { getOrderLocation, preserveCurrentQrTable } from '../src/lib/order-location.ts';
+import { getOrderLocation, preserveCurrentQrTable, isTableVisibleForQrMode, getPhysicalTablesPendingTransition } from '../src/lib/order-location.ts';
+
+const traditionalTable = { id: '2', number: 2, status: 'ordering', qrFlowOverride: 'mesa' };
+assert.equal(isTableVisibleForQrMode(traditionalTable, true), true);
+assert.equal(isTableVisibleForQrMode({ ...traditionalTable, qrFlowOverride: null }, true), false);
+assert.equal(isTableVisibleForQrMode(traditionalTable, false), true);
+assert.deepEqual(getPhysicalTablesPendingTransition([traditionalTable]), [], 'mesa com preferência permanente não é uma transição temporária');
 
 assert.deepEqual(
   getOrderLocation({

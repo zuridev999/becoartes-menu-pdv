@@ -135,6 +135,32 @@ try {
   const transitionedPhysical = await db.execute("SELECT id, number, status, qr_flow_override FROM tables WHERE CAST(number AS INTEGER) IN (1, 2) ORDER BY CAST(number AS INTEGER)");
   assert.deepEqual(switched.data.transitionTables, [1], `somente a mesa física ativa deve permanecer herdada: ${JSON.stringify(transitionedPhysical.rows)}`);
 
+  const physical10 = (await db.execute("SELECT id FROM tables WHERE CAST(number AS INTEGER) = 10")).rows[0].id;
+  const setPhysicalMode = (traditional, extra = {}) => request('/api/tables/qr-mode', {
+    method: 'POST', token: adminToken, headers: allowedHeaders,
+    body: { tableId: physical10, traditional }, ...extra,
+  });
+  await setPhysicalMode(true, { token: '', expectedStatus: 401 });
+  await setPhysicalMode('yes', { expectedStatus: 400 });
+  await setPhysicalMode(true);
+  let physicalFlow = await request('/api/qr/resolve', { method: 'POST', body: { tableNumber: 10 } });
+  assert.equal(physicalFlow.data.flow, 'mesa', 'mesa vazia marcada deve abrir no modo tradicional');
+  await request('/api/tables/status', { method: 'POST', token: adminToken, headers: allowedHeaders, body: { tableId: physical10, status: 'available' } });
+  physicalFlow = await request('/api/qr/resolve', { method: 'POST', body: { tableNumber: 10 } });
+  assert.equal(physicalFlow.data.flow, 'mesa', 'preferência manual deve persistir após encerramento');
+  await setPhysicalMode(false);
+  physicalFlow = await request('/api/qr/resolve', { method: 'POST', body: { tableNumber: 10 } });
+  assert.equal(physicalFlow.data.flow, 'comanda', 'desmarcar mesa vazia restaura o fluxo global');
+  await setPhysicalMode(true);
+  await db.execute({ sql: "UPDATE tables SET status = 'ordering' WHERE id = ?", args: [physical10] });
+  const deferredMode = await setPhysicalMode(false);
+  assert.equal(deferredMode.data.qrFlowOverride, 'mesa_until_close', 'conta ativa não pode ser dividida ao desmarcar');
+  await request('/api/tables/status', { method: 'POST', token: adminToken, headers: allowedHeaders, body: { tableId: physical10, status: 'available' } });
+  physicalFlow = await request('/api/qr/resolve', { method: 'POST', body: { tableNumber: 10 } });
+  assert.equal(physicalFlow.data.flow, 'comanda');
+  const digital51 = (await db.execute("SELECT id FROM tables WHERE CAST(number AS INTEGER) = 51")).rows[0].id;
+  await request('/api/tables/qr-mode', { method: 'POST', token: adminToken, headers: allowedHeaders, body: { tableId: digital51, traditional: true }, expectedStatus: 400 });
+
   const transferTables = await db.execute("SELECT id, number FROM tables WHERE CAST(number AS INTEGER) IN (3, 4, 5, 6) ORDER BY CAST(number AS INTEGER)");
   const byNumber = Object.fromEntries(transferTables.rows.map((row) => [Number(row.number), String(row.id)]));
   await db.batch([
@@ -299,10 +325,24 @@ try {
   const order = await request('/api/orders/send-to-kitchen', {
     method: 'POST',
     body: orderBody,
+    headers: {
+      'X-Forwarded-For': '203.0.113.42',
+      'User-Agent': 'Becoartes-QR-Test/1.0',
+    },
   });
   assert.equal(order.data.request.sourceTableNumber, 2);
   assert.equal(order.data.request.customerTabNumber, opened.data.tab.tableNumber);
   assert.equal(order.data.inventorySyncError, null, 'QR não deve receber detalhe técnico de estoque');
+  const qrOrderAudit = await db.execute({
+    sql: "SELECT details, table_number FROM audit_logs WHERE action = 'qr_order_submitted' AND json_extract(details, '$.orderId') = ? LIMIT 1",
+    args: [orderBody.orderId],
+  });
+  assert.equal(qrOrderAudit.rows.length, 1, 'pedido QR deve registrar a origem técnica uma única vez');
+  const qrOrderAuditDetails = JSON.parse(String(qrOrderAudit.rows[0].details || '{}'));
+  assert.equal(qrOrderAuditDetails.sourceIp, '203.0.113.42');
+  assert.equal(qrOrderAuditDetails.userAgent, 'Becoartes-QR-Test/1.0');
+  assert.equal(qrOrderAuditDetails.qrVisitId, orderBody.qrVisitId);
+  assert.equal(Number(qrOrderAudit.rows[0].table_number), 2);
   const funnel = await request('/api/qr/analytics/funnel', {
     token: adminToken,
     headers: allowedHeaders,
@@ -510,6 +550,7 @@ try {
   });
   assert.equal(fullCapacity.error, 'Não há comandas disponíveis agora. Chame alguém da equipe.');
 
+  await setPhysicalMode(true);
   await request('/api/settings/qr-mode', {
     method: 'POST',
     token: adminToken,
@@ -521,14 +562,23 @@ try {
     body: { tableNumber: 2 },
   });
   assert.equal(backToTables.data.flow, 'mesa');
+  assert.equal((await db.execute({ sql: 'SELECT qr_flow_override FROM tables WHERE id = ?', args: [physical10] })).rows[0].qr_flow_override, 'mesa');
+  await request('/api/settings/qr-mode', {
+    method: 'POST', token: adminToken, headers: allowedHeaders, body: { qrMode: 'comanda' },
+  });
+  assert.equal((await request('/api/qr/resolve', { method: 'POST', body: { tableNumber: 10 } })).data.flow, 'mesa', 'preferência persiste ao alternar o modo global');
 
   console.log(JSON.stringify({
     ok: true,
     covered: [
       'active_table_inherited_until_close',
+      'persistent_manual_table_preference',
+      'manual_preference_removal_preserves_active_account',
+      'manual_preference_requires_session_and_physical_table',
       'inactive_table_enters_customer_tab_mode',
       'customer_tabs_reserved_to_51_200',
       'order_records_physical_source_and_account',
+      'qr_order_records_ip_device_and_visit_audit',
       'kitchen_and_pdv_receive_both_locations',
       'service_requests_keep_physical_source',
       'customer_tab_ownership_required',

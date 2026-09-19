@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CreditCard, Landmark, Plus, Search, ShoppingBag, Trash2, Wallet, X } from 'lucide-react';
 import { useStore, type Modifier, type OrderItem, type Product } from '../../store';
 import { createId } from '../../lib/id';
+import { applyImageFallback, getImageSrc } from '../../lib/image';
+import { buildPdvCatalogCategories, getPdvCategoriesById, getPdvProductCategoryId } from '../../lib/pdv-catalog';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { ProductModal } from './ProductModal';
 
@@ -43,6 +45,11 @@ const formatCurrency = (value: number) => value.toLocaleString('pt-BR', {
   currency: 'BRL',
 });
 
+const formatPaymentInput = (digits: string) => {
+  if (!digits) return '';
+  return (Number(digits) / 100).toFixed(2);
+};
+
 const createCounterItem = (
   product: Product,
   quantity: number,
@@ -82,17 +89,14 @@ export function CounterSaleModal({
 }) {
   const { menu, categories, closeCounterSale, addNotification } = useStore();
   const [cart, setCart] = useState<OrderItem[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>(categories[0]?.id || '');
+  const [activeCategory, setActiveCategory] = useState<string>('');
   const [query, setQuery] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentValidationMessage, setPaymentValidationMessage] = useState('');
   const [payments, setPayments] = useState<Array<{ id: string; method: PaymentMethod; amount: number }>>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!activeCategory && categories[0]?.id) setActiveCategory(categories[0].id);
-  }, [activeCategory, categories]);
 
   const subtotal = getOrderItemsTotal(cart);
   const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
@@ -100,9 +104,25 @@ export function CounterSaleModal({
   const change = Math.max(0, paid - subtotal);
   const hasCashPayment = payments.some((payment) => payment.method === 'cash');
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleProducts = menu
-    .filter((product) => product.visible || canSellUnavailableProduct)
-    .filter((product) => !activeCategory || product.categoryId === activeCategory)
+  const categoriesById = useMemo(() => getPdvCategoriesById(categories), [categories]);
+  const pdvProducts = useMemo(
+    () => menu.filter((product) => product.visible || canSellUnavailableProduct),
+    [canSellUnavailableProduct, menu],
+  );
+  const pdvCategories = useMemo(
+    () => buildPdvCatalogCategories(categories, pdvProducts),
+    [categories, pdvProducts],
+  );
+  useEffect(() => {
+    if (!pdvCategories.length) {
+      if (activeCategory) setActiveCategory('');
+      return;
+    }
+    if (!pdvCategories.some(category => category.id === activeCategory)) setActiveCategory(pdvCategories[0].id);
+  }, [activeCategory, pdvCategories]);
+
+  const visibleProducts = pdvProducts
+    .filter((product) => getPdvProductCategoryId(product, categoriesById) === activeCategory)
     .filter((product) => {
       if (!normalizedQuery) return true;
       return hasVolumeAwareMatch(`${product.name} ${product.categoryName || ''}`, normalizedQuery);
@@ -131,11 +151,16 @@ export function CounterSaleModal({
       addNotification('Selecione a forma de pagamento.', 'error');
       return;
     }
-    const amount = Number(String(paymentAmount || '').replace(',', '.')) || remaining;
+    const amount = paymentAmount ? Number(paymentAmount) / 100 : remaining;
     if (amount <= 0) {
       addNotification('Informe um valor de pagamento maior que zero.', 'error');
       return;
     }
+    if (amount > remaining && paymentMethod !== 'cash') {
+      setPaymentValidationMessage(`O valor lançado passou do total da compra (${formatCurrency(remaining)}). Para receber a mais, selecione Dinheiro.`);
+      return;
+    }
+    setPaymentValidationMessage('');
     const label = PAYMENT_OPTIONS.find((option) => option.id === paymentMethod)?.label || paymentMethod;
     const confirmed = window.confirm(`Confirmar pagamento em ${label}? Confira na maquininha antes de lançar.`);
     if (!confirmed) return;
@@ -214,7 +239,7 @@ export function CounterSaleModal({
                   />
                 </div>
                 <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                  {categories.map((category) => (
+                  {pdvCategories.map((category) => (
                     <button
                       key={category.id}
                       onClick={() => setActiveCategory(category.id)}
@@ -224,31 +249,39 @@ export function CounterSaleModal({
                           : 'bg-white/[0.03] text-zinc-400 border-white/10 hover:text-white'
                       }`}
                     >
-                      {category.name}
+                      {category.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="max-h-[34dvh] xl:max-h-none xl:flex-1 xl:min-h-0 overflow-y-auto custom-scrollbar pr-1">
-                <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+              <div className="min-w-0 max-h-[34dvh] xl:max-h-none xl:flex-1 xl:min-h-0 overflow-y-auto custom-scrollbar pr-1">
+                <div className="mx-auto grid min-w-0 w-full grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
                   {visibleProducts.map((product) => (
                     <button
                       key={product.id}
                       onClick={() => product.modifierGroups?.length ? setSelectedProduct(product) : addCounterItem(product)}
                       disabled={!canAddOrderItem}
-                      className="rounded-3xl bg-[#121214] border border-white/10 p-4 text-left hover:border-amber-300/50 hover:bg-[#1a1a1e] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                      className="group min-w-0 w-full overflow-hidden rounded-3xl bg-[#121214] border border-white/10 p-3 sm:p-4 text-left hover:border-amber-300/50 hover:bg-[#1a1a1e] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="text-lg font-black italic tracking-tight text-white truncate">{product.name}</h3>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mt-1">{product.categoryName || product.categoryId}</p>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="relative order-2 h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 sm:h-24 sm:w-24">
+                          <img
+                            src={getImageSrc(product.image)}
+                            alt={product.name}
+                            onError={applyImageFallback}
+                            className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+                          />
+                          <span className="absolute bottom-1.5 right-1.5 flex h-8 w-8 items-center justify-center rounded-xl bg-amber-400 text-black shadow-lg shadow-black/30">
+                            <Plus size={18} strokeWidth={3} />
+                          </span>
                         </div>
-                        <div className="w-10 h-10 rounded-2xl bg-amber-400/10 text-amber-300 flex items-center justify-center shrink-0">
-                          <Plus size={20} strokeWidth={3} />
+                        <div className="flex min-w-0 flex-1 flex-col self-stretch py-0.5">
+                          <h3 className="line-clamp-2 break-words text-base font-black italic leading-tight tracking-tight text-white sm:text-lg">{product.name}</h3>
+                          <p className="mt-1 truncate text-[9px] font-black uppercase tracking-widest text-zinc-500">{product.categoryName || product.categoryId}</p>
+                          <p className="mt-auto pt-3 text-lg font-black text-emerald-400 sm:text-xl">{formatCurrency(product.price)}</p>
                         </div>
                       </div>
-                      <p className="mt-4 text-xl font-black text-emerald-400">{formatCurrency(product.price)}</p>
                     </button>
                   ))}
                 </div>
@@ -304,7 +337,8 @@ export function CounterSaleModal({
                         key={option.id}
                         onClick={() => {
                           setPaymentMethod(option.id);
-                          setPaymentAmount(remaining > 0 ? remaining.toFixed(2) : '');
+                          setPaymentValidationMessage('');
+                          setPaymentAmount(remaining > 0 ? String(Math.round(remaining * 100)) : '');
                         }}
                         className={`rounded-2xl border p-3 flex flex-col items-center gap-2 text-[9px] font-black uppercase tracking-widest transition-all ${
                           paymentMethod === option.id ? 'bg-amber-400 text-black border-amber-400' : 'bg-white/[0.03] border-white/10 text-zinc-400'
@@ -318,15 +352,32 @@ export function CounterSaleModal({
                 </div>
                 <div className="flex gap-2">
                   <input
-                    value={paymentAmount}
-                    onChange={(event) => setPaymentAmount(event.target.value)}
-                    placeholder={remaining > 0 ? remaining.toFixed(2) : '0,00'}
+                    value={formatPaymentInput(paymentAmount)}
+                    inputMode="decimal"
+                    pattern="[0-9.]*"
+                    aria-label="Valor do pagamento"
+                    onFocus={(event) => event.currentTarget.select()}
+                    onChange={(event) => {
+                      setPaymentAmount(event.target.value.replace(/\D/g, '').slice(0, 9));
+                      setPaymentValidationMessage('');
+                    }}
+                    onKeyDown={(event) => {
+                      if (['e', 'E', '+', '-', ','].includes(event.key)) event.preventDefault();
+                    }}
+                    placeholder={remaining > 0 ? formatPaymentInput(String(Math.round(remaining * 100))) : '0.00'}
                     className="flex-1 h-14 rounded-2xl bg-white/[0.04] border border-white/10 px-4 text-xl font-black text-white outline-none focus:border-amber-300/60"
                   />
                   <button onClick={addPayment} disabled={!canLaunchPayment || !paymentMethod} className="h-14 px-5 rounded-2xl bg-amber-400 text-black text-xs font-black uppercase tracking-widest disabled:opacity-30">
                     Lançar
                   </button>
                 </div>
+                <p className="-mt-2 text-[10px] font-bold text-zinc-500">Digite somente números: 5000 = R$ 50.00.</p>
+
+                {paymentValidationMessage && (
+                  <div role="alert" className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-xs font-bold leading-relaxed text-rose-200">
+                    {paymentValidationMessage}
+                  </div>
+                )}
 
                 {payments.length > 0 && (
                   <div className="space-y-2">

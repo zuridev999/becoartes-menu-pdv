@@ -71,6 +71,7 @@ export const PERMISSION_BY_ROUTE = Object.freeze({
   'POST /api/inventory/sync-open-orders': 'manageSettings',
   'POST /api/inventory/reconcile-pending': 'manageSettings',
   'POST /api/tables/status': 'updateTableStatus',
+  'POST /api/tables/qr-mode': 'updateTableStatus',
   'POST /api/tables/open': 'openTable',
   'POST /api/tables/transfer': 'transferTable',
   'POST /api/tables/join': 'joinTables',

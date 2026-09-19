@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Plus, Menu, Printer } from 'lucide-react';
+import { X, Wallet, CreditCard, Banknote, Trash2, CheckCircle2, ChevronRight, Plus, Menu, Printer, Pencil, ChevronDown } from 'lucide-react';
 import { useStore, type Seller, type Table as TableType } from '../../store';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, parseFlexibleDecimal, roundMoney } from '../../lib/billing';
 import { can } from '../../lib/permissions';
@@ -44,6 +44,8 @@ const paymentMethodLabels: Record<PaymentMethod, string> = {
   pix: 'PIX / QR Code',
   cash: 'Dinheiro',
 };
+
+const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const TECHNICAL_SELLER_IDS = new Set(['admin-bootstrap', 'manager-default', 'operator-default', 'master']);
 const TECHNICAL_SELLER_NAMES = new Set(['administrador', 'admin full', 'admin mestre', 'operador']);
@@ -114,16 +116,20 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const [serviceFeeInputMode, setServiceFeeInputMode] = useState<ServiceFeeInputMode>('percent');
   const [serviceFeePercentInput, setServiceFeePercentInput] = useState(formatPercent(defaultServiceFeePercent).replace('.', ','));
   const [serviceFeeAmountInput, setServiceFeeAmountInput] = useState('');
-  const [discountValue, setDiscountValue] = useState(0);
+  const [discountInput, setDiscountInput] = useState('0');
+  const discountValue = Math.max(0, parseFlexibleDecimal(discountInput) ?? 0);
+  const [showServiceFeeEditor, setShowServiceFeeEditor] = useState(false);
+  const [showDiscountEditor, setShowDiscountEditor] = useState(false);
+  const [showOrderItems, setShowOrderItems] = useState(false);
   const [discountType, setDiscountType] = useState<'fixed' | 'percent'>('fixed');
   const [discountReason] = useState('');
   const [payments, setPayments] = useState<Payment[]>(() => table.payments || []);
   const [currentMethod, setCurrentMethod] = useState<PaymentMethod | null>(null);
-  const [pendingPayment, setPendingPayment] = useState<{ method: PaymentMethod; amount: number } | null>(null);
   const [paymentCancelDialog, setPaymentCancelDialog] = useState<{ payment: Payment; index: number } | null>(null);
   const [paymentCancelReasonCode, setPaymentCancelReasonCode] = useState('');
   const [paymentCancelReasonNotes, setPaymentCancelReasonNotes] = useState('');
   const [isSavingPayment, setIsSavingPayment] = useState(false);
+  const paymentSavingRef = useRef(false);
   const [couponInput, setCouponInput] = useState('');
   const [coupon, setCoupon] = useState<ValidatedCoupon | null>(null);
   const [couponMessage, setCouponMessage] = useState('');
@@ -189,7 +195,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     }
     setShowAddSellerModal(true);
   };
-  
+
   const subtotal = roundMoney(table.orders.reduce((acc: number, o: any) => {
     const itemPrice = o.price + (o.selectedModifiers || []).reduce((mAcc: number, m: any) => mAcc + m.price, 0);
     return acc + (itemPrice * o.quantity);
@@ -210,7 +216,9 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
       requestedPercent,
       maxEditableServiceFeePercent,
     );
-  const serviceFeePercent = subtotal > 0 ? roundMoney((feeValue / subtotal) * 100) : 0;
+  const serviceFeePercent = serviceFeeInputMode === 'percent'
+    ? clampServiceFeePercent(requestedPercent, maxEditableServiceFeePercent)
+    : subtotal > 0 ? roundMoney((feeValue / subtotal) * 100) : 0;
   const rawDiscountAmount = discountType === 'fixed'
     ? discountValue
     : subtotal * (Math.min(100, Math.max(0, discountValue)) / 100);
@@ -371,7 +379,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   const currentPaymentCreatesInvalidChange = roundMoney(paidTotal + currentPaymentAmount) > totalFinal
     && currentMethod !== 'cash'
     && !hasCashPayment;
-  const currentAmountFormatted = (Number(amountDigits) / 100).toFixed(2);
+  const currentAmountFormatted = (Number(amountDigits) / 100).toFixed(2).replace('.', ',');
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawVal = e.target.value;
@@ -382,7 +390,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
   };
 
   const handleAddPayment = async () => {
-    if (!canLaunchPayment) return;
+    if (paymentSavingRef.current || !canLaunchPayment) return;
     if (payments.length >= 1 && !canSplitPayment) return;
     if (!currentMethod) return;
     if (!selectedSeller) return;
@@ -390,25 +398,23 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     if (val <= 0) return;
     const nextPaidTotal = roundMoney(paidTotal + val);
     if (nextPaidTotal > totalFinal && currentMethod !== 'cash' && !hasCashPayment) return;
-    setPendingPayment({ method: currentMethod, amount: val });
-  };
-
-  const handleConfirmPayment = async () => {
-    if (!pendingPayment || !canLaunchPayment || !selectedSeller) return;
+    paymentSavingRef.current = true;
     setIsSavingPayment(true);
     try {
       const result = await OperationalApi.createTablePayment({
         tableId: table.id,
         tableNumber: table.number,
-        method: pendingPayment.method,
-        amount: pendingPayment.amount,
+        method: currentMethod,
+        amount: val,
         sellerId: selectedSeller.id,
         sellerName: selectedSeller.name,
       });
       setPayments([...payments, result.payment]);
-      setPendingPayment(null);
       setCurrentMethod(null);
+    } catch (error) {
+      addNotification(error instanceof Error ? error.message : 'Não foi possível salvar o pagamento. Tente novamente.', 'error');
     } finally {
+      paymentSavingRef.current = false;
       setIsSavingPayment(false);
     }
   };
@@ -525,129 +531,224 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/90 backdrop-blur-3xl z-[400]" />
       <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }} className="fixed inset-0 z-[450] flex items-center justify-center p-2 sm:p-6 pointer-events-none font-['Outfit']">
-        <div className="glass-card w-full max-w-[64rem] h-[calc(100dvh-1rem)] sm:h-[90dvh] lg:h-[85vh] flex flex-col lg:flex-row overflow-hidden pointer-events-auto border-white/10 shadow-2xl">
-           {/* Esquerda: Resumo */}
-           <div className="w-full lg:w-[36%] max-h-[38dvh] lg:max-h-none p-4 sm:p-6 lg:p-8 bg-white/5 flex flex-col border-b lg:border-b-0 lg:border-r border-white/5">
-              <div className="flex justify-between items-center mb-4 lg:mb-6">
-                 <h2 className="text-2xl sm:text-3xl font-black italic tracking-tighter">Resumo <span className="text-primary">Mesa {table.number}</span></h2>
-                 <button onClick={onClose} className="p-2.5 glass rounded-xl hover:text-rose-500"><X size={20}/></button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto space-y-3 lg:space-y-4 pr-2 custom-scrollbar">
-                 {table.orders.map((o: any, idx: number) => {
-                   const modifiersTotal = o.selectedModifiers?.reduce((mAcc: number, m: any) => mAcc + m.price, 0) || 0;
-                   return (
-                    <div key={idx} className="space-y-1 pb-3 border-b border-white/5">
-                       <div className="flex justify-between items-start">
-                          <div>
-                             <p className="font-bold text-sm sm:text-base">{o.quantity}x {o.name}</p>
-                             <p className="text-[9px] text-gray-500 uppercase font-black">{o.categoryName || o.category}</p>
-                          </div>
-                          <p className="font-black text-white/70 text-sm">R$ {((o.price + modifiersTotal) * o.quantity).toFixed(2)}</p>
-                       </div>
-                       {o.selectedModifiers?.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {o.selectedModifiers.map((m: any) => (
-                              <span key={m.id} className="text-[8px] font-black bg-white/5 px-1.5 py-0.5 rounded text-gray-400">+{m.name}</span>
-                            ))}
-                          </div>
-                       )}
-                       {o.notes && (
-                          <p className="text-[9px] text-rose-400 font-bold italic">"{o.notes}"</p>
-                       )}
-                    </div>
-                   );
-                 })}
-              </div>
-
-              <div className="mt-4 lg:mt-6 space-y-3 pt-4 lg:pt-6 border-t border-white/10 text-sm">
-                 <div className="flex justify-between text-gray-400 font-bold"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>
-                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
-                    <div className="flex justify-between text-gray-200 font-black items-center gap-4">
-                       <span className="text-base sm:text-lg">Taxa de serviço ({formatPercent(serviceFeePercent)}%)</span>
-                       <span className="text-xl sm:text-2xl text-white">R$ {feeValue.toFixed(2)}</span>
-                    </div>
-                    {canEditServiceFeeControls ? (
-                      <>
-	                        <div className="flex items-center gap-1.5" role="group" aria-label="Modo de edição da taxa de serviço">
-	                          <button
-	                            type="button"
-	                            onClick={() => handleServiceFeeModeChange('percent')}
-	                            className={`h-10 px-3 rounded-xl text-[10px] font-black border transition-all ${serviceFeeInputMode === 'percent' ? 'bg-primary text-white border-primary' : 'border-white/10 text-gray-400 hover:text-white'}`}
-	                          >
-	                            %
-	                          </button>
-	                          <button
-	                            type="button"
-	                            onClick={() => handleServiceFeeModeChange('amount')}
-	                            className={`h-10 px-3 rounded-xl text-[10px] font-black border transition-all ${serviceFeeInputMode === 'amount' ? 'bg-primary text-white border-primary' : 'border-white/10 text-gray-400 hover:text-white'}`}
-	                          >
-	                            R$
-	                          </button>
-                          {serviceFeeInputMode === 'percent' ? [0, 1, 5, 10, 13].map((percent) => (
-                            <button
-                              key={percent}
-                              type="button"
-                              onClick={() => setServiceFeePercentInput(String(percent))}
-	                              className={`h-10 w-10 rounded-xl text-[10px] font-black border transition-all ${serviceFeeInputMode === 'percent' && serviceFeePercent === percent ? 'bg-primary text-white border-primary' : 'border-white/10 text-gray-400 hover:text-white'}`}
-                            >
-                              {percent}%
-                            </button>
-                          )) : null}
-                          <input
-                            type="text"
-                            min={0}
-                            step={0.01}
-                            inputMode="decimal"
-                            value={serviceFeeInputMode === 'percent' ? serviceFeePercentInput : serviceFeeAmountInput}
-                            onChange={(e) => {
-                              const nextValue = e.target.value.replace(/[^0-9.,]/g, '');
-                              if (serviceFeeInputMode === 'percent') setServiceFeePercentInput(nextValue);
-                              else setServiceFeeAmountInput(nextValue);
-                            }}
-                            onBlur={serviceFeeInputMode === 'percent' ? normalizeServiceFeePercentInput : normalizeServiceFeeAmountInput}
-                            aria-label={serviceFeeInputMode === 'percent' ? 'Percentual da taxa de serviço' : 'Valor em reais da taxa de serviço'}
-                            placeholder={serviceFeeInputMode === 'percent' ? '7,12' : '10,35'}
-                            className="h-10 min-w-24 rounded-xl border border-white/10 bg-white/[0.05] px-2 text-center text-[10px] font-black text-primary outline-none focus:border-primary"
-                          />
-	                          <span className="text-[10px] font-black text-gray-500">{serviceFeeInputMode === 'percent' ? '%' : 'R$'}</span>
-	                        </div>
-	                        <p className="text-[10px] font-bold text-gray-500">
-                          {serviceFeeInputMode === 'percent'
-                            ? `Valor equivalente: R$ ${feeValue.toFixed(2)}${isAdminSeller ? '' : ` (limite ${formatPercent(maxEditableServiceFeePercent)}%)`}`
-                            : `Percentual equivalente: ${formatPercent(serviceFeePercent)}%${isAdminSeller ? '' : ` (limite ${formatPercent(maxEditableServiceFeePercent)}%)`}`}
-                        </p>
-                        {serviceFeePercent > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setServiceFeePercentInput('0');
-                              setServiceFeeAmountInput('0,00');
-                              setServiceFeeInputMode('percent');
-                            }}
-                            className="w-full py-2 rounded-xl border border-amber-500/20 text-amber-300 text-[10px] font-black uppercase tracking-widest hover:bg-amber-500/10"
-                          >
-                            Remover taxa de serviço
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-[9px] font-black uppercase tracking-widest text-gray-600">Sem permissão para alterar a taxa de serviço.</p>
-                    )}
-                 </div>
-                 <div className="flex justify-between text-rose-400 font-bold"><span>Desconto</span><span>- R$ {discountAmountValue.toFixed(2)}</span></div>
-                 <div className="flex justify-between text-amber-300 font-bold">
-                   <span>Cupom{coupon?.appliedAmount === 0 && coupon?.benefitLabel ? ` (${coupon.benefitLabel})` : ''}</span>
-                   <span>- R$ {couponAmountValue.toFixed(2)}</span>
-                 </div>
-                 <div className="flex justify-between text-3xl font-black text-accent pt-3 border-t border-white/5 italic tracking-tighter"><span>Total</span><span>R$ {totalFinal.toFixed(2)}</span></div>
+        <div role="dialog" aria-modal="true" aria-labelledby="checkout-title" className="glass-card pointer-events-auto flex max-h-[calc(100dvh-1rem)] w-full max-w-[68rem] min-w-0 flex-col overflow-hidden rounded-3xl border-white/10 bg-[#101013] shadow-2xl sm:max-h-[90dvh]">
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-400">Fechamento da conta</p>
+              <h2 id="checkout-title" className="text-2xl font-black tracking-tight sm:text-3xl">Mesa <span className="text-primary">{table.number}</span></h2>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Fechar pagamento" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"><X size={20} /></button>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain custom-scrollbar">
+            <div className="grid min-w-0 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+              <section aria-label="Resumo e ajustes da conta" className="min-w-0 space-y-2 border-b border-white/10 bg-white/[0.02] p-3 sm:space-y-3 sm:p-6 lg:border-b-0 lg:border-r">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-base font-bold">Resumo da conta</h3>
+                  <button type="button" aria-expanded={showOrderItems} aria-controls="checkout-items" onClick={() => setShowOrderItems(value => !value)} className="flex min-h-9 items-center gap-1.5 rounded-xl px-2 text-xs font-bold text-zinc-400 hover:bg-white/5 hover:text-white sm:min-h-11">
+                    {table.orders.reduce((count, item) => count + item.quantity, 0)} {table.orders.reduce((count, item) => count + item.quantity, 0) === 1 ? 'item' : 'itens'}
+                    <ChevronDown size={16} className={showOrderItems ? 'rotate-180' : ''} />
+                  </button>
                 </div>
-             </div>
+                {showOrderItems && (
+                  <div id="checkout-items" className="space-y-3 rounded-xl border border-white/10 bg-black/15 p-3">
+                    {table.orders.map((item, index) => {
+                      const modifiersTotal = (item.selectedModifiers || []).reduce((sum, modifier) => sum + modifier.price, 0);
+                      return (
+                        <div key={item.id || index} className="space-y-1 text-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="min-w-0 break-words font-semibold">{item.quantity}× {item.name}</span>
+                            <span className="shrink-0 font-bold text-zinc-300">{money((item.price + modifiersTotal) * item.quantity)}</span>
+                          </div>
+                          {!!item.selectedModifiers?.length && <p className="text-xs text-zinc-400">{item.selectedModifiers.map(modifier => modifier.name).join(' · ')}</p>}
+                          {item.notes && <p className="text-xs text-zinc-400">{item.notes}</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="flex justify-between gap-3 text-sm text-zinc-400"><span>Subtotal dos itens</span><span className="font-bold text-zinc-200">{money(subtotal)}</span></div>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-2 sm:p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">Desconto</span>
+                    <div className="flex items-center gap-2">
+                      <span className={discountAmountValue > 0 ? 'text-sm font-bold text-rose-300' : 'text-sm font-bold text-zinc-400'}>{discountAmountValue > 0 ? '− ' : ''}{money(discountAmountValue)}</span>
+                      {canApplyDiscount && <button type="button" aria-label="Editar desconto" aria-expanded={showDiscountEditor} onClick={() => setShowDiscountEditor(value => !value)} className="grid h-11 w-11 place-items-center rounded-xl bg-white/5 text-primary hover:bg-primary/15"><Pencil size={16} /></button>}
+                    </div>
+                  </div>
+                  {canApplyDiscount && showDiscountEditor && (
+                    <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+                      <div className="flex gap-2">
+                        <input aria-label="Valor do desconto" type="text" inputMode="decimal" value={discountInput} onChange={event => setDiscountInput(event.target.value.replace(/[^0-9.,]/g, ''))} className="h-11 w-full min-w-0 rounded-xl border border-white/10 bg-black/20 px-3 text-base outline-none focus:border-primary" />
+                        <button type="button" aria-label="Alternar desconto entre reais e percentual" onClick={() => setDiscountType(discountType === 'fixed' ? 'percent' : 'fixed')} className="h-11 w-12 shrink-0 rounded-xl border border-white/10 text-sm font-bold text-primary">{discountType === 'fixed' ? 'R$' : '%'}</button>
+                        <button type="button" onClick={() => setShowDiscountEditor(false)} className="h-11 rounded-xl bg-primary/15 px-3 text-sm font-bold text-primary">OK</button>
+                      </div>
+                      {discountValue > 0 && <button type="button" onClick={() => { setDiscountInput('0'); setShowDiscountEditor(false); }} className="min-h-11 text-xs font-semibold text-rose-300">Remover desconto</button>}
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-2 sm:p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">Taxa de serviço <span className="whitespace-nowrap text-primary">{formatPercent(serviceFeePercent).replace('.', ',')}%</span></p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="text-sm font-bold">{money(feeValue)}</span>
+                      {canEditServiceFeeControls && <button type="button" aria-label="Editar taxa de serviço" aria-expanded={showServiceFeeEditor} onClick={() => setShowServiceFeeEditor(value => !value)} className="grid h-11 w-11 place-items-center rounded-xl bg-white/5 text-primary hover:bg-primary/15"><Pencil size={16} /></button>}
+                    </div>
+                  </div>
+                  {canEditServiceFeeControls && showServiceFeeEditor && (
+                    <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
+                      <div className="grid grid-cols-2 gap-2" role="group" aria-label="Modo de edição da taxa de serviço">
+                        <button type="button" aria-pressed={serviceFeeInputMode === 'percent'} onClick={() => handleServiceFeeModeChange('percent')} className={`min-h-11 rounded-xl border text-sm font-bold ${serviceFeeInputMode === 'percent' ? 'border-primary bg-primary text-white' : 'border-white/10 text-zinc-400'}`}>Percentual (%)</button>
+                        <button type="button" aria-pressed={serviceFeeInputMode === 'amount'} onClick={() => handleServiceFeeModeChange('amount')} className={`min-h-11 rounded-xl border text-sm font-bold ${serviceFeeInputMode === 'amount' ? 'border-primary bg-primary text-white' : 'border-white/10 text-zinc-400'}`}>Valor (R$)</button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input type="text" inputMode="decimal" value={serviceFeeInputMode === 'percent' ? serviceFeePercentInput : serviceFeeAmountInput}
+                          onChange={event => {
+                            const value = event.target.value.replace(/[^0-9.,]/g, '');
+                            if (serviceFeeInputMode === 'percent') setServiceFeePercentInput(value);
+                            else setServiceFeeAmountInput(value);
+                          }}
+                          onBlur={serviceFeeInputMode === 'percent' ? normalizeServiceFeePercentInput : normalizeServiceFeeAmountInput}
+                          aria-label={serviceFeeInputMode === 'percent' ? 'Percentual da taxa de serviço' : 'Valor em reais da taxa de serviço'}
+                          className="h-11 w-full min-w-0 rounded-xl border border-white/10 bg-black/20 px-3 text-base outline-none focus:border-primary" />
+                        <button type="button" onClick={() => setShowServiceFeeEditor(false)} className="h-11 rounded-xl bg-primary/15 px-4 text-sm font-bold text-primary">OK</button>
+                      </div>
+                      {!isAdminSeller && <p className="text-xs text-zinc-400">Até {formatPercent(maxEditableServiceFeePercent).replace('.', ',')}% de serviço.</p>}
+                    </div>
+                  )}
+                  {canEditServiceFeeControls && (
+                    <button type="button" onClick={() => {
+                      setServiceFeePercentInput(feeValue > 0 ? '0' : formatPercent(defaultServiceFeePercent).replace('.', ','));
+                      setServiceFeeInputMode('percent');
+                      setShowServiceFeeEditor(false);
+                    }} className="mt-1 inline-flex min-h-9 items-center rounded-lg px-2 text-xs font-semibold text-amber-300 hover:bg-amber-400/10 sm:min-h-11">
+                      {feeValue > 0 ? 'Remover taxa de serviço' : 'Restaurar taxa de serviço'}
+                    </button>
+                  )}
+                </div>
+                {coupon && <div className="flex justify-between gap-3 text-sm text-amber-300"><span>Cupom{coupon.benefitLabel ? ` · ${coupon.benefitLabel}` : ''}</span><span className="shrink-0 font-bold">− {money(couponAmountValue)}</span></div>}
+                <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-3">
+                  <span className="text-sm font-bold text-zinc-300">Total da conta</span>
+                  <span className="text-2xl font-black text-accent">{money(totalFinal)}</span>
+                </div>
+              </section>
 
-           {/* Direita: Pagamento */}
-           <div className="flex-1 min-h-0 bg-[#0d0d0f] p-4 sm:p-5 lg:p-6 flex flex-col overflow-y-auto custom-scrollbar">
-              <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-[minmax(230px,1fr)_minmax(170px,0.72fr)] lg:items-stretch">
-                 <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-3">
+            <section aria-label="Pagamento" className="min-w-0 bg-[#101013] p-4 sm:p-6">
+              <div className="min-w-0 space-y-3">
+                 <h3 className="text-base font-bold">Receber pagamento</h3>
+
+                 <div className="grid grid-cols-4 gap-2 mb-3">
+                    {[
+                      { id: 'credit', name: 'Crédito', icon: CreditCard },
+                      { id: 'debit', name: 'Débito', icon: CreditCard },
+                      { id: 'pix', name: 'PIX', icon: Wallet },
+                      { id: 'cash', name: 'Dinheiro', icon: Banknote },
+                    ].map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => canChangePaymentMethod && setCurrentMethod(m.id as PaymentMethod)}
+                        disabled={!canChangePaymentMethod || isSavingPayment}
+                        className={`min-h-[64px] rounded-2xl border px-1 py-3 transition-all flex flex-col items-center justify-center gap-2 ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-[1.02]' : 'bg-black/20 border-white/10 opacity-75 hover:opacity-100'} ${!canChangePaymentMethod ? 'cursor-not-allowed grayscale' : ''}`}
+                      >
+                        <m.icon size={20} />
+                        <span className="font-black uppercase text-[11px] tracking-wide">{m.name}</span>
+                      </button>
+                    ))}
+                 </div>
+                 {!canChangePaymentMethod && (
+                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                     Seu perfil não pode alterar a forma de pagamento.
+                   </p>
+                 )}
+                 {canChangePaymentMethod && !currentMethod && (
+                   <p className="mb-2 text-[9px] font-black uppercase tracking-widest text-amber-300">
+                     Selecione a forma de pagamento.
+                   </p>
+                 )}
+
+                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(190px,280px)_auto] sm:items-center">
+                    <div className="relative">
+                       <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-base text-gray-500">R$</span>
+                       <input
+                         type="text"
+                         inputMode="numeric"
+                         aria-label="Valor do pagamento"
+                         disabled={isSavingPayment}
+                         value={currentAmountFormatted}
+                         onChange={handleAmountChange}
+                         className="w-full rounded-xl border border-white/10 bg-black/20 py-2.5 pl-10 pr-5 text-2xl font-black text-accent outline-none"
+                       />
+                    </div>
+                    <button
+                       onClick={handleAddPayment}
+                       disabled={isSavingPayment || currentPaymentAmount <= 0 || !canLaunchPayment || !selectedSeller || !currentMethod || (payments.length >= 1 && !canSplitPayment) || currentPaymentCreatesInvalidChange}
+                       className="h-12 w-full px-7 sm:w-[190px] btn-beco btn-beco-purple text-xs font-black rounded-xl disabled:opacity-30 disabled:grayscale"
+                    >
+                       {isSavingPayment ? 'Salvando...' : 'Lançar Valor'}
+                    </button>
+                 </div>
+                 {payments.length > 0 && (
+                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-emerald-300">
+                     Pagamentos lançados ficam salvos na mesa mesmo se ela continuar aberta.
+                   </p>
+                 )}
+                 {!canLaunchPayment && (
+                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-rose-400">
+                     Seu perfil não pode lançar pagamentos.
+                   </p>
+                 )}
+                 {canLaunchPayment && !selectedSeller && (
+                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                     Selecione o vendedor responsável antes de lançar qualquer pagamento.
+                   </p>
+                 )}
+                 {canLaunchPayment && payments.length >= 1 && !canSplitPayment && (
+                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-amber-300">
+                     Seu perfil não pode dividir pagamento em mais de uma forma.
+                   </p>
+                 )}
+                 {(hasInvalidOverpayment || currentPaymentCreatesInvalidChange) && (
+                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-rose-400">
+                     Valor acima do total só é permitido em dinheiro, porque gera troco.
+                   </p>
+                 )}
+
+                 <div className="space-y-2">
+                    {payments.map((p, idx) => (
+                      <div key={idx} className="flex min-w-0 flex-wrap justify-between items-center gap-2 p-3 glass rounded-xl border-white/5 animate-in slide-in-from-right duration-300">
+                         <div className="flex min-w-0 items-center gap-3">
+                            <CheckCircle2 className="text-emerald-500" size={20}/>
+                            <div>
+                               <p className="font-black text-sm uppercase tracking-wider">{paymentMethodLabels[p.method]}</p>
+                               <p className="text-[9px] text-gray-500 font-bold uppercase">Registrado</p>
+                            </div>
+                         </div>
+                         <div className="ml-auto flex shrink-0 items-center gap-3 sm:gap-6">
+                            <p className="text-lg font-black text-white">{money(p.amount)}</p>
+                            <button
+                              onClick={() => {
+                                setPaymentCancelReasonCode('');
+                                setPaymentCancelReasonNotes('');
+                                setPaymentCancelDialog({ payment: p, index: idx });
+                              }}
+                              disabled={!canCancelPayment}
+                              className="text-rose-500 p-1.5 hover:bg-rose-500/10 rounded-lg disabled:opacity-20 disabled:cursor-not-allowed"
+                              title={canCancelPayment ? 'Remover pagamento' : 'Sem permissão para cancelar pagamento'}
+                            >
+                              <Trash2 size={18}/>
+                            </button>
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+
+              <details className="mt-5 border-t border-white/10 pt-3">
+                <summary className="cursor-pointer py-2 text-sm font-semibold text-zinc-300">Vendedor, cliente e cupom <span className="mt-1 block text-xs font-normal text-zinc-500">{selectedSeller?.name || 'Selecione o vendedor'}</span></summary>
+                <div className="mt-3">
+              <div className="grid min-w-0 grid-cols-1 gap-2.5 ">
+                 <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.025] p-3">
                     <div className="mb-2 flex items-center justify-between gap-3">
                       <h4 className="text-[9px] font-black uppercase tracking-widest text-gray-500">Vendedor</h4>
                       {canManageSellers && (
@@ -660,8 +761,8 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                         </button>
                       )}
                     </div>
-                    <select 
-                       value={selectedSellerId} 
+                    <select
+                       value={selectedSellerId}
                        onChange={(e) => setSelectedSellerId(e.target.value)}
                        className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm font-black outline-none"
                     >
@@ -671,32 +772,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                        ))}
                     </select>
                  </div>
-                 <div className={`rounded-2xl border border-white/10 bg-white/[0.025] p-3 ${canApplyDiscount ? '' : 'opacity-40'}`}>
-                    <h4 className="mb-2 text-[9px] font-black uppercase tracking-widest text-gray-500">Desconto</h4>
-                    {!canApplyDiscount && (
-                      <p className="mb-2 text-[9px] font-black uppercase tracking-widest text-rose-300">
-                        Desconto bloqueado. Taxa de serviço é controlada separadamente.
-                      </p>
-                    )}
-                    <div className="grid grid-cols-[minmax(0,1fr)_44px] gap-2">
-                       <input 
-                         type="number" 
-                         value={discountValue} 
-                         onChange={(e) => canApplyDiscount && setDiscountValue(Number(e.target.value))}
-                         disabled={!canApplyDiscount}
-                         className="min-w-0 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm font-black outline-none"
-                         placeholder={canApplyDiscount ? 'Valor...' : 'Sem permissão'}
-                       />
-                       <button 
-                         onClick={() => canApplyDiscount && setDiscountType(discountType === 'fixed' ? 'percent' : 'fixed')}
-                         disabled={!canApplyDiscount}
-                         className="h-full w-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm font-black text-primary"
-                       >
-                         {discountType === 'fixed' ? 'R$' : '%'}
-                       </button>
-                    </div>
-                 </div>
-                <div className="grid grid-cols-2 gap-2 lg:col-span-2">
+                <div className="grid min-w-0 grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setShowCustomerDocument((value) => !value)}
@@ -721,7 +797,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
               </div>
 
               {(showCustomerDocument || showCouponInput || couponMessage || coupon?.requiresBenefitChoice || (coupon && !coupon.requiresBenefitChoice)) && (
-                <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
                   {showCustomerDocument && (
                     <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.04] p-3">
                       <h4 className="mb-2 text-[9px] font-black uppercase tracking-widest text-emerald-200">CPF/CNPJ na conta</h4>
@@ -737,7 +813,7 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                   {showCouponInput && (
                     <div className="rounded-2xl border border-amber-400/20 bg-amber-400/[0.04] p-3">
                       <h4 className="mb-2 text-[9px] font-black uppercase tracking-widest text-amber-200">Cupom</h4>
-                      <div className="grid grid-cols-[1fr_auto] gap-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                         <input
                           value={couponInput}
                           onChange={(event) => {
@@ -797,177 +873,28 @@ export function CheckoutModal({ table, onClose }: { table: TableType, onClose: (
                 </div>
               )}
 
-              <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-                 <h4 className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-2">Fluxo de Caixa</h4>
-                 
-                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3">
-                    {[
-                      { id: 'credit', name: 'Crédito', icon: CreditCard },
-                      { id: 'debit', name: 'Débito', icon: CreditCard },
-                      { id: 'pix', name: 'PIX', icon: Wallet },
-                      { id: 'cash', name: 'Dinheiro', icon: Banknote },
-                    ].map(m => (
-                      <button 
-                        key={m.id}
-                        onClick={() => canChangePaymentMethod && setCurrentMethod(m.id as PaymentMethod)}
-                        disabled={!canChangePaymentMethod}
-                        className={`min-h-[62px] rounded-2xl border px-4 py-3 transition-all flex flex-col items-center justify-center gap-2 ${currentMethod === m.id ? 'bg-primary border-primary shadow-2xl shadow-primary/20 scale-[1.02]' : 'bg-black/20 border-white/10 opacity-75 hover:opacity-100'} ${!canChangePaymentMethod ? 'cursor-not-allowed grayscale' : ''}`}
-                      >
-                        <m.icon size={20} />
-                        <span className="font-black uppercase text-[8px] tracking-widest">{m.name}</span>
-                      </button>
-                    ))}
-                 </div>
-                 {!canChangePaymentMethod && (
-                   <p className="mb-5 text-[10px] font-black uppercase tracking-widest text-amber-300">
-                     Seu perfil não pode alterar a forma de pagamento.
-                   </p>
-                 )}
-                 {canChangePaymentMethod && !currentMethod && (
-                   <p className="mb-2 text-[9px] font-black uppercase tracking-widest text-amber-300">
-                     Selecione a forma exata conferida na maquininha antes de lançar.
-                   </p>
-                 )}
-
-                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(190px,280px)_auto] sm:items-center">
-                    <div className="relative">
-                       <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-base text-gray-500">R$</span>
-                       <input 
-                         type="text"
-                         inputMode="numeric"
-                         value={currentAmountFormatted}
-                         onChange={handleAmountChange}
-                         className="w-full rounded-xl border border-white/10 bg-black/20 py-2.5 pl-10 pr-5 text-2xl font-black text-accent outline-none"
-                       />
-                    </div>
-                    <button 
-                       onClick={handleAddPayment}
-                       disabled={isSavingPayment || !canLaunchPayment || !selectedSeller || !currentMethod || (payments.length >= 1 && !canSplitPayment) || currentPaymentCreatesInvalidChange}
-                       className="h-12 w-full px-7 sm:w-[190px] btn-beco btn-beco-purple text-xs font-black rounded-xl disabled:opacity-30 disabled:grayscale"
-                    >
-                       {isSavingPayment ? 'Salvando...' : 'Lançar Valor'}
-                    </button>
-                 </div>
-                 {pendingPayment && (
-                   <div className="mb-5 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 sm:p-5 shadow-2xl shadow-amber-900/10">
-                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-200 mb-2">
-                       Conferência obrigatória
-                     </p>
-                     <h4 className="text-xl sm:text-2xl font-black italic text-white mb-2">
-                       Tem certeza que foi em {paymentMethodLabels[pendingPayment.method]}?
-                     </h4>
-                     <p className="text-xs sm:text-sm font-bold text-gray-300 leading-relaxed">
-                       Valor: <span className="text-accent font-black">R$ {pendingPayment.amount.toFixed(2)}</span>. Confirme na maquininha antes de salvar. Todos os pagamentos precisam bater com o relatório da maquininha.
-                     </p>
-                     <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                       <button
-                         onClick={() => setPendingPayment(null)}
-                         disabled={isSavingPayment}
-                         className="py-3 rounded-xl bg-white/10 border border-white/10 font-black uppercase tracking-widest text-[10px] text-white disabled:opacity-40"
-                       >
-                         Voltar e corrigir
-                       </button>
-                       <button
-                         onClick={handleConfirmPayment}
-                         disabled={isSavingPayment}
-                         className="py-3 rounded-xl bg-emerald-400 text-black font-black uppercase tracking-widest text-[10px] disabled:opacity-40"
-                       >
-                         Sim, conciliei na maquininha
-                       </button>
-                     </div>
-                   </div>
-                 )}
-                 {payments.length > 0 && (
-                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-emerald-300">
-                     Pagamentos lançados ficam salvos na mesa mesmo se ela continuar aberta.
-                   </p>
-                 )}
-                 {!canLaunchPayment && (
-                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-rose-400">
-                     Seu perfil não pode lançar pagamentos.
-                   </p>
-                 )}
-                 {canLaunchPayment && !selectedSeller && (
-                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-amber-300">
-                     Selecione o vendedor responsável antes de lançar qualquer pagamento.
-                   </p>
-                 )}
-                 {canLaunchPayment && payments.length >= 1 && !canSplitPayment && (
-                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-amber-300">
-                     Seu perfil não pode dividir pagamento em mais de uma forma.
-                   </p>
-                 )}
-                 {(hasInvalidOverpayment || currentPaymentCreatesInvalidChange) && (
-                   <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-rose-400">
-                     Valor acima do total só é permitido em dinheiro, porque gera troco.
-                   </p>
-                 )}
-
-                 <div className="space-y-3">
-                    {payments.map((p, idx) => (
-                      <div key={idx} className="flex justify-between items-center p-3 glass rounded-xl border-white/5 animate-in slide-in-from-right duration-300">
-                         <div className="flex items-center gap-3">
-                            <CheckCircle2 className="text-emerald-500" size={20}/>
-                            <div>
-                               <p className="font-black text-sm uppercase tracking-wider">{paymentMethodLabels[p.method]}</p>
-                               <p className="text-[9px] text-gray-500 font-bold uppercase">Confirmado</p>
-                            </div>
-                         </div>
-                         <div className="flex items-center gap-6">
-                            <p className="text-lg font-black text-white">R$ {p.amount.toFixed(2)}</p>
-                            <button
-                              onClick={() => {
-                                setPaymentCancelReasonCode('');
-                                setPaymentCancelReasonNotes('');
-                                setPaymentCancelDialog({ payment: p, index: idx });
-                              }}
-                              disabled={!canCancelPayment}
-                              className="text-rose-500 p-1.5 hover:bg-rose-500/10 rounded-lg disabled:opacity-20 disabled:cursor-not-allowed"
-                              title={canCancelPayment ? 'Remover pagamento' : 'Sem permissão para cancelar pagamento'}
-                            >
-                              <Trash2 size={18}/>
-                            </button>
-                         </div>
-                      </div>
-                    ))}
-                 </div>
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                 <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-gray-500">Troco</span>
-                    <span className="mt-1 block text-2xl font-black text-emerald-400">R$ {change.toFixed(2)}</span>
-                 </div>
-                 <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3 text-right">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-gray-500">Restante</span>
-                    <span className={`mt-1 block text-2xl font-black ${remaining > 0 ? 'text-rose-500 animate-pulse' : 'text-emerald-400'}`}>R$ {remaining.toFixed(2)}</span>
-                 </div>
-              </div>
-
-              <div className="mt-3 flex items-stretch gap-3">
-                <button
-                  disabled={remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill}
-                  onClick={handleFinish}
-                  className="flex-1 btn-beco btn-beco-purple py-4 text-base font-black shadow-2xl shadow-primary/40 disabled:opacity-20 disabled:grayscale transition-all flex items-center justify-center gap-3 group rounded-2xl"
-                >
-                  FINALIZAR CONTA <ChevronRight className="group-hover:translate-x-2 transition-transform" size={22}/>
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePrintReceipt}
-                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-200 transition-all hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
-                  title={payments.length > 0 ? 'Imprimir recibo da conta' : 'Imprimir conta antes do pagamento'}
-                >
-                  <Printer size={18} />
-                </button>
-              </div>
-                {(remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill) && (
-                <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-rose-500 mt-3 animate-pulse">
-                  {!canCloseBill ? 'Sem permissão para fechar conta' : !canLaunchPayment ? 'Sem permissão para lançar pagamento' : !selectedSeller ? 'Selecione o vendedor responsável' : hasPendingCouponChoice ? 'Escolha o benefício do cupom' : hasInvalidOverpayment ? 'Troco só pode existir em pagamento em dinheiro' : `Falta receber R$ ${remaining.toFixed(2)}`}
-                </p>
-              )}
-           </div>
+                </div>
+              </details>
+            </section>
+          </div>
         </div>
+        <footer className="shrink-0 space-y-3 border-t border-white/10 bg-[#151518] px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="text-xs text-zinc-400">Recebido <span className="ml-1 font-bold text-emerald-400">{money(paidTotal)}</span>{change > 0 && <span className="ml-3">Troco <strong className="text-emerald-400">{money(change)}</strong></span>}</div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-bold text-zinc-400">{remaining > 0 ? 'Falta receber' : 'Conta paga'}</span>
+              <span className={`text-xl font-black sm:text-2xl ${remaining > 0 ? 'text-accent' : 'text-emerald-400'}`}>{money(remaining)}</span>
+            </div>
+          </div>
+          <div className="flex items-stretch gap-2">
+            <button type="button" onClick={handlePrintReceipt} aria-label="Imprimir conta" className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-zinc-300 hover:bg-white/10"><Printer size={18} /><span className="hidden sm:inline">Imprimir conta</span></button>
+            <button disabled={isSavingPayment || remaining > 0 || hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill} onClick={handleFinish} className="btn-beco btn-beco-purple flex h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold disabled:opacity-30 disabled:grayscale">
+              Finalizar conta <ChevronRight size={18} />
+            </button>
+          </div>
+          {(hasInvalidOverpayment || hasPendingCouponChoice || !selectedSeller || !canLaunchPayment || !canCloseBill) && <p className="text-xs text-rose-300">{!canCloseBill ? 'Sem permissão para fechar conta.' : !canLaunchPayment ? 'Sem permissão para lançar pagamento.' : !selectedSeller ? 'Selecione o vendedor responsável.' : hasPendingCouponChoice ? 'Escolha o benefício do cupom.' : 'Troco só é permitido em dinheiro.'}</p>}
+        </footer>
+      </div>
       </motion.div>
       <AnimatePresence>
         {showAddSellerModal && (

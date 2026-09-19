@@ -5,6 +5,7 @@ export const createQrModeTransitionStatements = ({ currentMode, nextMode, nextSe
       sql: `
         UPDATE tables
         SET qr_flow_override = CASE
+          WHEN qr_flow_override = 'mesa' THEN 'mesa'
           WHEN CAST(number AS INTEGER) BETWEEN 1 AND 50
             AND NOT EXISTS (SELECT 1 FROM customer_tabs ct WHERE ct.table_id = tables.id AND ct.status IN ('open', 'paid'))
             AND (
@@ -20,7 +21,7 @@ export const createQrModeTransitionStatements = ({ currentMode, nextMode, nextSe
       args: [],
     });
   } else if (nextMode === 'mesa') {
-    statements.push({ sql: "UPDATE tables SET qr_flow_override = NULL WHERE qr_flow_override IS NOT NULL", args: [] });
+    statements.push({ sql: "UPDATE tables SET qr_flow_override = NULL WHERE qr_flow_override = 'mesa_until_close'", args: [] });
   }
   statements.push({
     sql: "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('settings', ?, CURRENT_TIMESTAMP)",
@@ -46,6 +47,9 @@ export const createQrComandaTransitionServices = ({
   createId,
   getCustomerTabTotalsByTable,
   sanitizeCustomerTab,
+  ensureTableAccess,
+  requirePermission,
+  addAuditLog,
   recordQrAnalyticsEvent = async () => ({ recorded: false }),
 }) => {
   const getTableById = async (tableId) => {
@@ -178,7 +182,7 @@ export const createQrComandaTransitionServices = ({
       inheritedMesa = false;
     }
 
-    const flow = globalMode === 'mesa' || inheritedMesa ? 'mesa' : 'comanda';
+    const flow = globalMode === 'mesa' || inheritedMesa || table.qr_flow_override === 'mesa' ? 'mesa' : 'comanda';
     const response = {
       flow,
       physicalTable: { id: String(table.id), number: safeNumber },
@@ -262,7 +266,7 @@ export const createQrComandaTransitionServices = ({
     }
     const resolution = await resolvePhysicalQrFlow({ tableNumber: access.tableNumber });
     if (resolution.flow !== 'comanda') {
-      const error = new Error(`A Mesa ${access.tableNumber} continua no modo mesa até o fechamento.`);
+      const error = new Error(`A Mesa ${access.tableNumber} está no modo mesa tradicional.`);
       error.statusCode = 409;
       throw error;
     }
@@ -400,6 +404,55 @@ export const createQrComandaTransitionServices = ({
     return { tab, accessToken: createCustomerTabAccessToken(row) };
   };
 
+  const setPhysicalTableMode = async ({ tableId, traditional }, session) => {
+    const settings = await getSettings();
+    requirePermission(session, 'updateTableStatus', settings);
+    await ensureTableAccess(tableId, session);
+    if (typeof traditional !== 'boolean') {
+      const error = new Error('Informe se a mesa deve permanecer no modo tradicional.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const table = await getTableById(tableId);
+    if (!table || Number(table.number) < 1 || Number(table.number) > 50) {
+      const error = new Error('Selecione uma mesa física de 1 a 50.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (settings?.qrMode !== 'comanda') {
+      const error = new Error('Ative o modo comanda para configurar uma exceção por mesa.');
+      error.statusCode = 409;
+      throw error;
+    }
+    // Removing a preference must not split an account already in progress.
+    const result = await db.execute({
+      sql: `UPDATE tables SET qr_flow_override = CASE
+          WHEN ? THEN 'mesa'
+          WHEN status IN ('ordering', 'waiting', 'paid', 'bill_requested')
+            OR EXISTS (SELECT 1 FROM orders o WHERE o.table_id = tables.id AND o.status != 'closed')
+            OR EXISTS (SELECT 1 FROM table_payments tp WHERE tp.table_id = tables.id AND tp.status = 'active')
+          THEN 'mesa_until_close' ELSE NULL END,
+          qr_session_revision = COALESCE(qr_session_revision, 1) + 1
+        WHERE id = ? AND NOT EXISTS (
+          SELECT 1 FROM customer_tabs ct WHERE ct.table_id = tables.id AND ct.status IN ('open', 'paid')
+        ) RETURNING qr_flow_override`,
+      args: [traditional ? 1 : 0, table.id],
+    });
+    if (!result.rows.length) {
+      const error = new Error('Esta conta já está vinculada a uma comanda.');
+      error.statusCode = 409;
+      throw error;
+    }
+    const qrFlowOverride = result.rows[0].qr_flow_override || null;
+    await addAuditLog({
+      id: createId(), action: 'physical_table_mode_changed',
+      details: JSON.stringify({ tableId: table.id, before: table.qr_flow_override, after: qrFlowOverride }),
+      table_number: String(table.number), origin: 'pdv',
+      authorId: session.id, authorName: session.name, timestamp: new Date().toISOString(),
+    });
+    return { tableId: String(table.id), qrFlowOverride };
+  };
+
   return {
     createTableAccessToken,
     openCustomerTab,
@@ -407,5 +460,6 @@ export const createQrComandaTransitionServices = ({
     resolvePhysicalQrFlow,
     verifyCustomerTabOrderContext,
     verifyPublicTableToken,
+    setPhysicalTableMode,
   };
 };

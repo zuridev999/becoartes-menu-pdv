@@ -15,7 +15,7 @@ type QrModeTable = {
   id?: string;
   number: number;
   status: string;
-  qrFlowOverride?: 'mesa_until_close' | null;
+  qrFlowOverride?: 'mesa' | 'mesa_until_close' | null;
   customerTab?: unknown;
   orders?: unknown[];
   payments?: Array<{ status?: string }>;
@@ -36,11 +36,11 @@ export const preserveCurrentQrTable = <T extends QrModeTable>(
 };
 
 export const isTableVisibleForQrMode = (table: QrModeTable, isComandaMode: boolean) => (
-  isComandaMode ? table.number > 50 || table.qrFlowOverride === 'mesa_until_close' : table.number <= 50
+  isComandaMode ? table.number > 50 || table.qrFlowOverride === 'mesa_until_close' || table.qrFlowOverride === 'mesa' : table.number <= 50
 );
 
 export const getPhysicalTablesPendingTransition = (tables: QrModeTable[]) => tables
-  .filter((table) => table.number >= 1 && table.number <= 50 && !table.customerTab)
+  .filter((table) => table.number >= 1 && table.number <= 50 && !table.customerTab && table.qrFlowOverride !== 'mesa')
   .filter((table) => (
     ['ordering', 'waiting', 'paid', 'bill_requested'].includes(table.status)
     || (table.orders || []).length > 0

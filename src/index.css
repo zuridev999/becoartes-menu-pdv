@@ -118,6 +118,7 @@ html.light body {
 .custom-scrollbar {
   touch-action: pan-x pan-y !important;
   overscroll-behavior-y: contain !important;
+  scrollbar-gutter: stable;
 }
 
 button,
@@ -285,9 +286,32 @@ textarea {
 }
 
 /* Custom Scrollbar */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, 0.3); border-radius: 10px; }
+html {
+  scrollbar-width: auto;
+  scrollbar-color: rgba(139, 92, 246, 0.72) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(139, 92, 246, 0.12);
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 88px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.72);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 85, 247, 0.95);
+  background-clip: padding-box;
+}
 
 /* Animations */
 @keyframes bounce-slow {
