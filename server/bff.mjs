@@ -32,6 +32,8 @@ import { createQrAnalyticsService } from './qr-analytics.mjs';
 import { createQrOrderAuditService } from './qr-order-audit.mjs';
 import { createPublicTableStateService, rethrowCustomerTabWriteError, sanitizePublicCustomerSnapshot } from './public-customer-snapshot.mjs';
 import { summarizeInventoryAttention } from './inventory/attention-summary.mjs';
+import { createNotificationServices } from './notifications/service.mjs';
+import { createDeliveryCustomerServices } from './delivery/customer-service.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -122,6 +124,8 @@ const DELIVERY_EMAIL_WEBHOOK_URL = process.env.DELIVERY_EMAIL_WEBHOOK_URL || '';
 const DELIVERY_SMS_WEBHOOK_URL = process.env.DELIVERY_SMS_WEBHOOK_URL || '';
 const DELIVERY_WHATSAPP_WEBHOOK_URL = process.env.DELIVERY_WHATSAPP_WEBHOOK_URL || '';
 const DELIVERY_NOTIFICATION_WEBHOOK_SECRET = process.env.DELIVERY_NOTIFICATION_WEBHOOK_SECRET || '';
+const ZURI_WHATSAPP_BRIDGE_URL = process.env.ZURI_WHATSAPP_BRIDGE_URL || '';
+const ZURI_WHATSAPP_BRIDGE_SECRET = process.env.ZURI_WHATSAPP_BRIDGE_SECRET || '';
 if (
   process.env.NODE_ENV === 'production'
   && [DELIVERY_EMAIL_PROVIDER, DELIVERY_SMS_PROVIDER, DELIVERY_WHATSAPP_PROVIDER].includes('mock')
@@ -204,7 +208,11 @@ const hashToken = (value) => createHash('sha256').update(String(value || '')).di
 const hashDeliveryCustomerCode = (value) => createHmac('sha256', DELIVERY_CUSTOMER_CODE_SECRET)
   .update(String(value || ''))
   .digest('hex');
+const hashCustomerTabRecoveryCode = (value) => createHmac('sha256', DELIVERY_CUSTOMER_CODE_SECRET)
+  .update(String(value || ''))
+  .digest('hex');
 const generateNumericCode = () => String(randomInt(100000, 1000000));
+const generateCustomerTabRecoveryCode = () => String(randomInt(100, 1000));
 const DELIVERY_PASSWORD_KEYLEN = 64;
 const hashDeliveryPassword = (password, salt = randomBytes(16).toString('hex')) => {
   const hash = scryptSync(String(password || ''), salt, DELIVERY_PASSWORD_KEYLEN).toString('hex');
@@ -670,6 +678,7 @@ const createCustomerTabAccessToken = (tab) => createSignedToken({
   tabId: String(tab?.id || ''),
   tableId: String(tab?.table_id || tab?.tableId || ''),
   cpfHash: String(tab?.cpf_hash || ''),
+  accessRevision: Number(tab?.access_revision || tab?.accessRevision || 1),
   exp: Date.now() + CUSTOMER_TAB_ACCESS_TTL_MS,
   iat: Date.now(),
 });
@@ -686,6 +695,7 @@ const verifyCustomerTabAccessToken = ({ token = '', tab }) => {
     String(decoded.tabId || '') === String(tab?.id || '')
     && String(decoded.tableId || '') === String(tab?.table_id || tab?.tableId || '')
     && String(decoded.cpfHash || '') === String(tab?.cpf_hash || '')
+    && Number(decoded.accessRevision || 1) === Number(tab?.access_revision || tab?.accessRevision || 1)
   );
 };
 
@@ -4258,30 +4268,21 @@ const sendToKitchen = async ({
   };
 };
 
-const normalizeDeliveryCustomer = (customer = {}) => ({
-  name: normalizeText(customer.name),
-  phone: normalizeText(customer.phone),
-  email: normalizeText(customer.email).toLowerCase(),
-  taxId: normalizeText(customer.taxId || customer.tax_id).replace(/\D/g, ''),
-  street: normalizeText(customer.street),
-  number: normalizeText(customer.number),
-  neighborhood: normalizeText(customer.neighborhood),
-  city: normalizeText(customer.city),
-  state: normalizeText(customer.state).toUpperCase().slice(0, 2),
-  postalCode: normalizeText(customer.postalCode).replace(/\D/g, ''),
-  complement: normalizeText(customer.complement),
-  reference: normalizeText(customer.reference),
-  latitude: customer.latitude === undefined || customer.latitude === null || customer.latitude === '' ? null : Number(customer.latitude),
-  longitude: customer.longitude === undefined || customer.longitude === null || customer.longitude === '' ? null : Number(customer.longitude),
-  quoteId: normalizeText(customer.quoteId),
-  quoteExpiresAt: normalizeText(customer.quoteExpiresAt),
-  notes: normalizeText(customer.notes),
-  fulfillment: customer.fulfillment === 'pickup' ? 'pickup' : 'delivery',
-  paymentMethod: customer.paymentMethod === 'pagbank'
-    ? 'pix'
-    : (['pix', 'credit', 'debit'].includes(customer.paymentMethod) ? customer.paymentMethod : 'pix'),
-  coupon: normalizeText(customer.coupon).toUpperCase(),
-  joinClub: customer.joinClub !== false,
+const {
+  createDeliveryCustomerSession,
+  deliveryCustomerPublic,
+  findDeliveryCustomerIdentity,
+  getDeliveryClubSummary,
+  getDeliveryCustomerBySession,
+  normalizeDeliveryCustomer,
+} = createDeliveryCustomerServices({
+  db,
+  createId,
+  hashToken,
+  normalizeText,
+  sessionTtlDays: DELIVERY_CUSTOMER_SESSION_TTL_DAYS,
+  clubCycleSize: DELIVERY_CLUB_CYCLE_SIZE,
+  clubRewardLabel: DELIVERY_CLUB_REWARD_LABEL,
 });
 
 const getDeliveryCouponForCode = (code) => {
@@ -4938,288 +4939,33 @@ const getDeliveryQuote = async ({ customer = {}, items = [] } = {}) => {
   };
 };
 
-const getDeliveryClubSummary = async (customerId) => {
-  if (!customerId) return null;
-  const customerRes = await db.execute({
-    sql: "SELECT join_club FROM delivery_customers WHERE id = ? LIMIT 1",
-    args: [customerId],
-  });
-  const joinClub = customerRes.rows[0]?.join_club !== 0;
-  if (!joinClub) {
-    return {
-      enrolled: false,
-      paidOrders: 0,
-      cycleSize: DELIVERY_CLUB_CYCLE_SIZE,
-      remainingToReward: DELIVERY_CLUB_CYCLE_SIZE,
-      rewardsEarned: 0,
-      rewardLabel: DELIVERY_CLUB_REWARD_LABEL,
-    };
-  }
-
-  const countRes = await db.execute({
-    sql: "SELECT COUNT(*) as paid_orders FROM delivery_orders WHERE customer_id = ? AND payment_status LIKE 'paid%'",
-    args: [customerId],
-  });
-  const paidOrders = Number(countRes.rows[0]?.paid_orders || 0);
-  const cycleSize = DELIVERY_CLUB_CYCLE_SIZE;
-  const remainder = paidOrders % cycleSize;
-  return {
-    enrolled: true,
-    paidOrders,
-    cycleSize,
-    remainingToReward: remainder === 0 && paidOrders > 0 ? 0 : cycleSize - remainder,
-    rewardsEarned: Math.floor(paidOrders / cycleSize),
-    rewardLabel: DELIVERY_CLUB_REWARD_LABEL,
-  };
-};
-
-const deliveryCustomerPublic = (row) => row ? ({
-  id: row.id,
-  name: row.name || '',
-  phone: row.phone || '',
-  email: row.email || '',
-  street: row.street || '',
-  number: row.number || '',
-  neighborhood: row.neighborhood || '',
-  city: row.city || '',
-  state: row.state || '',
-  postalCode: row.postal_code || '',
-  complement: row.complement || '',
-  reference: row.reference || '',
-  joinClub: row.join_club !== 0,
-  emailVerified: row.email_verified === 1,
-  phoneVerified: row.phone_verified === 1,
-}) : null;
-
-const recordDeliveryNotification = async ({ orderId = null, customerId = null, channel, type, provider, status, destination = '', payload = {}, error = null }) => {
-  await db.execute({
-    sql: "INSERT INTO delivery_notifications (id, delivery_order_id, customer_id, channel, type, provider, status, destination, payload, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    args: [createId(), orderId, customerId, channel, type, provider, status, destination, JSON.stringify(payload), error],
-  });
-};
-
-const sendDeliveryNotification = async ({ orderId = null, customer = {}, channel, type, message, payload = {}, sensitive = false }) => {
-  const providerByChannel = {
+const {
+  assertDeliveryCustomerCodeChannel,
+  sendCustomerTabRecoveryCode,
+  sendDeliveryCustomerCode,
+  sendDeliveryNotification,
+} = createNotificationServices({
+  db,
+  createId,
+  normalizeText,
+  generateNumericCode,
+  hashDeliveryCustomerCode,
+  providers: {
     email: DELIVERY_EMAIL_PROVIDER,
     sms: DELIVERY_SMS_PROVIDER,
     whatsapp: DELIVERY_WHATSAPP_PROVIDER,
-  };
-  const webhookUrlByChannel = {
+  },
+  webhooks: {
     email: DELIVERY_EMAIL_WEBHOOK_URL,
     sms: DELIVERY_SMS_WEBHOOK_URL,
     whatsapp: DELIVERY_WHATSAPP_WEBHOOK_URL,
-  };
-  const destination = channel === 'email' ? customer.email : customer.phone;
-  const provider = providerByChannel[channel] || 'disabled';
-  const notificationPayload = {
-    orderId,
-    customerId: customer.id || null,
-    channel,
-    type,
-    destination,
-    customer: {
-      name: customer.name || '',
-      email: customer.email || '',
-      phone: customer.phone || '',
-    },
-    message,
-    payload,
-    createdAt: new Date().toISOString(),
-  };
-  const persistedPayload = sensitive
-    ? { ...notificationPayload, message: '[REDACTED]', payload: {} }
-    : notificationPayload;
-  if (provider === 'webhook') {
-    const webhookUrl = webhookUrlByChannel[channel] || '';
-    if (!webhookUrl) {
-      await recordDeliveryNotification({
-        orderId,
-        customerId: customer.id || null,
-        channel,
-        type,
-        provider,
-        status: 'missing_webhook_url',
-        destination,
-        payload: persistedPayload,
-        error: `Configure DELIVERY_${channel.toUpperCase()}_WEBHOOK_URL.`,
-      });
-      return { channel, provider, status: 'missing_webhook_url' };
-    }
-    try {
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(DELIVERY_NOTIFICATION_WEBHOOK_SECRET ? { 'x-beco-delivery-notification-secret': DELIVERY_NOTIFICATION_WEBHOOK_SECRET } : {}),
-        },
-        body: JSON.stringify(notificationPayload),
-        signal: AbortSignal.timeout(5000),
-      });
-      const status = response.ok ? 'sent' : 'failed';
-      await recordDeliveryNotification({
-        orderId,
-        customerId: customer.id || null,
-        channel,
-        type,
-        provider,
-        status,
-        destination,
-        payload: { ...persistedPayload, responseStatus: response.status },
-        error: response.ok ? null : `Webhook retornou ${response.status}`,
-      });
-      return { channel, provider, status };
-    } catch (error) {
-      await recordDeliveryNotification({
-        orderId,
-        customerId: customer.id || null,
-        channel,
-        type,
-        provider,
-        status: 'failed',
-        destination,
-        payload: persistedPayload,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return { channel, provider, status: 'failed' };
-    }
-  }
-  const status = provider === 'disabled' ? 'disabled' : provider === 'mock' ? 'mock_logged' : 'ready_for_provider';
-  await recordDeliveryNotification({
-    orderId,
-    customerId: customer.id || null,
-    channel,
-    type,
-    provider,
-    status,
-    destination,
-    payload: persistedPayload,
-  });
-  return { channel, provider, status };
-};
-
-const getDeliveryCustomerCodeChannel = (customer = {}) => {
-  const channels = [
-    {
-      channel: 'email',
-      provider: DELIVERY_EMAIL_PROVIDER,
-      webhookUrl: DELIVERY_EMAIL_WEBHOOK_URL,
-      destination: normalizeText(customer.email),
-    },
-    {
-      channel: 'sms',
-      provider: DELIVERY_SMS_PROVIDER,
-      webhookUrl: DELIVERY_SMS_WEBHOOK_URL,
-      destination: normalizeText(customer.phone),
-    },
-    {
-      channel: 'whatsapp',
-      provider: DELIVERY_WHATSAPP_PROVIDER,
-      webhookUrl: DELIVERY_WHATSAPP_WEBHOOK_URL,
-      destination: normalizeText(customer.phone),
-    },
-  ];
-  return channels.find((entry) => entry.provider === 'webhook' && entry.webhookUrl && entry.destination) || null;
-};
-
-const assertDeliveryCustomerCodeChannel = (customer = {}) => {
-  const channel = getDeliveryCustomerCodeChannel(customer);
-  if (channel) return channel;
-  const error = new Error('Canal de confirmacao temporariamente indisponivel.');
-  error.statusCode = 503;
-  throw error;
-};
-
-const sendDeliveryCustomerCode = async ({ customer, type }) => {
-  const target = assertDeliveryCustomerCodeChannel(customer);
-  const code = generateNumericCode();
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-  const columnPrefix = type === 'reset_password' ? 'reset' : 'verification';
-  await db.execute({
-    sql: `UPDATE delivery_customers SET ${columnPrefix}_code_hash = ?, ${columnPrefix}_code_expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    args: [hashDeliveryCustomerCode(code), expiresAt, customer.id],
-  });
-  const notification = await sendDeliveryNotification({
-    customer,
-    channel: target.channel,
-    type,
-    message: `Seu codigo Becoartes e ${code}. Ele vale por 15 minutos.`,
-    sensitive: true,
-  });
-  if (notification.status !== 'sent') {
-    await db.execute({
-      sql: `UPDATE delivery_customers SET ${columnPrefix}_code_hash = NULL, ${columnPrefix}_code_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      args: [customer.id],
-    });
-    const error = new Error('Canal de confirmacao temporariamente indisponivel.');
-    error.statusCode = 503;
-    throw error;
-  }
-  return { expiresAt };
-};
-
-const createDeliveryCustomerSession = async (customerId) => {
-  const customerRes = await db.execute({
-    sql: "SELECT email_verified, phone_verified FROM delivery_customers WHERE id = ? LIMIT 1",
-    args: [customerId],
-  });
-  const customer = customerRes.rows[0];
-  if (!customer || (customer.email_verified !== 1 && customer.phone_verified !== 1)) {
-    const error = new Error('Confirme seu cadastro antes de entrar.');
-    error.statusCode = 403;
-    throw error;
-  }
-  const token = createId() + createId();
-  const expiresAt = new Date(
-    Date.now() + DELIVERY_CUSTOMER_SESSION_TTL_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  await db.execute("DELETE FROM delivery_customer_sessions WHERE expires_at <= CURRENT_TIMESTAMP");
-  await db.execute({
-    sql: "INSERT INTO delivery_customer_sessions (token_hash, customer_id, expires_at) VALUES (?, ?, ?)",
-    args: [hashToken(token), customerId, expiresAt],
-  });
-  await db.execute({
-    sql: "UPDATE delivery_customers SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    args: [customerId],
-  });
-  return { token, expiresAt };
-};
-
-const getDeliveryCustomerBySession = async (token = '') => {
-  const safeToken = normalizeText(token);
-  if (!safeToken) return null;
-  const sessionRes = await db.execute({
-    sql: "SELECT customer_id FROM delivery_customer_sessions WHERE token_hash = ? AND expires_at > CURRENT_TIMESTAMP LIMIT 1",
-    args: [hashToken(safeToken)],
-  });
-  const customerId = sessionRes.rows[0]?.customer_id;
-  if (!customerId) return null;
-  const customerRes = await db.execute({
-    sql: "SELECT * FROM delivery_customers WHERE id = ? AND (email_verified = 1 OR phone_verified = 1) LIMIT 1",
-    args: [customerId],
-  });
-  return customerRes.rows[0] || null;
-};
-
-const findDeliveryCustomerIdentity = async ({ email = '', phone = '' } = {}) => {
-  const safeEmail = normalizeText(email).toLowerCase();
-  const safePhone = normalizeText(phone).replace(/\D/g, '');
-  if (!safeEmail && !safePhone) return null;
-  const clauses = [];
-  const args = [];
-  if (safeEmail) {
-    clauses.push('email = ?');
-    args.push(safeEmail);
-  }
-  if (safePhone) {
-    clauses.push("replace(replace(replace(replace(phone, ' ', ''), '-', ''), '(', ''), ')', '') = ?");
-    args.push(safePhone);
-  }
-  const res = await db.execute({
-    sql: `SELECT * FROM delivery_customers WHERE ${clauses.join(' OR ')} ORDER BY updated_at DESC LIMIT 1`,
-    args,
-  });
-  return res.rows[0] || null;
-};
+  },
+  webhookSecret: DELIVERY_NOTIFICATION_WEBHOOK_SECRET,
+  zuriWhatsApp: {
+    bridgeUrl: ZURI_WHATSAPP_BRIDGE_URL,
+    bridgeSecret: ZURI_WHATSAPP_BRIDGE_SECRET,
+  },
+});
 
 const createDeliveryCustomerAccount = async ({ customer = {}, password = '' } = {}, context = {}) => {
   await ensureDatabaseReady();
@@ -8711,8 +8457,8 @@ const closeBillWithInventorySync = async (data, session = null) => {
         args: [integrationId, tableId],
       },
       {
-        sql: "UPDATE customer_tabs SET status = 'paid', paid_at = ? WHERE table_id = ? AND status = 'open'",
-        args: [closedAt.toISOString(), tableId],
+        sql: "UPDATE customer_tabs SET status = 'closed', paid_at = COALESCE(paid_at, ?), closed_at = COALESCE(closed_at, ?), closed_by_id = ?, closed_by_name = ? WHERE table_id = ? AND status IN ('open', 'paid')",
+        args: [closedAt.toISOString(), closedAt.toISOString(), auditAuthorId, auditAuthorName, tableId],
       },
     );
 
@@ -9086,8 +8832,10 @@ const {
   createTableAccessToken,
   openCustomerTab,
   recoverCustomerTab,
+  requestCustomerTabRecovery,
   resolvePhysicalQrFlow,
   setPhysicalTableMode,
+  verifyCustomerTabRecovery,
   verifyCustomerTabOrderContext,
   verifyPublicTableToken,
 } = createQrComandaTransitionServices({
@@ -9111,6 +8859,10 @@ const {
   ensureTableAccess,
   requirePermission: (...args) => requirePermission(...args),
   addAuditLog,
+  generateRecoveryCode: generateCustomerTabRecoveryCode,
+  hashRecoveryCode: hashCustomerTabRecoveryCode,
+  verifyRecoveryCode: (code, codeHash) => safeSecretEqual(hashCustomerTabRecoveryCode(code), codeHash),
+  sendRecoveryCode: sendCustomerTabRecoveryCode,
 });
 
 const getPublicTableState = createPublicTableStateService({ db, verifyCustomerTabOrderContext, verifyPublicTableToken });
@@ -9419,6 +9171,7 @@ const handlers = createRouteHandlers({
   openShift,
   openTable,
   recoverCustomerTab,
+  requestCustomerTabRecovery,
   regenerateTableQr,
   reorderCatalogProducts,
   requestBill,
@@ -9447,6 +9200,7 @@ const handlers = createRouteHandlers({
   upsertProduct,
   validateCoupon,
   validateTabletSetupPin,
+  verifyCustomerTabRecovery,
   verifyDeliveryCustomerCode,
 });
 

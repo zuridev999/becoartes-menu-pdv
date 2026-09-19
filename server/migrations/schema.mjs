@@ -218,6 +218,34 @@ export const SCHEMA_MIGRATIONS = [
       executeSql('CREATE INDEX IF NOT EXISTS idx_qr_analytics_visit ON qr_analytics_events(visit_id, business_date)'),
     ],
   },
+  {
+    id: '20260919_0001_customer_tab_recovery',
+    description: 'Add recovery credentials and release customer tabs that were paid and fully closed.',
+    steps: [
+      addColumn('customer_tabs', 'access_revision', 'INTEGER NOT NULL DEFAULT 1'),
+      addColumn('customer_tabs', 'recovery_code_hash', 'TEXT'),
+      addColumn('customer_tabs', 'recovery_code_expires_at', 'DATETIME'),
+      addColumn('customer_tabs', 'recovered_at', 'DATETIME'),
+      executeSql(`UPDATE customer_tabs
+        SET status = 'closed',
+            closed_at = COALESCE(closed_at, paid_at),
+            closed_by_name = CASE WHEN COALESCE(closed_by_name, '') = '' THEN 'Sistema' ELSE closed_by_name END
+        WHERE status = 'paid'
+          AND EXISTS (
+            SELECT 1 FROM closed_bills cb
+            WHERE cb.table_id = customer_tabs.table_id
+              AND datetime(cb.closed_at) >= datetime(customer_tabs.opened_at)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM orders o
+            WHERE o.customer_tab_id = customer_tabs.id AND o.status != 'closed'
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM table_payments tp
+            WHERE tp.table_id = customer_tabs.table_id AND tp.status = 'active'
+          )`),
+    ],
+  },
 ];
 
 const quoteIdentifier = (value) => {

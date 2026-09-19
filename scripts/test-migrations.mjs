@@ -40,15 +40,73 @@ const createLegacyTables = async (db) => {
     .filter((step) => step.type === 'add_column')
     .map((step) => step.table))));
   for (const table of tables) {
-    const extraColumns = table === 'orders' || table === 'service_requests'
-      ? ', table_id TEXT'
+    const extraColumns = table === 'orders'
+      ? ', table_id TEXT, status TEXT'
+      : table === 'service_requests'
+        ? ', table_id TEXT'
       : table === 'customer_tabs'
-        ? ', table_id TEXT, status TEXT'
+        ? ', table_id TEXT, status TEXT, opened_at DATETIME'
+        : table === 'closed_bills'
+          ? ', closed_at DATETIME'
         : '';
     await db.execute(`CREATE TABLE ${quoteIdentifier(table)} (id TEXT PRIMARY KEY${extraColumns})`);
   }
 
+  await db.execute('CREATE TABLE table_payments (id TEXT PRIMARY KEY, table_id TEXT, status TEXT)');
+
   await db.execute('ALTER TABLE menu ADD COLUMN category_id TEXT');
+};
+
+const testPaidCustomerTabsAreReleasedSafely = async () => {
+  const { db, cleanup } = createTempDb();
+  try {
+    await createLegacyTables(db);
+    const recoveryMigration = SCHEMA_MIGRATIONS.at(-1);
+    await runSchemaMigrations(db, SCHEMA_MIGRATIONS.slice(0, -1));
+
+    await db.batch([
+      {
+        sql: `INSERT INTO customer_tabs (id, table_id, status, opened_at, paid_at)
+              VALUES ('settled', '73', 'paid', '2026-08-15T22:07:46.464Z', '2026-08-16T02:44:42.513Z')`,
+      },
+      {
+        sql: `INSERT INTO orders (id, table_id, status, customer_tab_id)
+              VALUES ('settled_order', '73', 'closed', 'settled')`,
+      },
+      {
+        sql: `INSERT INTO closed_bills (id, table_id, closed_at)
+              VALUES ('settled_bill', '73', '2026-08-16T02:44:42.513Z')`,
+      },
+      {
+        sql: `INSERT INTO table_payments (id, table_id, status)
+              VALUES ('settled_payment', '73', 'applied')`,
+      },
+      {
+        sql: `INSERT INTO customer_tabs (id, table_id, status, opened_at, paid_at)
+              VALUES ('still_active', '74', 'paid', '2026-08-15T22:07:46.464Z', '2026-08-16T02:44:42.513Z')`,
+      },
+      {
+        sql: `INSERT INTO orders (id, table_id, status, customer_tab_id)
+              VALUES ('active_order', '74', 'open', 'still_active')`,
+      },
+      {
+        sql: `INSERT INTO closed_bills (id, table_id, closed_at)
+              VALUES ('active_bill', '74', '2026-08-16T02:44:42.513Z')`,
+      },
+    ], 'write');
+
+    await runSchemaMigrations(db, [recoveryMigration]);
+
+    const settled = (await getRows(db, "SELECT status, closed_at, closed_by_name FROM customer_tabs WHERE id = 'settled'"))[0];
+    assert.equal(settled.status, 'closed', 'fully settled paid tabs must stop reserving the CPF');
+    assert.equal(settled.closed_at, '2026-08-16T02:44:42.513Z');
+    assert.equal(settled.closed_by_name, 'Sistema');
+
+    const stillActive = (await getRows(db, "SELECT status FROM customer_tabs WHERE id = 'still_active'"))[0];
+    assert.equal(stillActive.status, 'paid', 'tabs with a non-closed order must remain untouched');
+  } finally {
+    cleanup();
+  }
 };
 
 const testLegacyDatabaseMigratesOnce = async () => {
@@ -115,6 +173,7 @@ const testChecksumMismatchFails = async () => {
 };
 
 await testLegacyDatabaseMigratesOnce();
+await testPaidCustomerTabsAreReleasedSafely();
 await testMigrationFailureDoesNotWriteLedger();
 await testChecksumMismatchFails();
 
@@ -124,6 +183,7 @@ console.log(JSON.stringify({
     'migration_legacy_database',
     'migration_existing_column',
     'migration_idempotent_second_run',
+    'migration_releases_only_fully_settled_paid_tabs',
     'migration_failure_not_recorded',
     'migration_checksum_mismatch',
   ],

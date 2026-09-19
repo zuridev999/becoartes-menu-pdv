@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 1.15.0 - 2026-09-19
+
+- Permite recuperar uma comanda ativa em outro navegador ou celular com um código de três dígitos enviado pelo WhatsApp via Zuri.
+- Mantém o código válido por cinco minutos e de uso único, sem limite de tentativas nem bloqueio de reenvio.
+- Fecha automaticamente comandas antigas que já possuem conta encerrada, pedidos fechados e nenhum pagamento ativo, liberando o CPF preso.
+- Faz novos fechamentos encerrarem também a comanda do cliente, evitando que o problema volte a ocorrer.
+- Atualiza automaticamente uma tela QR antiga quando há uma nova versão publicada e não existe uma credencial ativa naquele navegador.
+
 ## 1.14.2 - 2026-09-19
 
 - Retoma automaticamente a mesma comanda no mesmo celular ao escanear qualquer outro QR físico.

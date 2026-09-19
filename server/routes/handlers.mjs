@@ -57,6 +57,8 @@ export const createRouteHandlers = (services) => ({
   'POST /api/delivery/customer/verify-code': async (body, context) => services.verifyDeliveryCustomerCode(body, context),
   'POST /api/customer-tabs/open': async (body) => services.openCustomerTab(body),
   'POST /api/customer-tabs/recover': async (body) => services.recoverCustomerTab(body),
+  'POST /api/customer-tabs/recovery/request': async (body, context) => services.requestCustomerTabRecovery(body, context),
+  'POST /api/customer-tabs/recovery/verify': async (body, context) => services.verifyCustomerTabRecovery(body, context),
   'POST /api/customer-tabs/payment-link': async (body, context) => services.createCustomerTabPaymentLink(body, context.session),
   'GET /api/customer-tabs/lookup': async (_body, context) => services.lookupCustomerTabs({ query: context.url.searchParams.get('q') || '' }),
   'GET /api/comanda/customer-tabs/lookup': async (_body, context) => services.lookupCustomerTabsByIdentifier({ query: context.url.searchParams.get('q') || '' }),

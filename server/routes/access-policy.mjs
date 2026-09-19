@@ -25,6 +25,8 @@ const PUBLIC_CUSTOMER_ROUTES = new Set([
   'GET /api/delivery/pagbank/public-key',
   'POST /api/customer-tabs/open',
   'POST /api/customer-tabs/recover',
+  'POST /api/customer-tabs/recovery/request',
+  'POST /api/customer-tabs/recovery/verify',
   'POST /api/customer-tabs/payment-link',
 ]);
 

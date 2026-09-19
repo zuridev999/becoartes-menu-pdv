@@ -51,6 +51,11 @@ export const createQrComandaTransitionServices = ({
   requirePermission,
   addAuditLog,
   recordQrAnalyticsEvent = async () => ({ recorded: false }),
+  generateRecoveryCode,
+  hashRecoveryCode,
+  verifyRecoveryCode,
+  sendRecoveryCode,
+  recoveryCodeTtlMs = 5 * 60 * 1000,
 }) => {
   const getTableById = async (tableId) => {
     const result = await db.execute({
@@ -422,6 +427,123 @@ export const createQrComandaTransitionServices = ({
     return { tab, accessToken: createCustomerTabAccessToken(row) };
   };
 
+  const requestCustomerTabRecovery = async ({
+    cpf = '',
+    origin = '',
+    sourceTableId = '',
+    sourceTableNumber = '',
+    publicAccessToken = '',
+  }) => {
+    await verifyPhysicalSource({ origin, sourceTableId, sourceTableNumber, publicAccessToken });
+    const normalizedCpf = normalizeCpf(cpf);
+    if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
+    const tab = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
+    if (!tab) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return { sent: true, expiresAt: null };
+    }
+    const row = (await db.execute({
+      sql: "SELECT * FROM customer_tabs WHERE id = ? AND status IN ('open', 'paid') LIMIT 1",
+      args: [tab.id],
+    })).rows[0];
+    if (!row || !String(row.phone || '').trim()) {
+      const error = new Error('Esta comanda não possui um WhatsApp válido. Peça ajuda à equipe.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const code = generateRecoveryCode();
+    const expiresAt = new Date(Date.now() + recoveryCodeTtlMs).toISOString();
+    await db.execute({
+      sql: 'UPDATE customer_tabs SET recovery_code_hash = ?, recovery_code_expires_at = ? WHERE id = ?',
+      args: [hashRecoveryCode(code), expiresAt, row.id],
+    });
+    try {
+      await sendRecoveryCode({ tab: row, code });
+    } catch (error) {
+      await db.execute({
+        sql: 'UPDATE customer_tabs SET recovery_code_hash = NULL, recovery_code_expires_at = NULL WHERE id = ?',
+        args: [row.id],
+      }).catch(() => null);
+      throw error;
+    }
+
+    await addAuditLog({
+      id: createId(),
+      action: 'customer_tab_recovery_requested',
+      details: JSON.stringify({ tabId: row.id, cpfLast4: normalizedCpf.slice(-4) }),
+      table_number: String(row.table_number),
+      origin: 'qr',
+      authorId: '',
+      authorName: 'Cliente QR',
+      timestamp: new Date().toISOString(),
+    });
+    return { sent: true, expiresAt };
+  };
+
+  const verifyCustomerTabRecovery = async ({
+    cpf = '',
+    code = '',
+    origin = '',
+    sourceTableId = '',
+    sourceTableNumber = '',
+    publicAccessToken = '',
+  }) => {
+    await verifyPhysicalSource({ origin, sourceTableId, sourceTableNumber, publicAccessToken });
+    const normalizedCpf = normalizeCpf(cpf);
+    const normalizedCode = String(code || '').replace(/\D/g, '').slice(0, 3);
+    if (!isValidCpf(normalizedCpf)) throw new Error('CPF inválido. Confira os números e tente novamente.');
+    if (normalizedCode.length !== 3) throw new Error('Digite o código de três números.');
+    const tab = await findCustomerTabByCpf(normalizedCpf, ['open', 'paid']);
+    const row = tab ? (await db.execute({
+      sql: "SELECT * FROM customer_tabs WHERE id = ? AND status IN ('open', 'paid') LIMIT 1",
+      args: [tab.id],
+    })).rows[0] : null;
+    const expired = !row?.recovery_code_expires_at || Date.parse(String(row.recovery_code_expires_at)) < Date.now();
+    const validCode = Boolean(
+      row?.recovery_code_hash
+      && !expired
+      && verifyRecoveryCode(normalizedCode, String(row.recovery_code_hash)),
+    );
+    if (!validCode) {
+      const error = new Error('Código inválido ou expirado. Solicite um novo código.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const now = new Date().toISOString();
+    const update = await db.execute({
+      sql: `UPDATE customer_tabs
+        SET access_revision = COALESCE(access_revision, 1) + 1,
+            recovery_code_hash = NULL,
+            recovery_code_expires_at = NULL,
+            recovered_at = ?
+        WHERE id = ? AND recovery_code_hash = ? AND recovery_code_expires_at > ?`,
+      args: [now, row.id, row.recovery_code_hash, now],
+    });
+    if (Number(update.rowsAffected || 0) !== 1) {
+      const error = new Error('Código inválido ou expirado. Solicite um novo código.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const updatedRow = (await db.execute({ sql: 'SELECT * FROM customer_tabs WHERE id = ? LIMIT 1', args: [row.id] })).rows[0];
+    const totals = await getCustomerTabTotalsByTable([updatedRow.table_id]);
+    await addAuditLog({
+      id: createId(),
+      action: 'customer_tab_recovered_on_new_browser',
+      details: JSON.stringify({ tabId: updatedRow.id, cpfLast4: normalizedCpf.slice(-4) }),
+      table_number: String(updatedRow.table_number),
+      origin: 'qr',
+      authorId: '',
+      authorName: 'Cliente QR',
+      timestamp: now,
+    });
+    return {
+      tab: sanitizeCustomerTab(updatedRow, totals[updatedRow.table_id]),
+      accessToken: createCustomerTabAccessToken(updatedRow),
+    };
+  };
+
   const setPhysicalTableMode = async ({ tableId, traditional }, session) => {
     const settings = await getSettings();
     requirePermission(session, 'updateTableStatus', settings);
@@ -475,6 +597,8 @@ export const createQrComandaTransitionServices = ({
     createTableAccessToken,
     openCustomerTab,
     recoverCustomerTab,
+    requestCustomerTabRecovery,
+    verifyCustomerTabRecovery,
     resolvePhysicalQrFlow,
     verifyCustomerTabOrderContext,
     verifyPublicTableToken,

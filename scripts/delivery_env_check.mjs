@@ -12,7 +12,7 @@ const allowedShippingModes = new Set(['dry_run', 'live']);
 const allowedGeocoderProviders = new Set(['mock', 'disabled', 'provider']);
 const allowedPostalProviders = new Set(['mock', 'viacep', 'disabled']);
 const allowedPublicStatuses = new Set(['building', 'open']);
-const allowedNotificationProviders = new Set(['mock', 'disabled', 'webhook']);
+const allowedNotificationProviders = new Set(['mock', 'disabled', 'webhook', 'zuri']);
 
 const parseEnvFile = async (path) => {
   if (!path) return {};
@@ -66,10 +66,13 @@ add('postal provider valido', allowedPostalProviders.has(postalProvider), 'warn'
 add('public status valido', allowedPublicStatuses.has(publicStatus), 'error', 'Use DELIVERY_PUBLIC_STATUS=building|open.');
 add('email provider valido', allowedNotificationProviders.has(emailProvider), 'error', 'Use DELIVERY_EMAIL_PROVIDER=mock|disabled|webhook.');
 add('sms provider valido', allowedNotificationProviders.has(smsProvider), 'error', 'Use DELIVERY_SMS_PROVIDER=mock|disabled|webhook.');
-add('whatsapp provider valido', allowedNotificationProviders.has(whatsappProvider), 'error', 'Use DELIVERY_WHATSAPP_PROVIDER=mock|disabled|webhook.');
+add('whatsapp provider valido', allowedNotificationProviders.has(whatsappProvider), 'error', 'Use DELIVERY_WHATSAPP_PROVIDER=mock|disabled|webhook|zuri.');
 if (emailProvider === 'webhook') add('email webhook url', isHttpsUrl('DELIVERY_EMAIL_WEBHOOK_URL'), 'error', 'Configure DELIVERY_EMAIL_WEBHOOK_URL=https://...');
 if (smsProvider === 'webhook') add('sms webhook url', isHttpsUrl('DELIVERY_SMS_WEBHOOK_URL'), 'error', 'Configure DELIVERY_SMS_WEBHOOK_URL=https://...');
 if (whatsappProvider === 'webhook') add('whatsapp webhook url', isHttpsUrl('DELIVERY_WHATSAPP_WEBHOOK_URL'), 'error', 'Configure DELIVERY_WHATSAPP_WEBHOOK_URL=https://...');
+if (whatsappProvider === 'zuri') {
+  add('zuri whatsapp bridge', present('ZURI_WHATSAPP_BRIDGE_URL'), 'error', 'Configure ZURI_WHATSAPP_BRIDGE_URL.');
+}
 add('club cycle valido', Number.isFinite(clubCycleSize) && clubCycleSize >= 1, 'error', 'Configure DELIVERY_CLUB_CYCLE_SIZE >= 1.');
 add('preparation time valido', Number.isFinite(preparationSeconds) && preparationSeconds >= 60, 'warn', 'Configure IFOOD_PREPARATION_TIME_SECONDS com pelo menos 60.');
 

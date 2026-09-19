@@ -34,6 +34,7 @@ const pinSource = readFileSync(join(process.cwd(), 'server/auth/pins.mjs'), 'utf
 const terminalSource = readFileSync(join(process.cwd(), 'server/auth/pdv-terminal.mjs'), 'utf8');
 const routerSource = readFileSync(join(process.cwd(), 'server/routes/api-router.mjs'), 'utf8');
 const httpSource = readFileSync(join(process.cwd(), 'server/http.mjs'), 'utf8');
+const notificationSource = readFileSync(join(process.cwd(), 'server/notifications/service.mjs'), 'utf8');
 assert.doesNotMatch(bffSource, /goomer|abrahao/i, 'PDV runtime must not retain the retired Goomer integration');
 assert.match(bffSource, /ADMIN_BYPASS_ENABLED && ADMIN_BYPASS_PIN/, 'admin bypass must be disabled unless explicitly enabled');
 assert.match(pinSource, /scrypt:\$\{salt\}:\$\{hash\}/, 'seller PINs must be stored with scrypt and a per-record salt');
@@ -68,7 +69,12 @@ assert.doesNotMatch(
   /return\s*\{\s*sent:\s*true[\s\S]{0,100}\bcode\s*:/,
   'forgot-password must never return the reset code',
 );
-assert.match(bffSource, /message:\s*'\[REDACTED\]'/, 'sensitive notification payloads must be redacted before persistence');
+assert.match(notificationSource, /message:\s*'\[REDACTED\]'/, 'sensitive notification payloads must be redacted before persistence');
+assert.match(
+  bffSource,
+  /UPDATE customer_tabs SET status = 'closed', paid_at = COALESCE\(paid_at, \?\), closed_at = COALESCE\(closed_at, \?\)/,
+  'closing a bill must fully close its customer tab instead of leaving the CPF reserved',
+);
 assert.match(bffSource, /DELETE FROM delivery_customer_sessions WHERE customer_id = \?/, 'password reset must revoke previous customer sessions');
 assert.match(bffSource, /assertDeliveryAuthRateLimit/, 'delivery account recovery must enforce narrow rate limits');
 assert.match(bffSource, /DELIVERY_CUSTOMER_CODE_SECRET/, 'delivery codes must use an independent runtime secret');

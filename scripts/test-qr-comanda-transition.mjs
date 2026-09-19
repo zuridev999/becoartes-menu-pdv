@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHmac } from 'node:crypto';
+import { createServer } from 'node:http';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +14,8 @@ const dbFile = join(tmpdir(), `becoartes-qr-comanda-${process.pid}.db`);
 const dbUrl = `file:${dbFile}`;
 const allowedHeaders = { 'X-Forwarded-For': '10.0.0.5' };
 const sessionSecret = 'qr-comanda-transition-test-secret';
+const notificationPort = port + 1;
+const capturedNotifications = [];
 
 const createValidCpf = (base) => {
   const digits = String(base).replace(/\D/g, '').padStart(9, '0').slice(-9).split('').map(Number);
@@ -42,6 +45,9 @@ const env = {
   INVENTORY_RECONCILIATION_DISABLED: '1',
   CASH_SANDBOX_MODE: '1',
   HEALTH_DB_TIMEOUT_MS: '1000',
+  DELIVERY_WHATSAPP_PROVIDER: 'webhook',
+  DELIVERY_WHATSAPP_WEBHOOK_URL: `http://127.0.0.1:${notificationPort}/whatsapp`,
+  DELIVERY_NOTIFICATION_WEBHOOK_SECRET: 'qr-recovery-test-secret',
 };
 
 const request = async (path, {
@@ -84,9 +90,20 @@ const waitForHealth = async () => {
 };
 
 let child;
+let notificationServer;
 let serverStderr = '';
 try {
   rmSync(dbFile, { force: true });
+  notificationServer = createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => { raw += chunk.toString(); });
+    req.on('end', () => {
+      capturedNotifications.push(JSON.parse(raw || '{}'));
+      res.writeHead(202, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+    });
+  });
+  await new Promise((resolve) => notificationServer.listen(notificationPort, '127.0.0.1', resolve));
   child = spawn(process.execPath, ['server/bff.mjs'], {
     cwd: process.cwd(),
     env,
@@ -519,6 +536,95 @@ try {
   assert.equal(missingOwnership.ok, false);
   assert.doesNotMatch(missingOwnership.error, /sql|sqlite|trigger|customer_tab|stack|internal/i);
 
+  const recoveryRequest = await request('/api/customer-tabs/recovery/request', {
+    method: 'POST',
+    body: {
+      cpf: '52998224725',
+      origin: 'qr',
+      sourceTableId: alternateCommandSource.data.physicalTable.id,
+      sourceTableNumber: 7,
+      publicAccessToken: alternateCommandSource.data.access.token,
+    },
+  });
+  assert.equal(recoveryRequest.data.sent, true);
+  assert.ok(recoveryRequest.data.expiresAt);
+  await request('/api/customer-tabs/recovery/request', {
+    method: 'POST',
+    body: {
+      cpf: '52998224725',
+      origin: 'qr',
+      sourceTableId: alternateCommandSource.data.physicalTable.id,
+      sourceTableNumber: 7,
+      publicAccessToken: alternateCommandSource.data.access.token,
+    },
+  });
+  const recoveryNotification = capturedNotifications.at(-1);
+  assert.equal(recoveryNotification.type, 'customer_tab_recovery');
+  assert.equal(recoveryNotification.destination, '11999990000');
+  assert.match(String(recoveryNotification.payload?.code || ''), /^\d{3}$/);
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await request('/api/customer-tabs/recovery/verify', {
+      method: 'POST',
+      expectedStatus: 400,
+      body: {
+        cpf: '52998224725',
+        code: '000',
+        origin: 'qr',
+        sourceTableId: alternateCommandSource.data.physicalTable.id,
+        sourceTableNumber: 7,
+        publicAccessToken: alternateCommandSource.data.access.token,
+      },
+    });
+  }
+  const recoveredOnNewBrowser = await request('/api/customer-tabs/recovery/verify', {
+    method: 'POST',
+    body: {
+      cpf: '52998224725',
+      code: recoveryNotification.payload.code,
+      origin: 'qr',
+      sourceTableId: alternateCommandSource.data.physicalTable.id,
+      sourceTableNumber: 7,
+      publicAccessToken: alternateCommandSource.data.access.token,
+    },
+  });
+  assert.equal(recoveredOnNewBrowser.data.tab.id, opened.data.tab.id);
+  assert.ok(recoveredOnNewBrowser.data.accessToken);
+  await request('/api/customer-tabs/recover', {
+    method: 'POST',
+    expectedStatus: 403,
+    body: {
+      origin: 'qr',
+      sourceTableId: alternateCommandSource.data.physicalTable.id,
+      sourceTableNumber: 7,
+      publicAccessToken: alternateCommandSource.data.access.token,
+      accessToken: opened.data.accessToken,
+    },
+  });
+  const recoveredWithRotatedCredential = await request('/api/customer-tabs/recover', {
+    method: 'POST',
+    body: {
+      origin: 'qr',
+      sourceTableId: alternateCommandSource.data.physicalTable.id,
+      sourceTableNumber: 7,
+      publicAccessToken: alternateCommandSource.data.access.token,
+      accessToken: recoveredOnNewBrowser.data.accessToken,
+    },
+  });
+  assert.equal(recoveredWithRotatedCredential.data.tab.id, opened.data.tab.id);
+  await request('/api/customer-tabs/recovery/verify', {
+    method: 'POST',
+    expectedStatus: 400,
+    body: {
+      cpf: '52998224725',
+      code: recoveryNotification.payload.code,
+      origin: 'qr',
+      sourceTableId: alternateCommandSource.data.physicalTable.id,
+      sourceTableNumber: 7,
+      publicAccessToken: alternateCommandSource.data.access.token,
+    },
+  });
+
   await db.execute({ sql: "UPDATE customer_tabs SET status = 'closed' WHERE id = ?", args: [secondTab.data.tab.id] });
   await request('/api/customer-tabs/recover', {
     method: 'POST',
@@ -651,6 +757,8 @@ try {
       'same_device_recovers_across_physical_qrs_without_cpf',
       'device_credential_extended_and_rotated',
       'legacy_12h_device_credential_gets_migration_window',
+      'new_browser_recovery_uses_single_use_whatsapp_code',
+      'new_browser_recovery_revokes_previous_credential',
       'closed_customer_tab_revokes_device_recovery',
       'public_snapshot_has_no_internal_data',
       'public_sync_has_no_internal_data',
@@ -675,6 +783,7 @@ try {
   throw error;
 } finally {
   if (child && !child.killed) child.kill('SIGTERM');
+  if (notificationServer) await new Promise((resolve) => notificationServer.close(resolve));
   rmSync(dbFile, { force: true });
   rmSync(`${dbFile}-shm`, { force: true });
   rmSync(`${dbFile}-wal`, { force: true });

@@ -345,6 +345,30 @@ export const CustomerTabApi = {
     });
   },
 
+  requestRecovery(cpf: string, source: Omit<CustomerTabOrderContext, 'customerTabId'>) {
+    return postJson<{ sent: boolean; expiresAt: string | null }>('/api/customer-tabs/recovery/request', {
+      cpf,
+      sourceTableId: source.sourceTableId,
+      sourceTableNumber: source.sourceTableNumber,
+      publicAccessToken: getPublicTableAccessToken(source.sourceTableId, 'qr'),
+      origin: 'qr',
+    });
+  },
+
+  verifyRecovery(cpf: string, code: string, source: Omit<CustomerTabOrderContext, 'customerTabId'>) {
+    return postJson<{ tab: CustomerTab; accessToken: string }>('/api/customer-tabs/recovery/verify', {
+      cpf,
+      code,
+      sourceTableId: source.sourceTableId,
+      sourceTableNumber: source.sourceTableNumber,
+      publicAccessToken: getPublicTableAccessToken(source.sourceTableId, 'qr'),
+      origin: 'qr',
+    }).then(result => {
+      saveCustomerTabAccessToken(result.accessToken);
+      return { tab: hydrateCustomerTab(result.tab) };
+    });
+  },
+
   lookup(query: string) {
     const q = encodeURIComponent(query);
     return getJson<{ tabs: CustomerTab[] }>(`/api/customer-tabs/lookup?q=${q}`)

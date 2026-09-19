@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { ShoppingBag, LayoutDashboard, Bell, FileText, Send, UserRound, Phone, BadgeCheck, QrCode, RefreshCw } from 'lucide-react';
+import { ShoppingBag, LayoutDashboard, Bell, FileText, Send, UserRound, Phone, BadgeCheck, QrCode, RefreshCw, KeyRound, ArrowLeft } from 'lucide-react';
 import { useStore, type Product } from '../../store';
 import type { CustomerTab, Table } from '../../types';
 import { MenuCatalog } from '../../components/shared/MenuCatalog';
@@ -22,6 +22,7 @@ import { usePublicI18n } from '../../lib/public-i18n';
 import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
 import { GoogleAdBanner } from '../../components/common/GoogleAdBanner';
 import { getQrVisitId } from '../../lib/qr-analytics';
+import { useBuildRefresh } from '../../hooks/useBuildRefresh';
 
 const normalizeCpfInput = (value: string) => value.replace(/\D/g, '').slice(0, 11);
 
@@ -93,6 +94,7 @@ export function QRView() {
   const [tableAccessError, setTableAccessError] = useState('');
   const [tableAccessRetry, setTableAccessRetry] = useState(0);
   const isCouponRulesPage = window.location.pathname.includes('regulamento-cupom');
+  useBuildRefresh(!hasCustomerTabDeviceAccess());
 
   usePublicTablePolling(qrResolution?.flow === 'mesa' ? {
     tableId: qrResolution.physicalTable.id,
@@ -414,9 +416,12 @@ function ComandaQRExperience({
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
   const [cpf, setCpf] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [accessMode, setAccessMode] = useState<'open' | 'recover' | 'code'>('open');
   const [isRecoveringDevice, setIsRecoveringDevice] = useState(hasCustomerTabDeviceAccess);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const currentTable = tab?.tableId
     ? tables.find(t => t.id === tab.tableId)
@@ -475,8 +480,19 @@ function ComandaQRExperience({
     };
   }, [setCurrentTableId, sourceTableId, sourceTableNumber]);
 
+  const activateTab = async (recoveredTab: CustomerTab) => {
+    setTab(recoveredTab);
+    setCurrentTableId(recoveredTab.tableId);
+    const { table } = await AppApi.getPublicTableState({
+      tableId: recoveredTab.tableId,
+      customerTabContext: { customerTabId: recoveredTab.id, sourceTableId, sourceTableNumber },
+    });
+    applyPublicTableState(table);
+  };
+
   const submit = async () => {
     setError('');
+    setNotice('');
     setIsSubmitting(true);
     const normalizedCpf = normalizeCpfInput(cpf);
     try {
@@ -486,18 +502,58 @@ function ComandaQRExperience({
         cpf: normalizedCpf,
         source: { sourceTableId, sourceTableNumber },
       });
-      setTab(result.tab);
-      setCurrentTableId(result.tab.tableId);
-      const { table } = await AppApi.getPublicTableState({
-        tableId: result.tab.tableId,
-        customerTabContext: { customerTabId: result.tab.id, sourceTableId, sourceTableNumber },
-      });
-      applyPublicTableState(table);
+      await activateTab(result.tab);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível abrir sua comanda.');
+      const message = err instanceof Error ? err.message : 'Não foi possível abrir sua comanda.';
+      if (message.includes('comanda ativa') || message.includes('comanda acabou de ser aberta')) {
+        setAccessMode('recover');
+        setNotice('Encontramos uma comanda ativa. Confirme seu CPF para receber o código no WhatsApp cadastrado.');
+      } else {
+        setError(message);
+      }
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const requestRecovery = async () => {
+    setError('');
+    setNotice('');
+    setIsSubmitting(true);
+    try {
+      await CustomerTabApi.requestRecovery(normalizeCpfInput(cpf), { sourceTableId, sourceTableNumber });
+      setRecoveryCode('');
+      setAccessMode('code');
+      setNotice('Enviamos um código de três números para o WhatsApp cadastrado. Ele vale por 5 minutos.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não conseguimos enviar o código agora.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const verifyRecovery = async () => {
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const result = await CustomerTabApi.verifyRecovery(
+        normalizeCpfInput(cpf),
+        recoveryCode,
+        { sourceTableId, sourceTableNumber },
+      );
+      await activateTab(result.tab);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível confirmar o código.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const selectAccessMode = (mode: 'open' | 'recover') => {
+    setAccessMode(mode);
+    setRecoveryCode('');
+    setError('');
+    setNotice('');
   };
 
   if (isRecoveringDevice) {
@@ -523,11 +579,34 @@ function ComandaQRExperience({
           </div>
           <p className="text-[10px] font-black uppercase tracking-[0.32em] text-primary mb-3">Modo comanda</p>
           <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter mb-3">
-            Abrir minha comanda
+            {accessMode === 'open' ? 'Abrir minha comanda' : accessMode === 'recover' ? 'Acessar minha comanda' : 'Digite seu código'}
           </h1>
           <p className="text-xs sm:text-sm font-bold text-zinc-400 leading-relaxed mb-5 sm:mb-7">
-            Use seu CPF para identificar sua comanda e continue neste celular até o fechamento. Se trocar de aparelho, peça ajuda à equipe.
+            {accessMode === 'open'
+              ? 'Primeira vez? Cadastre seus dados para abrir uma comanda.'
+              : accessMode === 'recover'
+                ? 'Já abriu em outro navegador? Informe seu CPF e confirme o acesso pelo WhatsApp cadastrado.'
+                : 'Digite abaixo o código recebido. Ao confirmar, esta passa a ser sua navegação autorizada.'}
           </p>
+
+          {accessMode !== 'code' && (
+            <div className="mb-5 grid grid-cols-2 rounded-2xl border border-white/10 bg-black/25 p-1">
+              <button
+                type="button"
+                onClick={() => selectAccessMode('open')}
+                className={`min-h-11 rounded-xl px-3 text-[10px] font-black uppercase tracking-wider transition ${accessMode === 'open' ? 'bg-primary text-white' : 'text-zinc-400'}`}
+              >
+                Nova comanda
+              </button>
+              <button
+                type="button"
+                onClick={() => selectAccessMode('recover')}
+                className={`min-h-11 rounded-xl px-3 text-[10px] font-black uppercase tracking-wider transition ${accessMode === 'recover' ? 'bg-primary text-white' : 'text-zinc-400'}`}
+              >
+                Já tenho comanda
+              </button>
+            </div>
+          )}
 
           {error && (
             <div className="mb-5 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm font-black text-rose-200">
@@ -535,22 +614,28 @@ function ComandaQRExperience({
             </div>
           )}
 
+          {notice && (
+            <div className="mb-5 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-black text-emerald-100">
+              {notice}
+            </div>
+          )}
+
           <div className="space-y-3 sm:space-y-4">
-            <label className="block">
+            {accessMode === 'open' && <label className="block">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Nome</span>
               <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
                 <UserRound size={18} className="text-primary" />
                 <input name="name" autoComplete="name" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="Seu nome" />
               </div>
-            </label>
-            <label className="block">
+            </label>}
+            {accessMode === 'open' && <label className="block">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Telefone</span>
               <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
                 <Phone size={18} className="text-primary" />
                 <input name="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="WhatsApp" />
               </div>
-            </label>
-            <label className="block">
+            </label>}
+            {accessMode !== 'code' && <label className="block">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">CPF</span>
               <input
                 value={cpf}
@@ -561,16 +646,56 @@ function ComandaQRExperience({
                 className="mt-2 w-full rounded-3xl border border-white/10 bg-white/[0.04] px-5 py-4 sm:py-5 outline-none text-xl sm:text-2xl font-black tracking-[0.16em] focus:border-primary/70"
                 placeholder="00000000000"
               />
-            </label>
+            </label>}
+            {accessMode === 'code' && <label className="block">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Código do WhatsApp</span>
+              <div className="mt-2 flex items-center gap-3 rounded-3xl border border-primary/40 bg-primary/[0.07] px-4">
+                <KeyRound size={18} className="text-primary" />
+                <input
+                  value={recoveryCode}
+                  name="one-time-code"
+                  autoComplete="one-time-code"
+                  onChange={e => setRecoveryCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                  inputMode="numeric"
+                  className="w-full bg-transparent py-5 text-center text-3xl font-black tracking-[0.35em] outline-none"
+                  placeholder="000"
+                  autoFocus
+                />
+              </div>
+            </label>}
           </div>
 
-          <button
-            onClick={submit}
-            disabled={isSubmitting || cpf.length < 11 || !customerName.trim() || !phone.trim()}
-            className="mt-5 sm:mt-7 w-full btn-beco btn-beco-purple py-4 sm:py-5 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40 disabled:grayscale"
-          >
-            {isSubmitting ? 'Validando...' : 'Abrir comanda'}
-          </button>
+          {accessMode === 'open' && <button
+              onClick={submit}
+              disabled={isSubmitting || cpf.length < 11 || !customerName.trim() || !phone.trim()}
+              className="mt-5 sm:mt-7 w-full btn-beco btn-beco-purple py-4 sm:py-5 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40 disabled:grayscale"
+            >
+              {isSubmitting ? 'Validando...' : 'Abrir comanda'}
+            </button>}
+          {accessMode === 'recover' && <button
+              onClick={requestRecovery}
+              disabled={isSubmitting || cpf.length < 11}
+              className="mt-5 sm:mt-7 w-full btn-beco btn-beco-purple py-4 sm:py-5 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40 disabled:grayscale"
+            >
+              {isSubmitting ? 'Enviando...' : 'Enviar código no WhatsApp'}
+            </button>}
+          {accessMode === 'code' && <div className="mt-5 sm:mt-7 space-y-3">
+              <button
+                onClick={verifyRecovery}
+                disabled={isSubmitting || recoveryCode.length < 3}
+                className="w-full btn-beco btn-beco-purple py-4 sm:py-5 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40 disabled:grayscale"
+              >
+                {isSubmitting ? 'Confirmando...' : 'Confirmar e acessar'}
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => selectAccessMode('recover')} className="min-h-11 rounded-2xl border border-white/10 text-[10px] font-black uppercase tracking-wider text-zinc-300">
+                  <ArrowLeft className="mr-1 inline h-4 w-4" aria-hidden="true" /> Trocar CPF
+                </button>
+                <button type="button" onClick={requestRecovery} disabled={isSubmitting} className="min-h-11 rounded-2xl border border-white/10 text-[10px] font-black uppercase tracking-wider text-zinc-300 disabled:opacity-40">
+                  Reenviar código
+                </button>
+              </div>
+            </div>}
         </div>
         </div>
       </div>
