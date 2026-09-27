@@ -24,8 +24,10 @@ const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, men
 ]);
 
 assert.match(indexHtml, /<meta name="google-adsense-account" content="ca-pub-8099608758666537"/);
-assert.match(indexHtml, /id="becoartes-adsense-script"[\s\S]*pagead2\.googlesyndication\.com/);
-assert.equal((indexHtml.match(/nonce="__CSP_NONCE__"/g) || []).length, 3);
+assert.match(indexHtml, /adsenseScript\.id = 'becoartes-adsense-script'/);
+assert.match(indexHtml, /adsenseScript\.src = 'https:\/\/pagead2\.googlesyndication\.com\/pagead\/js\/adsbygoogle\.js\?client=ca-pub-8099608758666537'/);
+assert.match(indexHtml, /becoHost === 'qr\.becoartes\.com'[\s\S]*adsenseScript\.dataset\.overlays = 'collapsed-bottom'/);
+assert.equal((indexHtml.match(/nonce="__CSP_NONCE__"/g) || []).length, 2);
 assert.doesNotMatch(component, /document\.createElement\(['"]script['"]\)/);
 assert.match(component, /data-ad-render-status/);
 assert.match(component, /unfill-optimized/);
@@ -57,7 +59,7 @@ assert.match(component, /new IntersectionObserver/);
 assert.match(component, /entry\.intersectionRatio >= 0\.2/);
 assert.equal((qrView.match(/h-\[calc\(100dvh-50px\)\] max-h-\[calc\(100dvh-50px\)\] min-h-0/g) || []).length, 2);
 assert.match(pdvView, /h-\[calc\(100dvh-50px\)\]/);
-assert.match(pdvView, /overflow-y-auto overscroll-contain custom-scrollbar/);
+assert.match(pdvView, /overflow-y-scroll overscroll-contain custom-scrollbar/);
 assert.equal((qrView.match(/className="min-h-0 flex flex-1 flex-col overflow-hidden sm:pb-28"/g) || []).length, 2);
 assert.equal((qrView.match(/constrainToParent/g) || []).length, 2);
 assert.match(menuCatalog, /constrainToParent \? 'flex-1' : 'h-full'/);
