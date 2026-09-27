@@ -12,13 +12,6 @@
     <meta name="description" content="Sistema operacional Becoartes." />
     <meta name="robots" content="noindex,nofollow" />
     <link rel="canonical" href="https://pdv.becoartes.com/" />
-    <script
-      id="becoartes-adsense-script"
-      nonce="__CSP_NONCE__"
-      async
-      crossorigin="anonymous"
-      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8099608758666537"
-    ></script>
     <title>Becoartes PDV</title>
     <script nonce="__CSP_NONCE__">
       // Restaura o tema salvo antes do React montar (evita flash).
@@ -29,6 +22,19 @@
       } catch (e) { /* noop */ }
 
       const becoHost = window.location.hostname;
+      const adsenseScript = document.createElement('script');
+      adsenseScript.id = 'becoartes-adsense-script';
+      adsenseScript.async = true;
+      adsenseScript.crossOrigin = 'anonymous';
+      adsenseScript.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8099608758666537';
+      if (becoHost === 'qr.becoartes.com' || (
+        (becoHost === 'localhost' || becoHost === '127.0.0.1') &&
+        /^\/(?:mesa\/\d+|qr(?:\/|$))/.test(window.location.pathname)
+      )) {
+        adsenseScript.dataset.overlays = 'collapsed-bottom';
+      }
+      document.head.appendChild(adsenseScript);
+
       if (becoHost.startsWith('qr.')) {
         const tableMatch = window.location.pathname.match(/^\/mesa\/(\d+)\/?$/);
         const tableNumber = tableMatch?.[1];

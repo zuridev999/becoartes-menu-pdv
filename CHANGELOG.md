@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.16.1 - 2026-09-27
+
+- Limita ao QR o anúncio âncora do Google ao formato recolhido na parte inferior, sem alterar o comportamento das outras frentes.
+
 ## 1.16.0 - 2026-09-19
 
 - Separa no Bar as ações “Pronto para retirar” e “Já entregue ao cliente”.
