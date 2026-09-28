@@ -29,10 +29,12 @@ type CloseBillResult = {
 };
 
 type SendToKitchenResult = {
-  request: Omit<ServiceRequest, 'createdAt' | 'tableNumber'> & {
+  request: Omit<ServiceRequest, 'createdAt' | 'tableNumber' | 'status'> & {
     createdAt: string;
     tableNumber?: number;
+    status: ServiceRequest['status'] | 'suppressed';
   };
+  sentToProduction?: boolean;
   inventorySync?: {
     movementCount: number;
     unmatched: string[];
@@ -424,6 +426,7 @@ export const OperationalApi = {
     clientRequestId?: string;
     customerTabContext?: CustomerTabOrderContext;
     items: OrderItem[];
+    dispatchTargets?: { kitchen: boolean; bar: boolean };
   }) {
     const sourceToken = input.customerTabContext
       ? getPublicTableAccessToken(input.customerTabContext.sourceTableId, 'qr')

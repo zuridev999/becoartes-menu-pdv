@@ -101,3 +101,16 @@ export const buildPdvCatalogCategories = (
 export const getPdvCategoriesById = (categories: Category[]) => (
   new Map(categories.map((category) => [category.id, category]))
 );
+
+export const searchPdvProducts = (
+  products: Product[],
+  categoriesById: Map<string, Category>,
+  query: string,
+) => {
+  const term = normalizeText(query).replace(/\s+/g, ' ');
+  if (!term) return [];
+  return products.filter(product => getPdvProductCategoryId(product, categoriesById)
+    && normalizeText(`${product.name} ${product.description || ''} ${product.categoryName || ''}`)
+      .replace(/\s+/g, ' ')
+      .includes(term));
+};

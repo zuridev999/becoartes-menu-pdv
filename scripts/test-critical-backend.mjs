@@ -577,6 +577,66 @@ try {
   const deliveredTicket = await getScalar("SELECT status FROM production_tickets WHERE id = 'order_partial:kitchen'");
   assert.equal(deliveredTicket.status, 'ready', 'the production ticket must leave the active station after delivery');
 
+  await testDb.batch([
+    { sql: "INSERT INTO categories (id, name, sort_order, visible) VALUES ('cat_dispatch_food', 'Pratos', 10, 1), ('cat_dispatch_bar', 'Drinks', 11, 1)" },
+    { sql: "INSERT INTO estoque_produtos (id, empresa_id, nome, categoria, ativo, quantidade_atual, estoque_minimo, created_at) VALUES ('stock_dispatch_food', 'empresa_test', 'Comida teste', 'Teste', 1, 20, 0, ?), ('stock_dispatch_bar', 'empresa_test', 'Bebida teste', 'Teste', 1, 20, 0, ?)", args: [Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000)] },
+    { sql: "INSERT INTO menu (id, name, description, price, category_id, image, visible, remote_stock_id, cost, sort_order) VALUES ('prod_dispatch_food', 'Comida teste', '', 10, 'cat_dispatch_food', '', 1, 'stock_dispatch_food', 0, 10), ('prod_dispatch_bar', 'Bebida teste', '', 10, 'cat_dispatch_bar', '', 1, 'stock_dispatch_bar', 0, 11)" },
+  ], 'write');
+  const dispatchItem = (id, station) => ({
+    id,
+    productId: `prod_dispatch_${station}`,
+    name: station === 'food' ? 'Comida teste' : 'Bebida teste',
+    categoryId: `cat_dispatch_${station}`,
+    categoryName: station === 'food' ? 'Pratos' : 'Drinks',
+    price: 10,
+    quantity: 1,
+    selectedModifiers: [],
+    notes: '',
+  });
+  const dispatchItems = (prefix) => [dispatchItem(`${prefix}_food`, 'food'), dispatchItem(`${prefix}_bar`, 'bar')];
+
+  const barOnly = await post('/api/orders/send-to-kitchen', {
+    orderId: 'order_dispatch_bar_only', tableId: '1', total: 20, origin: 'pdv', sellerId: admin.seller.id,
+    items: dispatchItems('bar_only'), dispatchTargets: { kitchen: false, bar: true },
+  }, admin.sessionToken);
+  assert.equal(barOnly.data.sentToProduction, true);
+  assert.equal((await getScalar("SELECT status FROM production_tickets WHERE id = 'order_dispatch_bar_only:kitchen'")).status, 'skipped');
+  const barOnlyKitchen = await fetchJson('/api/app/init?view=kitchen', { token: admin.sessionToken });
+  const barOnlyBar = await fetchJson('/api/app/init?view=bar', { token: admin.sessionToken });
+  assert.equal(barOnlyKitchen.data.kitchenData.orders.some(order => order.orderId === 'order_dispatch_bar_only'), false);
+  assert.equal(barOnlyBar.data.kitchenData.orders.some(order => order.orderId === 'order_dispatch_bar_only'), true);
+  await post('/api/orders/status', { orderId: 'order_dispatch_bar_only:bar', status: 'ready', completionMode: 'delivered' }, admin.sessionToken);
+  assert.equal((await getScalar("SELECT status FROM orders WHERE id = 'order_dispatch_bar_only'")).status, 'ready');
+
+  const kitchenOnly = await post('/api/orders/send-to-kitchen', {
+    orderId: 'order_dispatch_kitchen_only', tableId: '1', total: 20, origin: 'pdv', sellerId: admin.seller.id,
+    items: dispatchItems('kitchen_only'), dispatchTargets: { kitchen: true, bar: false },
+  }, admin.sessionToken);
+  assert.equal(kitchenOnly.data.request.status, 'suppressed');
+  assert.equal((await getScalar("SELECT status FROM production_tickets WHERE id = 'order_dispatch_kitchen_only:bar'")).status, 'skipped');
+  const kitchenOnlyKitchen = await fetchJson('/api/app/init?view=kitchen', { token: admin.sessionToken });
+  const kitchenOnlyBar = await fetchJson('/api/app/init?view=bar', { token: admin.sessionToken });
+  assert.equal(kitchenOnlyKitchen.data.kitchenData.orders.some(order => order.orderId === 'order_dispatch_kitchen_only'), true);
+  assert.equal(kitchenOnlyBar.data.kitchenData.orders.some(order => order.orderId === 'order_dispatch_kitchen_only'), false);
+
+  const neitherStation = {
+    orderId: 'order_dispatch_neither', tableId: '1', total: 20, origin: 'pdv', sellerId: admin.seller.id,
+    items: dispatchItems('neither'), dispatchTargets: { kitchen: false, bar: false },
+  };
+  const manualOrder = await post('/api/orders/send-to-kitchen', neitherStation, admin.sessionToken);
+  assert.equal(manualOrder.data.sentToProduction, false);
+  assert.equal(manualOrder.data.request.status, 'suppressed');
+  assert.equal((await getScalar("SELECT status FROM orders WHERE id = 'order_dispatch_neither'")).status, 'ready');
+  assert.equal(Number((await getScalar("SELECT COUNT(*) AS count FROM order_items WHERE order_id = 'order_dispatch_neither'")).count), 2);
+  const manualRetry = await post('/api/orders/send-to-kitchen', neitherStation, admin.sessionToken);
+  assert.equal(manualRetry.data.duplicate, true);
+  assert.equal(manualRetry.data.request.status, 'suppressed');
+  assert.equal(Number((await getScalar("SELECT COUNT(*) AS count FROM orders WHERE id = 'order_dispatch_neither'")).count), 1);
+  const manualKitchen = await fetchJson('/api/app/init?view=kitchen', { token: admin.sessionToken });
+  const manualBar = await fetchJson('/api/app/init?view=bar', { token: admin.sessionToken });
+  assert.equal(manualKitchen.data.kitchenData.orders.some(order => order.orderId === 'order_dispatch_neither'), false);
+  assert.equal(manualBar.data.kitchenData.orders.some(order => order.orderId === 'order_dispatch_neither'), false);
+
   const partial = await post('/api/table-payments', {
     id: 'partial_1',
     tableId: '1',
@@ -791,6 +851,7 @@ try {
       'fechamento_concluido_notifica_superadmin',
       'pagamento_parcial',
       'pedido_entregue_sem_alerta_pendente_no_pdv',
+      'envio_seletivo_cozinha_bar_sem_duplicar_conta',
       'retry_pagamento_parcial',
       'fechamento',
       'retry_fechamento',

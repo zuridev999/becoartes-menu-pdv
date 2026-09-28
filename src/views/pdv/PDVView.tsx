@@ -28,8 +28,9 @@ import type { ReceiptData } from '../../lib/receiptPrint';
 import { businessDateKey, businessWeekday } from '../../lib/business-time';
 import { getOrderLocation, getPhysicalTablesPendingTransition, isTableVisibleForQrMode } from '../../lib/order-location';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
-import { buildPdvCatalogCategories, getPdvCategoriesById, getPdvProductCategoryId } from '../../lib/pdv-catalog';
+import { buildPdvCatalogCategories, getPdvCategoriesById, getPdvProductCategoryId, searchPdvProducts } from '../../lib/pdv-catalog';
 import { RequestHistoryToggle } from '../../components/pdv/RequestHistoryToggle';
+import { TableDispatchFooter, TableProductSearchHeader } from '../../components/pdv/TableOrderControls';
 
 const CANCEL_REASONS = [
   { code: 'cliente_desistiu', label: 'Cliente desistiu' },
@@ -187,6 +188,9 @@ export function PDVView() {
   const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
   const [showCheckout, setShowCheckout] = useState(false);
   const [showProductMenu, setShowProductMenu] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [sendToKitchenStation, setSendToKitchenStation] = useState(true);
+  const [sendToBarStation, setSendToBarStation] = useState(true);
   const [showCounterSale, setShowCounterSale] = useState(false);
   const [showSalesBreakdown, setShowSalesBreakdown] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -367,6 +371,10 @@ export function PDVView() {
     () => pdvProducts.filter(product => getPdvProductCategoryId(product, pdvCategoriesById) === activeCategory),
     [activeCategory, pdvCategoriesById, pdvProducts],
   );
+  const visiblePdvProducts = useMemo(() => {
+    if (!productSearch.trim()) return pdvProductsForActiveCategory;
+    return searchPdvProducts(pdvProducts, pdvCategoriesById, productSearch);
+  }, [pdvCategoriesById, pdvProducts, pdvProductsForActiveCategory, productSearch]);
 
   useEffect(() => {
     if (!pdvCategories.length) {
@@ -623,6 +631,13 @@ export function PDVView() {
     }
   };
 
+  const openProductMenu = () => {
+    setProductSearch('');
+    setSendToKitchenStation(true);
+    setSendToBarStation(true);
+    setShowProductMenu(true);
+  };
+
   const handleTableClick = (table: TableType) => {
     if (!canAccessTable(table)) {
       addNotification('Mesa vinculada a outro operador.', 'error');
@@ -631,7 +646,7 @@ export function PDVView() {
     setSelectedTable(table);
     setCurrentTableId(table.id);
     if (table.status === 'available' && !(isComandaMode && table.number <= 50)) {
-      setShowProductMenu(true);
+      openProductMenu();
       if (pdvCategories.length > 0) setActiveCategory(pdvCategories[0].id);
     }
   };
@@ -1170,7 +1185,7 @@ export function PDVView() {
                            <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${isResolved ? 'text-emerald-400' : 'text-white/60'}`}>
                              <Clock size={10} /> 
                              {new Date(req.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • 
-                             {isResolved ? 'Atendimento Concluído' : (req.type === 'order_ready' ? 'Retirar na Cozinha' : (req.type === 'new_order' ? 'Preparar Bebidas/Drinks' : (req.message || 'Aguardando atendimento')))}
+                             {isResolved ? 'Atendimento Concluído' : (req.type === 'order_ready' ? 'Retirar pedido pronto' : (req.type === 'new_order' ? 'Preparar Bebidas/Drinks' : (req.message || 'Aguardando atendimento')))}
                            </p>
                            {location.secondary && (
                              <p className="mt-1 text-[9px] font-black uppercase tracking-[0.16em] text-white/65">
@@ -1281,7 +1296,7 @@ export function PDVView() {
                   ? 'Ative a chave acima para abrir uma conta tradicional nesta mesa.'
                   : 'Inicie um novo atendimento para adicionar itens e gerenciar esta mesa.'}</p>
                 <button 
-                  onClick={() => canOpenTable && canAddItems && setShowProductMenu(true)}
+                  onClick={() => canOpenTable && canAddItems && openProductMenu()}
                   disabled={!canOpenTable || !canAddItems || (isComandaMode && managedTable.number <= 50 && !managedTable.qrFlowOverride)}
                   className={`w-full btn-beco py-8 text-xl font-black rounded-3xl ${
                     canOpenTable && canAddItems && !(isComandaMode && managedTable.number <= 50 && !managedTable.qrFlowOverride)
@@ -1383,7 +1398,7 @@ export function PDVView() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <button 
-                      onClick={() => canAddItems && setShowProductMenu(true)}
+                      onClick={() => canAddItems && openProductMenu()}
                       disabled={!canAddItems}
                       className={`btn-beco py-6 rounded-2xl font-black text-sm ${
                         canAddItems
@@ -1439,13 +1454,12 @@ export function PDVView() {
             exit={{ opacity: 0, scale: 1.1 }}
             className="!fixed inset-0 z-[500] glass-card m-0 sm:m-6 xl:m-12 bg-transparent/95 border-white/10 flex flex-col overflow-hidden p-4 sm:p-8 xl:p-12"
           >
-            <div className="flex justify-between items-start gap-4 mb-6 xl:mb-12">
-               <div>
-                 <h2 className="text-3xl sm:text-4xl font-black italic tracking-tighter leading-none">Adicionar à <span className="text-primary">Mesa {selectedTable.number}</span></h2>
-                 <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">Selecione os produtos abaixo</p>
-               </div>
-               <button type="button" aria-label="Fechar cardápio" onClick={() => setShowProductMenu(false)} className="p-4 sm:p-6 glass rounded-3xl hover:text-rose-500 transition-all shrink-0"><X size={28}/></button>
-            </div>
+            <TableProductSearchHeader
+              tableNumber={selectedTable.number}
+              query={productSearch}
+              onQueryChange={setProductSearch}
+              onClose={() => setShowProductMenu(false)}
+            />
 
             <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-8 overflow-hidden min-h-0">
                {/* CATEGORIES */}
@@ -1453,7 +1467,7 @@ export function PDVView() {
                   {pdvCategories.map(cat => (
                     <button 
                       key={cat.id}
-                      onClick={() => setActiveCategory(cat.id)}
+                      onClick={() => { setActiveCategory(cat.id); setProductSearch(''); }}
                       className={`px-5 py-4 lg:p-6 rounded-3xl font-black text-left uppercase text-xs tracking-widest transition-all whitespace-nowrap lg:whitespace-normal ${
                         activeCategory === cat.id 
                           ? 'bg-primary text-white shadow-2xl shadow-primary/20 border border-primary' 
@@ -1466,8 +1480,14 @@ export function PDVView() {
                </div>
 
                <div className="min-w-0 flex-1 overflow-y-auto lg:pr-4 custom-scrollbar min-h-0">
+                  {productSearch.trim() && (
+                    <p className="mb-3 text-xs font-bold text-zinc-400">{visiblePdvProducts.length} resultado(s) em todas as categorias</p>
+                  )}
+                  {visiblePdvProducts.length === 0 && (
+                    <p className="rounded-2xl border border-white/10 bg-[#121214] p-6 text-sm font-bold text-zinc-400">Nenhum produto encontrado.</p>
+                  )}
                   <div className="mx-auto grid min-w-0 w-full grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-                    {pdvProductsForActiveCategory.map(product => (
+                    {visiblePdvProducts.map(product => (
                       <motion.button
                         key={product.id}
                         whileHover={{ x: 6 }}
@@ -1508,7 +1528,7 @@ export function PDVView() {
                            <h4 className="line-clamp-2 break-words text-base font-bold italic leading-tight tracking-tight text-white sm:text-lg">{product.name}</h4>
                            <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
                              <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">
-                               {pdvCategories.find(category => category.id === activeCategory)?.label}
+                               {pdvCategories.find(category => category.id === getPdvProductCategoryId(product, pdvCategoriesById))?.label}
                              </span>
                              <span className={`text-[9px] font-black uppercase tracking-widest ${
                                product.modifierGroups?.length ? 'text-primary' : 'text-zinc-600'
@@ -1591,60 +1611,38 @@ export function PDVView() {
               </div>
             )}
 
-            <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-white/10 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 shrink-0">
-              <div className="flex gap-6 sm:gap-8">
-                 <div>
-                   <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1">Itens no Pedido</span>
-                   <span className="text-2xl sm:text-3xl font-black italic tracking-tighter text-white">{cart.length} ITENS</span>
-                 </div>
-                 <div>
-                   <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1">Subtotal</span>
-                   <span className="text-2xl sm:text-3xl font-black italic tracking-tighter text-emerald-400">{formatCurrency(getOrderItemsTotal(cart))}</span>
-                 </div>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                <button 
-                  onClick={() => setShowProductMenu(false)}
-                  className="btn-beco bg-zinc-800 py-5 sm:py-8 px-8 sm:px-12 text-base sm:text-xl font-black rounded-3xl"
-                >
-                  CANCELAR
-                </button>
-                <button 
-                  disabled={isSendingOrder || cart.length === 0 || !canSendOrderToProduction}
-                  onClick={async () => {
-                    if (cart.length > 0) {
-                      setIsSendingOrder(true);
-                      try {
-                        await sendToKitchen(selectedTable.id, 'pdv', currentSeller?.id || 'sistema');
-                        if (!useStore.getState().currentSeller) return;
-                        addAuditLog({
-                          action: 'item_added',
-                          details: { items_count: cart.length },
-                          table_number: selectedTable.number.toString(),
-                          origin: 'pdv'
-                        });
-                        setShowProductMenu(false);
-                      } catch (err) {
-                        console.error("Erro ao enviar pedido para a cozinha:", err);
-                        addNotification("Não foi possível enviar o pedido. Confira o aviso na tela e tente novamente.", "error");
-                      } finally {
-                        setIsSendingOrder(false);
-                      }
-                    } else {
-                      setShowProductMenu(false);
-                    }
-                  }}
-                  className="btn-beco btn-beco-purple py-5 sm:py-8 px-8 sm:px-16 xl:px-24 text-base sm:text-xl font-black rounded-3xl shadow-2xl shadow-primary/20 disabled:opacity-20 disabled:grayscale transition-all"
-                >
-                  {isSendingOrder ? 'ENVIANDO...' : 'CONFIRMAR E ENVIAR'}
-                </button>
-                {!canSendOrderToProduction && (
-                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-400 text-center sm:text-right">
-                    Seu perfil não pode enviar pedido para produção/bar.
-                  </p>
-                )}
-              </div>
-            </div>
+            <TableDispatchFooter
+              cart={cart}
+              kitchen={sendToKitchenStation}
+              bar={sendToBarStation}
+              onKitchenChange={setSendToKitchenStation}
+              onBarChange={setSendToBarStation}
+              isSending={isSendingOrder}
+              canSend={canSendOrderToProduction}
+              onCancel={() => setShowProductMenu(false)}
+              onConfirm={async () => {
+                if (!cart.length) return;
+                setIsSendingOrder(true);
+                try {
+                  await sendToKitchen(selectedTable.id, 'pdv', currentSeller?.id || 'sistema', undefined, {
+                    kitchen: sendToKitchenStation, bar: sendToBarStation,
+                  });
+                  if (!useStore.getState().currentSeller) return;
+                  addAuditLog({
+                    action: 'item_added',
+                    details: { items_count: cart.length, send_to_kitchen: sendToKitchenStation, send_to_bar: sendToBarStation },
+                    table_number: selectedTable.number.toString(),
+                    origin: 'pdv',
+                  });
+                  setShowProductMenu(false);
+                } catch (error) {
+                  console.error('Erro ao registrar pedido da mesa:', error);
+                  addNotification('Não foi possível registrar o pedido. Confira o aviso na tela e tente novamente.', 'error');
+                } finally {
+                  setIsSendingOrder(false);
+                }
+              }}
+            />
           </motion.div>
         )}
       </AnimatePresence>

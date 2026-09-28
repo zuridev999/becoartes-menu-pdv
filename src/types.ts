@@ -84,6 +84,8 @@ export interface OrderItem {
   status?: 'pending' | 'preparing' | 'ready' | 'delivered';
 }
 
+export type ProductionDispatchTargets = { kitchen: boolean; bar: boolean };
+
 export interface Table {
   id: string;
   number: number;

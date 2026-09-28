@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.17.0 - 2026-09-28
+
+- Inclui busca de produtos em todas as categorias ao abrir uma mesa ou adicionar itens a uma mesa aberta no PDV.
+- Permite escolher, por pedido, o envio para cozinha e bar; os dois destinos vêm selecionados.
+- Registra os itens na conta e baixa o estoque mesmo quando um destino é desmarcado, sem criar preparo ou aviso pendente para ele.
+
 ## 1.16.1 - 2026-09-27
 
 - Limita ao QR o anúncio âncora do Google ao formato recolhido na parte inferior, sem alterar o comportamento das outras frentes.

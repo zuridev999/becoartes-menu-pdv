@@ -34,6 +34,7 @@ import { createPublicTableStateService, rethrowCustomerTabWriteError, sanitizePu
 import { summarizeInventoryAttention } from './inventory/attention-summary.mjs';
 import { createNotificationServices } from './notifications/service.mjs';
 import { createDeliveryCustomerServices } from './delivery/customer-service.mjs';
+import { resolveOrderDispatch } from './order-dispatch.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -1885,7 +1886,7 @@ const loadKitchenOrders = async (view = 'pdv', materialize = false) => {
     for (const [station, stationItems] of Object.entries(split)) {
       if (stationFilter && station !== stationFilter) continue;
       const ticket = ticketsByOrder[orderId]?.[station] || {};
-      if (ticket.status === 'ready') continue;
+      if (ticket.status === 'ready' || ticket.status === 'skipped') continue;
       productionOrders.push({
         id: ticket.id || `${orderId}:${station}`,
         orderId,
@@ -4020,7 +4021,11 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
 const getExistingOrderSubmission = async (clientRequestId) => {
   if (!clientRequestId) return null;
   const result = await db.execute({
-    sql: "SELECT id, table_id, source_table_id, source_table_number, customer_tab_id FROM orders WHERE client_request_id = ? LIMIT 1",
+    sql: `SELECT o.id, o.table_id, o.source_table_id, o.source_table_number,
+                 o.customer_tab_id, o.status, sr.status AS request_status
+          FROM orders o
+          LEFT JOIN service_requests sr ON sr.id = 'new_order_' || o.id
+          WHERE o.client_request_id = ? LIMIT 1`,
     args: [clientRequestId],
   });
   return result.rows?.[0] || null;
@@ -4043,9 +4048,10 @@ const orderSubmissionDuplicateResponse = (order, tableId, items = []) => {
       type: 'new_order',
       message: items.map((item) => `${item.quantity}x ${item.name}`).join(', '),
       items,
-      status: 'pending',
+      status: order?.request_status || 'pending',
       createdAt: new Date().toISOString(),
     },
+    sentToProduction: order?.status === 'pending' || order?.status === 'preparing',
     inventorySync: null,
     inventorySyncError: null,
   };
@@ -4063,6 +4069,7 @@ const sendToKitchen = async ({
   sellerId,
   clientRequestId,
   items,
+  dispatchTargets,
   customerTabId = '',
   customerTabAccessToken = '',
   sourceTableId = '',
@@ -4118,6 +4125,10 @@ const sendToKitchen = async ({
     isPublicOrigin: safeOrigin === 'tablet' || safeOrigin === 'qr',
   });
 
+  const dispatch = await resolveOrderDispatch({
+    origin: safeOrigin, dispatchTargets, items: safeItems, db, splitItemsByProductionStation,
+  });
+
   const qrOrderAuditStatement = await buildQrOrderAuditStatement({
     origin: safeOrigin,
     orderId,
@@ -4136,7 +4147,7 @@ const sendToKitchen = async ({
         orderId,
         tableId,
         requireNumber(total, 'total'),
-        'pending',
+        dispatch.orderStatus,
         safeOrigin,
         effectiveSellerId,
         safeClientRequestId,
@@ -4157,6 +4168,10 @@ const sendToKitchen = async ({
         item.notes || '',
       ],
     })),
+    ...dispatch.skippedStations.map(station => ({
+      sql: "INSERT OR IGNORE INTO production_tickets (id, order_id, station, status, created_at, updated_at) VALUES (?, ?, ?, 'skipped', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+      args: [`${orderId}:${station}`, orderId, station],
+    })),
     {
       sql: "UPDATE tables SET status = ?, current_seller_id = COALESCE(current_seller_id, ?) WHERE id = ?",
       args: ['ordering', effectiveSellerId, tableId],
@@ -4173,7 +4188,7 @@ const sendToKitchen = async ({
       requestId,
       tableId,
       'new_order',
-      'pending',
+      dispatch.requestStatus,
       itemsList,
       customerTabContext?.sourceTableId || null,
       customerTabContext?.sourceTableNumber || null,
@@ -4259,9 +4274,10 @@ const sendToKitchen = async ({
       type: 'new_order',
       message: itemsList,
       items: safeItems,
-      status: 'pending',
+      status: dispatch.requestStatus,
       createdAt: new Date().toISOString(),
     },
+    sentToProduction: dispatch.sentToProduction,
     inventorySync,
     inventorySyncError: safeOrigin === 'pdv'
       ? (inventorySyncError instanceof Error ? inventorySyncError.message : inventorySyncError ? String(inventorySyncError) : null)
@@ -6044,7 +6060,7 @@ const updateOrderStatus = async ({ orderId, status, completionMode = 'notify' })
     if (safeStatus !== 'ready') return { request: null };
 
     const remainingRes = await db.execute({
-      sql: "SELECT COUNT(*) as count FROM production_tickets WHERE order_id = ? AND status != 'ready'",
+      sql: "SELECT COUNT(*) as count FROM production_tickets WHERE order_id = ? AND status NOT IN ('ready', 'skipped')",
       args: [ticket.order_id],
     });
     if (Number(remainingRes.rows[0]?.count || 0) > 0) return { request: null };

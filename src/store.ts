@@ -9,7 +9,7 @@ import { attachModifierGroupsToMenu, sortProductsByCatalogOrder } from './lib/ca
 import { getCustomerTabLocationContext, getServiceRequestLabel, preserveCurrentQrTable } from './lib/order-location';
 import type {
   Product, Table, OrderItem, KitchenOrder,
-  ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category, CounterSaleInput
+  ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier, Category, CounterSaleInput, ProductionDispatchTargets
 } from './types';
 
 export type { Product, Table, OrderItem, KitchenOrder, ServiceRequest, ModifierGroup, ClosedBill, Seller, AppSettings, Modifier };
@@ -149,7 +149,7 @@ export interface AppState {
   removeOrderItem: (itemId: string, context?: { tableId?: string; tableNumber: number; itemName: string; quantity: number; sellerName?: string; sellerPermission?: Seller['permission']; reasonCode?: string; reasonLabel?: string; reasonNotes?: string }) => Promise<void>;
   removeFromCart: (itemId: string) => void;
   updateCartItemQuantity: (itemId: string, quantity: number) => void;
-  sendToKitchen: (tableId: string, origin?: 'tablet' | 'pdv' | 'qr', sellerId?: string, customerTabContext?: CustomerTabOrderContext) => Promise<void>;
+  sendToKitchen: (tableId: string, origin?: 'tablet' | 'pdv' | 'qr', sellerId?: string, customerTabContext?: CustomerTabOrderContext, dispatchTargets?: ProductionDispatchTargets) => Promise<void>;
   requestBill: (tableId: string) => void;
   requestService: (tableId: string, type: string, message?: string, customerTabContext?: CustomerTabOrderContext) => void;
   resolveService: (requestId: string) => void;
@@ -1075,7 +1075,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  sendToKitchen: async (tableId, origin = 'pdv', sellerId, customerTabContext) => {
+  sendToKitchen: async (tableId, origin = 'pdv', sellerId, customerTabContext, dispatchTargets) => {
     if (origin === 'pdv' && !hasApiSessionToken()) {
       clearSellerSession();
       set({ currentSeller: null });
@@ -1110,7 +1110,8 @@ export const useStore = create<AppState>((set, get) => ({
         sellerId: sellerId || null,
         clientRequestId,
         customerTabContext,
-        items: persistedItems
+        items: persistedItems,
+        dispatchTargets: origin === 'pdv' ? dispatchTargets : undefined,
       });
 
       const location = getCustomerTabLocationContext(table.number, customerTabContext);
@@ -1144,8 +1145,12 @@ export const useStore = create<AppState>((set, get) => ({
       };
 
       set((state) => ({
-        kitchenOrders: [...state.kitchenOrders, newKitchenOrder],
-        serviceRequests: [newRequest, ...state.serviceRequests],
+        kitchenOrders: origin === 'pdv' && (dispatchTargets?.kitchen === false || dispatchTargets?.bar === false)
+          ? state.kitchenOrders
+          : [...state.kitchenOrders, newKitchenOrder],
+        serviceRequests: sendResult.request.status === 'pending'
+          ? [newRequest, ...state.serviceRequests]
+          : state.serviceRequests,
         tables: state.tables.map(t => t.id === tableId ? {
           ...t,
           orders: [...t.orders, ...persistedItems],
@@ -1156,18 +1161,28 @@ export const useStore = create<AppState>((set, get) => ({
         } : t)
       }));
 
-      get().addNotification(`Novo pedido: ${location.label}!`, 'order', tableId);
+      get().addNotification(
+        sendResult.sentToProduction === false ? `Itens registrados na ${location.label}.` : `Novo pedido: ${location.label}!`,
+        'order',
+        tableId,
+      );
       if (sendResult.inventorySyncError) {
         get().addNotification("Pedido lançado, mas a baixa de estoque falhou. Confira o estoque.", "error", tableId);
       }
 
-      postOSMessage('table_alert', {
-        tableId,
-        tableNumber: location.publicTableNumber,
-        alertType: 'new_order',
-        message: `Novo pedido realizado!`,
-        createdAt: new Date().toISOString()
-      });
+      if (sendResult.sentToProduction !== false) {
+        postOSMessage('table_alert', {
+          tableId,
+          tableNumber: location.publicTableNumber,
+          alertType: 'new_order',
+          message: `Novo pedido realizado!`,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      if (origin === 'pdv' && (dispatchTargets?.kitchen === false || dispatchTargets?.bar === false)) {
+        void get().syncData({ includeCatalog: false });
+      }
 
       try {
         await get().addAuditLog('order_sent', `Itens: ${table.cart.length} | Total: R$ ${total.toFixed(2)}${location.customerTabNumber ? ` | Comanda ${location.customerTabNumber}` : ''}`, String(location.publicTableNumber), origin);
