@@ -1,9 +1,7 @@
-import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@libsql/client';
-import { sendJson } from './http.mjs';
 import { runSchemaMigrations } from './migrations/schema.mjs';
 import { createApiHandler } from './routes/api-router.mjs';
 import { createAccessGuards, createRouteAccessEnforcer } from './routes/access-policy.mjs';
@@ -35,6 +33,10 @@ import { summarizeInventoryAttention } from './inventory/attention-summary.mjs';
 import { createNotificationServices } from './notifications/service.mjs';
 import { createDeliveryCustomerServices } from './delivery/customer-service.mjs';
 import { resolveOrderDispatch } from './order-dispatch.mjs';
+import { createLioRuntime } from './lio/runtime.mjs';
+import { startBffServer } from './http-server.mjs';
+
+let lioService = null;
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -4079,6 +4081,7 @@ const sendToKitchen = async ({
 }, session = null, req = null) => {
   requireString(orderId, 'orderId');
   requireString(tableId, 'tableId');
+  if (lioService) await lioService.assertUnlocked(tableId, session);
   const safeOrigin = origin === 'tablet' || origin === 'qr' ? origin : 'pdv';
   const customerTabContext = await verifyCustomerTabOrderContext({
     tableId,
@@ -7259,6 +7262,7 @@ const requestBill = async ({ tableId }) => {
 const ensureTableAccess = async (tableId, session) => {
   requireString(tableId, 'tableId');
   requireSession(session);
+  if (lioService) await lioService.assertUnlocked(tableId, session);
   const tableRes = await db.execute({
     sql: "SELECT current_seller_id FROM tables WHERE id = ? LIMIT 1",
     args: [tableId],
@@ -9250,6 +9254,14 @@ const handleApi = createApiHandler({
   maxJsonBodyBytes: MAX_JSON_BODY_BYTES,
 });
 
+const lioRuntime = await createLioRuntime({ db, secret: SESSION_SECRET, getSessionFromRequest,
+  isAdminSession: isSuperAdminSession, pdv: {
+    getAuthSellers, getSettings, requirePermission, ensureTableAccess, getTables, canSessionWithSettings,
+    getCatalogData, getActiveTablePaymentBalance, assertCashOperationAllowed, getCashState, getPdvLockState,
+    sendToKitchen, createTablePayment, closeBillWithInventorySync, getExistingOrderSubmission,
+  } });
+lioService = lioRuntime.service;
+
 const serveStatic = createStaticHandler({
   distDir,
   securityHeaders,
@@ -9265,23 +9277,7 @@ if (process.env.BFF_DATABASE_BOOTSTRAP !== 'validate') {
   await materializeNewOrderRequests();
 }
 
-createServer(async (req, res) => {
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-
-  if (url.pathname.startsWith('/api/')) {
-    await handleApi(req, res, url);
-    return;
-  }
-
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    sendJson(res, 405, { ok: false, error: 'Method not allowed' });
-    return;
-  }
-
-  await serveStatic(req, res, url);
-}).listen(port, () => {
-  console.log(`Becoartes PDV BFF listening on :${port}`);
-});
+startBffServer({ port, handleLio: lioRuntime.handle, handleApi, serveStatic });
 
 if (process.env.INVENTORY_RECONCILIATION_DISABLED !== '1') {
   const inventoryWorker = setInterval(() => {

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.18.0 - 2026-09-29
+
+- Prepara a integração opcional da Cielo LIO ON com o PDV atual, incluindo catálogo, mesas, pedidos e conciliação de pagamentos.
+- Inclui painel administrativo e aplicativo Android nativo para os três terminais previstos.
+- Mantém a integração desligada por padrão; ativação exige migração aditiva explícita e credenciais da Cielo.
+
 ## 1.17.0 - 2026-09-28
 
 - Inclui busca de produtos em todas as categorias ao abrir uma mesa ou adicionar itens a uma mesa aberta no PDV.

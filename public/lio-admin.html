@@ -1,0 +1,9 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Becoartes • Maquininhas</title><link rel="stylesheet" href="/lio-admin.css">
+<main><a href="/pdv">← Voltar ao PDV</a><h1>Maquininhas</h1><p>Entre como administrador no PDV neste navegador. Cada funcionário autorizado usa o mesmo PIN que já utiliza no PDV.</p>
+<section><h2>Ativar uma LIO ON</h2><label>Terminal <select id="terminal"></select></label><button id="enroll">Gerar código de ativação</button><output id="code"></output></section>
+<section><h2>Funcionários autorizados</h2><label>Funcionário <select id="seller"></select></label><button id="save">Liberar na maquininha</button><p>O acesso será feito com o PIN atual do funcionário no PDV.</p></section>
+<section><h2>Acessos autorizados</h2><div id="devices"></div><div id="operators"></div></section>
+<section><h2>Pagamentos para conferência</h2><p>Não repita uma cobrança pendente. Retome a consulta na máquina e com o operador que iniciou a operação.</p><pre id="pending"></pre>
+<details><summary>Liberar operação NÃO cobrada (superadmin)</summary><p>Antes de liberar, confirme no histórico da Cielo que não houve aprovação. Isto NÃO estorna pagamentos. Liberar sem conferir pode causar cobrança duplicada.</p><label>ID da operação <input id="cancel-id"></label><label>Evidência da conferência <input id="cancel-reason"></label><button id="cancel">Confirmei na Cielo: não houve cobrança</button></details></section><p id="status" role="status"></p></main>
+<script src="/lio-admin.js" defer></script></html>
