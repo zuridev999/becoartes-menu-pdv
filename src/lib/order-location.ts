@@ -35,6 +35,12 @@ export const preserveCurrentQrTable = <T extends QrModeTable>(
   return snapshotTables.map((table, tableIndex) => tableIndex === index ? current : table);
 };
 
+export const preserveLocalCart = <T extends { id?: string; cart?: unknown[] }>(publicTable: T, currentTables: T[]) => {
+  const currentTable = currentTables.find((table) => table.id === publicTable.id);
+  if (!currentTable || !Array.isArray(currentTable.cart)) return publicTable;
+  return { ...publicTable, cart: currentTable.cart };
+};
+
 export const isTableVisibleForQrMode = (table: QrModeTable, isComandaMode: boolean) => (
   isComandaMode ? table.number > 50 || table.qrFlowOverride === 'mesa_until_close' || table.qrFlowOverride === 'mesa' : table.number <= 50
 );

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { getOrderLocation, preserveCurrentQrTable, isTableVisibleForQrMode, getPhysicalTablesPendingTransition } from '../src/lib/order-location.ts';
+import { getOrderLocation, preserveCurrentQrTable, preserveLocalCart, isTableVisibleForQrMode, getPhysicalTablesPendingTransition } from '../src/lib/order-location.ts';
 
 const traditionalTable = { id: '2', number: 2, status: 'ordering', qrFlowOverride: 'mesa' };
 assert.equal(isTableVisibleForQrMode(traditionalTable, true), true);
@@ -39,7 +39,17 @@ assert.deepEqual(
   'o snapshot público genérico não deve sobrescrever a conta já autorizada',
 );
 
+const localCart = [{ id: 'cart-1', name: 'Caipirinha' }, { id: 'cart-2', name: 'Contrafilé' }];
+assert.deepEqual(
+  preserveLocalCart(
+    { id: 'table-1', number: 1, status: 'ordering', cart: [] },
+    [{ id: 'table-1', number: 1, status: 'ordering', cart: localCart }],
+  ).cart,
+  localCart,
+  'a atualização pública não deve apagar itens ainda não enviados',
+);
+
 console.log(JSON.stringify({
   ok: true,
-  covered: ['physical_table_primary', 'customer_tab_secondary', 'legacy_table_fallback', 'customer_tab_without_location', 'authorized_qr_table_preserved'],
+  covered: ['physical_table_primary', 'customer_tab_secondary', 'legacy_table_fallback', 'customer_tab_without_location', 'authorized_qr_table_preserved', 'local_cart_preserved'],
 }, null, 2));

@@ -22,12 +22,13 @@ import { usePublicI18n } from '../../lib/public-i18n';
 import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
 import { GoogleAdBanner } from '../../components/common/GoogleAdBanner';
 import { getQrVisitId } from '../../lib/qr-analytics';
+import { preserveLocalCart } from '../../lib/order-location';
 import { useBuildRefresh } from '../../hooks/useBuildRefresh';
 
 const normalizeCpfInput = (value: string) => value.replace(/\D/g, '').slice(0, 11);
 
 const applyPublicTableState = (table: Table) => useStore.setState((state) => ({
-  tables: [...state.tables.filter((entry) => entry.id !== table.id), table].sort((a, b) => a.number - b.number),
+  tables: [...state.tables.filter((entry) => entry.id !== table.id), preserveLocalCart(table, state.tables)].sort((a, b) => a.number - b.number),
 }));
 
 const usePublicTablePolling = (input: {

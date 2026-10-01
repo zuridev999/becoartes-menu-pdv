@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.18.1 - 2026-10-01
+
+- Preserva itens ainda não enviados no carrinho do QR quando a atualização pública da mesa acontece.
+
 ## 1.18.0 - 2026-09-29
 
 - Prepara a integração opcional da Cielo LIO ON com o PDV atual, incluindo catálogo, mesas, pedidos e conciliação de pagamentos.
