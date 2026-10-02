@@ -42,6 +42,7 @@ const PUBLIC_TABLE_ROUTES = new Set([
 
 export const PERMISSION_BY_ROUTE = Object.freeze({
   'POST /api/order-items/delete': 'cancelTableItem',
+  'POST /api/order-items/modifier/delete': 'cancelTableItem',
   'POST /api/bills/close': 'closeBill',
   'POST /api/service-requests/resolve': 'resolveServiceRequest',
   'POST /api/catalog/category': 'manageCategories',

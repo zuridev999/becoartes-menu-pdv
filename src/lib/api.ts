@@ -475,6 +475,19 @@ export const OperationalApi = {
     return postJson<{ orderId: string | null }>('/api/order-items/delete', input);
   },
 
+  deleteOrderItemModifier(input: {
+    itemId: string;
+    modifierId: string;
+    cancelContext: {
+      tableNumber: number;
+      reasonCode?: string;
+      reasonLabel?: string;
+      reasonNotes?: string;
+    };
+  }) {
+    return postJson<{ orderId: string; inventoryReversalCount: number }>('/api/order-items/modifier/delete', input);
+  },
+
   closeBill(data: Omit<ClosedBill, 'id' | 'closedAt'>) {
     return postJson<CloseBillResult>('/api/bills/close', data)
       .then(result => ({

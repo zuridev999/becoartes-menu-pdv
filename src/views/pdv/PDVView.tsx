@@ -31,6 +31,7 @@ import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { buildPdvCatalogCategories, getPdvCategoriesById, getPdvProductCategoryId, searchPdvProducts } from '../../lib/pdv-catalog';
 import { RequestHistoryToggle } from '../../components/pdv/RequestHistoryToggle';
 import { TableDispatchFooter, TableProductSearchHeader } from '../../components/pdv/TableOrderControls';
+import { TableOrderItemCard } from '../../components/pdv/TableOrderItemCard';
 
 const CANCEL_REASONS = [
   { code: 'cliente_desistiu', label: 'Cliente desistiu' },
@@ -167,6 +168,7 @@ export function PDVView() {
     addAuditLog,
     addToCart,
     removeOrderItem,
+    removeOrderItemModifier,
     removeFromCart,
     updateCartItemQuantity,
     setCurrentTableId,
@@ -196,7 +198,8 @@ export function PDVView() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showOnlyActive, setShowOnlyActive] = useState(true);
-  const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableId: string; tableNumber: number } | null>(null);
+  const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableId: string; tableNumber: number; modifier?: OrderItem['selectedModifiers'][number] } | null>(null);
+  const [expandedOrderItemId, setExpandedOrderItemId] = useState<string | null>(null);
   const [cancelReasonCode, setCancelReasonCode] = useState('');
   const [cancelReasonNotes, setCancelReasonNotes] = useState('');
   
@@ -447,7 +450,9 @@ export function PDVView() {
   const isCashOpen = Boolean(cashState?.isOpen);
   const isCashOverdue = Boolean(cashState?.requiresClosing);
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides, userPermissionOverrides);
-  const canCancelTableItem = can(currentSeller, 'cancelTableItem', permissionOverrides, userPermissionOverrides);
+  const canCancelTableItem = can(currentSeller, 'cancelTableItem', permissionOverrides, userPermissionOverrides)
+    && (currentSeller?.osRole === 'super_admin'
+      || (currentSeller?.permission === 'admin' && ['admin-bootstrap', 'admin-bypass', 'master'].includes(currentSeller.id)));
   const canCloseBill = can(currentSeller, 'closeBill', permissionOverrides, userPermissionOverrides);
   const canLaunchPayment = can(currentSeller, 'launchPayment', permissionOverrides, userPermissionOverrides);
   const canOpenCash = can(currentSeller, 'openCash', permissionOverrides, userPermissionOverrides);
@@ -1311,42 +1316,19 @@ export function PDVView() {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-y-auto space-y-2.5 pr-3 custom-scrollbar mb-8">
                   <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-3">Pedidos Ativos</h4>
-                  {(managedTable?.orders || []).map((o, idx) => (
-                    <div key={idx} className="rounded-2xl border border-white/10 bg-white/[0.045] px-3.5 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:border-primary/35 hover:bg-white/[0.06] sm:px-4">
-                      <div className="min-w-0">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="min-w-0 flex-1 text-base font-black leading-tight text-zinc-50">{o.quantity}x {o.name}</p>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <p className="text-sm font-black tabular-nums text-zinc-200">{formatCurrency(getOrderItemTotal(o))}</p>
-                            {canCancelTableItem && (
-                              <button
-                                type="button"
-                                aria-label={`Cancelar ${o.name} da mesa`}
-                                onClick={() => {
-                                  setCancelReasonCode('');
-                                  setCancelReasonNotes('');
-                                  setCancelItemDialog({ item: o, tableId: managedTable?.id || selectedTable.id, tableNumber: selectedTable.number });
-                                }}
-                                className="rounded-lg border border-white/10 bg-white/[0.04] p-2 text-rose-500 transition-all hover:border-rose-500/30 hover:bg-rose-500/10"
-                                title="Cancelar item da mesa"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        {(o.categoryName || o.categoryId) && (
-                          <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-zinc-500">
-                            {o.categoryName || o.categoryId}
-                          </p>
-                        )}
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                          {(o.selectedModifiers || []).map(m => (
-                            <span key={m.id} className="rounded bg-white/5 px-1.5 py-0.5 text-[8px] font-black text-zinc-500">+{m.name}</span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                  {(managedTable?.orders || []).map(o => (
+                    <TableOrderItemCard
+                      key={o.id}
+                      item={o}
+                      canCancel={canCancelTableItem}
+                      expanded={expandedOrderItemId === o.id}
+                      onToggle={() => setExpandedOrderItemId(expandedOrderItemId === o.id ? null : o.id)}
+                      onCancel={modifier => {
+                        setCancelReasonCode('');
+                        setCancelReasonNotes('');
+                        setCancelItemDialog({ item: o, modifier, tableId: managedTable?.id || selectedTable.id, tableNumber: selectedTable.number });
+                      }}
+                    />
                   ))}
                 </div>
 
@@ -1898,10 +1880,12 @@ export function PDVView() {
           <ActionDialog
             isOpen
             tone="danger"
-            title="Cancelar item?"
-            description={`Remover ${cancelItemDialog.item.quantity}x ${cancelItemDialog.item.name} da Mesa ${cancelItemDialog.tableNumber}. O total do pedido será recalculado.`}
+            title={cancelItemDialog.modifier ? 'Remover só o adicional?' : 'Cancelar item inteiro?'}
+            description={cancelItemDialog.modifier
+              ? `Remover ${cancelItemDialog.item.quantity}x +${cancelItemDialog.modifier.name} de ${cancelItemDialog.item.name} na Mesa ${cancelItemDialog.tableNumber}. O prato permanece e o total será recalculado.`
+              : `Remover ${cancelItemDialog.item.quantity}x ${cancelItemDialog.item.name} e seus adicionais da Mesa ${cancelItemDialog.tableNumber}. O total será recalculado.`}
             cancelLabel="Voltar"
-            confirmLabel="Cancelar item"
+            confirmLabel={cancelItemDialog.modifier ? 'Remover adicional' : 'Cancelar item inteiro'}
             confirmDisabled={!cancelReasonCode || cancelReasonNotes.trim().length < 3}
             onClose={() => {
               setCancelItemDialog(null);
@@ -1910,6 +1894,17 @@ export function PDVView() {
             }}
             onConfirm={async () => {
               const reason = CANCEL_REASONS.find(item => item.code === cancelReasonCode);
+              if (cancelItemDialog.modifier) {
+                await removeOrderItemModifier(cancelItemDialog.item.id, cancelItemDialog.modifier.id, {
+                  tableId: cancelItemDialog.tableId,
+                  tableNumber: cancelItemDialog.tableNumber,
+                  reasonCode: reason?.code,
+                  reasonLabel: reason?.label,
+                  reasonNotes: cancelReasonNotes.trim(),
+                });
+                setExpandedOrderItemId(null);
+                return;
+              }
               await removeOrderItem(cancelItemDialog.item.id, {
                 tableId: cancelItemDialog.tableId,
                 tableNumber: cancelItemDialog.tableNumber,
@@ -1937,6 +1932,7 @@ export function PDVView() {
               } catch (error) {
                 console.warn('Item removido, mas auditoria falhou:', error);
               }
+              setExpandedOrderItemId(null);
             }}
           >
             <div className="space-y-3">

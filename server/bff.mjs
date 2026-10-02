@@ -33,6 +33,7 @@ import { summarizeInventoryAttention } from './inventory/attention-summary.mjs';
 import { createNotificationServices } from './notifications/service.mjs';
 import { createDeliveryCustomerServices } from './delivery/customer-service.mjs';
 import { resolveOrderDispatch } from './order-dispatch.mjs';
+import { createOrderItemModifierCancellation, createOrderItemCancellationNotifier, createSuperAdminItemCancellationGuard } from './order-item-modifier-cancellation.mjs';
 import { createLioRuntime } from './lio/runtime.mjs';
 import { startBffServer } from './http-server.mjs';
 
@@ -2208,6 +2209,8 @@ const assertSuperAdminLockControl = async (session = null) => {
   throw error;
 };
 
+const assertSuperAdminItemCancellation = createSuperAdminItemCancellationGuard(isSuperAdminSession);
+
 const setPdvLockState = async ({ locked, message }, session = null) => {
   await assertSuperAdminLockControl(session);
   const state = {
@@ -3792,15 +3795,7 @@ const getInventoryReconciliationSummary = async () => {
   return summary;
 };
 
-const notifyOrderItemCancelled = async ({ tableNumber, itemName, quantity, sellerName, sellerPermission, reasonLabel, reasonNotes }) => {
-  const reasonText = reasonLabel ? ` Motivo: ${reasonLabel}${reasonNotes ? ` (${reasonNotes})` : ''}.` : '';
-  return safeCreateOSNotification({
-    title: 'Item cancelado no PDV',
-    message: `Mesa ${tableNumber}: ${quantity}x ${itemName} cancelado por ${sellerName} (${sellerPermission}).${reasonText}`,
-    type: 'warning',
-    link: `/${OS_TENANT_SLUG}/dinheiro`,
-  });
-};
+const notifyOrderItemCancelled = createOrderItemCancellationNotifier({ safeCreateOSNotification, tenantSlug: OS_TENANT_SLUG });
 
 const notifyCloseBillSyncFailure = async ({ tableNumber, integrationId, error }) => {
   return safeCreateOSNotification({
@@ -3853,6 +3848,7 @@ const validateOrderItemsAvailability = async ({ items, session, settings, isPubl
 };
 
 const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
+  await assertSuperAdminItemCancellation(session);
   const safeCancelContext = cancelContext && typeof cancelContext === 'object' && !Array.isArray(cancelContext)
     ? cancelContext
     : null;
@@ -4019,6 +4015,8 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
 
   return { orderId: orderId || null, inventoryReversalCount: stockMovements.rows.length };
 };
+
+const deleteOrderItemModifier = createOrderItemModifierCancellation({ db, assertSuperAdminItemCancellation, normalizeText, parseJsonArray, ensureTableAccess: (...args) => ensureTableAccess(...args), resolveOSContext, osTimestamp, createId, bumpCatalogVersion: () => bumpCatalogVersion(), notifyOrderItemCancelled });
 
 const getExistingOrderSubmission = async (clientRequestId) => {
   if (!clientRequestId) return null;
@@ -9160,6 +9158,7 @@ const handlers = createRouteHandlers({
   deleteCategory,
   deleteModifierGroup,
   deleteOrderItem,
+  deleteOrderItemModifier,
   deleteProduct,
   deleteSeller,
   ensureCmvForMenuProduct,

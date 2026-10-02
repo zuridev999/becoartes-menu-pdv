@@ -81,6 +81,7 @@ export const createRouteHandlers = (services) => ({
   'GET /api/delivery/orders': async (_body, context) => services.listDeliveryOrders({ limit: context.url.searchParams.get('limit') || 50 }),
   'POST /api/orders/status': async (body) => services.updateOrderStatus(body),
   'POST /api/order-items/delete': async (body, context) => services.deleteOrderItem(body, context.session),
+  'POST /api/order-items/modifier/delete': async (body, context) => services.deleteOrderItemModifier(body, context.session),
   'POST /api/table-payments': async (body, context) => services.createTablePayment(body, context.session),
   'POST /api/table-payments/cancel': async (body, context) => services.cancelTablePayment(body, context.session),
   'GET /api/coupons/list': async () => services.listCoupons(),

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.19.0 - 2026-10-02
+
+- Permite ao superadmin cancelar separadamente um adicional ou o item inteiro de uma mesa no PDV, com motivo obrigatório.
+- Recalcula a conta, mantém o prato quando só o adicional é removido, registra auditoria e estorna apenas o estoque correspondente.
+- Bloqueia o cancelamento de itens de mesa por operadores e gerentes também no servidor.
+
 ## 1.18.1 - 2026-10-01
 
 - Preserva itens ainda não enviados no carrinho do QR quando a atualização pública da mesa acontece.

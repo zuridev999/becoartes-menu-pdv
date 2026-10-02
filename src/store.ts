@@ -5,6 +5,7 @@ import { getOrderItemsTotal } from './lib/totals';
 import { postOSMessage } from './lib/osBridge';
 import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, hasApiSessionToken, setApiSessionToken, type CashState, type CustomerTabOrderContext } from './lib/api';
 import { operationalRequestError } from './lib/request-timeout';
+import { cancelOrderItemModifier } from './lib/order-item-modifier-cancellation';
 import { attachModifierGroupsToMenu, sortProductsByCatalogOrder } from './lib/catalog-menu';
 import { getCustomerTabLocationContext, getServiceRequestLabel, preserveCurrentQrTable } from './lib/order-location';
 import type {
@@ -147,6 +148,7 @@ export interface AppState {
 
   addToCart: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
   removeOrderItem: (itemId: string, context?: { tableId?: string; tableNumber: number; itemName: string; quantity: number; sellerName?: string; sellerPermission?: Seller['permission']; reasonCode?: string; reasonLabel?: string; reasonNotes?: string }) => Promise<void>;
+  removeOrderItemModifier: (itemId: string, modifierId: string, context: { tableId: string; tableNumber: number; reasonCode?: string; reasonLabel?: string; reasonNotes?: string }) => Promise<void>;
   removeFromCart: (itemId: string) => void;
   updateCartItemQuantity: (itemId: string, quantity: number) => void;
   sendToKitchen: (tableId: string, origin?: 'tablet' | 'pdv' | 'qr', sellerId?: string, customerTabContext?: CustomerTabOrderContext, dispatchTargets?: ProductionDispatchTargets) => Promise<void>;
@@ -977,6 +979,8 @@ export const useStore = create<AppState>((set, get) => ({
       throw error;
     }
   },
+
+  removeOrderItemModifier: (itemId, modifierId, context) => cancelOrderItemModifier(itemId, modifierId, context, get, set),
 
   requestService: async (tableId, type, message = '', customerTabContext) => {
     const table = get().tables.find(t => t.id === tableId);
