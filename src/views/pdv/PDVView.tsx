@@ -23,7 +23,7 @@ import { PdvTicker } from '../../components/pdv/PdvTicker';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, MAX_SERVICE_FEE_PERCENT } from '../../lib/billing';
-import { AdminApi, AppApi, CustomerTabApi, type PdvLockState } from '../../lib/api';
+import { AdminApi, AppApi, CustomerTabApi, OpsApi, type PdvLockState } from '../../lib/api';
 import type { ReceiptData } from '../../lib/receiptPrint';
 import { businessDateKey, businessWeekday } from '../../lib/business-time';
 import { getOrderLocation, getPhysicalTablesPendingTransition, isTableVisibleForQrMode } from '../../lib/order-location';
@@ -170,7 +170,6 @@ export function PDVView() {
     resolveService,
     clearServiceRequest,
     syncData,
-    updateTableStatus,
     cashState,
     settings,
     openCash,
@@ -452,7 +451,7 @@ export function PDVView() {
   const canCloseCash = can(currentSeller, 'closeCash', permissionOverrides, userPermissionOverrides);
   const canUseCashAction = isCashOpen ? canCloseCash : canOpenCash;
   const canOpenTable = can(currentSeller, 'openTable', permissionOverrides, userPermissionOverrides);
-  const canUpdateTableStatus = can(currentSeller, 'updateTableStatus', permissionOverrides, userPermissionOverrides);
+  const isSuperAdmin = String(currentSeller?.osRole || '').toLowerCase() === 'super_admin';
   const canViewOtherOperatorTables = can(currentSeller, 'viewOtherOperatorTables', permissionOverrides, userPermissionOverrides);
   const canAddOrderItem = can(currentSeller, 'addOrderItem', permissionOverrides, userPermissionOverrides);
   const canSendOrderToProduction = can(currentSeller, 'sendOrderToProduction', permissionOverrides, userPermissionOverrides);
@@ -1383,23 +1382,7 @@ export function PDVView() {
                     >
                       ADICIONAR ITENS
                     </button>
-                    {getOrderItemsTotal(managedTable?.orders || []) === 0 ? (
-                      <button 
-                        onClick={async () => {
-                          if (!canUpdateTableStatus) return;
-                          const cleaned = await updateTableStatus(managedTable.id, 'available');
-                          if (cleaned) setSelectedTable(null);
-                        }}
-                        disabled={!canUpdateTableStatus}
-                        className={`btn-beco py-6 rounded-2xl font-black text-sm ${
-                          canUpdateTableStatus
-                            ? 'bg-rose-500/20 text-rose-500 hover:bg-rose-500/30'
-                            : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                        }`}
-                      >
-                        LIMPAR MESA (R$ 0,00)
-                      </button>
-                    ) : (
+                    {getOrderItemsTotal(managedTable?.orders || []) > 0 && (
                       <button
                         onClick={() => canCloseBill && setShowCheckout(true)}
                         disabled={!canCloseBill}
@@ -1410,6 +1393,26 @@ export function PDVView() {
                         }`}
                       >
                         FINALIZAR CONTA
+                      </button>
+                    )}
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const confirmed = window.confirm(`Limpar a Mesa ${managedTable.number}? Isso encerrará pedidos e comandas ativos sem registrar pagamento e ficará auditado como ação do superadmin.`);
+                          if (!confirmed) return;
+                          try {
+                            await OpsApi.clearTable(managedTable.id);
+                            await syncData({ includeCatalog: false });
+                            addNotification('Mesa limpa pelo superadmin.', 'info');
+                            setSelectedTable(null);
+                          } catch (error) {
+                            addNotification(error instanceof Error ? error.message : 'Não foi possível limpar a mesa.', 'error');
+                          }
+                        }}
+                        className="btn-beco py-6 rounded-2xl font-black text-sm bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 sm:col-span-2"
+                      >
+                        LIMPAR MESA
                       </button>
                     )}
                   </div>

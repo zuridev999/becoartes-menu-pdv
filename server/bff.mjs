@@ -29,6 +29,7 @@ import { createQrComandaTransitionServices, createQrModeTransitionStatements } f
 import { createQrAnalyticsService } from './qr-analytics.mjs';
 import { createQrOrderAuditService } from './qr-order-audit.mjs';
 import { createPublicTableStateService, rethrowCustomerTabWriteError, sanitizePublicCustomerSnapshot } from './public-customer-snapshot.mjs';
+import { createClearTableService } from './tables/clear-table-service.mjs';
 import { summarizeInventoryAttention } from './inventory/attention-summary.mjs';
 import { createNotificationServices } from './notifications/service.mjs';
 import { createDeliveryCustomerServices } from './delivery/customer-service.mjs';
@@ -9127,8 +9128,8 @@ const finalizeCustomerTab = async ({ tabId }, session) => {
   return { tab: sanitizeCustomerTab(updated.rows[0], totals[row.table_id]) };
 };
 
+const clearTable = createClearTableService({ db, createId, getCustomerTabTotalsByTable, isSuperAdminSession });
 const { requireSession, requirePermission } = createAccessGuards({ canSessionWithSettings });
-
 const enforceRouteAccess = createRouteAccessEnforcer({
   verifyPublicTableToken,
   canAccessOutsideOperationIp,
@@ -9144,6 +9145,7 @@ const handlers = createRouteHandlers({
   authorizePdvTerminal,
   addSeller,
   cancelTablePayment,
+  clearTable,
   clearServiceRequest,
   closeBillWithInventorySync,
   closeCash,

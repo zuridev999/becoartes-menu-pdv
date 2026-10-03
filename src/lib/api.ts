@@ -1232,6 +1232,18 @@ export const OpsApi = {
     return postJson<{ status: string }>('/api/tables/status', { tableId, status });
   },
 
+  clearTable(tableId: string) {
+    return postJson<{
+      tableId: string;
+      tableNumber: number;
+      status: 'available';
+      closedOrders: number;
+      closedCustomerTabs: number;
+      cancelledPayments: number;
+      outstandingBalance: number;
+    }>('/api/tables/clear', { tableId });
+  },
+
   openTable(tableId: string, wasAvailable: boolean) {
     return postJson<{ status: 'ordering' }>('/api/tables/open', { tableId, wasAvailable });
   },

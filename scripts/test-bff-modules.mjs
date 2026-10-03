@@ -16,6 +16,7 @@ import {
   normalizePaymentsFingerprint,
 } from '../server/domain/money.mjs';
 import { sendZuriWhatsAppMessage } from '../server/notifications/zuri-whatsapp.mjs';
+import { createClearTableService } from '../server/tables/clear-table-service.mjs';
 
 const bffSource = readFileSync(new URL('../server/bff.mjs', import.meta.url), 'utf8');
 assert.equal(moneyToCents('R$ 1.234,56'), 123456);
@@ -43,6 +44,37 @@ assert.doesNotMatch(
   /const recoverCustomerTab = async \(\{ cpf \}\)/,
   'CPF alone must not recover a customer tab.',
 );
+assert.match(bffSource, /createClearTableService/, 'Superadmin table clear service must be registered.');
+
+const clearTableBatches = [];
+const clearTableDb = {
+  execute: async ({ sql }) => {
+    if (sql.includes('FROM tables')) return { rows: [{ id: 'table-52', number: 52, status: 'ordering' }] };
+    if (sql.includes('FROM orders')) return { rows: [{ count: 2, total: 15.8 }] };
+    if (sql.includes('FROM customer_tabs')) return { rows: [{ count: 1 }] };
+    if (sql.includes('FROM table_payments')) return { rows: [{ count: 1, total: 7.9 }] };
+    throw new Error(`Unexpected clear-table query: ${sql}`);
+  },
+  batch: async (commands) => clearTableBatches.push(commands),
+};
+const clearTableService = createClearTableService({
+  db: clearTableDb,
+  createId: () => 'audit-clear-table',
+  getCustomerTabTotalsByTable: async () => ({ 'table-52': { balance: 7.9 } }),
+  isSuperAdminSession: async (session) => session?.osRole === 'super_admin',
+});
+await assert.rejects(
+  () => clearTableService({ tableId: 'table-52' }, { osRole: 'operator' }),
+  (error) => error.statusCode === 403,
+);
+const clearResult = await clearTableService(
+  { tableId: 'table-52' },
+  { id: 'admin', name: 'Admin', osRole: 'super_admin' },
+);
+assert.equal(clearResult.status, 'available');
+assert.equal(clearResult.outstandingBalance, 7.9);
+assert.equal(clearTableBatches.length, 1);
+assert.equal(clearTableBatches[0].some(({ sql }) => sql.includes("'table_force_cleared'")), true);
 
 let receivedZuriHost = '';
 const zuriProbe = createServer((req, res) => {
@@ -83,7 +115,7 @@ const services = new Proxy({}, {
 });
 const handlers = createRouteHandlers(services);
 
-assert.equal(Object.keys(handlers).length, 99, 'route registry lost or duplicated operational endpoints');
+assert.equal(Object.keys(handlers).length, 100, 'route registry lost or duplicated operational endpoints');
 for (const route of [
   'GET /api/app/init',
   'POST /api/pdv-terminal/challenge',
@@ -101,6 +133,7 @@ for (const route of [
   'POST /api/orders/send-to-kitchen',
   'POST /api/bills/close',
   'POST /api/counter-sales/close',
+  'POST /api/tables/clear',
   'POST /api/delivery/checkout',
   'POST /api/catalog/product/delete',
   'POST /api/catalog/product/cmv',
@@ -154,6 +187,15 @@ await handlers['POST /api/customer-tabs/payment-link'](
 assert.deepEqual(calls.at(-1), {
   name: 'createCustomerTabPaymentLink',
   args: [{ tabId: 'tab-owner-test', accessToken: 'tab-token' }, deliveryContext.session],
+});
+
+await handlers['POST /api/tables/clear'](
+  { tableId: 'table-52' },
+  { session: { id: 'superadmin' } },
+);
+assert.deepEqual(calls.at(-1), {
+  name: 'clearTable',
+  args: [{ tableId: 'table-52' }, { id: 'superadmin' }],
 });
 
 const allowedPermissions = new Set();

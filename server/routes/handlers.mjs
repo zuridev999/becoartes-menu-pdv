@@ -116,6 +116,7 @@ export const createRouteHandlers = (services) => ({
   'POST /api/service-requests/clear': async (body) => services.clearServiceRequest(body),
   'POST /api/tables/request-bill': async (body) => services.requestBill(body),
   'POST /api/tables/status': async (body, context) => services.updateTableStatus(body, context.session),
+  'POST /api/tables/clear': async (body, context) => services.clearTable(body, context.session),
   'POST /api/tables/open': async (body, context) => services.openTable(body, context.session),
   'POST /api/tables/transfer': async (body, context) => services.transferTable(body, context.session),
   'POST /api/tables/join': async (body, context) => services.joinTables(body, context.session),

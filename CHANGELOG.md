@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.21.0 - 2026-10-03
+
+- Compacta a Venda Balcão para aproveitar melhor a altura da tela e reduzir espaços vazios nos produtos e no carrinho.
+- Torna a busca da Venda Balcão global entre categorias e restaura o Bolinho de Feijoada na categoria Porções.
+- Adiciona a limpeza administrativa de mesa exclusivamente para o superadmin, com confirmação, encerramento consistente e registro de auditoria.
+
 ## 1.20.0 - 2026-10-02
 
 - Oferece três ações para itens com adicional vendável: cancelar só o prato e manter o adicional como SKU próprio, cancelar só o adicional ou cancelar ambos.

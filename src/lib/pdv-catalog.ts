@@ -58,6 +58,7 @@ export const getPdvProductCategoryId = (
   const categoryName = normalizeText(category?.name || product.categoryName || '');
   const productName = normalizeText(product.name);
 
+  if (productName.includes('bolinho') && productName.includes('feijoada')) return 'porcoes';
   if (categoryName.includes('a validar') || categoryName.includes('feijoada') || productName.includes('feijoada')) return null;
   if (categoryName.includes('salgado')) return 'porcoes';
   if (categoryName.includes('nao alcool')) return classifyNonAlcoholic(product.name);
