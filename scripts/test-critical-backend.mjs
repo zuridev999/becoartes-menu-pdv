@@ -153,6 +153,12 @@ const seedCatalogAndStock = async () => {
       args: ['stock_modifier', 'empresa_test', 'Adicional Teste', 10, Math.floor(Date.now() / 1000)],
     },
     {
+      sql: `INSERT OR REPLACE INTO menu
+              (id, name, description, price, category_id, image, visible, remote_stock_id, cost, sort_order)
+            VALUES (?, ?, '', ?, ?, '', 1, ?, 0, 0)`,
+      args: ['prod_standalone_modifier', 'Adicional Teste Lata', 12, 'cat_test', 'stock_modifier'],
+    },
+    {
       sql: "INSERT OR REPLACE INTO tables (id, number, status, current_seller_id) VALUES ('1', '1', 'available', NULL), ('2', '2', 'available', NULL), ('3', '3', 'available', NULL)",
     },
     {
@@ -764,6 +770,65 @@ try {
   assert.equal(Number((await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'")).quantidade_atual), 9,
     'cancelamento posterior do prato não pode estornar o adicional uma segunda vez');
 
+  const keptModifierItem = {
+    ...orderItem('item_keep_modifier'),
+    selectedModifiers: [{ id: 'stock_modifier', name: 'Adicional Teste', price: 10.9 }],
+  };
+  await post('/api/orders/send-to-kitchen', {
+    orderId: 'order_keep_modifier', tableId: '2', total: 110.9, origin: 'pdv',
+    sellerId: admin.seller.id, items: [keptModifierItem],
+  }, admin.sessionToken);
+  assert.equal(Number((await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'")).quantidade_atual), 8);
+  assert.equal(Number((await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_modifier'")).quantidade_atual), 9);
+  await post('/api/order-items/product/delete', {
+    itemId: keptModifierItem.id, keepModifierId: 'stock_modifier', cancelContext: modifierCancelContext,
+  }, operator.sessionToken, 403);
+  const productOnlyCancel = await post('/api/order-items/product/delete', {
+    itemId: keptModifierItem.id, keepModifierId: 'stock_modifier', cancelContext: modifierCancelContext,
+  }, admin.sessionToken);
+  assert.equal(productOnlyCancel.data.item.productId, 'prod_standalone_modifier');
+  assert.equal(productOnlyCancel.data.item.price, 10.9, 'preço histórico do adicional não deve virar o preço atual do SKU');
+  assert.equal(Number((await getScalar("SELECT COUNT(*) AS count FROM order_items WHERE id = 'item_keep_modifier'")).count), 0);
+  assert.equal(Number((await getScalar("SELECT total FROM orders WHERE id = 'order_keep_modifier'")).total), 10.9);
+  assert.equal(Number((await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_test'")).quantidade_atual), 9,
+    'cancelar só o prato deve estornar apenas o prato');
+  assert.equal(Number((await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_modifier'")).quantidade_atual), 9,
+    'adicional mantido deve continuar baixado no estoque');
+  assert.equal(Number((await getScalar(
+    "SELECT COUNT(*) AS count FROM estoque_movimentacoes WHERE order_item_id = ? AND tipo_movimentacao = 'saida'",
+    [productOnlyCancel.data.item.id],
+  )).count), 1, 'baixa do adicional deve acompanhar seu novo item');
+  assert.equal(Number((await getScalar("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'order_item_product_cancelled_modifier_kept' AND details LIKE '%item_keep_modifier%'")).count), 1);
+  const keepRetry = await post('/api/order-items/product/delete', {
+    itemId: keptModifierItem.id, keepModifierId: 'stock_modifier', cancelContext: modifierCancelContext,
+  }, admin.sessionToken);
+  assert.equal(keepRetry.data.idempotent, true);
+  assert.equal(Number((await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_modifier'")).quantidade_atual), 9);
+  await post('/api/order-items/delete', {
+    itemId: productOnlyCancel.data.item.id,
+    cancelContext: { ...modifierCancelContext, itemName: 'Adicional Teste Lata', quantity: 1,
+      sellerName: 'Admin', sellerPermission: 'admin' },
+  }, admin.sessionToken);
+  assert.equal(Number((await getScalar("SELECT quantidade_atual FROM estoque_produtos WHERE id = 'stock_modifier'")).quantidade_atual), 10,
+    'cancelamento posterior do SKU deve estornar o adicional uma única vez');
+
+  await post('/api/orders/send-to-kitchen', {
+    orderId: 'order_unlinked_modifier', tableId: '2', total: 105, origin: 'pdv',
+    sellerId: admin.seller.id,
+    items: [{ ...orderItem('item_unlinked_modifier'),
+      selectedModifiers: [{ id: 'not_a_sku', name: 'Extra sem SKU', price: 5 }] }],
+  }, admin.sessionToken);
+  await post('/api/order-items/product/delete', {
+    itemId: 'item_unlinked_modifier', keepModifierId: 'not_a_sku', cancelContext: modifierCancelContext,
+  }, admin.sessionToken, 409);
+  assert.equal(Number((await getScalar("SELECT COUNT(*) AS count FROM order_items WHERE id = 'item_unlinked_modifier'")).count), 1,
+    'sem SKU inequívoco, o cancelamento deve falhar sem alterar o pedido');
+  await post('/api/order-items/delete', {
+    itemId: 'item_unlinked_modifier',
+    cancelContext: { ...modifierCancelContext, itemName: 'Produto Teste', quantity: 1,
+      sellerName: 'Admin', sellerPermission: 'admin' },
+  }, admin.sessionToken);
+
   const identificationCoupon = await post('/api/coupons/create', {
     code: 'JOAO',
     amount: 0,
@@ -912,6 +977,8 @@ try {
       'cmv_vinculado_ao_produto_pdv',
       'cancelamento_estorna_estoque',
       'retry_cancelamento_idempotente',
+      'cancelamento_do_prato_mantem_adicional_com_sku_e_preco_historico',
+      'cancelamento_do_adicional_separado_e_estoque_idempotente',
       'venda_balcao_com_estoque_pendente',
       'reconciliacao_estoque_idempotente',
       'cupom_identificacao_reutilizavel_sem_desconto',

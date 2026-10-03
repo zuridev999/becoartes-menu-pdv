@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.20.0 - 2026-10-02
+
+- Oferece três ações para itens com adicional vendável: cancelar só o prato e manter o adicional como SKU próprio, cancelar só o adicional ou cancelar ambos.
+- Preserva o preço histórico do adicional e sua baixa de estoque, estornando somente o preparo cancelado, com autorização de superadmin e auditoria.
+
 ## 1.19.0 - 2026-10-02
 
 - Permite ao superadmin cancelar separadamente um adicional ou o item inteiro de uma mesa no PDV, com motivo obrigatório.

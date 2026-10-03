@@ -32,15 +32,7 @@ import { buildPdvCatalogCategories, getPdvCategoriesById, getPdvProductCategoryI
 import { RequestHistoryToggle } from '../../components/pdv/RequestHistoryToggle';
 import { TableDispatchFooter, TableProductSearchHeader } from '../../components/pdv/TableOrderControls';
 import { TableOrderItemCard } from '../../components/pdv/TableOrderItemCard';
-
-const CANCEL_REASONS = [
-  { code: 'cliente_desistiu', label: 'Cliente desistiu' },
-  { code: 'pedido_por_engano', label: 'Pedido por engano' },
-  { code: 'produto_indisponivel', label: 'Produto indisponível' },
-  { code: 'erro_preparo', label: 'Erro de preparo' },
-  { code: 'correcao_administrativa', label: 'Correção administrativa' },
-  { code: 'outro', label: 'Outro motivo' },
-];
+import { CANCEL_REASONS } from '../../lib/order-cancel-reasons';
 
 const DAILY_GOALS_BY_WEEKDAY: Record<number, number> = {
   0: 6000,
@@ -169,6 +161,7 @@ export function PDVView() {
     addToCart,
     removeOrderItem,
     removeOrderItemModifier,
+    removeOrderItemProduct,
     removeFromCart,
     updateCartItemQuantity,
     setCurrentTableId,
@@ -198,7 +191,7 @@ export function PDVView() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showOnlyActive, setShowOnlyActive] = useState(true);
-  const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableId: string; tableNumber: number; modifier?: OrderItem['selectedModifiers'][number] } | null>(null);
+  const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableId: string; tableNumber: number; mode: 'all' | 'modifier' | 'product'; modifier?: OrderItem['selectedModifiers'][number] } | null>(null);
   const [expandedOrderItemId, setExpandedOrderItemId] = useState<string | null>(null);
   const [cancelReasonCode, setCancelReasonCode] = useState('');
   const [cancelReasonNotes, setCancelReasonNotes] = useState('');
@@ -1323,10 +1316,10 @@ export function PDVView() {
                       canCancel={canCancelTableItem}
                       expanded={expandedOrderItemId === o.id}
                       onToggle={() => setExpandedOrderItemId(expandedOrderItemId === o.id ? null : o.id)}
-                      onCancel={modifier => {
+                      onCancel={(mode, modifier) => {
                         setCancelReasonCode('');
                         setCancelReasonNotes('');
-                        setCancelItemDialog({ item: o, modifier, tableId: managedTable?.id || selectedTable.id, tableNumber: selectedTable.number });
+                        setCancelItemDialog({ item: o, mode, modifier, tableId: managedTable?.id || selectedTable.id, tableNumber: selectedTable.number });
                       }}
                     />
                   ))}
@@ -1880,12 +1873,14 @@ export function PDVView() {
           <ActionDialog
             isOpen
             tone="danger"
-            title={cancelItemDialog.modifier ? 'Remover só o adicional?' : 'Cancelar item inteiro?'}
-            description={cancelItemDialog.modifier
+            title={cancelItemDialog.mode === 'product' ? 'Cancelar só o item?' : cancelItemDialog.mode === 'modifier' ? 'Remover só o adicional?' : 'Cancelar ambos?'}
+            description={cancelItemDialog.mode === 'product'
+              ? `Cancelar ${cancelItemDialog.item.quantity}x ${cancelItemDialog.item.name} e manter ${cancelItemDialog.modifier?.name} como item próprio na Mesa ${cancelItemDialog.tableNumber}, pelo preço original.`
+              : cancelItemDialog.mode === 'modifier'
               ? `Remover ${cancelItemDialog.item.quantity}x +${cancelItemDialog.modifier.name} de ${cancelItemDialog.item.name} na Mesa ${cancelItemDialog.tableNumber}. O prato permanece e o total será recalculado.`
               : `Remover ${cancelItemDialog.item.quantity}x ${cancelItemDialog.item.name} e seus adicionais da Mesa ${cancelItemDialog.tableNumber}. O total será recalculado.`}
             cancelLabel="Voltar"
-            confirmLabel={cancelItemDialog.modifier ? 'Remover adicional' : 'Cancelar item inteiro'}
+            confirmLabel={cancelItemDialog.mode === 'product' ? 'Manter adicional' : cancelItemDialog.mode === 'modifier' ? 'Remover adicional' : 'Cancelar ambos'}
             confirmDisabled={!cancelReasonCode || cancelReasonNotes.trim().length < 3}
             onClose={() => {
               setCancelItemDialog(null);
@@ -1894,7 +1889,15 @@ export function PDVView() {
             }}
             onConfirm={async () => {
               const reason = CANCEL_REASONS.find(item => item.code === cancelReasonCode);
-              if (cancelItemDialog.modifier) {
+              if (cancelItemDialog.mode === 'product' && cancelItemDialog.modifier) {
+                await removeOrderItemProduct(cancelItemDialog.item.id, cancelItemDialog.modifier.id, {
+                  tableId: cancelItemDialog.tableId, tableNumber: cancelItemDialog.tableNumber,
+                  reasonCode: reason?.code, reasonLabel: reason?.label, reasonNotes: cancelReasonNotes.trim(),
+                });
+                setExpandedOrderItemId(null);
+                return;
+              }
+              if (cancelItemDialog.mode === 'modifier' && cancelItemDialog.modifier) {
                 await removeOrderItemModifier(cancelItemDialog.item.id, cancelItemDialog.modifier.id, {
                   tableId: cancelItemDialog.tableId,
                   tableNumber: cancelItemDialog.tableNumber,

@@ -6,7 +6,7 @@ type Props = {
   canCancel: boolean;
   expanded: boolean;
   onToggle: () => void;
-  onCancel: (modifier?: OrderItem['selectedModifiers'][number]) => void;
+  onCancel: (mode: 'all' | 'modifier' | 'product', modifier?: OrderItem['selectedModifiers'][number]) => void;
 };
 
 export function TableOrderItemCard({ item, canCancel, expanded, onToggle, onCancel }: Props) {
@@ -34,11 +34,16 @@ export function TableOrderItemCard({ item, canCancel, expanded, onToggle, onCanc
       </div>
       {canCancel && expanded && (
         <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3">
-          <button type="button" onClick={() => onCancel()} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300">
-            Cancelar {item.name} inteiro
+          {(item.selectedModifiers || []).filter(modifier => Number(modifier.price || 0) > 0 || modifier.linkedProductId).map(modifier => (
+            <button key={`keep-${modifier.id}`} type="button" onClick={() => onCancel('product', modifier)} className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs font-bold text-violet-200">
+              Cancelar só {item.name} · manter +{modifier.name}
+            </button>
+          ))}
+          <button type="button" onClick={() => onCancel('all')} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300">
+            Cancelar {item.name} e adicionais
           </button>
           {(item.selectedModifiers || []).map(modifier => (
-            <button key={modifier.id} type="button" onClick={() => onCancel(modifier)} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200">
+            <button key={modifier.id} type="button" onClick={() => onCancel('modifier', modifier)} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200">
               Remover só +{modifier.name}
             </button>
           ))}

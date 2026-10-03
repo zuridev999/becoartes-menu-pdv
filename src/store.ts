@@ -149,6 +149,7 @@ export interface AppState {
   addToCart: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
   removeOrderItem: (itemId: string, context?: { tableId?: string; tableNumber: number; itemName: string; quantity: number; sellerName?: string; sellerPermission?: Seller['permission']; reasonCode?: string; reasonLabel?: string; reasonNotes?: string }) => Promise<void>;
   removeOrderItemModifier: (itemId: string, modifierId: string, context: { tableId: string; tableNumber: number; reasonCode?: string; reasonLabel?: string; reasonNotes?: string }) => Promise<void>;
+  removeOrderItemProduct: (itemId: string, keepModifierId: string, context: { tableId: string; tableNumber: number; reasonCode?: string; reasonLabel?: string; reasonNotes?: string }) => Promise<void>;
   removeFromCart: (itemId: string) => void;
   updateCartItemQuantity: (itemId: string, quantity: number) => void;
   sendToKitchen: (tableId: string, origin?: 'tablet' | 'pdv' | 'qr', sellerId?: string, customerTabContext?: CustomerTabOrderContext, dispatchTargets?: ProductionDispatchTargets) => Promise<void>;
@@ -981,6 +982,25 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   removeOrderItemModifier: (itemId, modifierId, context) => cancelOrderItemModifier(itemId, modifierId, context, get, set),
+
+  removeOrderItemProduct: async (itemId, keepModifierId, context) => {
+    try {
+      const { item } = await OperationalApi.deleteOrderItemProduct({ itemId, keepModifierId,
+        cancelContext: { tableNumber: context.tableNumber, reasonCode: context.reasonCode,
+          reasonLabel: context.reasonLabel, reasonNotes: context.reasonNotes } });
+      set(state => ({
+        tables: state.tables.map(table => table.id === context.tableId
+          ? { ...table, orders: [...table.orders.filter(orderItem => orderItem.id !== itemId), item] }
+          : table),
+        kitchenOrders: state.kitchenOrders.map(order => ({ ...order,
+          items: order.items.filter(orderItem => orderItem.id !== itemId && !orderItem.id.startsWith(`${itemId}:`)) })).filter(order => order.items.length > 0),
+      }));
+      void get().syncData().catch(error => console.warn('Atualização da mesa após cancelamento:', error));
+    } catch (error) {
+      get().addNotification(`Erro ao manter o adicional: ${getErrorMessage(error)}`, 'error');
+      throw error;
+    }
+  },
 
   requestService: async (tableId, type, message = '', customerTabContext) => {
     const table = get().tables.find(t => t.id === tableId);

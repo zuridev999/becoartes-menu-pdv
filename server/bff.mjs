@@ -34,6 +34,7 @@ import { createNotificationServices } from './notifications/service.mjs';
 import { createDeliveryCustomerServices } from './delivery/customer-service.mjs';
 import { resolveOrderDispatch } from './order-dispatch.mjs';
 import { createOrderItemModifierCancellation, createOrderItemCancellationNotifier, createSuperAdminItemCancellationGuard } from './order-item-modifier-cancellation.mjs';
+import { createOrderItemProductCancellation } from './order-item-product-cancellation.mjs';
 import { createLioRuntime } from './lio/runtime.mjs';
 import { startBffServer } from './http-server.mjs';
 
@@ -4017,6 +4018,7 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
 };
 
 const deleteOrderItemModifier = createOrderItemModifierCancellation({ db, assertSuperAdminItemCancellation, normalizeText, parseJsonArray, ensureTableAccess: (...args) => ensureTableAccess(...args), resolveOSContext, osTimestamp, createId, bumpCatalogVersion: () => bumpCatalogVersion(), notifyOrderItemCancelled });
+const deleteOrderItemProduct = createOrderItemProductCancellation({ db, assertSuperAdminItemCancellation, normalizeText, parseJsonArray, ensureTableAccess: (...args) => ensureTableAccess(...args), osTimestamp, bumpCatalogVersion: () => bumpCatalogVersion(), notifyOrderItemCancelled });
 
 const getExistingOrderSubmission = async (clientRequestId) => {
   if (!clientRequestId) return null;
@@ -9159,6 +9161,7 @@ const handlers = createRouteHandlers({
   deleteModifierGroup,
   deleteOrderItem,
   deleteOrderItemModifier,
+  deleteOrderItemProduct,
   deleteProduct,
   deleteSeller,
   ensureCmvForMenuProduct,
