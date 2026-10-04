@@ -2,6 +2,22 @@ import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, Modif
 import { createPdvTerminalIdentity, signPdvTerminalChallenge } from './pdv-terminal-browser';
 import { createRequestTimeoutSignal } from './request-timeout';
 import { getQrVisitId } from './qr-analytics';
+import type { CashCount } from './cash-count';
+
+export type CashClosureCount = {
+  id: string;
+  cashId: string;
+  businessDate: string;
+  openedAt: string;
+  closedAt: string;
+  counts: CashCount;
+  total: number;
+  expected: number;
+  difference: number;
+  actorId: string;
+  actorName: string;
+  notes: string;
+};
 
 const SESSION_TOKEN_STORAGE_KEY = 'beco_bff_session_token';
 const COMANDA_SESSION_TOKEN_STORAGE_KEY = 'beco_comanda_session_token';
@@ -13,6 +29,18 @@ type ApiEnvelope<T> = {
   ok: boolean;
   data?: T;
   error?: string;
+};
+
+export type AvailabilityImpact = {
+  productId: string;
+  sourceId: string | null;
+  sourceName?: string;
+  hidden?: boolean;
+  sources: Array<{ id: string; name: string; direct: boolean; hidden: boolean }>;
+  candidates: Array<{
+    key: string; kind: 'product' | 'modifier'; id: string; name: string;
+    baseVisible: boolean; reviewed: boolean; selected: boolean; provenance: string;
+  }>;
 };
 
 type CloseBillResult = {
@@ -565,12 +593,20 @@ export const OperationalApi = {
     return getJson<{ cashState: CashState }>('/api/cash/status');
   },
 
+  getCashClosureCounts(filters: { from?: string; to?: string; limit?: number } = {}) {
+    const query = new URLSearchParams();
+    if (filters.from) query.set('from', filters.from);
+    if (filters.to) query.set('to', filters.to);
+    query.set('limit', String(filters.limit || 30));
+    return getJson<{ closures: CashClosureCount[] }>(`/api/cash/closure-counts?${query}`);
+  },
+
   openCash(openingBalance: number, notes = '', confirmationPin = '') {
     return postJson<{ cashState: CashState }>('/api/cash/open', { openingBalance, notes, confirmationPin });
   },
 
-  closeCash(closingBalance: number, notes = '', confirmationPin = '') {
-    return postJson<{ cashState: CashState }>('/api/cash/close', { closingBalance, notes, confirmationPin });
+  closeCash(closingBalance: number, notes = '', confirmationPin = '', cashCount?: CashCount) {
+    return postJson<{ cashState: CashState }>('/api/cash/close', { closingBalance, cashCount, notes, confirmationPin });
   },
 };
 
@@ -1011,6 +1047,16 @@ export const AppApi = {
 };
 
 export const CatalogApi = {
+  getAvailabilityImpact(productId: string, sourceId?: string) {
+    const params = new URLSearchParams({ productId });
+    if (sourceId) params.set('sourceId', sourceId);
+    return getJson<AvailabilityImpact>(`/api/catalog/availability/impact?${params}`);
+  },
+
+  setSourceVisibility(input: { productId: string; sourceId: string; hidden: boolean; selectedKeys: string[] }) {
+    return postJson<{ catalogVersion: string }>('/api/catalog/availability/set', input);
+  },
+
   upsertCategory(category: Category) {
     return postJson<{ catalogVersion: string }>('/api/catalog/category', { category });
   },

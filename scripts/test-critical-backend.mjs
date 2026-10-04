@@ -342,11 +342,17 @@ try {
 
   const closedCash = await post('/api/cash/close', {
     closingBalance: 108.35,
+    cashCount: { note_200: 0, note_100: 1, note_50: 0, note_20: 0, note_10: 0, note_5: 1, note_2: 1, coin_1: 1, coin_50: 0, coin_25: 1, coin_10: 1, coin_5: 0 },
     notes: 'Teste automatizado do fechamento conferido',
     confirmationPin: '1122',
   }, cashier.sessionToken);
   assert.equal(closedCash.ok, true, 'operador autorizado deve fechar o caixa quando o valor confere');
   assert.equal(closedCash.data.cashState.isOpen, false, 'cash must be closed after an exact operator confirmation');
+  const closureCount = await getScalar('SELECT total_cents, counts_json FROM pdv_cash_closure_counts WHERE cash_id = ?', [openedAudit.cash_id]);
+  assert.equal(Number(closureCount.total_cents), 10835, 'denomination snapshot must preserve the physical cash total in cents');
+  assert.equal(JSON.parse(closureCount.counts_json).note_100, 1);
+  const closureHistory = await fetchJson('/api/cash/closure-counts?limit=30', { token: admin.sessionToken, headers: AUTHORIZED_IP_HEADERS });
+  assert.equal(closureHistory.data.closures[0].total, 108.35, 'authorized history must expose the daily cash breakdown');
   const successNotification = await getScalar("SELECT COUNT(*) AS count FROM notificacoes WHERE titulo = 'Fechamento de caixa realizado'");
   assert.equal(Number(successNotification.count), 1, 'successful cash close must notify the OS');
 
@@ -966,6 +972,7 @@ try {
       'fechamento_bloqueado_notifica_superadmin',
       'pin_invalido_notifica_superadmin',
       'fechamento_concluido_notifica_superadmin',
+      'contagem_fisica_diaria_consultavel',
       'pagamento_parcial',
       'pedido_entregue_sem_alerta_pendente_no_pdv',
       'envio_seletivo_cozinha_bar_sem_duplicar_conta',

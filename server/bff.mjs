@@ -9,6 +9,11 @@ import { createRouteHandlers } from './routes/handlers.mjs';
 import { createStaticHandler } from './static-files.mjs';
 import { businessDateGapDays, businessDateKey, resolveBusinessTimeZone } from './business-time.mjs';
 import { getPdvPublishBlockers } from './catalog/product-lifecycle.mjs';
+import { availabilitySchema, seedReviewedRecipeLinks, readAvailabilityProjection } from './catalog/availability.mjs';
+import { createAvailabilityServices } from './catalog/availability-service.mjs';
+import { createGetMenu } from './catalog/menu-query.mjs';
+import { countCashCents } from './cash-count.mjs';
+import { persistCashClosure, listCashClosureCounts } from './cash-close-record.mjs';
 import { backfillCanonicalProductData, persistCanonicalMenuProduct, saveCanonicalModifierGroup } from './catalog/product-governance.mjs';
 import {
   centsToMoney,
@@ -815,6 +820,8 @@ const ensureDatabase = async () => {
   await runSchemaMigrations(db);
 
   await backfillCanonicalProductData(db);
+  await db.batch(availabilitySchema, 'write');
+  await seedReviewedRecipeLinks(db);
 
   const indexes = [
     "CREATE INDEX IF NOT EXISTS idx_orders_table_status ON orders(table_id, status)",
@@ -1046,74 +1053,9 @@ const getCategories = async () => {
   }));
 };
 
-const getMenu = async () => {
-  const res = await db.execute(`
-    SELECT
-      m.*,
-      c.name as category_name,
-      c.sort_order as category_sort_order,
-      ep.quantidade_atual as stock_quantity,
-      ep.estoque_minimo as stock_minimum,
-      ep.preco_custo as stock_cost,
-      ft.id as cmv_id,
-      ft.custo_total as cmv_cost,
-      (SELECT COUNT(*) FROM ficha_ingredientes fi WHERE fi.ficha_tecnica_id = ft.id) as cmv_ingredient_count,
-      (SELECT COUNT(*) FROM ficha_ingredientes fi WHERE fi.ficha_tecnica_id = ft.id AND fi.estoque_produto_id IS NULL) as cmv_unlinked_count
-    FROM menu m
-    LEFT JOIN categories c ON m.category_id = c.id
-    LEFT JOIN estoque_produtos ep ON ep.id = m.remote_stock_id AND ep.ativo = 1
-    LEFT JOIN fichas_tecnicas ft ON ft.id = (
-      SELECT candidate.id
-      FROM fichas_tecnicas candidate
-      WHERE candidate.pdv_product_id = m.id
-      ORDER BY
-        CASE WHEN EXISTS (SELECT 1 FROM ficha_ingredientes fi2 WHERE fi2.ficha_tecnica_id = candidate.id) THEN 0 ELSE 1 END,
-        candidate.updated_at DESC,
-        candidate.created_at DESC
-      LIMIT 1
-    )
-    ORDER BY COALESCE(c.sort_order, 0) ASC, COALESCE(m.sort_order, 0) ASC, m.rowid ASC
-  `);
-  return res.rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    description: row.description || '',
-    price: Number(row.price || 0),
-    categoryId: row.category_id || '',
-    categoryName: row.category_name || '',
-    image: row.image || '',
-    visible: row.visible === 1,
-    deliveryVisible: row.delivery_visible !== 0,
-    sortOrder: Number(row.sort_order || 0),
-    schedule: parseJsonObject(row.schedule_config),
-    productCode: Number(row.product_code || 0) || null,
-    erpCode: row.erp_code || '',
-    remoteStockId: row.remote_stock_id || '',
-    stockQuantity: row.remote_stock_id ? Number(row.stock_quantity || 0) : null,
-    stockMinimum: row.remote_stock_id ? Number(row.stock_minimum || 0) : null,
-    cost: row.cmv_id
-      ? Number(row.cmv_cost || 0)
-      : row.remote_stock_id
-        ? Number(row.stock_cost || 0)
-        : Number(row.cost || 0),
-    costSource: row.cmv_id ? 'cmv' : row.remote_stock_id ? 'stock' : 'manual',
-    cmvId: row.cmv_id || '',
-    cmvIngredientCount: Number(row.cmv_ingredient_count || 0),
-    cmvUnlinkedCount: Number(row.cmv_unlinked_count || 0),
-    cmvStatus: row.cmv_id
-      ? Number(row.cmv_ingredient_count || 0) === 0
-        ? 'empty'
-        : Number(row.cmv_unlinked_count || 0) > 0
-          ? 'incomplete'
-          : 'complete'
-      : row.remote_stock_id
-        ? 'direct_stock'
-        : 'missing',
-    modifierGroups: [],
-  }));
-};
+const getMenu = createGetMenu({ db, parseJsonObject });
 
-const getModifierData = async () => {
+const getModifierData = async (availability = { productBlocked: new Set(), modifierBlocked: new Set() }) => {
   const res = await db.execute(`
     SELECT
       'group' as row_kind,
@@ -1246,7 +1188,7 @@ const getModifierData = async () => {
         sortOrder: Number(row.modifier_sort_order || 0),
         linkedProductId: row.linked_product_id || '',
         productCode: Number(row.linked_product_code || 0) || null,
-        inheritedUnavailable: Number(row.inherited_unavailable || 0) === 1,
+        inheritedUnavailable: Number(row.inherited_unavailable || 0) === 1 || availability.modifierBlocked.has(String(row.modifier_id)),
       });
       return;
     }
@@ -1290,10 +1232,11 @@ const getCatalogData = async () => {
   const catalogVersion = await getCatalogVersion();
   if (catalogCache?.catalogVersion === catalogVersion) return catalogCache;
 
+  const availability = await readAvailabilityProjection(db);
   const [categories, menuItems, modifierData] = await Promise.all([
     getCategories(),
-    getMenu(),
-    getModifierData(),
+    getMenu(availability),
+    getModifierData(availability),
   ]);
 
   catalogCache = { categories, menuItems, ...modifierData, catalogVersion };
@@ -7666,8 +7609,16 @@ const safeRecordCashCloseEvent = async ({
   return { duplicate: false };
 };
 
-const closeCash = async ({ closingBalance, notes, confirmationPin }, requestSession = null) => {
-  const closingCents = moneyToCents(closingBalance, 'closingBalance');
+const closeCash = async ({ closingBalance, cashCount, notes, confirmationPin }, requestSession = null) => {
+  const closingCents = cashCount === undefined
+    ? moneyToCents(closingBalance, 'closingBalance')
+    : countCashCents(cashCount);
+  if (cashCount !== undefined && closingBalance !== undefined
+    && moneyToCents(closingBalance, 'closingBalance') !== closingCents) {
+    const error = new Error('Total informado não confere com a contagem de cédulas e moedas.');
+    error.statusCode = 400;
+    throw error;
+  }
   const cash = await getOpenCashRow();
   if (!cash) {
     const error = new Error('Não existe caixa aberto.');
@@ -7731,44 +7682,24 @@ const closeCash = async ({ closingBalance, notes, confirmationPin }, requestSess
 
   const effectiveSession = cashActor.seller;
 
-  const now = osTimestamp();
-  await db.execute({
-    sql: `
-      UPDATE ${CASH_TABLE}
-      SET valor_caixa_final = ?, status = 'Fechado', observacoes = ?, updated_at = ?
-      WHERE id = ?
-    `,
-    args: [
-      centsToMoney(closingCents),
-      notes || cash.observacoes || '',
-      now,
-      cash.id,
-    ],
-  });
-
-  await addAuditLog({
-    id: createId(),
-    action: 'cash_closed',
-    details: JSON.stringify({
-      empresaId: OS_EMPRESA_ID,
-      cashId: cash.id,
-      cashDate: cash.data,
-      closingBalance: centsToMoney(closingCents),
-      expected: centsToMoney(closeSummary.expectedCents),
-      difference: centsToMoney(closingCents - closeSummary.expectedCents),
-      opening: centsToMoney(closeSummary.openingCents),
-      cashSales: centsToMoney(closeSummary.cashSalesCents),
-      manualIn: centsToMoney(closeSummary.manualInCents),
-      manualOut: centsToMoney(closeSummary.manualOutCents),
-      tolerance: centsToMoney(100),
+  await persistCashClosure({
+    db,
+    cashTable: CASH_TABLE,
+    cash: {
+      ...cash,
+      ...closeSummary,
       blockingShortage: hasBlockingShortage,
       adminOverride,
       sandbox: CASH_SANDBOX_MODE,
-    }),
-    origin: 'pdv',
-    authorId: effectiveSession.id,
-    authorName: effectiveSession.name,
-    timestamp: new Date().toISOString(),
+    },
+    empresaId: OS_EMPRESA_ID,
+    closingCents,
+    expectedCents: closeSummary.expectedCents,
+    cashCount,
+    notes,
+    actor: effectiveSession,
+    createId,
+    now: osTimestamp(),
   });
 
   const differenceCents = closingCents - closeSummary.expectedCents;
@@ -9130,6 +9061,10 @@ const finalizeCustomerTab = async ({ tabId }, session) => {
 
 const clearTable = createClearTableService({ db, createId, getCustomerTabTotalsByTable, isSuperAdminSession });
 const { requireSession, requirePermission } = createAccessGuards({ canSessionWithSettings });
+const { catalogAvailabilityImpact, catalogAvailabilitySet } = createAvailabilityServices({
+  db, getSettings, requirePermission, isAdminSession, requireString,
+  clearCatalogCache: () => { catalogCache = null; },
+});
 const enforceRouteAccess = createRouteAccessEnforcer({
   verifyPublicTableToken,
   canAccessOutsideOperationIp,
@@ -9172,6 +9107,7 @@ const handlers = createRouteHandlers({
   getAppSnapshotWithRetry,
   getAuditLogs,
   getCashState,
+  getCashClosureCounts: (options) => listCashClosureCounts({ db, empresaId: OS_EMPRESA_ID, sandboxMode: CASH_SANDBOX_MODE, ...options }),
   getChecklistAlertsFromOs,
   getClosedBills,
   getDeliveryCustomerSession,
@@ -9224,6 +9160,8 @@ const handlers = createRouteHandlers({
   toggleCategoryVisibility,
   toggleProductDeliveryVisibility,
   toggleProductVisibility,
+  catalogAvailabilityImpact,
+  catalogAvailabilitySet,
   transferTable,
   updateOrderStatus,
   updateSeller,

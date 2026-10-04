@@ -61,8 +61,8 @@ const testPaidCustomerTabsAreReleasedSafely = async () => {
   const { db, cleanup } = createTempDb();
   try {
     await createLegacyTables(db);
-    const recoveryMigration = SCHEMA_MIGRATIONS.at(-1);
-    await runSchemaMigrations(db, SCHEMA_MIGRATIONS.slice(0, -1));
+    const recoveryMigration = SCHEMA_MIGRATIONS.find((migration) => migration.id === '20260919_0001_customer_tab_recovery');
+    await runSchemaMigrations(db, SCHEMA_MIGRATIONS.filter((migration) => migration.id !== recoveryMigration.id));
 
     await db.batch([
       {

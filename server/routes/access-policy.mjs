@@ -41,6 +41,8 @@ const PUBLIC_TABLE_ROUTES = new Set([
 ]);
 
 export const PERMISSION_BY_ROUTE = Object.freeze({
+  'GET /api/catalog/availability/impact': 'toggleProductVisibility',
+  'POST /api/catalog/availability/set': 'toggleProductVisibility',
   'POST /api/order-items/delete': 'cancelTableItem',
   'POST /api/order-items/modifier/delete': 'cancelTableItem',
   'POST /api/order-items/product/delete': 'cancelTableItem',
@@ -82,6 +84,7 @@ export const PERMISSION_BY_ROUTE = Object.freeze({
   'POST /api/tables/join': 'joinTables',
   'POST /api/cash/open': 'openCash',
   'POST /api/cash/close': 'closeCash',
+  'GET /api/cash/closure-counts': 'viewSalesTotals',
   'POST /api/shifts/open': 'manageShifts',
   'POST /api/shifts/close': 'manageShifts',
   'POST /api/table-payments': 'launchPayment',

@@ -51,6 +51,8 @@ export interface Product {
   categoryName?: string; // Para compatibilidade e facilidade
   image: string;
   visible: boolean;
+  baseVisible?: boolean;
+  availabilityBlocked?: boolean;
   deliveryVisible: boolean;
   sortOrder: number;
   schedule?: ScheduleConfig;

@@ -33,6 +33,8 @@ import { RequestHistoryToggle } from '../../components/pdv/RequestHistoryToggle'
 import { TableDispatchFooter, TableProductSearchHeader } from '../../components/pdv/TableOrderControls';
 import { TableOrderItemCard } from '../../components/pdv/TableOrderItemCard';
 import { CANCEL_REASONS } from '../../lib/order-cancel-reasons';
+import { cashCountTotalCents, emptyCashCount, type CashCount } from '../../lib/cash-count';
+import { CashRegisterDialog } from '../../components/pdv/CashRegisterDialog';
 
 const DAILY_GOALS_BY_WEEKDAY: Record<number, number> = {
   0: 6000,
@@ -200,6 +202,8 @@ export function PDVView() {
   const [hasPanicAlert, setHasPanicAlert] = useState(false);
   const [cashDialog, setCashDialog] = useState<'open' | 'close' | null>(null);
   const [cashValue, setCashValue] = useState('');
+  const [cashCount, setCashCount] = useState<CashCount>(emptyCashCount);
+  const [cashCountTouched, setCashCountTouched] = useState(false);
   const [cashNotes, setCashNotes] = useState('');
   const [cashConfirmationPin, setCashConfirmationPin] = useState('');
   const [cashError, setCashError] = useState('');
@@ -606,8 +610,12 @@ export function PDVView() {
   };
 
   const submitCashDialog = async () => {
-    const value = parseMoneyValue(cashValue);
+    const value = cashDialog === 'close' ? cashCountTotalCents(cashCount) / 100 : parseMoneyValue(cashValue);
     setCashError('');
+    if (cashDialog === 'close' && !cashCountTouched) {
+      setCashError('Conte as cédulas e moedas antes de fechar o caixa. Se a gaveta estiver vazia, informe 0 em um campo.');
+      return;
+    }
     if ((cashDialog === 'open' || cashDialog === 'close') && !/^\d{4}$/.test(cashConfirmationPin)) {
       setCashError('Digite o PIN de 4 dígitos de quem está fazendo esta ação no caixa.');
       return;
@@ -615,9 +623,11 @@ export function PDVView() {
     setIsCashSubmitting(true);
     try {
       if (cashDialog === 'open') await openCash(value, cashNotes, cashConfirmationPin);
-      if (cashDialog === 'close') await closeCash(value, cashNotes, cashConfirmationPin);
+      if (cashDialog === 'close') await closeCash(value, cashNotes, cashConfirmationPin, cashCount);
       setCashDialog(null);
       setCashValue('');
+      setCashCount(emptyCashCount());
+      setCashCountTouched(false);
       setCashNotes('');
       setCashConfirmationPin('');
       await syncData({ includeCatalog: false });
@@ -1726,112 +1736,23 @@ export function PDVView() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {cashDialog && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6"
-          >
-            <motion.div
-              initial={{ scale: 0.96, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.96, y: 20 }}
-              className="glass-card w-full max-w-xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto custom-scrollbar border-primary/30 p-5 sm:p-8"
-            >
-              <div className="flex items-start justify-between gap-6 mb-8">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary mb-2">
-                    {cashDialog === 'open' ? 'Abertura da casa' : 'Fechamento da casa'}
-                  </p>
-                  <h3 className="text-3xl font-black tracking-tight">
-                    {cashDialog === 'open' ? 'Abrir caixa' : 'Fechar caixa'}
-                  </h3>
-                </div>
-                <button type="button" aria-label="Fechar caixa" onClick={() => setCashDialog(null)} className="glass p-3 rounded-2xl text-zinc-400 hover:text-white">
-                  <X size={22} />
-                </button>
-              </div>
-
-              {cashError && (
-                <div className="mb-5 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-5 py-4 text-sm font-black text-rose-200">
-                  {cashError}
-                </div>
-              )}
-
-              <div className="space-y-5">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                    {cashDialog === 'open' ? 'Valor inicial na gaveta' : 'Valor físico final na gaveta'}
-                  </label>
-                  <input
-                    value={cashValue}
-                    onChange={(event) => setCashValue(formatMoneyInput(event.target.value))}
-                    readOnly={cashDialog === 'open' && Boolean(cashState?.mustInheritLastClosing)}
-                    placeholder="R$ 0,00"
-                    inputMode="numeric"
-                    className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-5 sm:px-6 py-5 sm:py-6 outline-none text-3xl sm:text-4xl font-black text-accent focus:border-primary/60 read-only:cursor-not-allowed read-only:opacity-80"
-                    autoFocus
-                  />
-                </div>
-
-                {cashDialog === 'open' && (
-                  <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-5">
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-2">Último fechamento</p>
-                    <p className="text-xl font-black text-white">{formatCurrency(cashState?.lastClosingBalance || 0)}</p>
-                    <p className="mt-2 text-xs font-bold text-zinc-500">
-                      {cashState?.mustInheritLastClosing
-                        ? 'A abertura herda o valor físico do fechamento de hoje ou de ontem.'
-                        : cashState?.hasPreviousClosing
-                          ? 'Como passou mais de um dia, confira a gaveta e informe o valor físico atual.'
-                        : 'Primeiro caixa: informe o fundo inicial para começar o histórico.'}
-                    </p>
-                  </div>
-                )}
-
-                {(cashDialog === 'open' || cashDialog === 'close') && (
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                      PIN de confirmação
-                    </label>
-                    <input
-                      value={cashConfirmationPin}
-                      onChange={(event) => setCashConfirmationPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
-                      placeholder="****"
-                      inputMode="numeric"
-                      type="password"
-                      maxLength={4}
-                      className="mt-3 w-full bg-white/[0.04] border border-white/10 rounded-3xl px-6 py-5 outline-none text-3xl font-black tracking-[0.5em] text-white focus:border-primary/60"
-                    />
-                    <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-zinc-600">
-                      Com o valor conferido, use o PIN de quem está fechando. Se houver diferença, solicite o PIN do superadministrador.
-                    </p>
-                  </div>
-                )}
-
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Observação</label>
-                  <textarea
-                    value={cashNotes}
-                    onChange={(event) => setCashNotes(event.target.value)}
-                    placeholder="Ex: diferença no fundo de caixa, conferência manual..."
-                    className="mt-3 w-full h-28 bg-white/[0.04] border border-white/10 rounded-3xl px-5 py-4 outline-none text-sm font-bold resize-none focus:border-primary/60"
-                  />
-                </div>
-              </div>
-
-              <button
-                onClick={submitCashDialog}
-                disabled={isCashSubmitting}
-                className="mt-8 w-full btn-beco btn-beco-purple py-6 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40"
-              >
-                {isCashSubmitting ? 'Processando...' : cashDialog === 'open' ? 'Abrir caixa e liberar PDV' : 'Fechar caixa e bloquear PDV'}
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <CashRegisterDialog
+        mode={cashDialog}
+        cashState={cashState}
+        cashValue={cashValue}
+        setCashValue={setCashValue}
+        cashCount={cashCount}
+        setCashCount={setCashCount}
+        onCountTouched={() => setCashCountTouched(true)}
+        confirmationPin={cashConfirmationPin}
+        setConfirmationPin={setCashConfirmationPin}
+        notes={cashNotes}
+        setNotes={setCashNotes}
+        error={cashError}
+        submitting={isCashSubmitting}
+        onClose={() => setCashDialog(null)}
+        onSubmit={() => void submitCashDialog()}
+      />
 
       <AnimatePresence>
         {showQrModeTransitionDialog && (

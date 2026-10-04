@@ -46,6 +46,9 @@ import { createId } from '../../lib/id';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { APP_BUILD_LABEL, getAppLabel } from '../../lib/version';
 import { AdminApi, AppApi, DeliveryApi, type DeliveryOrderSummary, type SellerCandidate } from '../../lib/api';
+import { CashClosureHistory } from './CashClosureHistory';
+import { useAvailabilityImpact } from './useAvailabilityImpact';
+import { AvailabilityImpactDialog } from './AvailabilityImpactDialog';
 import { getDefaultPublicCopy, getPublicLanguages } from '../../lib/public-i18n';
 import type { PublicLanguageConfig } from '../../types';
 
@@ -665,8 +668,6 @@ export function AdminView() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isEnsuringCmv, setIsEnsuringCmv] = useState(false);
   const [editingGroup, setEditingGroup] = useState<string | null>(null);
-
-
   const [schedulingItem, setSchedulingItem] = useState<{ type: 'product' | 'category', id: string, name: string, config?: ScheduleConfig } | null>(null);
 
   const [newSellerName, setNewSellerName] = useState('');
@@ -758,7 +759,7 @@ export function AdminView() {
   };
 
   const openProductEditor = useCallback((product: Product) => {
-    setEditingProduct({ ...product, deliveryVisible: product.deliveryVisible !== false });
+    setEditingProduct({ ...product, visible: product.baseVisible ?? product.visible, deliveryVisible: product.deliveryVisible !== false });
     window.setTimeout(() => {
       productEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
@@ -980,7 +981,6 @@ export function AdminView() {
       cancelled = true;
     };
   }, [activeTab, currentSeller, settings.pdvPermissions, settings.pdvUserPermissions, financeDateFrom, financeDateTo, closedBills]);
-
   useEffect(() => {
     if (!showAddSellerModal) return;
     let cancelled = false;
@@ -1042,6 +1042,10 @@ export function AdminView() {
     ...movements.map((movement) => movement.action).filter(Boolean),
   ])).sort((a, b) => getAuditActionLabel(a).localeCompare(getAuditActionLabel(b), 'pt-BR'));
 
+  const availability = useAvailabilityImpact({
+    canAdmin: currentSeller?.permission === 'admin', toggleProductVisibility, addNotification, syncData,
+    onSaved: () => setEditingProduct(null),
+  });
   if (!currentSeller) {
     return <PinLoginModal />;
   }
@@ -1059,6 +1063,7 @@ export function AdminView() {
   const canEditProductPrice = can(currentSeller, 'editProductPrice', permissionOverrides, userPermissionOverrides);
   const canDeleteProduct = can(currentSeller, 'deleteProduct', permissionOverrides, userPermissionOverrides);
   const canToggleVisibility = can(currentSeller, 'toggleProductVisibility', permissionOverrides, userPermissionOverrides);
+  const openAvailabilityImpact = availability.open;
   const canManageCategories = can(currentSeller, 'manageCategories', permissionOverrides, userPermissionOverrides);
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides, userPermissionOverrides);
   const canAccessProducts =
@@ -2220,7 +2225,7 @@ export function AdminView() {
                                 <Bike size={20}/>
                               </button>
                               <button
-                                onClick={() => toggleProductVisibility(p.id)}
+                                onClick={() => void openAvailabilityImpact(p)}
                                 className={`p-3 sm:p-4 glass rounded-2xl transition-all ${p.visible ? 'text-emerald-400' : 'text-gray-500'}`}
                                 title={p.visible ? 'Ocultar do Cardápio' : 'Mostrar no Cardápio'}
                               >
@@ -2309,8 +2314,8 @@ export function AdminView() {
                           if (editingProduct.id.startsWith('new_')) {
                             setEditingProduct({...editingProduct, visible: !editingProduct.visible});
                           } else {
-                            await toggleProductVisibility(editingProduct.id);
-                            setEditingProduct({...editingProduct, visible: !editingProduct.visible});
+                            const currentProduct = menu.find(product => product.id === editingProduct.id);
+                            if (currentProduct) await openAvailabilityImpact(currentProduct);
                           }
                         }}
                         className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
@@ -2958,7 +2963,7 @@ export function AdminView() {
               </div>
             </div>
           </div>
-
+          <CashClosureHistory from={financeDateFrom} to={financeDateTo} />
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="glass-card p-8 border-white/5">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Produtos vendidos</span>
@@ -4186,6 +4191,8 @@ export function AdminView() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AvailabilityImpactDialog availability={availability} />
 
       {/* Dialogo administrativo */}
       <AnimatePresence>

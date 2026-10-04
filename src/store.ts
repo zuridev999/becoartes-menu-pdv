@@ -7,6 +7,7 @@ import { AdminApi, AppApi, CatalogApi, OperationalApi, OpsApi, hasApiSessionToke
 import { operationalRequestError } from './lib/request-timeout';
 import { cancelOrderItemModifier } from './lib/order-item-modifier-cancellation';
 import { attachModifierGroupsToMenu, sortProductsByCatalogOrder } from './lib/catalog-menu';
+import type { CashCount } from './lib/cash-count';
 import { getCustomerTabLocationContext, getServiceRequestLabel, preserveCurrentQrTable } from './lib/order-location';
 import type {
   Product, Table, OrderItem, KitchenOrder,
@@ -174,7 +175,7 @@ export interface AppState {
   closeShift: (closingBalance: number) => Promise<void>;
   refreshCashState: () => Promise<void>;
   openCash: (openingBalance: number, notes?: string, confirmationPin?: string) => Promise<void>;
-  closeCash: (closingBalance: number, notes?: string, confirmationPin?: string) => Promise<void>;
+  closeCash: (closingBalance: number, notes?: string, confirmationPin?: string, cashCount?: CashCount) => Promise<void>;
 
   settings: AppSettings;
   updateSettings: (settings: Partial<AppSettings>) => Promise<void>;
@@ -1736,8 +1737,8 @@ export const useStore = create<AppState>((set, get) => ({
     get().addNotification('Caixa aberto. PDV liberado para operação.', 'info');
   },
 
-  closeCash: async (closingBalance, notes = '', confirmationPin = '') => {
-    const result = await OperationalApi.closeCash(closingBalance, notes, confirmationPin);
+  closeCash: async (closingBalance, notes = '', confirmationPin = '', cashCount) => {
+    const result = await OperationalApi.closeCash(closingBalance, notes, confirmationPin, cashCount);
     set({ cashState: result.cashState });
     get().addNotification('Caixa fechado. Operação do PDV bloqueada.', 'info');
   },

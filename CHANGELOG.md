@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.22.0 - 2026-10-04
+
+- Registra diariamente a quantidade de notas e moedas no fechamento do caixa, com cálculo automático e histórico de conferências sem alterar o total em espécie usado no controle de dinheiro.
+- Introduz vínculos de disponibilidade por SKU e insumo, com revisão do impacto antes de ocultar produtos e adicionais, preservando exceções, visibilidade manual e histórico de vendas.
+
 ## 1.21.0 - 2026-10-03
 
 - Compacta a Venda Balcão para aproveitar melhor a altura da tela e reduzir espaços vazios nos produtos e no carrinho.

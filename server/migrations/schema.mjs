@@ -246,6 +246,29 @@ export const SCHEMA_MIGRATIONS = [
           )`),
     ],
   },
+  {
+    id: '20261004_0001_cash_closure_counts',
+    description: 'Store immutable daily cash denomination snapshots independently of the balance used by OS.',
+    steps: [
+      executeSql(`CREATE TABLE IF NOT EXISTS pdv_cash_closure_counts (
+        id TEXT PRIMARY KEY,
+        empresa_id TEXT NOT NULL,
+        cash_id TEXT NOT NULL,
+        business_date TEXT NOT NULL,
+        opened_at TEXT NOT NULL,
+        closed_at TEXT NOT NULL,
+        counts_json TEXT NOT NULL,
+        total_cents INTEGER NOT NULL,
+        expected_cents INTEGER NOT NULL,
+        difference_cents INTEGER NOT NULL,
+        actor_id TEXT NOT NULL,
+        actor_name TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        sandbox INTEGER NOT NULL DEFAULT 0
+      )`),
+      executeSql('CREATE INDEX IF NOT EXISTS idx_pdv_cash_closure_counts_date ON pdv_cash_closure_counts(empresa_id, sandbox, business_date DESC, closed_at DESC)'),
+    ],
+  },
 ];
 
 const quoteIdentifier = (value) => {

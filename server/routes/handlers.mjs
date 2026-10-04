@@ -97,6 +97,11 @@ export const createRouteHandlers = (services) => ({
   'POST /api/catalog/product/cmv': async (body, context) => services.ensureCmvForMenuProduct(body, context.session),
   'POST /api/catalog/product/delete': async (body, context) => services.deleteProduct(body, context.session),
   'POST /api/catalog/product/visibility': async (body) => services.toggleProductVisibility(body),
+  'GET /api/catalog/availability/impact': async (_body, context) => services.catalogAvailabilityImpact({
+    productId: context.url.searchParams.get('productId') || '',
+    sourceId: context.url.searchParams.get('sourceId') || '',
+  }, context.session),
+  'POST /api/catalog/availability/set': async (body, context) => services.catalogAvailabilitySet(body, context.session),
   'POST /api/catalog/product/delivery-visibility': async (body) => services.toggleProductDeliveryVisibility(body),
   'POST /api/catalog/products/reorder': async (body, context) => services.reorderCatalogProducts(body, context.session),
   'POST /api/catalog/modifier-group': async (body) => services.saveModifierGroup(body),
@@ -121,6 +126,11 @@ export const createRouteHandlers = (services) => ({
   'POST /api/tables/transfer': async (body, context) => services.transferTable(body, context.session),
   'POST /api/tables/join': async (body, context) => services.joinTables(body, context.session),
   'GET /api/cash/status': async () => ({ cashState: await services.getCashState() }),
+  'GET /api/cash/closure-counts': async (_body, context) => ({ closures: await services.getCashClosureCounts({
+    from: context.url.searchParams.get('from') || '',
+    to: context.url.searchParams.get('to') || '',
+    limit: Number(context.url.searchParams.get('limit') || 30),
+  }) }),
   'POST /api/cash/open': async (body, context) => services.openCash(body, context.session),
   'POST /api/cash/close': async (body, context) => services.closeCash(body, context.session),
   'POST /api/shifts/open': async (body) => services.openShift(body),
