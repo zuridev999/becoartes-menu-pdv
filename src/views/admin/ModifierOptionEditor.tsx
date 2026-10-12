@@ -6,9 +6,10 @@ type Props = {
   siblingModifiers: Modifier[];
   index: number;
   onChange: (modifier: Modifier) => void;
+  disabled?: boolean;
 };
 
-export function ModifierOptionEditor({ modifier, products, siblingModifiers, index, onChange }: Props) {
+export function ModifierOptionEditor({ modifier, products, siblingModifiers, index, onChange, disabled = false }: Props) {
   const availableProducts = products.filter(product => (
     !siblingModifiers.some((candidate, candidateIndex) => (
       candidateIndex !== index && candidate.linkedProductId === product.id
@@ -18,6 +19,7 @@ export function ModifierOptionEditor({ modifier, products, siblingModifiers, ind
   return (
     <div className="min-w-0 space-y-2">
       <select
+        disabled={disabled}
         value={modifier.linkedProductId || ''}
         onChange={(event) => {
           const product = products.find(candidate => candidate.id === event.target.value);
@@ -32,7 +34,7 @@ export function ModifierOptionEditor({ modifier, products, siblingModifiers, ind
               }
             : { ...modifier, linkedProductId: undefined, productCode: undefined, inheritedUnavailable: false });
         }}
-        className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm font-bold outline-none focus:border-primary/50"
+        className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm font-bold outline-none focus:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <option value="">Opção de preparo sem produto</option>
         {availableProducts.map(product => (
@@ -49,22 +51,24 @@ export function ModifierOptionEditor({ modifier, products, siblingModifiers, ind
       ) : (
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
+            disabled={disabled}
             value={modifier.name}
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
             placeholder="Ex.: sem cebola ou sabor limão"
             onChange={(event) => onChange({ ...modifier, name: event.target.value })}
-            className="min-w-0 flex-1 rounded-xl bg-white/[0.03] px-3 py-2 outline-none font-bold text-sm"
+            className="min-w-0 flex-1 rounded-xl bg-white/[0.03] px-3 py-2 outline-none font-bold text-sm disabled:cursor-not-allowed disabled:opacity-50"
           />
           <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] px-3">
             <span className="text-[10px] font-black text-gray-500 uppercase">R$</span>
             <input
+              disabled={disabled}
               type="number"
               autoComplete="off"
               value={modifier.price}
               onChange={(event) => onChange({ ...modifier, price: Number(event.target.value) || 0 })}
-              className="w-20 bg-transparent py-2 outline-none font-bold text-sm text-right"
+              className="w-20 bg-transparent py-2 outline-none font-bold text-sm text-right disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
         </div>

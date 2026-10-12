@@ -121,6 +121,35 @@ html.light body {
   scrollbar-gutter: stable;
 }
 
+/*
+ * Safari/iOS antigos não tratam 100dvh e scroll interno em flex containers de
+ * forma consistente. Esta classe mantém o gesto vertical nativo, inclusive
+ * quando o arraste começa sobre um card clicável do cardápio QR.
+ */
+.ios-touch-scroll {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y !important;
+  overscroll-behavior-y: contain;
+}
+
+.ios-touch-scroll button,
+.ios-touch-scroll [role="button"] {
+  touch-action: pan-y !important;
+}
+
+.qr-mobile-shell {
+  height: calc(100vh - 50px);
+  max-height: calc(100vh - 50px);
+}
+
+@supports (height: 100dvh) {
+  .qr-mobile-shell {
+    height: calc(100dvh - 50px);
+    max-height: calc(100dvh - 50px);
+  }
+}
+
 button,
 [role="button"],
 a,

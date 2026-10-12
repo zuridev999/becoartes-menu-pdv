@@ -284,7 +284,7 @@ export function QRView() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-50px)] max-h-[calc(100dvh-50px)] min-h-0 flex-col overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
+    <div className="qr-mobile-shell flex min-h-0 flex-col overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
       {/* Header Mobile-Friendly */}
       <div className="relative z-50 flex h-14 shrink-0 items-center justify-between border-b border-white/5 bg-black/50 px-3 backdrop-blur-3xl sm:h-20 sm:px-6">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
@@ -724,7 +724,7 @@ function ComandaQRExperience({
   };
 
   return (
-    <div className="flex h-[calc(100dvh-50px)] max-h-[calc(100dvh-50px)] min-h-0 flex-col overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
+    <div className="qr-mobile-shell flex min-h-0 flex-col overflow-hidden bg-[#0a0a0c] text-white font-['Outfit']">
       <div className="relative z-50 flex h-16 shrink-0 items-center justify-between border-b border-white/5 bg-black/60 px-3 backdrop-blur-3xl sm:h-20 sm:px-6">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-11 h-11 bg-primary/20 rounded-2xl flex shrink-0 items-center justify-center text-primary">

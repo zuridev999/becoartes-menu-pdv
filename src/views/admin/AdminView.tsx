@@ -54,6 +54,8 @@ import type { PublicLanguageConfig } from '../../types';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
 import { ModifierOptionEditor } from './ModifierOptionEditor';
+import { ModifierGroupCatalog } from './ModifierGroupCatalog';
+import { ProductModifierGroupsEditor } from './ProductModifierGroupsEditor';
 import type { ClosedBill, ScheduleConfig, Seller } from '../../types';
 
 type AdminDialog = {
@@ -727,6 +729,7 @@ export function AdminView() {
   const [osLockState, setOsLockState] = useState<{ locked: boolean; message: string } | null>(null);
   const [isOsLockSaving, setIsOsLockSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [modifierSearchTerm, setModifierSearchTerm] = useState('');
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
   const productImageInputRef = useRef<HTMLInputElement | null>(null);
   const productEditorRef = useRef<HTMLDivElement | null>(null);
@@ -2408,31 +2411,26 @@ export function AdminView() {
                       </div>
                     </div>
                   </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Vincular Opcionais</label>
-                    <div className="flex flex-wrap gap-2">
-                      {modifierGroups.map(mg => {
-                        const isLinked = editingProduct.modifierGroups?.some(g => g.id === mg.id);
-                        return (
-                          <button
-                            key={mg.id}
-                            type="button"
-                            onClick={() => {
-                              if (!canEditProductFields) return;
-                              const currentGroups = editingProduct.modifierGroups || [];
-                              const newGroups = isLinked
-                                ? currentGroups.filter(g => g.id !== mg.id)
-                                : [...currentGroups, mg];
-                              setEditingProduct({ ...editingProduct, modifierGroups: newGroups });
-                            }}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isLinked ? 'bg-primary text-white' : 'glass text-gray-500'} ${!canEditProductFields ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          >
-                            {mg.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <ProductModifierGroupsEditor
+                    product={editingProduct}
+                    products={menu}
+                    groups={modifierGroups}
+                    productMapping={productModifierMapping}
+                    categoryMapping={categoryModifierMapping}
+                    categoryName={categories.find(category => category.id === editingProduct.categoryId)?.name}
+                    canEdit={canManageOptionals}
+                    isExistingProduct={editingProductExists}
+                    onDraftGroupsChange={(groups) => setEditingProduct({ ...editingProduct, modifierGroups: groups })}
+                    onLinkDirect={async (groupId, linked) => {
+                      await linkGroupToProduct(editingProduct.id, groupId, linked);
+                    }}
+                    onUpdateGroup={(groupId, data) => updateModifierGroup(groupId, data)}
+                    onOpenFullGroup={(groupId) => {
+                      setEditingGroup(groupId);
+                      setActiveTab('optionals');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                  />
                   <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Imagem do Produto</label>
                     <div
@@ -2525,11 +2523,13 @@ export function AdminView() {
                           remoteStockId: editingProduct.remoteStockId || "",
                           sortOrder: Number(editingProduct.sortOrder ?? 0),
                         };
-                        if (!canEditProductFields) {
+                        const exists = menu.find(p => p.id === editingProduct.id);
+                        if (exists || !canEditProductFields) {
+                          // Existing products expose a merged catalog projection (direct + inherited).
+                          // Links are persisted independently above so saving fields cannot flatten or
+                          // accidentally replace category inheritance with direct links.
                           delete cleanProduct.modifierGroups;
                         }
-
-                        const exists = menu.find(p => p.id === editingProduct.id);
                         if (exists) {
                           await updateProduct(editingProduct.id, cleanProduct);
                         } else {
@@ -2568,39 +2568,23 @@ export function AdminView() {
       )}
 
       {activeTab === 'optionals' && canManageOptionals && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
-          <div className="xl:col-span-1 space-y-6">
-            <div className="flex justify-between items-center mb-8 px-4">
-              <h3 className="text-3xl font-black flex items-center gap-4"><Sparkles size={28}/> Grupos</h3>
-              <button
-                onClick={() => addModifierGroup({ id: createId(), name: 'Novo Grupo', minChoices: 0, maxChoices: 1, isRequired: false, status: 'active', modifiers: [] })}
-                className="p-3 bg-primary text-white rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all"
-              >
-                <Plus size={20}/>
-              </button>
-            </div>
-            <div className="glass rounded-[3rem] border-white/5 overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar">
-              {(modifierGroups || []).map((group) => (
-                <button
-                  key={group.id}
-                  onClick={() => setEditingGroup(group.id)}
-                  className={`w-full p-8 border-b border-white/5 text-left transition-all group ${editingGroup === group.id ? 'bg-primary/10 border-primary/20' : 'hover:bg-white/[0.02]'}`}
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className={`font-black text-xl ${editingGroup === group.id ? 'text-primary' : ''}`}>{group.name}</h4>
-                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-1">
-                        {group.isRequired ? 'Obrigatório' : 'Opcional'} • {group.modifiers.length} Opções
-                      </p>
-                    </div>
-                    {editingGroup === group.id && <ChevronRight size={20} className="text-primary animate-pulse" />}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="mx-auto max-w-6xl space-y-10">
+          <ModifierGroupCatalog
+            groups={modifierGroups || []}
+            productMapping={productModifierMapping}
+            categoryMapping={categoryModifierMapping}
+            selectedGroupId={editingGroup}
+            searchTerm={modifierSearchTerm}
+            onSearchChange={setModifierSearchTerm}
+            onCreate={() => {
+              const id = createId();
+              addModifierGroup({ id, name: 'Novo Grupo', minChoices: 0, maxChoices: 1, isRequired: false, status: 'active', modifiers: [] });
+              setEditingGroup(id);
+            }}
+            onSelect={setEditingGroup}
+          />
 
-          <div className="xl:col-span-2">
+          <div>
             {editingGroup ? (
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
                 {modifierGroups.filter(g => g.id === editingGroup).map(group => (
@@ -2755,7 +2739,7 @@ export function AdminView() {
                 </div>
                 <h3 className="text-3xl font-black mb-4 tracking-tighter">Selecione um Grupo</h3>
                 <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] max-w-xs leading-relaxed">
-                  Escolha um grupo à esquerda para configurar opções, preços e onde ele deve aparecer no cardápio.
+                  Escolha um grupo acima para configurar opções, preços e onde ele deve aparecer no cardápio.
                 </p>
               </div>
             )}

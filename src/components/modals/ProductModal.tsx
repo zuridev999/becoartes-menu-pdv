@@ -106,7 +106,7 @@ export function ProductModal({
              </div>
              )}
 
-             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${qrMobileFlow ? 'pt-12 space-y-3 min-[900px]:space-y-6' : ''} ${tabletLandscape && !qrMobileFlow ? 'space-y-4 min-[900px]:space-y-6' : !tabletLandscape ? 'space-y-6 lg:space-y-10' : ''}`}>
+             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${qrMobileFlow ? 'ios-touch-scroll pt-12 space-y-3 min-[900px]:space-y-6' : ''} ${tabletLandscape && !qrMobileFlow ? 'space-y-4 min-[900px]:space-y-6' : !tabletLandscape ? 'space-y-6 lg:space-y-10' : ''}`}>
                 {product.modifierGroups?.map(group => {
                   const selectedInGroup = selectedModifiers.filter(m => group.modifiers.some(gm => gm.id === m.id));
                   const isSingle = group.maxChoices === 1;

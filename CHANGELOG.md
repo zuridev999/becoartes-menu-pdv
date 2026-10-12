@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.24.0 - 2026-10-12
+
+- Redesenha a gestão de grupos de adicionais com busca, identificação interna, contagem de opções e visão dos vínculos por categoria e produto.
+- Permite abrir e editar os adicionais vinculados diretamente pelo produto, distinguindo vínculos diretos dos herdados sem duplicá-los ao salvar.
+- Corrige a rolagem do cardápio QR e dos adicionais em iPhones antigos com gesto vertical nativo e fallback para navegadores sem suporte a `dvh`.
+
 ## 1.23.3 - 2026-10-12
 
 - Diferencia pedidos prontos das demais solicitações pendentes com cartão e cabeçalho azuis.

@@ -263,7 +263,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       </div>
 
       {/* Grid de Produtos */}
-      <div className={`flex-1 min-h-0 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'p-4 sm:p-6 lg:p-10' : 'p-4 sm:p-8 lg:p-12'} overflow-y-auto custom-scrollbar bg-white/[0.01]`}>
+      <div className={`ios-touch-scroll flex-1 min-h-0 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'p-4 sm:p-6 lg:p-10' : 'p-4 sm:p-8 lg:p-12'} custom-scrollbar bg-white/[0.01]`}>
          <div className={`flex flex-col md:flex-row md:justify-between md:items-center gap-4 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'mb-5 sm:mb-8' : 'mb-6 md:mb-16'}`}>
             <div className="min-w-0">
               <h3 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter italic leading-none truncate">{navigationMode === 'continuous' ? t('menu') : catalogText(availableCategories.find((category) => category.name === selectedCategory)?.id || selectedCategory, selectedCategory, 'name')}</h3>
