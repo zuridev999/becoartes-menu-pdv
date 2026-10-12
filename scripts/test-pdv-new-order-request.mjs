@@ -39,6 +39,26 @@ assert.match(
 );
 assert.match(pdvSource, /Solicitações e atendimentos/, 'O painel deve comunicar que reúne os dois estados.');
 assert.doesNotMatch(pdvSource, /RequestHistoryToggle|showResolvedRequests/, 'O PDV não deve esconder atendimentos atrás de um alternador.');
+assert.match(
+  pdvSource,
+  /const isPendingOrderReady = !isResolved && req\.type === 'order_ready'/,
+  'O PDV deve identificar pedido pronto pendente separadamente das outras solicitações.',
+);
+assert.match(
+  pdvSource,
+  /isPendingOrderReady \? 'bg-blue-600 hover:bg-blue-500' : 'bg-rose-600 hover:bg-rose-500'/,
+  'Pedido pronto pendente deve usar azul e as demais solicitações pendentes devem continuar vermelhas.',
+);
+assert.match(
+  pdvSource,
+  /isPendingOrderReady \? 'animate-pulse text-lg text-white[\s\S]*?sm:text-xl'/,
+  'O título de pedido pronto pendente deve ficar maior e pulsar.',
+);
+assert.match(
+  pdvSource,
+  /hasPendingOrderReadyRequests \? 'bg-blue-700' : 'bg-emerald-700'/,
+  'O cabeçalho deve ficar azul quando só houver pedidos prontos pendentes.',
+);
 assert.match(kitchenSource, /Pronto para retirar/, 'O Bar deve oferecer a opção que avisa o PDV.');
 assert.match(kitchenSource, /Já entregue ao cliente/, 'O Bar deve oferecer a opção que encerra sem alerta pendente.');
 assert.match(kitchenSource, /updateKitchenOrderStatus\(selectedOrder\.id, 'ready', completionMode\)/, 'A escolha do Bar deve chegar ao backend.');

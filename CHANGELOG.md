@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.23.3 - 2026-10-12
+
+- Diferencia pedidos prontos das demais solicitações pendentes com cartão e cabeçalho azuis.
+- Amplia e pulsa somente o título “Pedido Pronto”, mantendo outras solicitações vermelhas e atendimentos verdes.
+- Destaca a retirada com selo amarelo e mantém o pedido na linha do tempo após o atendimento.
+
 ## 1.23.2 - 2026-10-12
 
 - Mantém solicitações pendentes e atendidas juntas na mesma linha do tempo do PDV, sem esconder pedidos concluídos atrás de “Ver atendidos”.

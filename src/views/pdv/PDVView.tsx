@@ -230,6 +230,8 @@ export function PDVView() {
   });
   const pendingRequests = panelRequests.filter(req => req.status !== 'resolved');
   const resolvedRequests = panelRequests.filter(req => req.status === 'resolved');
+  const hasPendingOrderReadyRequests = pendingRequests.some(req => req.type === 'order_ready');
+  const hasPendingOtherRequests = pendingRequests.some(req => req.type !== 'order_ready');
   const permissionOverrides = settings.pdvPermissions;
   const userPermissionOverrides = settings.pdvUserPermissions;
   const canClearResolvedRequests = can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides);
@@ -1146,14 +1148,14 @@ export function PDVView() {
           {/* SOLICITAÇÕES DE SERVIÇO */}
           {panelRequests.length > 0 && (
             <div className="solid-panel flex-1 flex flex-col min-h-0 border-b border-white/5 relative z-10">
-              <div className={`p-5 sm:p-8 border-b border-white/20 flex justify-between items-center ${pendingRequests.length > 0 ? 'bg-rose-600 animate-pulse' : 'bg-emerald-700'} shrink-0`}>
+              <div className={`p-5 sm:p-8 border-b border-white/20 flex justify-between items-center ${hasPendingOtherRequests ? 'bg-rose-600 animate-pulse' : hasPendingOrderReadyRequests ? 'bg-blue-700' : 'bg-emerald-700'} shrink-0`}>
                 <h3 className="text-xs sm:text-sm font-black uppercase tracking-[0.16em] sm:tracking-[0.2em] flex items-center gap-3 text-white">
                   {pendingRequests.length > 0 ? <Bell size={16} className="animate-bounce" /> : <History size={16} />}
                   Solicitações e atendimentos
                 </h3>
                 <div className="flex items-center gap-2">
                   {pendingRequests.length > 0 && (
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-rose-700 shadow-xl" title="Solicitações pendentes">
+                    <span className={`rounded-full bg-white px-3 py-1 text-xs font-black shadow-xl ${hasPendingOtherRequests ? 'text-rose-700' : 'text-blue-700'}`} title="Solicitações pendentes">
                       {pendingRequests.length} pendente{pendingRequests.length === 1 ? '' : 's'}
                     </span>
                   )}
@@ -1167,6 +1169,7 @@ export function PDVView() {
               <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar bg-[#0d0d0f]">
                 {panelRequests.map((req) => {
                   const isResolved = req.status === 'resolved';
+                  const isPendingOrderReady = !isResolved && req.type === 'order_ready';
                   const isOrderActionable = req.type === 'order_ready' || req.type === 'new_order';
                   const location = getOrderLocation(req);
                   return (
@@ -1177,15 +1180,15 @@ export function PDVView() {
                       onClick={() => {
                         setSelectedRequestForDetails(req);
                       }}
-                      className={`p-4 sm:p-6 border-b border-white/10 last:border-0 flex justify-between items-center gap-3 group transition-colors cursor-pointer ${isResolved ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : 'bg-rose-600 hover:bg-rose-500'}`}
+                      className={`p-4 sm:p-6 border-b border-white/10 last:border-0 flex justify-between items-center gap-3 group transition-colors cursor-pointer ${isResolved ? 'bg-emerald-500/20 hover:bg-emerald-500/30' : isPendingOrderReady ? 'bg-blue-600 hover:bg-blue-500' : 'bg-rose-600 hover:bg-rose-500'}`}
                     >
                       <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                         <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center font-black italic text-xl shadow-inner shrink-0 ${isResolved ? 'bg-emerald-500 text-white' : 'bg-white/20 text-white'}`}>
+                         <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center font-black italic text-xl shadow-inner shrink-0 ${isResolved ? 'bg-emerald-500 text-white' : isPendingOrderReady ? 'bg-blue-200 text-blue-950' : 'bg-white/20 text-white'}`}>
                            {req.sourceTableNumber || req.tableNumber}
                          </div>
                          <div className="min-w-0">
                            <div className="flex items-center gap-2 mb-1">
-                             <p className="text-sm sm:text-base font-black text-white uppercase tracking-tight truncate">
+                             <p className={`font-black uppercase tracking-tight truncate ${isPendingOrderReady ? 'animate-pulse text-lg text-white drop-shadow-[0_1px_0_rgba(0,0,0,0.45)] sm:text-xl' : 'text-sm text-white sm:text-base'}`}>
                                {req.type === 'waiter' ? 'Chamar Garçom' : 
                                 req.type === 'bill' ? 'Pedido de Conta' : 
                                 req.type === 'glass' ? 'Copo Extra' :
@@ -1195,12 +1198,12 @@ export function PDVView() {
                                 req.type}
                              </p>
                              {isOrderActionable && (
-                               <span className="bg-white/20 text-[9px] px-2 py-0.5 rounded-full font-black uppercase">
-                                 {req.type === 'order_ready' ? 'Entrega' : 'Bebidas'}
+                               <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase ${isPendingOrderReady ? 'bg-amber-300 text-zinc-950' : 'bg-white/20 text-white'}`}>
+                                 {req.type === 'order_ready' ? 'Retirada' : 'Bebidas'}
                                </span>
                              )}
                            </div>
-                           <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${isResolved ? 'text-emerald-400' : 'text-white/60'}`}>
+                           <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${isResolved ? 'text-emerald-400' : isPendingOrderReady ? 'text-blue-100' : 'text-white/60'}`}>
                              <Clock size={10} /> 
                              {new Date(req.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • 
                              {isResolved ? 'Atendimento Concluído' : (req.type === 'order_ready' ? 'Retirar pedido pronto' : (req.type === 'new_order' ? 'Preparar Bebidas/Drinks' : (req.message || 'Aguardando atendimento')))}
@@ -1248,7 +1251,7 @@ export function PDVView() {
                             resolveService(req.id);
                           }}
                           disabled={!isResolved && !canResolveServiceRequests}
-                          className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-all ${isResolved ? 'bg-emerald-500 text-white hover:scale-105' : 'bg-white text-rose-600 hover:scale-110 active:scale-90'} ${!isResolved && !canResolveServiceRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-2xl transition-all ${isResolved ? 'bg-emerald-500 text-white hover:scale-105' : isPendingOrderReady ? 'bg-white text-blue-700 hover:scale-110 active:scale-90' : 'bg-white text-rose-600 hover:scale-110 active:scale-90'} ${!isResolved && !canResolveServiceRequests ? 'opacity-50 cursor-not-allowed' : ''}`}
                           title={isResolved ? "Atendimento concluído" : "Dar Ciente"}
                         >
                           <Check size={24} strokeWidth={4} />
