@@ -32,6 +32,7 @@ import { buildPdvCatalogCategories, getPdvCategoriesById, getPdvProductCategoryI
 import { RequestHistoryToggle } from '../../components/pdv/RequestHistoryToggle';
 import { TableDispatchFooter, TableProductSearchHeader } from '../../components/pdv/TableOrderControls';
 import { TableOrderItemCard } from '../../components/pdv/TableOrderItemCard';
+import { TableOrderDetailsDialog } from '../../components/pdv/TableOrderDetailsDialog';
 import { CANCEL_REASONS } from '../../lib/order-cancel-reasons';
 import { cashCountTotalCents, emptyCashCount, type CashCount } from '../../lib/cash-count';
 import { CashRegisterDialog } from '../../components/pdv/CashRegisterDialog';
@@ -194,6 +195,7 @@ export function PDVView() {
   const [showOnlyActive, setShowOnlyActive] = useState(true);
   const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableId: string; tableNumber: number; mode: 'all' | 'modifier' | 'product'; modifier?: OrderItem['selectedModifiers'][number] } | null>(null);
   const [expandedOrderItemId, setExpandedOrderItemId] = useState<string | null>(null);
+  const [selectedOrderItemDetails, setSelectedOrderItemDetails] = useState<OrderItem | null>(null);
   const [cancelReasonCode, setCancelReasonCode] = useState('');
   const [cancelReasonNotes, setCancelReasonNotes] = useState('');
   
@@ -250,6 +252,11 @@ export function PDVView() {
       setCashDialog('close');
     }
   }, []);
+
+  useEffect(() => {
+    setSelectedOrderItemDetails(null);
+    setExpandedOrderItemId(null);
+  }, [selectedTable?.id]);
 
   // Auto-scroll para o topo quando uma nova solicitação chega
   useEffect(() => {
@@ -1324,6 +1331,7 @@ export function PDVView() {
                       item={o}
                       canCancel={canCancelTableItem}
                       expanded={expandedOrderItemId === o.id}
+                      onView={() => setSelectedOrderItemDetails(o)}
                       onToggle={() => setExpandedOrderItemId(expandedOrderItemId === o.id ? null : o.id)}
                       onCancel={(mode, modifier) => {
                         setCancelReasonCode('');
@@ -1788,6 +1796,16 @@ export function PDVView() {
             onConfirm={async (value) => {
               await submitQrModeSwitch(value);
             }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedOrderItemDetails && selectedTable && (
+          <TableOrderDetailsDialog
+            item={selectedOrderItemDetails}
+            tableNumber={selectedTable.number}
+            onClose={() => setSelectedOrderItemDetails(null)}
           />
         )}
       </AnimatePresence>
