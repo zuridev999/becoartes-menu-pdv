@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.23.2 - 2026-10-12
+
+- Mantém solicitações pendentes e atendidas juntas na mesma linha do tempo do PDV, sem esconder pedidos concluídos atrás de “Ver atendidos”.
+- Preserva a ordem cronológica e o status visual de cada solicitação; dar ciência apenas muda o cartão de vermelho para verde.
+- Oculta completamente a seção de observações dos itens quando nenhuma observação foi registrada.
+- Sincroniza `VERSION`, manifesto e versão exibida, incorporando também as atualizações de dependências seguras da versão anterior.
+
 ## 1.22.0 - 2026-10-04
 
 - Registra diariamente a quantidade de notas e moedas no fechamento do caixa, com cálculo automático e histórico de conferências sem alterar o total em espécie usado no controle de dinheiro.

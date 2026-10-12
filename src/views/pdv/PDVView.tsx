@@ -29,7 +29,6 @@ import { businessDateKey, businessWeekday } from '../../lib/business-time';
 import { getOrderLocation, getPhysicalTablesPendingTransition, isTableVisibleForQrMode } from '../../lib/order-location';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { buildPdvCatalogCategories, getPdvCategoriesById, getPdvProductCategoryId, searchPdvProducts } from '../../lib/pdv-catalog';
-import { RequestHistoryToggle } from '../../components/pdv/RequestHistoryToggle';
 import { TableDispatchFooter, TableProductSearchHeader } from '../../components/pdv/TableOrderControls';
 import { TableOrderItemCard } from '../../components/pdv/TableOrderItemCard';
 import { TableOrderDetailsDialog } from '../../components/pdv/TableOrderDetailsDialog';
@@ -222,18 +221,15 @@ export function PDVView() {
   const [customerTabResults, setCustomerTabResults] = useState<CustomerTab[]>([]);
   const [isCustomerTabSearching, setIsCustomerTabSearching] = useState(false);
   const [isFinalizingCustomerTab, setIsFinalizingCustomerTab] = useState<string | null>(null);
-  const [showResolvedRequests, setShowResolvedRequests] = useState(false);
-
-  // Filtra solicitações das últimas 2 horas para manter a tela limpa
-  const now = new Date();
-  const visibleRequests = serviceRequests.filter(req => {
-    const createdAt = req.createdAt instanceof Date ? req.createdAt : new Date(req.createdAt);
-    const diffHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
-    return diffHours < 2;
+  // Mantém solicitações pendentes e atendidas na mesma linha do tempo. O backend
+  // já limita o histórico resolvido às últimas 12 horas e mantém pendências antigas.
+  const panelRequests = [...serviceRequests].sort((left, right) => {
+    const leftCreatedAt = left.createdAt instanceof Date ? left.createdAt : new Date(left.createdAt);
+    const rightCreatedAt = right.createdAt instanceof Date ? right.createdAt : new Date(right.createdAt);
+    return rightCreatedAt.getTime() - leftCreatedAt.getTime();
   });
-  const pendingRequests = visibleRequests.filter(req => req.status !== 'resolved');
-  const resolvedRequests = visibleRequests.filter(req => req.status === 'resolved');
-  const panelRequests = showResolvedRequests ? resolvedRequests : pendingRequests;
+  const pendingRequests = panelRequests.filter(req => req.status !== 'resolved');
+  const resolvedRequests = panelRequests.filter(req => req.status === 'resolved');
   const permissionOverrides = settings.pdvPermissions;
   const userPermissionOverrides = settings.pdvUserPermissions;
   const canClearResolvedRequests = can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides);
@@ -261,7 +257,6 @@ export function PDVView() {
   // Auto-scroll para o topo quando uma nova solicitação chega
   useEffect(() => {
     if (pendingRequests.length > prevPendingRequestsLength.current) {
-      setShowResolvedRequests(false);
       listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
     prevPendingRequestsLength.current = pendingRequests.length;
@@ -1151,14 +1146,23 @@ export function PDVView() {
           {/* SOLICITAÇÕES DE SERVIÇO */}
           {panelRequests.length > 0 && (
             <div className="solid-panel flex-1 flex flex-col min-h-0 border-b border-white/5 relative z-10">
-              <div className={`p-5 sm:p-8 border-b border-white/20 flex justify-between items-center ${showResolvedRequests ? 'bg-emerald-700' : 'bg-rose-600 animate-pulse'} shrink-0`}>
+              <div className={`p-5 sm:p-8 border-b border-white/20 flex justify-between items-center ${pendingRequests.length > 0 ? 'bg-rose-600 animate-pulse' : 'bg-emerald-700'} shrink-0`}>
                 <h3 className="text-xs sm:text-sm font-black uppercase tracking-[0.16em] sm:tracking-[0.2em] flex items-center gap-3 text-white">
-                  {showResolvedRequests ? <History size={16} /> : <Bell size={16} className="animate-bounce" />}
-                  {showResolvedRequests ? 'Atendidos Recentemente' : 'Novas Solicitações'}
+                  {pendingRequests.length > 0 ? <Bell size={16} className="animate-bounce" /> : <History size={16} />}
+                  Solicitações e atendimentos
                 </h3>
-                <span className="bg-white text-zinc-900 px-3 py-1 rounded-full text-xs font-black shadow-xl">
-                  {panelRequests.length}
-                </span>
+                <div className="flex items-center gap-2">
+                  {pendingRequests.length > 0 && (
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-rose-700 shadow-xl" title="Solicitações pendentes">
+                      {pendingRequests.length} pendente{pendingRequests.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                  {resolvedRequests.length > 0 && (
+                    <span className="rounded-full bg-emerald-950/45 px-3 py-1 text-xs font-black text-emerald-100" title="Atendimentos concluídos">
+                      {resolvedRequests.length} atendido{resolvedRequests.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </div>
               </div>
               <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar bg-[#0d0d0f]">
                 {panelRequests.map((req) => {
@@ -1256,13 +1260,6 @@ export function PDVView() {
               </div>
             </div>
           )}
-
-          <RequestHistoryToggle
-            pendingCount={pendingRequests.length}
-            resolvedCount={resolvedRequests.length}
-            showingResolved={showResolvedRequests}
-            onToggle={() => setShowResolvedRequests(current => !current)}
-          />
 
         </div>
       </div>

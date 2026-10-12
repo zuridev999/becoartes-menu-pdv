@@ -93,15 +93,17 @@ export function TableOrderDetailsDialog({ item, tableNumber, onClose }: Props) {
             )}
           </section>
 
-          <section className={`rounded-2xl border p-4 ${notes ? 'border-amber-300/25 bg-amber-400/[0.08]' : 'border-white/10 bg-white/[0.025]'}`}>
-            <div className={`flex items-center gap-2 ${notes ? 'text-amber-300' : 'text-zinc-500'}`}>
-              <MessageSquareText size={16} />
-              <h3 className="text-[10px] font-black uppercase tracking-[0.18em]">Observações</h3>
-            </div>
-            <p className={`mt-3 whitespace-pre-wrap text-base font-black leading-relaxed ${notes ? 'text-white' : 'text-zinc-500'}`}>
-              {notes || 'Sem observações neste item.'}
-            </p>
-          </section>
+          {notes && (
+            <section className="rounded-2xl border border-amber-300/25 bg-amber-400/[0.08] p-4">
+              <div className="flex items-center gap-2 text-amber-300">
+                <MessageSquareText size={16} />
+                <h3 className="text-[10px] font-black uppercase tracking-[0.18em]">Observações</h3>
+              </div>
+              <p className="mt-3 whitespace-pre-wrap text-base font-black leading-relaxed text-white">
+                {notes}
+              </p>
+            </section>
+          )}
         </div>
 
         <div className="shrink-0 border-t border-white/10 bg-black/30 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-6">

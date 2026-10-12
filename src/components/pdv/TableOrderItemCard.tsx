@@ -39,13 +39,15 @@ export function TableOrderItemCard({ item, canCancel, expanded, onView, onToggle
             </div>
           </div>
         )}
-        <div className={`mt-2 flex items-start gap-1.5 rounded-xl px-2.5 py-2 ${notes ? 'bg-amber-400/10 text-amber-100' : 'bg-white/[0.025] text-zinc-600'}`}>
-          <MessageSquareText size={13} className="mt-0.5 shrink-0" />
-          <p className="min-w-0 text-[10px] font-bold leading-snug">
-            <span className="font-black uppercase tracking-[0.1em]">Observações:</span>{' '}
-            {notes || 'Sem observações'}
-          </p>
-        </div>
+        {notes && (
+          <div className="mt-2 flex items-start gap-1.5 rounded-xl bg-amber-400/10 px-2.5 py-2 text-amber-100">
+            <MessageSquareText size={13} className="mt-0.5 shrink-0" />
+            <p className="min-w-0 text-[10px] font-bold leading-snug">
+              <span className="font-black uppercase tracking-[0.1em]">Observações:</span>{' '}
+              {notes}
+            </p>
+          </div>
+        )}
         <p className="mt-2 text-[8px] font-black uppercase tracking-[0.14em] text-primary/75">Toque para conferir o pedido</p>
       </button>
       {canCancel && (
