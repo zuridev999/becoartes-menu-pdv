@@ -83,7 +83,7 @@ const fireQrAnalytics = (input: {
 
 export function QRView() {
   const { currentTableId, tables, setCurrentTableId, settings } = useStore();
-  const { t } = usePublicI18n();
+  const { t, locale } = usePublicI18n();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
@@ -132,7 +132,7 @@ export function QRView() {
       .catch(() => {
         if (!cancelled) {
           setIsTableAccessReady(false);
-          setTableAccessError('Não foi possível validar esta mesa agora.');
+          setTableAccessError('tableAccessError');
         }
       });
 
@@ -156,15 +156,15 @@ export function QRView() {
     return (
       <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-5">
         <div className="glass-card w-full max-w-2xl p-7 sm:p-10 border-primary/30">
-          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-primary mb-3">Regulamento</p>
-          <h1 className="text-4xl sm:text-5xl font-black italic tracking-tighter mb-6">Campanha WhatsApp</h1>
+          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-primary mb-3">{t('rules')}</p>
+          <h1 className="text-4xl sm:text-5xl font-black italic tracking-tighter mb-6">{t('whatsappCampaign')}</h1>
           <div className="space-y-4 text-sm sm:text-base font-bold text-gray-300 leading-relaxed">
-            <p>O cliente poderá escolher entre R$30 de desconto ou 1 drink cortesia.</p>
-            <p>Válido para pedidos acima de R$50.</p>
-            <p>Uso único por cliente e não cumulativo com outras promoções.</p>
-            <p>O drink cortesia é válido apenas para maiores de 18 anos.</p>
-            <p>O cupom deve ser apresentado antes do fechamento da conta.</p>
-            <p className="text-amber-300">Válido até 29/05/2026.</p>
+            <p>{t('couponChoice')}</p>
+            <p>{t('couponMinimum')}</p>
+            <p>{t('couponOnce')}</p>
+            <p>{t('couponAdult')}</p>
+            <p>{t('couponBeforeBill')}</p>
+            <p className="text-amber-300">{t('couponExpiry')}</p>
           </div>
         </div>
       </div>
@@ -175,6 +175,7 @@ export function QRView() {
     return (
       <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white font-['Outfit']">
         <section className="w-full max-w-md border-y border-white/10 py-9">
+          <div className="mb-5 flex justify-end"><PublicLanguageMenu /></div>
           <QrCode className="mx-auto h-12 w-12 text-primary" aria-hidden="true" />
           <p className="mt-5 text-[10px] font-black uppercase tracking-[0.24em] text-primary">{t('menu')}</p>
           <h1 className="mt-2 text-4xl font-black leading-tight">{t('scanTableQr')}</h1>
@@ -199,10 +200,10 @@ export function QRView() {
     return (
       <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-8 text-center">
         <div className="glass-card max-w-md p-8 border-primary/30">
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">Validando mesa</p>
-          <h1 className="text-4xl font-black tracking-tighter mb-3">Mesa {routeTableNumber}</h1>
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">{t('validatingTable')}</p>
+          <h1 className="text-4xl font-black tracking-tighter mb-3">{t('table')} {routeTableNumber}</h1>
           <p className="text-sm font-bold text-gray-400">
-            Estamos abrindo o cardápio desta mesa.
+            {t('openingMenu')}
           </p>
         </div>
       </div>
@@ -213,10 +214,10 @@ export function QRView() {
     return (
       <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-8 text-center">
         <div className="glass-card max-w-md p-8 border-red-500/30">
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-red-300 mb-3">Mesa não encontrada</p>
-          <h1 className="text-4xl font-black tracking-tighter mb-3">Mesa {routeTableNumber}</h1>
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-red-300 mb-3">{t('tableNotFound')}</p>
+          <h1 className="text-4xl font-black tracking-tighter mb-3">{t('table')} {routeTableNumber}</h1>
           <p className="text-sm font-bold text-gray-400">
-            Este QR Code não encontrou uma mesa ativa. Chame a equipe para conferir o cadastro.
+            {t('tableNotFoundDescription')}
           </p>
         </div>
       </div>
@@ -228,16 +229,16 @@ export function QRView() {
       return (
         <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white font-['Outfit']">
           <section className="w-full max-w-md border-y border-rose-500/25 py-8">
-            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-rose-300">Acesso à mesa</p>
-            <h1 className="mt-2 text-3xl font-black">Mesa {routeTableNumber}</h1>
-            <p className="mt-3 text-sm font-semibold text-zinc-400">{tableAccessError}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-rose-300">{t('tableAccess')}</p>
+            <h1 className="mt-2 text-3xl font-black">{t('table')} {routeTableNumber}</h1>
+            <p className="mt-3 text-sm font-semibold text-zinc-400">{t(tableAccessError)}</p>
             <button
               type="button"
               onClick={() => setTableAccessRetry((current) => current + 1)}
               className="btn-beco btn-beco-purple mx-auto mt-6 inline-flex min-h-11 items-center gap-2 px-5 py-3"
             >
               <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              Tentar novamente
+              {t('retry')}
             </button>
           </section>
         </main>
@@ -246,9 +247,9 @@ export function QRView() {
     return (
       <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-8 text-center">
         <div className="glass-card max-w-md p-8 border-primary/30">
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">Validando acesso</p>
-          <h1 className="text-4xl font-black tracking-tighter mb-3">Mesa {routeTableNumber}</h1>
-          <p className="text-sm font-bold text-gray-400">Estamos liberando o cardápio seguro desta mesa.</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">{t('validatingAccess')}</p>
+          <h1 className="text-4xl font-black tracking-tighter mb-3">{t('table')} {routeTableNumber}</h1>
+          <p className="text-sm font-bold text-gray-400">{t('openingSecureMenu')}</p>
         </div>
       </div>
     );
@@ -355,15 +356,15 @@ export function QRView() {
           <div className="text-left">
             <p className="text-[8px] font-black uppercase text-gray-500">
               {hasCartItems
-                ? `${cartCount} item${cartCount > 1 ? 's' : ''} no pedido`
+                ? t('cartItems', { count: cartCount, items: t(cartCount === 1 ? 'item' : 'items') })
                 : hasAccountItems
-                  ? `${accountCount} item${accountCount > 1 ? 's' : ''} na minha conta`
-                  : 'Nenhum consumo lançado ainda'}
+                  ? t('accountItems', { count: accountCount, items: t(accountCount === 1 ? 'item' : 'items') })
+                  : t('noConsumptionShort')}
             </p>
             <p className="text-lg font-black text-white leading-none">
               {hasCartItems
-                ? `Enviar meu pedido - ${formatCurrency(cartTotal)}`
-                : `Minha conta - ${formatCurrency(accountTotal)}`}
+                ? `${t('sendOrder')} - ${formatCurrency(cartTotal, locale)}`
+                : `${t('account')} - ${formatCurrency(accountTotal, locale)}`}
             </p>
           </div>
         </button>
@@ -407,6 +408,7 @@ function ComandaQRExperience({
   sourceTableId: string;
   sourceTableNumber: number;
 }) {
+  const { t, locale, errorText } = usePublicI18n();
   const { currentTableId, tables, setCurrentTableId } = useStore();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
@@ -508,7 +510,7 @@ function ComandaQRExperience({
       const message = err instanceof Error ? err.message : 'Não foi possível abrir sua comanda.';
       if (message.includes('comanda ativa') || message.includes('comanda acabou de ser aberta')) {
         setAccessMode('recover');
-        setNotice('Encontramos uma comanda ativa. Confirme seu CPF para receber o código no WhatsApp cadastrado.');
+        setNotice('activeTabFound');
       } else {
         setError(message);
       }
@@ -525,7 +527,7 @@ function ComandaQRExperience({
       await CustomerTabApi.requestRecovery(normalizeCpfInput(cpf), { sourceTableId, sourceTableNumber });
       setRecoveryCode('');
       setAccessMode('code');
-      setNotice('Enviamos um código de três números para o WhatsApp cadastrado. Ele vale por 5 minutos.');
+      setNotice('codeSent');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não conseguimos enviar o código agora.');
     } finally {
@@ -562,9 +564,9 @@ function ComandaQRExperience({
       <main className="flex min-h-[100dvh] items-center justify-center bg-[#0a0a0c] p-6 text-center text-white font-['Outfit']">
         <section className="w-full max-w-md border-y border-primary/25 py-10">
           <RefreshCw className="mx-auto h-10 w-10 animate-spin text-primary" aria-hidden="true" />
-          <p className="mt-5 text-[10px] font-black uppercase tracking-[0.24em] text-primary">Mesmo aparelho</p>
-          <h1 className="mt-2 text-3xl font-black">Retomando sua comanda</h1>
-          <p className="mt-3 text-sm font-semibold text-zinc-400">Estamos conectando este QR à comanda que já está neste celular.</p>
+          <p className="mt-5 text-[10px] font-black uppercase tracking-[0.24em] text-primary">{t('sameDevice')}</p>
+          <h1 className="mt-2 text-3xl font-black">{t('resumingTab')}</h1>
+          <p className="mt-3 text-sm font-semibold text-zinc-400">{t('resumingTabDescription')}</p>
         </section>
       </main>
     );
@@ -578,16 +580,17 @@ function ComandaQRExperience({
           <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-primary/20 text-primary flex items-center justify-center mb-5 sm:mb-6">
             <BadgeCheck size={26} />
           </div>
-          <p className="text-[10px] font-black uppercase tracking-[0.32em] text-primary mb-3">Modo comanda</p>
+          <div className="mb-4 flex justify-end"><PublicLanguageMenu /></div>
+          <p className="text-[10px] font-black uppercase tracking-[0.32em] text-primary mb-3">{t('tabMode')}</p>
           <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter mb-3">
-            {accessMode === 'open' ? 'Abrir minha comanda' : accessMode === 'recover' ? 'Acessar minha comanda' : 'Digite seu código'}
+            {accessMode === 'open' ? t('openMyTab') : accessMode === 'recover' ? t('accessMyTab') : t('enterCode')}
           </h1>
           <p className="text-xs sm:text-sm font-bold text-zinc-400 leading-relaxed mb-5 sm:mb-7">
             {accessMode === 'open'
-              ? 'Primeira vez? Cadastre seus dados para abrir uma comanda.'
+              ? t('openTabDescription')
               : accessMode === 'recover'
-                ? 'Já abriu em outro navegador? Informe seu CPF e confirme o acesso pelo WhatsApp cadastrado.'
-                : 'Digite abaixo o código recebido. Ao confirmar, esta passa a ser sua navegação autorizada.'}
+                ? t('recoverTabDescription')
+                : t('codeDescription')}
           </p>
 
           {accessMode !== 'code' && (
@@ -597,47 +600,47 @@ function ComandaQRExperience({
                 onClick={() => selectAccessMode('open')}
                 className={`min-h-11 rounded-xl px-3 text-[10px] font-black uppercase tracking-wider transition ${accessMode === 'open' ? 'bg-primary text-white' : 'text-zinc-400'}`}
               >
-                Nova comanda
+                {t('newTab')}
               </button>
               <button
                 type="button"
                 onClick={() => selectAccessMode('recover')}
                 className={`min-h-11 rounded-xl px-3 text-[10px] font-black uppercase tracking-wider transition ${accessMode === 'recover' ? 'bg-primary text-white' : 'text-zinc-400'}`}
               >
-                Já tenho comanda
+                {t('existingTab')}
               </button>
             </div>
           )}
 
           {error && (
             <div className="mb-5 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm font-black text-rose-200">
-              {error}
+              {errorText(error)}
             </div>
           )}
 
           {notice && (
             <div className="mb-5 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-black text-emerald-100">
-              {notice}
+              {t(notice)}
             </div>
           )}
 
           <div className="space-y-3 sm:space-y-4">
             {accessMode === 'open' && <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Nome</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{t('name')}</span>
               <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
                 <UserRound size={18} className="text-primary" />
-                <input name="name" autoComplete="name" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="Seu nome" />
+                <input name="name" autoComplete="name" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder={t('yourName')} />
               </div>
             </label>}
             {accessMode === 'open' && <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Telefone</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{t('phone')}</span>
               <div className="mt-2 flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-4">
                 <Phone size={18} className="text-primary" />
                 <input name="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" className="w-full bg-transparent py-4 sm:py-5 outline-none font-black" placeholder="WhatsApp" />
               </div>
             </label>}
             {accessMode !== 'code' && <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">CPF</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{t('cpf')}</span>
               <input
                 value={cpf}
                 name="cpf"
@@ -649,7 +652,7 @@ function ComandaQRExperience({
               />
             </label>}
             {accessMode === 'code' && <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Código do WhatsApp</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{t('whatsappCode')}</span>
               <div className="mt-2 flex items-center gap-3 rounded-3xl border border-primary/40 bg-primary/[0.07] px-4">
                 <KeyRound size={18} className="text-primary" />
                 <input
@@ -671,14 +674,14 @@ function ComandaQRExperience({
               disabled={isSubmitting || cpf.length < 11 || !customerName.trim() || !phone.trim()}
               className="mt-5 sm:mt-7 w-full btn-beco btn-beco-purple py-4 sm:py-5 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40 disabled:grayscale"
             >
-              {isSubmitting ? 'Validando...' : 'Abrir comanda'}
+              {isSubmitting ? t('validating') : t('openTab')}
             </button>}
           {accessMode === 'recover' && <button
               onClick={requestRecovery}
               disabled={isSubmitting || cpf.length < 11}
               className="mt-5 sm:mt-7 w-full btn-beco btn-beco-purple py-4 sm:py-5 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40 disabled:grayscale"
             >
-              {isSubmitting ? 'Enviando...' : 'Enviar código no WhatsApp'}
+              {isSubmitting ? t('sending') : t('sendCode')}
             </button>}
           {accessMode === 'code' && <div className="mt-5 sm:mt-7 space-y-3">
               <button
@@ -686,14 +689,14 @@ function ComandaQRExperience({
                 disabled={isSubmitting || recoveryCode.length < 3}
                 className="w-full btn-beco btn-beco-purple py-4 sm:py-5 rounded-2xl font-black uppercase tracking-widest disabled:opacity-40 disabled:grayscale"
               >
-                {isSubmitting ? 'Confirmando...' : 'Confirmar e acessar'}
+                {isSubmitting ? t('confirming') : t('confirmAccess')}
               </button>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => selectAccessMode('recover')} className="min-h-11 rounded-2xl border border-white/10 text-[10px] font-black uppercase tracking-wider text-zinc-300">
-                  <ArrowLeft className="mr-1 inline h-4 w-4" aria-hidden="true" /> Trocar CPF
+                  <ArrowLeft className="mr-1 inline h-4 w-4" aria-hidden="true" /> {t('changeCpf')}
                 </button>
                 <button type="button" onClick={requestRecovery} disabled={isSubmitting} className="min-h-11 rounded-2xl border border-white/10 text-[10px] font-black uppercase tracking-wider text-zinc-300 disabled:opacity-40">
-                  Reenviar código
+                  {t('resendCode')}
                 </button>
               </div>
             </div>}
@@ -731,16 +734,17 @@ function ComandaQRExperience({
             <BadgeCheck size={20} />
           </div>
           <div className="min-w-0">
-            <p className="text-[8px] font-black uppercase text-gray-500">Comanda {tab.tableNumber}</p>
+            <p className="text-[8px] font-black uppercase text-gray-500">{t('tab')} {tab.tableNumber}</p>
             <h2 className="text-lg font-black tracking-tighter truncate">{tab.customerName}</h2>
-            <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Mesa {sourceTableNumber} • {tab.cpfMasked}</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{t('table')} {sourceTableNumber} • {tab.cpfMasked}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setIsServiceOpen(true)} className="p-3 glass rounded-xl text-primary active:scale-95 transition-all" aria-label="Chamar atendimento">
+          <PublicLanguageMenu />
+          <button onClick={() => setIsServiceOpen(true)} className="p-3 glass rounded-xl text-primary active:scale-95 transition-all" aria-label={t('callService')}>
             <Bell size={18} />
           </button>
-          <button onClick={handlePrimaryAccountAction} className="btn-beco btn-beco-purple px-4 py-3 relative active:scale-95" aria-label={hasCartItems ? 'Ver pedido antes de enviar' : 'Ver minha conta'}>
+          <button onClick={handlePrimaryAccountAction} className="btn-beco btn-beco-purple px-4 py-3 relative active:scale-95" aria-label={hasCartItems ? t('order') : t('viewAccount')}>
             <ShoppingBag size={18} />
             {(hasCartItems || hasAccountItems) && (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-accent text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-[#0a0a0c]">
@@ -780,10 +784,10 @@ function ComandaQRExperience({
           {hasCartItems ? <Send size={20} className="text-accent" /> : <FileText size={20} className="text-accent" />}
           <div className="text-left">
             <p className="text-[8px] font-black uppercase text-gray-500">
-              {hasCartItems ? `${cartCount} item${cartCount > 1 ? 's' : ''} no pedido` : hasAccountItems ? `${accountCount} item${accountCount > 1 ? 's' : ''} na minha comanda` : 'Nenhum consumo lançado ainda'}
+              {hasCartItems ? t('cartItems', { count: cartCount, items: t(cartCount === 1 ? 'item' : 'items') }) : hasAccountItems ? t('accountItems', { count: accountCount, items: t(accountCount === 1 ? 'item' : 'items') }) : t('noConsumptionShort')}
             </p>
             <p className="text-lg font-black text-white leading-none">
-              {hasCartItems ? `Enviar meu pedido - ${formatCurrency(cartTotal)}` : `Minha comanda - ${formatCurrency(accountTotal)}`}
+              {hasCartItems ? `${t('sendOrder')} - ${formatCurrency(cartTotal, locale)}` : `${t('myTab')} - ${formatCurrency(accountTotal, locale)}`}
             </p>
           </div>
         </button>
@@ -794,7 +798,7 @@ function ComandaQRExperience({
         {isAccountOpen && (
           <CustomerAccountModal
             onClose={() => setIsAccountOpen(false)}
-            locationLabel={`Comanda ${tab.tableNumber} • Mesa ${sourceTableNumber}`}
+            locationLabel={`${t('tab')} ${tab.tableNumber} • ${t('table')} ${sourceTableNumber}`}
           />
         )}
         {isOrderOpen && (

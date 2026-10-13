@@ -53,7 +53,7 @@ export function ProductModal({
     }) || [];
 
     if (missingGroups.length > 0) {
-      setErrors(missingGroups.map(g => `${g.name}: ${t('chooseRange', { min: g.minChoices, max: g.maxChoices })}.`));
+      setErrors(missingGroups.map(g => `${catalogText(g.id, g.name, 'name')}: ${g.maxChoices === 1 ? t('chooseOne') : t('chooseRange', { min: g.minChoices, max: g.maxChoices })}.`));
       return;
     }
 
@@ -93,7 +93,7 @@ export function ProductModal({
              <img src={getImageSrc(product.image)} alt={catalogText(product.id, product.name, 'name')} onError={applyImageFallback} className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
              <div className={tabletLandscape ? 'absolute bottom-5 left-5 right-5 min-[900px]:bottom-10 min-[900px]:left-10 min-[900px]:right-10' : 'absolute bottom-16 left-16'}>
-                <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2 block">{product.categoryName}</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2 block">{catalogText(product.categoryId || '', product.categoryName || '', 'name')}</span>
                 <h2 className={`${tabletLandscape ? 'text-3xl min-[900px]:text-5xl' : 'text-7xl'} font-black tracking-tighter italic text-white mb-2 min-[900px]:mb-4 leading-none`}>{catalogText(product.id, product.name, 'name')}</h2>
                 <p className={`${tabletLandscape ? 'hidden min-[900px]:block text-base max-w-sm' : 'text-xl max-w-md'} text-gray-400 font-medium italic`}>"{catalogText(product.id, product.description || '', 'description')}"</p>
              </div>
@@ -115,10 +115,10 @@ export function ProductModal({
                     <div key={group.id} className={qrMobileFlow ? 'space-y-2' : 'space-y-5'}>
                       <div className={`flex justify-between items-start z-10 ${qrMobileFlow ? 'py-1' : 'py-3 sticky top-0 bg-[#0a0a0c]/95 backdrop-blur-md'}`}>
                         <div>
-                          <h4 className="text-base sm:text-lg font-black uppercase tracking-[0.12em] text-white leading-tight pr-4">{group.name}</h4>
+                          <h4 className="text-base sm:text-lg font-black uppercase tracking-[0.12em] text-white leading-tight pr-4">{catalogText(group.id, group.name, 'name')}</h4>
                           <p className={`${qrMobileFlow ? 'mt-1' : 'mt-2'} flex items-center gap-2 text-[10px] text-gray-500 font-black uppercase tracking-[0.16em]`}>
                             <span className="w-2 h-2 rounded-full bg-accent shadow-[0_0_16px_rgba(255,210,30,0.8)]" />
-                            {isSingle ? t('chooseOne') : t('chooseRange', { min: group.minChoices, max: group.maxChoices })}
+                            {isSingle ? t(group.minChoices > 0 ? 'chooseOne' : 'chooseUpToOne') : t('chooseRange', { min: group.minChoices, max: group.maxChoices })}
                           </p>
                         </div>
                         {group.isRequired && (
@@ -161,7 +161,7 @@ export function ProductModal({
                                 {isSelected ? <Check size={qrMobileFlow ? 20 : 26} strokeWidth={5} /> : '+'}
                               </div>
                               <div className="min-w-0">
-                                <span className={`block font-black ${tabletLandscape ? qrMobileFlow ? 'text-base' : 'text-lg' : 'text-base sm:text-xl'} tracking-tight leading-tight`}>{m.name}</span>
+                                <span className={`block font-black ${tabletLandscape ? qrMobileFlow ? 'text-base' : 'text-lg' : 'text-base sm:text-xl'} tracking-tight leading-tight`}>{catalogText(m.id, m.name, 'name')}</span>
                                 <span className={`${qrMobileFlow ? 'mt-0.5 text-[8px]' : 'mt-1 text-[10px]'} block font-black uppercase tracking-[0.16em] ${isSelected ? 'text-white/65' : 'text-black/55'}`}>
                                   {isSelected ? t('selectedRemove') : t('tapToAdd')}
                                 </span>
@@ -198,9 +198,9 @@ export function ProductModal({
              <div className={`${tabletLandscape ? qrMobileFlow ? 'mt-2 pt-3 space-y-2.5 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-4 pt-4 space-y-3 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-4 sm:mt-8 pt-4 sm:pt-8 space-y-4 sm:space-y-6'} border-t border-white/10 shrink-0`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 glass p-2 rounded-2xl border-white/5">
-                     <button type="button" aria-label="Diminuir quantidade" disabled={!canChangeItemQuantity} onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-11 h-11 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">-</button>
+                     <button type="button" aria-label={t('decreaseQuantity')} disabled={!canChangeItemQuantity} onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-11 h-11 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">-</button>
                      <span className="text-xl font-black w-8 text-center">{quantity}</span>
-                     <button type="button" aria-label="Aumentar quantidade" disabled={!canChangeItemQuantity} onClick={() => setQuantity(quantity + 1)} className="w-11 h-11 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">+</button>
+                     <button type="button" aria-label={t('increaseQuantity')} disabled={!canChangeItemQuantity} onClick={() => setQuantity(quantity + 1)} className="w-11 h-11 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">+</button>
                   </div>
                   <div className="text-right">
                      <p className="text-[10px] font-black uppercase text-gray-500 mb-1">{t('totalItem')}</p>

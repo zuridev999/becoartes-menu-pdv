@@ -1,9 +1,12 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Info, AlertCircle, ShoppingBag, Bell, X } from 'lucide-react';
 import { useStore } from '../../store';
+import { usePublicI18n } from '../../lib/public-i18n';
 
 export function NotificationDisplay() {
-  const { notifications, clearNotification } = useStore();
+  const { notifications, clearNotification, activeView } = useStore();
+  const { t, errorText } = usePublicI18n();
+  const isQr = activeView === 'qr';
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -40,12 +43,12 @@ export function NotificationDisplay() {
               {getIcon(notif.type)}
             </div>
             <div className="flex-1">
-              <p className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-1">{notif.type === 'service' ? 'Solicitação' : 'Notificação'}</p>
-              <p className="text-sm font-bold text-white leading-tight">{notif.message}</p>
+              <p className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-1">{isQr ? t(notif.type === 'service' ? 'request' : 'notification') : notif.type === 'service' ? 'Solicitação' : 'Notificação'}</p>
+              <p className="text-sm font-bold text-white leading-tight">{isQr && notif.type === 'error' ? errorText(notif.message) : isQr && notif.type === 'order' ? t('orderWasSent') : notif.message}</p>
             </div>
             <button
               type="button"
-              aria-label="Fechar notificação"
+              aria-label={isQr ? t('close') : 'Fechar notificação'}
               onClick={() => clearNotification(notif.id)}
               className="text-zinc-500 hover:text-white transition-colors"
             >

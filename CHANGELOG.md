@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.25.0 - 2026-10-13
+
+- Adiciona francês ao QR e completa os textos de acesso, catálogo, adicionais, carrinho, conta e atendimento; revisa o inglês e preserva a preferência de idioma.
+- Traduz o catálogo visível sem alterar IDs, preços, disponibilidade ou os nomes originais enviados ao PDV/cozinha.
+- Corrige o retorno de falhas de rede no envio pelo QR para não exibir sucesso nem esvaziar o carrinho antes da confirmação.
+- Inclui testes de cobertura de traduções e fluxo simulado em Chromium e WebKit, sem lançar pedidos reais.
+
 ## 1.24.1 - 2026-10-12
 
 - Aceita a contagem padrão zerada de notas e moedas no fechamento, sem exigir que o operador redigite zero quando a gaveta está vazia.

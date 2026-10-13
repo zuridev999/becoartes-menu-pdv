@@ -19,7 +19,7 @@ export function CustomerOrderModal({
   customerTabContext?: CustomerTabOrderContext;
 }) {
   const { currentTableId, tables, removeFromCart, sendToKitchen } = useStore();
-  const { t, locale } = usePublicI18n();
+  const { t, locale, catalogText } = usePublicI18n();
   const [isSending, setIsSending] = useState(false);
   const [isSent, setIsSent] = useState(false);
   
@@ -97,7 +97,7 @@ export function CustomerOrderModal({
               <p className="text-gray-500 font-black uppercase tracking-widest text-[9px] sm:text-xs">{t('reviewBeforeSending')}</p>
             </div>
           </div>
-          <button type="button" aria-label="Fechar pedido" onClick={onClose} className="p-3 sm:p-4 glass rounded-full hover:bg-rose-500/20 text-rose-500 transition-all shrink-0">
+          <button type="button" aria-label={t('close')} onClick={onClose} className="p-3 sm:p-4 glass rounded-full hover:bg-rose-500/20 text-rose-500 transition-all shrink-0">
             <X size={24} className="sm:hidden" />
             <X size={32} className="hidden sm:block" />
           </button>
@@ -127,19 +127,19 @@ export function CustomerOrderModal({
                           {item.quantity}
                        </div>
                        <div className="min-w-0">
-                          <p className="text-lg sm:text-2xl font-black italic tracking-tighter leading-tight mb-1">{item.name}</p>
+                          <p className="text-lg sm:text-2xl font-black italic tracking-tighter leading-tight mb-1">{catalogText(item.productId, item.name, 'name')}</p>
                           <p className="text-accent font-black text-sm sm:text-base">{formatCurrency(getOrderItemTotal(item), locale)}</p>
                        </div>
                     </div>
                     {item.selectedModifiers && item.selectedModifiers.length > 0 && (
                       <div className="flex flex-wrap gap-2 ml-[3.25rem] sm:ml-[4.5rem]">
                         {item.selectedModifiers.map((m, mIdx) => (
-                          <span key={mIdx} className="text-[10px] font-black uppercase bg-white/5 px-3 py-1 rounded-lg border border-white/5 text-gray-400">+{m.name}</span>
+                          <span key={mIdx} className="text-[10px] font-black uppercase bg-white/5 px-3 py-1 rounded-lg border border-white/5 text-gray-400">+{catalogText(m.id, m.name, 'name')}</span>
                         ))}
                       </div>
                     )}
                   </div>
-                  <button type="button" aria-label={`Remover ${item.name} do pedido`} onClick={() => removeFromCart(item.id)} className="p-3 sm:p-4 glass rounded-2xl text-rose-500 hover:bg-rose-500/20 transition-all shrink-0">
+                  <button type="button" aria-label={t('removeItem', { name: catalogText(item.productId, item.name, 'name') })} onClick={() => removeFromCart(item.id)} className="p-3 sm:p-4 glass rounded-2xl text-rose-500 hover:bg-rose-500/20 transition-all shrink-0">
                     <Trash2 size={20} className="sm:hidden" />
                     <Trash2 size={24} className="hidden sm:block" />
                   </button>

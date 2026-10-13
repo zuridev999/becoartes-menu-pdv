@@ -1,14 +1,17 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AppSettings, PublicLanguageCode, PublicLanguageConfig } from '../types';
+import { extraPublicCopy } from './public-copy-extra';
+import { additionalCatalogCopy, normalizeCatalogText } from './public-catalog-copy';
 
-export const PUBLIC_LANGUAGE_CODES = ['pt-BR', 'en-US', 'es-ES'] as const;
+export const PUBLIC_LANGUAGE_CODES = ['pt-BR', 'en-US', 'es-ES', 'fr-FR'] as const;
 export type { PublicLanguageCode, PublicLanguageConfig } from '../types';
 
 export const defaultPublicLanguages: PublicLanguageConfig[] = [
   { code: 'pt-BR', name: 'Português', nativeName: 'Português', flag: '🇧🇷', enabled: true },
   { code: 'en-US', name: 'English', nativeName: 'English', flag: '🇺🇸', enabled: true },
   { code: 'es-ES', name: 'Español', nativeName: 'Español', flag: '🇪🇸', enabled: true },
+  { code: 'fr-FR', name: 'French', nativeName: 'Français', flag: '🇫🇷', enabled: true },
 ];
 
 const copy: Record<PublicLanguageCode, Record<string, string>> = {
@@ -23,12 +26,7 @@ const copy: Record<PublicLanguageCode, Record<string, string>> = {
   },
 };
 
-const normalizeCatalogText = (value: string) => value
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase()
-  .replace(/\s+/g, ' ')
-  .trim();
+for (const locale of PUBLIC_LANGUAGE_CODES) copy[locale] = { ...copy[locale], ...extraPublicCopy[locale] };
 
 const catalogCopy: Partial<Record<PublicLanguageCode, Record<string, string>>> = {
   'en-US': {
@@ -75,9 +73,9 @@ Object.assign(catalogCopy['es-ES']!, {
   'feito para dividir: duas porções de omelete recheado, arroz, feijão, salada e batata frita inclusa.': 'Para compartir: dos porciones de tortilla rellena con arroz, frijoles, ensalada y papas fritas.',
 });
 
-const getCatalogBaseTranslation = (locale: PublicLanguageCode, text: string) => {
+export const getCatalogBaseTranslation = (locale: PublicLanguageCode, text: string) => {
   const normalizedText = normalizeCatalogText(text);
-  return Object.entries(catalogCopy[locale] || {}).find(([source]) => normalizeCatalogText(source) === normalizedText)?.[1];
+  return additionalCatalogCopy[locale]?.[normalizedText] || Object.entries(catalogCopy[locale] || {}).find(([source]) => normalizeCatalogText(source) === normalizedText)?.[1];
 };
 
 export const getDefaultPublicCopy = (locale: PublicLanguageCode) => ({ ...(copy[locale as keyof typeof copy] || copy['pt-BR']) });
@@ -100,6 +98,7 @@ type I18nState = {
   setLocale: (locale: PublicLanguageCode) => void;
   t: (key: string, values?: Record<string, string | number>) => string;
   catalogText: (id: string, text: string, field: 'name' | 'description') => string;
+  errorText: (error: unknown, fallbackKey?: string) => string;
 };
 
 const PublicI18nContext = createContext<I18nState | null>(null);
@@ -107,9 +106,15 @@ const PublicI18nContext = createContext<I18nState | null>(null);
 export function PublicI18nProvider({ settings, children }: { settings: AppSettings; children: ReactNode }) {
   const languages = useMemo(() => getPublicLanguages(settings), [settings]);
   const [locale, setLocaleState] = useState<PublicLanguageCode>(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY) as PublicLanguageCode | null;
-    return stored || 'pt-BR';
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      return languages.some((language) => language.code === stored && language.enabled) ? stored! : 'pt-BR';
+    } catch { return 'pt-BR'; }
   });
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   useEffect(() => {
     if (languages.some((language) => language.code === locale && language.enabled)) return;
@@ -118,7 +123,7 @@ export function PublicI18nProvider({ settings, children }: { settings: AppSettin
 
   const setLocale = useCallback((nextLocale: PublicLanguageCode) => {
     if (!languages.some((language) => language.code === nextLocale && language.enabled)) return;
-    window.localStorage.setItem(STORAGE_KEY, nextLocale);
+    try { window.localStorage.setItem(STORAGE_KEY, nextLocale); } catch { /* Private browsing may block storage. */ }
     setLocaleState(nextLocale);
   }, [languages]);
 
@@ -132,6 +137,11 @@ export function PublicI18nProvider({ settings, children }: { settings: AppSettin
       return interpolate(raw, values);
     },
     catalogText: (id, text, field) => languages.find((item) => item.code === locale)?.catalog?.[id]?.[field] || getCatalogBaseTranslation(locale, text) || text,
+    errorText: (error, fallbackKey = 'requestError') => {
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      if (locale === 'pt-BR' && message) return message;
+      return copy[locale]?.[fallbackKey] || copy['pt-BR'][fallbackKey];
+    },
   }), [languages, locale, setLocale]);
 
   return <PublicI18nContext.Provider value={value}>{children}</PublicI18nContext.Provider>;

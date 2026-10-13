@@ -23,21 +23,25 @@ const featuredCategoryCopy: Record<string, Record<string, { label: string; subti
     'pt-BR': { label: 'Pratos para 2' },
     'en-US': { label: 'Dishes for Two' },
     'es-ES': { label: 'Platos para dos' },
+    'fr-FR': { label: 'Plats pour deux' },
   },
   dzw6tb2cg: {
     'pt-BR': { label: 'Pratos Brasileiros', subtitle: 'Serve uma pessoa' },
-    'en-US': { label: 'Brazilian Dishes', subtitle: '“serves one person”' },
-    'es-ES': { label: 'Platos brasileños', subtitle: '“para una persona”' },
+    'en-US': { label: 'Brazilian Dishes', subtitle: 'Serves one person' },
+    'es-ES': { label: 'Platos brasileños', subtitle: 'Para una persona' },
+    'fr-FR': { label: 'Plats brésiliens', subtitle: 'Pour une personne' },
   },
   dyao2k7w9: {
     'pt-BR': { label: 'Burgers Beco' },
     'en-US': { label: 'Burgers' },
     'es-ES': { label: 'Hamburguesas' },
+    'fr-FR': { label: 'Burgers Beco' },
   },
   uh9q7ngoy: {
     'pt-BR': { label: 'Petiscos' },
     'en-US': { label: 'Sharing Plates' },
     'es-ES': { label: 'Para compartir' },
+    'fr-FR': { label: 'À partager' },
   },
 };
 

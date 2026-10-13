@@ -1230,12 +1230,12 @@ export const useStore = create<AppState>((set, get) => ({
         clearSellerSession();
         set({ currentSeller: null });
         get().addNotification("Sessão expirada. Entre com o PIN novamente.", "error");
-        return;
+        if (origin === 'qr') throw error; else return;
       }
 
       if (isNetworkError(error)) {
         get().addNotification("Banco demorou para responder. Atualize a mesa e tente novamente.", "error", tableId);
-        return;
+        if (origin === 'qr') throw error; else return;
       }
 
       const message = getErrorMessage(error);

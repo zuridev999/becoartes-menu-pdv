@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
+import { usePublicI18n } from '../../lib/public-i18n';
+import { useStore } from '../../store';
 import { fallbackImageSrc, getImageSrc } from '../../lib/image';
 
 export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => void, isLoading: boolean }) {
+  const { t } = usePublicI18n();
+  const isQr = useStore((state) => state.activeView === 'qr') || window.location.hostname.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(window.location.pathname);
   useEffect(() => {
     const hasLoaded = sessionStorage.getItem('beco_loaded');
     if (hasLoaded && !isLoading) {
@@ -25,15 +29,15 @@ export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => voi
       <img src="/favicon.svg" alt="Becoartes" className="mb-6 h-14 w-14 rounded-2xl" />
       <div className="text-center">
         <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Becoartes</p>
-        <h2 className="mt-2 text-2xl font-black text-white">Preparando a operação</h2>
+        <h2 className="mt-2 text-2xl font-black text-white">{isQr ? t('menu') : 'Preparando a operação'}</h2>
         <div className="mt-4 flex items-center justify-center gap-3 text-zinc-400" role="status" aria-live="polite">
           {isLoading ? (
              <>
                <Loader2 className="animate-spin" size={20} />
-               <p className="text-xs font-bold">Carregando dados atualizados...</p>
+               <p className="text-xs font-bold">{isQr ? t('validating') : 'Carregando dados atualizados...'}</p>
              </>
           ) : (
-             <p className="text-xs font-bold text-emerald-300">Pronto.</p>
+             <p className="text-xs font-bold text-emerald-300">{isQr ? t('success') : 'Pronto.'}</p>
           )}
         </div>
       </div>

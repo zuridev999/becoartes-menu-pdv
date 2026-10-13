@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { usePublicI18n } from '../../lib/public-i18n';
 
 const ADSENSE_CLIENT = import.meta.env.VITE_ADSENSE_CLIENT || 'ca-pub-8099608758666537';
 const ADSENSE_SLOT = import.meta.env.VITE_ADSENSE_SLOT || '6877500198';
@@ -14,6 +15,7 @@ export function GoogleAdBanner({
   placement: GoogleAdPlacement;
   onViewportVisibilityChange?: (visible: boolean) => void;
 }) {
+  const { t } = usePublicI18n();
   const [status, setStatus] = useState<GoogleAdStatus>('pending');
   const adRef = useRef<HTMLModElement>(null);
   const containerRef = useRef<HTMLElement>(null);
@@ -108,10 +110,10 @@ export function GoogleAdBanner({
       className={positionClass}
       data-ad-placement={placement}
       data-ad-render-status={status}
-      aria-label="Publicidade"
+      aria-label={t('advertisement')}
     >
       {isQrMenuInline && (
-        <p className="mb-1 text-center text-[8px] font-black uppercase tracking-[0.2em] text-zinc-600">Publicidade</p>
+        <p className="mb-1 text-center text-[8px] font-black uppercase tracking-[0.2em] text-zinc-600">{t('advertisement')}</p>
       )}
       <ins
         data-beco-google-ad

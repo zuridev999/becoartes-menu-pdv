@@ -22,7 +22,7 @@ const paymentOptions: Array<{
 
 export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () => void; locationLabel?: string }) {
   const { currentTableId, tables, settings, addNotification } = useStore();
-  const { t, locale } = usePublicI18n();
+  const { t, locale, catalogText, errorText } = usePublicI18n();
   const [loadingMethod, setLoadingMethod] = useState<PaymentMethod | null>(null);
   const table = tables.find(t => t.id === currentTableId);
 
@@ -60,7 +60,7 @@ export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () =
       }
       window.location.href = result.checkoutUrl;
     } catch (error) {
-      addNotification(error instanceof Error ? error.message : t('onlinePayment'), 'error');
+      addNotification(errorText(error), 'error');
     } finally {
       setLoadingMethod(null);
     }
@@ -90,7 +90,7 @@ export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () =
               </p>
             </div>
           </div>
-          <button type="button" aria-label="Fechar conta" onClick={onClose} className="glass shrink-0 rounded-full p-3 text-rose-500 transition-all hover:bg-rose-500/20 sm:p-4">
+          <button type="button" aria-label={t('close')} onClick={onClose} className="glass shrink-0 rounded-full p-3 text-rose-500 transition-all hover:bg-rose-500/20 sm:p-4">
             <X size={28} />
           </button>
         </div>
@@ -107,12 +107,12 @@ export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () =
                 <div key={idx} className="flex justify-between items-start pb-6 border-b border-white/5 last:border-0 group">
                   <div className="flex-1">
                     <div className="flex justify-between items-center mb-1">
-                      <p className="text-2xl font-black italic tracking-tighter">{item.quantity}x {item.name}</p>
+                      <p className="text-2xl font-black italic tracking-tighter">{item.quantity}x {catalogText(item.productId, item.name, 'name')}</p>
                       <p className="text-lg font-black text-white/90 sm:text-2xl">{formatCurrency((item.price + (item.selectedModifiers?.reduce((acc, m) => acc + m.price, 0) || 0)) * item.quantity, locale)}</p>
                     </div>
                     {item.selectedModifiers && item.selectedModifiers.length > 0 && (
                       <p className="text-sm text-gray-500 font-bold">
-                        + {item.selectedModifiers.map(m => m.name).join(', ')}
+                        + {item.selectedModifiers.map(m => catalogText(m.id, m.name, 'name')).join(', ')}
                       </p>
                     )}
                   </div>

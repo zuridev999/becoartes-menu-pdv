@@ -10,7 +10,7 @@ import type { CustomerTabOrderContext } from '../../lib/api';
 
 export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: () => void; customerTabContext?: CustomerTabOrderContext }) {
   const { currentTableId, requestService, addNotification } = useStore();
-  const { t } = usePublicI18n();
+  const { t, errorText } = usePublicI18n();
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
 
@@ -29,7 +29,7 @@ export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: 
       addNotification(t('requestSent'));
       onClose();
     } catch (error) {
-      addNotification(error instanceof Error ? error.message : 'Não foi possível enviar sua solicitação.', 'error');
+      addNotification(errorText(error), 'error');
     } finally {
       setIsSending(false);
     }
@@ -52,7 +52,7 @@ export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: 
             <h2 className="mb-2 text-3xl font-black italic tracking-tighter sm:text-5xl">{t('service')}</h2>
             <p className="text-gray-500 font-black uppercase tracking-widest text-xs">{t('helpToday')}</p>
           </div>
-          <button type="button" aria-label="Fechar atendimento" onClick={onClose} className="glass shrink-0 rounded-full p-3 text-rose-500 transition-all hover:bg-rose-500/20 sm:p-4">
+          <button type="button" aria-label={t('close')} onClick={onClose} className="glass shrink-0 rounded-full p-3 text-rose-500 transition-all hover:bg-rose-500/20 sm:p-4">
             <X size={28} />
           </button>
         </div>
@@ -63,7 +63,7 @@ export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: 
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => handleSend(opt.id, opt.label)}
+                onClick={() => handleSend(opt.id)}
                 className="flex items-center gap-6 p-6 glass rounded-3xl border border-white/5 hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
               >
                 <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center group-hover:bg-primary/20 transition-all">
