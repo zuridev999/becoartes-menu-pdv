@@ -53,6 +53,7 @@ for (const [engineName, engine] of [['chromium', chromium], ['webkit', webkit]])
     });
     await page.getByRole('button', { name: /Français/ }).click();
     await page.getByRole('heading', { name: 'Plats pour deux', exact: true }).first().waitFor();
+    assert.ok(await page.getByText('1 article', { exact: true }).count(), 'Single-item categories must use the singular label.');
     assert.equal(await page.locator('html').getAttribute('lang'), 'fr-FR');
     const search = page.getByRole('textbox', { name: 'Rechercher dans la carte' });
     await search.fill('poulet');

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.25.1 - 2026-10-13
+
+- Corrige singular e plural nas contagens das categorias em todos os idiomas do cardápio.
+
 ## 1.25.0 - 2026-10-13
 
 - Adiciona francês ao QR e completa os textos de acesso, catálogo, adicionais, carrinho, conta e atendimento; revisa o inglês e preserva a preferência de idioma.

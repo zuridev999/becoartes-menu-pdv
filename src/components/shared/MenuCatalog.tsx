@@ -251,7 +251,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
             >
               <div>
                 <p className={`font-black text-[8px] md:text-[10px] uppercase tracking-widest ${selectedCategory === cat ? 'text-white/70' : 'text-primary'}`}>
-                  {productCountByCategory.get(cat) || 0} {t('items')}
+                  {productCountByCategory.get(cat) || 0} {t(productCountByCategory.get(cat) === 1 ? 'item' : 'items')}
                 </p>
                 <h4 className="font-black text-sm md:text-lg tracking-tighter italic whitespace-nowrap">{getCategoryPresentation(cat).label}</h4>
                 {getCategoryPresentation(cat).subtitle && (
@@ -319,7 +319,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
                  className="scroll-mt-6"
                >
                  <div className="mb-4">
-                   <p className="text-[9px] font-black uppercase tracking-[0.35em] text-primary">{products.length} {t('items')}</p>
+                   <p className="text-[9px] font-black uppercase tracking-[0.35em] text-primary">{products.length} {t(products.length === 1 ? 'item' : 'items')}</p>
                    <h4 className="text-3xl sm:text-4xl font-black italic tracking-tighter">{getCategoryPresentation(category).label}</h4>
                    {getCategoryPresentation(category).subtitle && (
                      <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">{getCategoryPresentation(category).subtitle}</p>
