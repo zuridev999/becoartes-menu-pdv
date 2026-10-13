@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.24.1 - 2026-10-12
+
+- Aceita a contagem padrão zerada de notas e moedas no fechamento, sem exigir que o operador redigite zero quando a gaveta está vazia.
+- Mantém o total em espécie calculado pelas quantidades e todas as validações de PIN e divergência do caixa.
+
 ## 1.24.0 - 2026-10-12
 
 - Redesenha a gestão de grupos de adicionais com busca, identificação interna, contagem de opções e visão dos vínculos por categoria e produto.

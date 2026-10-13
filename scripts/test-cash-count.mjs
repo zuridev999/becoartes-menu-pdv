@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { cashDenominationsCents, countCashCents } from '../server/cash-count.mjs';
 
 const zero = Object.fromEntries(Object.keys(cashDenominationsCents).map(key => [key, 0]));
@@ -14,4 +15,9 @@ for (const invalid of [
   { ...zero, extra: 1 },
 ]) assert.throws(() => countCashCents(invalid));
 assert.throws(() => countCashCents({ note_2: 1 }));
-console.log('cash count: denominations, zero, cents precision and invalid quantities passed');
+
+const pdvView = readFileSync(new URL('../src/views/pdv/PDVView.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(pdvView, /cashCountTouched/, 'untouched zero count must remain valid at close');
+assert.match(pdvView, /cashCountTotalCents\(cashCount\)/, 'close must use the denomination total, including zero');
+
+console.log('cash count: denominations, zero-default close, cents precision and invalid quantities passed');

@@ -204,7 +204,6 @@ export function PDVView() {
   const [cashDialog, setCashDialog] = useState<'open' | 'close' | null>(null);
   const [cashValue, setCashValue] = useState('');
   const [cashCount, setCashCount] = useState<CashCount>(emptyCashCount);
-  const [cashCountTouched, setCashCountTouched] = useState(false);
   const [cashNotes, setCashNotes] = useState('');
   const [cashConfirmationPin, setCashConfirmationPin] = useState('');
   const [cashError, setCashError] = useState('');
@@ -616,10 +615,6 @@ export function PDVView() {
   const submitCashDialog = async () => {
     const value = cashDialog === 'close' ? cashCountTotalCents(cashCount) / 100 : parseMoneyValue(cashValue);
     setCashError('');
-    if (cashDialog === 'close' && !cashCountTouched) {
-      setCashError('Conte as cédulas e moedas antes de fechar o caixa. Se a gaveta estiver vazia, informe 0 em um campo.');
-      return;
-    }
     if ((cashDialog === 'open' || cashDialog === 'close') && !/^\d{4}$/.test(cashConfirmationPin)) {
       setCashError('Digite o PIN de 4 dígitos de quem está fazendo esta ação no caixa.');
       return;
@@ -631,7 +626,6 @@ export function PDVView() {
       setCashDialog(null);
       setCashValue('');
       setCashCount(emptyCashCount());
-      setCashCountTouched(false);
       setCashNotes('');
       setCashConfirmationPin('');
       await syncData({ includeCatalog: false });
@@ -1751,7 +1745,6 @@ export function PDVView() {
         setCashValue={setCashValue}
         cashCount={cashCount}
         setCashCount={setCashCount}
-        onCountTouched={() => setCashCountTouched(true)}
         confirmationPin={cashConfirmationPin}
         setConfirmationPin={setCashConfirmationPin}
         notes={cashNotes}

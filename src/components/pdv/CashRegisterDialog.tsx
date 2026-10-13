@@ -16,7 +16,6 @@ type Props = {
   setCashValue: (value: string) => void;
   cashCount: CashCount;
   setCashCount: (count: CashCount) => void;
-  onCountTouched: () => void;
   confirmationPin: string;
   setConfirmationPin: (value: string) => void;
   notes: string;
@@ -77,10 +76,9 @@ function CountSection({ kind, cashCount, onChange }: { kind: 'note' | 'coin'; ca
   </section>;
 }
 
-export function CashRegisterDialog({ mode, cashState, cashValue, setCashValue, cashCount, setCashCount, onCountTouched, confirmationPin, setConfirmationPin, notes, setNotes, error, submitting, onClose, onSubmit }: Props) {
+export function CashRegisterDialog({ mode, cashState, cashValue, setCashValue, cashCount, setCashCount, confirmationPin, setConfirmationPin, notes, setNotes, error, submitting, onClose, onSubmit }: Props) {
   const updateCount = (key: Denomination['key'], quantity: number) => {
     setCashCount({ ...cashCount, [key]: quantity });
-    onCountTouched();
   };
   return <AnimatePresence>{mode && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6">
     <motion.div initial={{ scale: 0.96, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 20 }} className={`glass-card w-full max-h-[calc(100dvh-1.5rem)] overflow-y-auto custom-scrollbar border-primary/30 p-4 sm:p-6 ${mode === 'close' ? 'max-w-4xl' : 'max-w-xl'}`}>
