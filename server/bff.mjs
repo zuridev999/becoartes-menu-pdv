@@ -41,6 +41,8 @@ import { createDeliveryCustomerServices } from './delivery/customer-service.mjs'
 import { resolveOrderDispatch } from './order-dispatch.mjs';
 import { createOrderItemModifierCancellation, createOrderItemCancellationNotifier, createSuperAdminItemCancellationGuard } from './order-item-modifier-cancellation.mjs';
 import { createOrderItemProductCancellation } from './order-item-product-cancellation.mjs';
+import { cancellationAlertSchema, createOrderCancellationAlertService } from './order-cancellation-alerts.mjs';
+import { createZuriCancellationServices } from './zuri-cancellation.mjs';
 import { createLioRuntime } from './lio/runtime.mjs';
 import { startBffServer } from './http-server.mjs';
 
@@ -138,6 +140,8 @@ const DELIVERY_NOTIFICATION_WEBHOOK_SECRET = process.env.DELIVERY_NOTIFICATION_W
 const ZURI_WHATSAPP_BRIDGE_URL = process.env.ZURI_WHATSAPP_BRIDGE_URL || '';
 const ZURI_WHATSAPP_BRIDGE_SECRET = process.env.ZURI_WHATSAPP_BRIDGE_SECRET || '';
 const ZURI_WHATSAPP_BRIDGE_HOST_HEADER = process.env.ZURI_WHATSAPP_BRIDGE_HOST_HEADER || '';
+const ZURI_PDV_CANCEL_TOKEN = String(process.env.BECO_AGENT_TOKEN || '');
+const CANCELLATION_OWNER_PHONE = String(process.env.CANCELLATION_OWNER_PHONE || '').replace(/\D/g, '');
 if (
   process.env.NODE_ENV === 'production'
   && [DELIVERY_EMAIL_PROVIDER, DELIVERY_SMS_PROVIDER, DELIVERY_WHATSAPP_PROVIDER].includes('mock')
@@ -795,6 +799,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS sellers (id TEXT PRIMARY KEY, name TEXT NOT NULL, nickname TEXT, status TEXT NOT NULL, role TEXT NOT NULL, permission TEXT DEFAULT 'standard', pin TEXT DEFAULT '1234', notes TEXT, tipo_vinculo TEXT DEFAULT 'fixo', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS pdv_terminals (id TEXT PRIMARY KEY, public_key_jwk TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', device_info TEXT, first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP, last_seen_at DATETIME, last_ip TEXT)",
     "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, details TEXT, table_number TEXT, origin TEXT, author_id TEXT, author_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    ...cancellationAlertSchema,
     "CREATE TABLE IF NOT EXISTS closed_bills (id TEXT PRIMARY KEY, table_id TEXT, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, subtotal REAL NOT NULL, service_fee REAL DEFAULT 0, discount REAL DEFAULT 0, discount_reason TEXT, coupon_code TEXT, coupon_amount REAL DEFAULT 0, coupon_benefit TEXT, total REAL NOT NULL, payments TEXT, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS table_payments (id TEXT PRIMARY KEY, table_id TEXT NOT NULL, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, method TEXT NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, cancelled_at DATETIME, applied_closed_bill_id TEXT)",
     "CREATE TABLE IF NOT EXISTS pdv_coupons (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', note TEXT, created_by_id TEXT, created_by_name TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, redeemed_at DATETIME, redeemed_table_id TEXT, redeemed_closed_bill_id TEXT, customer_id TEXT, customer_name TEXT, phone TEXT, campaign_name TEXT, valid_until DATETIME, min_order_value REAL DEFAULT 0, selected_benefit TEXT, used_by_employee_id TEXT, used_by_employee TEXT, table_number INTEGER, order_id TEXT, whatsapp_message TEXT, sent_at DATETIME, benefit_type TEXT, discount_type TEXT, target_category TEXT, target_product_id TEXT, target_product_name TEXT, free_item_name TEXT, benefit_label TEXT, rule_json TEXT)",
@@ -3741,6 +3746,18 @@ const getInventoryReconciliationSummary = async () => {
 };
 
 const notifyOrderItemCancelled = createOrderItemCancellationNotifier({ safeCreateOSNotification, tenantSlug: OS_TENANT_SLUG });
+const cancellationAlerts = createOrderCancellationAlertService({
+  db,
+  ownerPhone: CANCELLATION_OWNER_PHONE,
+  bridge: {
+    bridgeUrl: ZURI_WHATSAPP_BRIDGE_URL,
+    bridgeSecret: ZURI_WHATSAPP_BRIDGE_SECRET,
+    bridgeHostHeader: ZURI_WHATSAPP_BRIDGE_HOST_HEADER,
+  },
+});
+const dispatchCancellationAlerts = () => cancellationAlerts.dispatch().catch((error) => {
+  console.error('[cancellation-alert] dispatch failed:', error);
+});
 
 const notifyCloseBillSyncFailure = async ({ tableNumber, integrationId, error }) => {
   return safeCreateOSNotification({
@@ -3809,9 +3826,11 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
   const itemRes = await db.execute({
     sql: `
       SELECT oi.order_id, oi.product_id, oi.quantity, oi.selected_modifiers,
-             o.table_id, m.name, m.remote_stock_id
+             o.table_id, o.status AS order_status, t.number AS table_number,
+             m.name, m.remote_stock_id
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
+      LEFT JOIN tables t ON t.id = o.table_id
       LEFT JOIN menu m ON m.id = oi.product_id
       WHERE oi.id = ?
       LIMIT 1
@@ -3838,6 +3857,11 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
   }
   const orderId = itemRow?.order_id;
   const tableId = itemRow?.table_id;
+  if (itemRow.order_status === 'closed') {
+    const error = new Error('Não é possível cancelar um item de pedido fechado.');
+    error.statusCode = 409;
+    throw error;
+  }
   if (tableId) {
     await ensureTableAccess(tableId, session);
   }
@@ -3918,7 +3942,23 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
     );
   }
   cancellationBatch.push({ sql: "DELETE FROM order_items WHERE id = ?", args: [itemId] });
-  await db.batch(cancellationBatch, 'write');
+  cancellationBatch.push({
+    sql: `INSERT INTO audit_logs
+      (id, action, details, table_number, origin, author_id, author_name, timestamp)
+      SELECT ?, 'order_item_cancelled', ?, ?, 'pdv', ?, ?, ? WHERE changes() > 0`,
+    args: [createId(), JSON.stringify({
+      ownerAlertVersion: 1,
+      itemId, orderId, itemName: itemRow.name || 'Item', quantity: Number(itemRow.quantity || 0),
+      reasonCode, reasonLabel, reasonNotes,
+      requesterPhone: String(safeCancelContext?.requesterPhone || ''),
+      sourceMessageId: String(safeCancelContext?.sourceMessageId || ''),
+    }), String(itemRow.table_number || ''), session?.id || null, session?.name || 'Superadmin',
+    new Date().toISOString()],
+  });
+  const cancellationResults = await db.batch(cancellationBatch, 'write');
+  if (Number(cancellationResults.at(-2)?.rowsAffected || 0) !== 1) {
+    return { orderId: orderId || null, inventoryReversalCount: 0, idempotent: true };
+  }
   if (stockMovements.rows.length > 0) await bumpCatalogVersion();
 
   if (orderId) {
@@ -3949,20 +3989,24 @@ const deleteOrderItem = async ({ itemId, cancelContext }, session = null) => {
   }
 
   void notifyOrderItemCancelled({
-    tableNumber: Number(safeCancelContext.tableNumber || 0),
-    itemName: String(safeCancelContext.itemName || 'Item'),
-    quantity: Number(safeCancelContext.quantity || 0),
-    sellerName: String(safeCancelContext.sellerName || 'Sistema'),
-    sellerPermission: String(safeCancelContext.sellerPermission || 'standard'),
+    tableNumber: Number(itemRow.table_number || 0),
+    itemName: String(itemRow.name || 'Item'),
+    quantity: Number(itemRow.quantity || 0),
+    sellerName: String(session?.name || 'Superadmin'),
+    sellerPermission: String(session?.permission || 'super_admin'),
     reasonLabel,
     reasonNotes,
   });
+  void dispatchCancellationAlerts();
 
   return { orderId: orderId || null, inventoryReversalCount: stockMovements.rows.length };
 };
 
-const deleteOrderItemModifier = createOrderItemModifierCancellation({ db, assertSuperAdminItemCancellation, normalizeText, parseJsonArray, ensureTableAccess: (...args) => ensureTableAccess(...args), resolveOSContext, osTimestamp, createId, bumpCatalogVersion: () => bumpCatalogVersion(), notifyOrderItemCancelled });
-const deleteOrderItemProduct = createOrderItemProductCancellation({ db, assertSuperAdminItemCancellation, normalizeText, parseJsonArray, ensureTableAccess: (...args) => ensureTableAccess(...args), osTimestamp, bumpCatalogVersion: () => bumpCatalogVersion(), notifyOrderItemCancelled });
+const deleteOrderItemModifier = createOrderItemModifierCancellation({ db, assertSuperAdminItemCancellation, normalizeText, parseJsonArray, ensureTableAccess: (...args) => ensureTableAccess(...args), resolveOSContext, osTimestamp, createId, bumpCatalogVersion: () => bumpCatalogVersion(), notifyOrderItemCancelled, dispatchCancellationAlerts });
+const deleteOrderItemProduct = createOrderItemProductCancellation({ db, assertSuperAdminItemCancellation, normalizeText, parseJsonArray, ensureTableAccess: (...args) => ensureTableAccess(...args), osTimestamp, bumpCatalogVersion: () => bumpCatalogVersion(), notifyOrderItemCancelled, dispatchCancellationAlerts });
+const { lookup: lookupZuriCancellation, commit: commitZuriCancellation } = createZuriCancellationServices({
+  db, token: ZURI_PDV_CANCEL_TOKEN, safeSecretEqual, cancelItem: deleteOrderItem,
+});
 
 const getExistingOrderSubmission = async (clientRequestId) => {
   if (!clientRequestId) return null;
@@ -9099,6 +9143,8 @@ const handlers = createRouteHandlers({
   deleteOrderItem,
   deleteOrderItemModifier,
   deleteOrderItemProduct,
+  lookupZuriCancellation,
+  commitZuriCancellation,
   deleteProduct,
   deleteSeller,
   ensureCmvForMenuProduct,
@@ -9229,3 +9275,8 @@ if (process.env.INVENTORY_RECONCILIATION_DISABLED !== '1') {
   }, INVENTORY_RECONCILIATION_INTERVAL_MS);
   inventoryWorker.unref();
 }
+const cancellationAlertWorker = setInterval(() => {
+  void dispatchCancellationAlerts();
+}, 15_000);
+cancellationAlertWorker.unref();
+void dispatchCancellationAlerts();

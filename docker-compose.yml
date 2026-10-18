@@ -2,6 +2,9 @@ version: '3.8'
 
 services:
   becoartes-operational:
+    env_file:
+      - path: /etc/becoartes-zuri-agent.env
+        required: false
     build:
       context: .
       args:
@@ -65,6 +68,7 @@ services:
       ZURI_WHATSAPP_BRIDGE_URL: ${ZURI_WHATSAPP_BRIDGE_URL:-}
       ZURI_WHATSAPP_BRIDGE_SECRET: ${ZURI_WHATSAPP_BRIDGE_SECRET:-}
       ZURI_WHATSAPP_BRIDGE_HOST_HEADER: ${ZURI_WHATSAPP_BRIDGE_HOST_HEADER:-}
+      CANCELLATION_OWNER_PHONE: ${CANCELLATION_OWNER_PHONE:-5511974717013}
       PAGBANK_API_BASE_URL: ${PAGBANK_API_BASE_URL:-https://api.pagseguro.com}
       PAGBANK_TOKEN: ${PAGBANK_TOKEN:-}
       PAGBANK_NOTIFICATION_URL: ${PAGBANK_NOTIFICATION_URL:-}

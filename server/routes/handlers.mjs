@@ -83,6 +83,8 @@ export const createRouteHandlers = (services) => ({
   'POST /api/order-items/delete': async (body, context) => services.deleteOrderItem(body, context.session),
   'POST /api/order-items/modifier/delete': async (body, context) => services.deleteOrderItemModifier(body, context.session),
   'POST /api/order-items/product/delete': async (body, context) => services.deleteOrderItemProduct(body, context.session),
+  'POST /api/zuri/cancellation/lookup': async (body, context) => services.lookupZuriCancellation(body, context.req),
+  'POST /api/zuri/cancellation/commit': async (body, context) => services.commitZuriCancellation(body, context.req),
   'POST /api/table-payments': async (body, context) => services.createTablePayment(body, context.session),
   'POST /api/table-payments/cancel': async (body, context) => services.cancelTablePayment(body, context.session),
   'GET /api/coupons/list': async () => services.listCoupons(),

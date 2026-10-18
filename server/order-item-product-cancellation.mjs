@@ -13,6 +13,7 @@ const comparableName = (value) => String(value || '')
 export const createOrderItemProductCancellation = ({
   db, assertSuperAdminItemCancellation, ensureTableAccess, parseJsonArray,
   normalizeText, osTimestamp, bumpCatalogVersion, notifyOrderItemCancelled,
+  dispatchCancellationAlerts = () => {},
 }) => async ({ itemId, keepModifierId, cancelContext }, session = null) => {
   await assertSuperAdminItemCancellation(session);
   const reasonCode = normalizeText(cancelContext?.reasonCode);
@@ -189,7 +190,8 @@ export const createOrderItemProductCancellation = ({
       sql: `INSERT INTO audit_logs
               (id, action, details, table_number, origin, author_id, author_name, timestamp)
             VALUES (?, 'order_item_product_cancelled_modifier_kept', ?, ?, 'pdv', ?, ?, ?)`,
-      args: [randomUUID(), JSON.stringify({ itemId, keepModifierId, keptSkuId: sku.id,
+      args: [randomUUID(), JSON.stringify({ ownerAlertVersion: 1, itemId, keepModifierId,
+        itemName: `${item.product_name || 'item'} (adicional ${modifier.name} mantido)`, keptSkuId: sku.id,
         splitItemId, quantity: item.quantity, historicalModifierPrice: Number(modifier.price || 0),
         reasonCode, reasonLabel, reasonNotes, inventoryReversalCount: reversedCount }),
       String(item.table_number || cancelContext?.tableNumber || ''), session?.id || null,
@@ -210,6 +212,7 @@ export const createOrderItemProductCancellation = ({
       quantity: Number(item.quantity || 0), sellerName: session?.name || 'Superadmin',
       sellerPermission: 'super_admin', reasonLabel, reasonNotes,
     });
+    void dispatchCancellationAlerts();
     return result;
   } catch (error) {
     try { await tx.rollback(); } catch { /* transaction already completed */ }

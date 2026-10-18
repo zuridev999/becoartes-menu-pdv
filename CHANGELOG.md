@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.26.0 - 2026-10-18
+
+- Registra em auditoria cada cancelamento de item, produto ou adicional e envia um aviso individual ao proprietário pelo WhatsApp da Zuri, com mesa, item, responsável e motivo.
+- Reconstrói avisos pendentes do registro transacional após reinício, evita duplicações por ID de auditoria e separa envio confirmado de resultado incerto para revisão humana.
+- Expõe consulta e cancelamento interno de item simples à Zuri com token de serviço, mesa e item revalidados, motivo específico e bloqueio para pagamentos ativos, pedidos fechados, quantidades múltiplas e adicionais.
+
 ## 1.25.1 - 2026-10-13
 
 - Corrige singular e plural nas contagens das categorias em todos os idiomas do cardápio.

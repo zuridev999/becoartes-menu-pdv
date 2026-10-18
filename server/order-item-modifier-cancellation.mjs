@@ -22,6 +22,7 @@ export const createOrderItemCancellationNotifier = ({ safeCreateOSNotification, 
 export const createOrderItemModifierCancellation = ({
   db, assertSuperAdminItemCancellation, normalizeText, parseJsonArray, ensureTableAccess,
   resolveOSContext, osTimestamp, createId, bumpCatalogVersion, notifyOrderItemCancelled,
+  dispatchCancellationAlerts = () => {},
 }) => async ({ itemId, modifierId, cancelContext }, session = null) => {
   await assertSuperAdminItemCancellation(session);
   const reasonCode = normalizeText(cancelContext?.reasonCode);
@@ -139,7 +140,8 @@ export const createOrderItemModifierCancellation = ({
   }, {
     sql: `INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name, timestamp)
           VALUES (?, 'order_modifier_cancelled', ?, ?, 'pdv', ?, ?, ?)`,
-    args: [createId(), JSON.stringify({ itemId, modifierId, modifierName: modifier.name, quantity: row.quantity,
+    args: [createId(), JSON.stringify({ ownerAlertVersion: 1, itemId, modifierId,
+      itemName: `adicional ${modifier.name}`, modifierName: modifier.name, quantity: row.quantity,
       reasonCode, reasonLabel, reasonNotes, inventoryReversalCount: movements.length }),
     String(row.table_number || cancelContext?.tableNumber || ''), session?.id || null, session?.name || 'Superadmin', new Date().toISOString()],
   });
@@ -154,5 +156,6 @@ export const createOrderItemModifierCancellation = ({
     reasonLabel,
     reasonNotes,
   });
+  void dispatchCancellationAlerts();
   return { orderId: row.order_id, inventoryReversalCount: movements.length, total };
 };

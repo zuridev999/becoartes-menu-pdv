@@ -8,6 +8,8 @@ const PUBLIC_BOOTSTRAP_ROUTES = new Set([
   'POST /api/pdv-terminal/authorize',
   'POST /api/table-access-token',
   'POST /api/qr/resolve',
+  'POST /api/zuri/cancellation/lookup',
+  'POST /api/zuri/cancellation/commit',
 ]);
 
 const PUBLIC_CUSTOMER_ROUTES = new Set([

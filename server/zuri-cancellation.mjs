@@ -1,0 +1,84 @@
+const fail = (message, statusCode = 409) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  throw error;
+};
+
+const allowedRequester = new Set(['5561983440871', '556183440871']);
+
+export const createZuriCancellationServices = ({ db, token, safeSecretEqual, cancelItem }) => {
+  const authenticate = (req) => {
+    if (!token) fail('Integração de cancelamento da Zuri indisponível.', 503);
+    const supplied = String(req?.headers?.['x-zuri-pdv-token'] || '');
+    if (!supplied || !safeSecretEqual(supplied, token)) fail('Acesso não autorizado.', 403);
+  };
+
+  const getTable = async (tableNumber) => {
+    const number = Number(tableNumber);
+    if (!Number.isInteger(number) || number < 1 || number > 200) fail('Informe o número da mesa.', 400);
+    const row = (await db.execute({
+      sql: 'SELECT id, number FROM tables WHERE CAST(number AS INTEGER) = ? LIMIT 1',
+      args: [number],
+    })).rows[0];
+    if (!row) fail('Mesa não encontrada.', 404);
+    const payment = (await db.execute({
+      sql: `SELECT id FROM table_payments WHERE table_id = ? AND status = 'active' LIMIT 1`,
+      args: [row.id],
+    })).rows[0];
+    if (payment) fail('Esta mesa já tem pagamento lançado; revisão manual necessária.');
+    return row;
+  };
+
+  const itemsForTable = async (tableId) => (await db.execute({
+    sql: `SELECT oi.id AS item_id, oi.order_id, oi.quantity, oi.selected_modifiers,
+                 m.name AS item_name, o.status AS order_status
+          FROM order_items oi JOIN orders o ON o.id = oi.order_id
+          LEFT JOIN menu m ON m.id = oi.product_id
+          WHERE o.table_id = ? AND o.status != 'closed'
+          ORDER BY o.created_at, oi.id LIMIT 100`,
+    args: [tableId],
+  })).rows.map(row => ({
+    itemId: String(row.item_id), orderId: String(row.order_id),
+    name: String(row.item_name || 'Item'), quantity: Number(row.quantity || 0),
+    modifiers: (() => {
+      try { return JSON.parse(String(row.selected_modifiers || '[]')).map(mod => String(mod.name || '')).filter(Boolean); }
+      catch { return []; }
+    })(),
+  }));
+
+  const lookup = async ({ tableNumber }, req) => {
+    authenticate(req);
+    const table = await getTable(tableNumber);
+    return { tableNumber: Number(table.number), items: await itemsForTable(table.id) };
+  };
+
+  const commit = async ({ tableNumber, itemId, reasonNotes, requesterPhone, sourceMessageId }, req) => {
+    authenticate(req);
+    const phone = String(requesterPhone || '').replace(/\D/g, '');
+    if (!allowedRequester.has(phone)) fail('Solicitante não habilitado para este fluxo.', 403);
+    const reason = String(reasonNotes || '').trim();
+    if (reason.length < 10 || reason.length > 500 || /^(cliente desistiu|desistiu|erro|cancelar)$/i.test(reason)) {
+      fail('Motivo insuficiente; explique brevemente a situação antes de cancelar.', 400);
+    }
+    if (!sourceMessageId || String(sourceMessageId).length > 180) fail('Mensagem de confirmação ausente.', 400);
+    const table = await getTable(tableNumber);
+    const items = await itemsForTable(table.id);
+    const item = items.find(entry => entry.itemId === String(itemId));
+    if (!item) fail('O item já não está nesta mesa aberta. Atualize a consulta.', 409);
+    if (item.quantity !== 1 || item.modifiers.length) {
+      fail('Linha com quantidade múltipla ou adicionais exige revisão do superadmin; nada foi cancelado.', 409);
+    }
+    const session = { id: 'admin-bootstrap', name: 'Matheus Alencar via Zuri', permission: 'admin' };
+    const outcome = await cancelItem({ itemId: item.itemId, cancelContext: {
+      tableNumber: Number(table.number), itemName: item.name, quantity: item.quantity,
+      reasonCode: 'freelancer_request', reasonLabel: 'Solicitação da equipe', reasonNotes: reason,
+      requesterPhone: phone, sourceMessageId: String(sourceMessageId),
+    } }, session);
+    if (!outcome?.orderId || outcome.idempotent) {
+      fail('Não foi possível confirmar um novo cancelamento. Confira a mesa antes de responder.', 409);
+    }
+    return { cancelled: true, tableNumber: Number(table.number), itemName: item.name, quantity: item.quantity };
+  };
+
+  return { lookup, commit };
+};
