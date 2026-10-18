@@ -43,6 +43,7 @@ import { createOrderItemModifierCancellation, createOrderItemCancellationNotifie
 import { createOrderItemProductCancellation } from './order-item-product-cancellation.mjs';
 import { cancellationAlertSchema, createOrderCancellationAlertService } from './order-cancellation-alerts.mjs';
 import { createZuriCancellationServices } from './zuri-cancellation.mjs';
+import { createZuriTableMergeServices, zuriTableMergeSchema } from './zuri-table-merge.mjs';
 import { createLioRuntime } from './lio/runtime.mjs';
 import { startBffServer } from './http-server.mjs';
 
@@ -800,6 +801,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS pdv_terminals (id TEXT PRIMARY KEY, public_key_jwk TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', device_info TEXT, first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP, last_seen_at DATETIME, last_ip TEXT)",
     "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, details TEXT, table_number TEXT, origin TEXT, author_id TEXT, author_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
     ...cancellationAlertSchema,
+    ...zuriTableMergeSchema,
     "CREATE TABLE IF NOT EXISTS closed_bills (id TEXT PRIMARY KEY, table_id TEXT, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, subtotal REAL NOT NULL, service_fee REAL DEFAULT 0, discount REAL DEFAULT 0, discount_reason TEXT, coupon_code TEXT, coupon_amount REAL DEFAULT 0, coupon_benefit TEXT, total REAL NOT NULL, payments TEXT, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS table_payments (id TEXT PRIMARY KEY, table_id TEXT NOT NULL, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, method TEXT NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, cancelled_at DATETIME, applied_closed_bill_id TEXT)",
     "CREATE TABLE IF NOT EXISTS pdv_coupons (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'active', note TEXT, created_by_id TEXT, created_by_name TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, redeemed_at DATETIME, redeemed_table_id TEXT, redeemed_closed_bill_id TEXT, customer_id TEXT, customer_name TEXT, phone TEXT, campaign_name TEXT, valid_until DATETIME, min_order_value REAL DEFAULT 0, selected_benefit TEXT, used_by_employee_id TEXT, used_by_employee TEXT, table_number INTEGER, order_id TEXT, whatsapp_message TEXT, sent_at DATETIME, benefit_type TEXT, discount_type TEXT, target_category TEXT, target_product_id TEXT, target_product_name TEXT, free_item_name TEXT, benefit_label TEXT, rule_json TEXT)",
@@ -4006,6 +4008,9 @@ const deleteOrderItemModifier = createOrderItemModifierCancellation({ db, assert
 const deleteOrderItemProduct = createOrderItemProductCancellation({ db, assertSuperAdminItemCancellation, normalizeText, parseJsonArray, ensureTableAccess: (...args) => ensureTableAccess(...args), osTimestamp, bumpCatalogVersion: () => bumpCatalogVersion(), notifyOrderItemCancelled, dispatchCancellationAlerts });
 const { lookup: lookupZuriCancellation, commit: commitZuriCancellation } = createZuriCancellationServices({
   db, token: ZURI_PDV_CANCEL_TOKEN, safeSecretEqual, cancelItem: deleteOrderItem,
+});
+const { lookup: lookupZuriTableMerge, commit: commitZuriTableMerge } = createZuriTableMergeServices({
+  db, token: ZURI_PDV_CANCEL_TOKEN, safeSecretEqual,
 });
 
 const getExistingOrderSubmission = async (clientRequestId) => {
@@ -9145,6 +9150,8 @@ const handlers = createRouteHandlers({
   deleteOrderItemProduct,
   lookupZuriCancellation,
   commitZuriCancellation,
+  lookupZuriTableMerge,
+  commitZuriTableMerge,
   deleteProduct,
   deleteSeller,
   ensureCmvForMenuProduct,

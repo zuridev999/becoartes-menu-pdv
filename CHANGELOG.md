@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.27.0 - 2026-10-18
+
+- Permite à Zuri conferir e unir duas mesas somente após o Alencar escolher o número que permanece e informar que retirou o outro QR code.
+- Revalida pagamentos, comandas, pedidos e revisões de QR no momento da transferência; movimenta apenas pedidos abertos e chamados pendentes em transação auditada e idempotente.
+- Não move histórico fechado nem afirma transferência quando não há trabalho aberto ou o estado exige conferência humana.
+
 ## 1.26.0 - 2026-10-18
 
 - Registra em auditoria cada cancelamento de item, produto ou adicional e envia um aviso individual ao proprietário pelo WhatsApp da Zuri, com mesa, item, responsável e motivo.

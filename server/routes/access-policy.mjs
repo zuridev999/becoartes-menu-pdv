@@ -10,6 +10,8 @@ const PUBLIC_BOOTSTRAP_ROUTES = new Set([
   'POST /api/qr/resolve',
   'POST /api/zuri/cancellation/lookup',
   'POST /api/zuri/cancellation/commit',
+  'POST /api/zuri/table-merge/lookup',
+  'POST /api/zuri/table-merge/commit',
 ]);
 
 const PUBLIC_CUSTOMER_ROUTES = new Set([
