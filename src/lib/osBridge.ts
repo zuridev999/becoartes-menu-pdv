@@ -1,8 +1,9 @@
 import { APP_COMMIT, APP_VERSION, getAppLabel } from './version';
+import { zordonRuntime } from './zordon-runtime';
 
 const MESSAGE_SOURCE = 'becoartes-pdv';
 const OS_MESSAGE_SOURCE = 'becoartes-os';
-const DEFAULT_OS_ORIGIN = 'https://os.becoartes.com';
+const DEFAULT_OS_ORIGIN = zordonRuntime ? window.location.origin : 'https://os.becoartes.com';
 const BRIDGE_VERSION = 1;
 
 type BridgeMessage = {

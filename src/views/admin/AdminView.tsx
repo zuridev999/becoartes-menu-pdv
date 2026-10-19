@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'qrcode';
+import { publicPdvBase, zordonRuntime } from '../../lib/zordon-runtime';
 import JSZip from 'jszip';
 import {
   Plus, Settings, LayoutDashboard, Package, Sparkles, User, TrendingUp,
@@ -156,7 +157,7 @@ const parseDateEnd = (value: string) => {
   return new Date(year, month - 1, day, 23, 59, 59, 999);
 };
 
-const QR_PUBLIC_BASE_URL = 'https://qr.becoartes.com';
+const QR_PUBLIC_BASE_URL = zordonRuntime ? publicPdvBase() : 'https://qr.becoartes.com';
 const QR_MENU_TEMPLATE_URL = '/qr/menu-qr-template.jpg';
 const QR_TEMPLATE_WIDTH = 3875;
 const QR_TEMPLATE_HEIGHT = 5463;

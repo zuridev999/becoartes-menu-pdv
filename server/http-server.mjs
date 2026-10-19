@@ -14,7 +14,7 @@ export function startBffServer({ port, handleLio, handleApi, serveStatic }) {
       return;
     }
     await serveStatic(req, res, url);
-  }).listen(port, () => {
+  }).listen(port, process.env.ZORDON_SAAS_RUNTIME === 'true' ? '127.0.0.1' : '0.0.0.0', () => {
     console.log(`Becoartes PDV BFF listening on :${port}`);
   });
 }

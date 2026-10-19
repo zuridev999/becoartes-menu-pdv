@@ -27,7 +27,7 @@ import { AdminApi, AppApi, CustomerTabApi, OpsApi, type PdvLockState } from '../
 import type { ReceiptData } from '../../lib/receiptPrint';
 import { businessDateKey, businessWeekday } from '../../lib/business-time';
 import { getOrderLocation, getPhysicalTablesPendingTransition, isTableVisibleForQrMode } from '../../lib/order-location';
-import { applyImageFallback, getImageSrc } from '../../lib/image';
+import { applyImageFallback, getImageSrc } from '../../lib/image'; import { zordonRuntime } from '../../lib/zordon-runtime';
 import { buildPdvCatalogCategories, getPdvCategoriesById, getPdvProductCategoryId, searchPdvProducts } from '../../lib/pdv-catalog';
 import { TableDispatchFooter, TableProductSearchHeader } from '../../components/pdv/TableOrderControls';
 import { TableOrderItemCard } from '../../components/pdv/TableOrderItemCard';
@@ -77,7 +77,7 @@ function isSameSaoPauloDate(date: Date | string | null | undefined, dateKey = ge
 
 function getDailyGoal(date = new Date()) {
   const dateKey = getLocalDateKey(date);
-  return DAILY_GOAL_EXCEPTIONS[dateKey] ?? DAILY_GOALS_BY_WEEKDAY[getSaoPauloWeekday(date)] ?? 0;
+  return zordonRuntime ? 0 : DAILY_GOAL_EXCEPTIONS[dateKey] ?? DAILY_GOALS_BY_WEEKDAY[getSaoPauloWeekday(date)] ?? 0;
 }
 
 function getGoalMessage(percent: number) {
@@ -742,7 +742,7 @@ export function PDVView() {
           </span>
           <div className="min-w-0">
             <p className="truncate text-base font-black leading-tight">
-              PDV <span className="text-primary">Becoartes</span>
+              PDV <span className="text-primary">{settings.unitName}</span>
             </p>
             <p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
               {isCashOpen ? 'Caixa aberto' : 'Caixa fechado'}
@@ -935,7 +935,7 @@ export function PDVView() {
 
       {isEmbedded && (
         <button
-          onClick={() => window.open('/pdv', '_blank', 'noopener,noreferrer')}
+          onClick={() => window.open(window.location.pathname, '_blank', 'noopener,noreferrer')}
           className="fixed right-8 bottom-8 z-50 glass-card p-4 border-primary/30 text-primary hover:bg-primary/10 transition-all"
           title="Abrir PDV em nova janela"
         >

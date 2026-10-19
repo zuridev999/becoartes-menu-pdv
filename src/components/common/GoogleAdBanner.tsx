@@ -5,10 +5,14 @@ const ADSENSE_CLIENT = import.meta.env.VITE_ADSENSE_CLIENT || 'ca-pub-8099608758
 const ADSENSE_SLOT = import.meta.env.VITE_ADSENSE_SLOT || '6877500198';
 const MOBILE_AD_HEIGHT_PROPERTY = '--beco-mobile-ad-height';
 
+export function GoogleAdBanner(props: Parameters<typeof GoogleAdBannerInner>[0]) {
+  return import.meta.env.VITE_ZORDON_MODE === 'true' ? null : <GoogleAdBannerInner {...props} />;
+}
+
 type GoogleAdPlacement = 'top' | 'operational-top' | 'mobile-bottom' | 'operational-bottom' | 'qr-menu-inline';
 type GoogleAdStatus = 'pending' | 'filled' | 'unfilled';
 
-export function GoogleAdBanner({
+function GoogleAdBannerInner({
   placement,
   onViewportVisibilityChange,
 }: {

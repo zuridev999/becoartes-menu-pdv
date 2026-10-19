@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { pdvPathname, pdvPath, zordonRuntime } from './lib/zordon-runtime';
 import { useStore } from './store';
 import { AnimatePresence } from 'framer-motion';
 import { ConnectionError } from './components/common/ConnectionError';
@@ -31,7 +32,7 @@ function App() {
     init, isLoading, initError, activeView, syncData, setActiveView, settings
   } = useStore();
   const [animationFinished, setAnimationFinished] = useState(() => {
-    const path = window.location.pathname.replace(/^\/+/, '');
+    const path = pdvPathname().replace(/^\/+/, '');
     const isDeliveryEntry = path.startsWith('delivery') || window.location.hostname.startsWith('delivery.');
     if (isDeliveryEntry) return true;
     // Skip animation if already shown in this session for this hostname
@@ -40,7 +41,7 @@ function App() {
 
   useEffect(() => {
     const start = async () => {
-      if (window.location.hostname.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(window.location.pathname)) {
+      if (window.location.hostname.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(pdvPathname())) {
         preloadQrEntry();
         void loadQrView();
       }
@@ -84,8 +85,8 @@ function App() {
   const isPublicTopAdView = activeView === 'tablet' || activeView === 'delivery';
   const isPdvView = activeView === 'pdv';
   const hasOperationalView = ['pdv', 'kitchen', 'admin'].includes(activeView);
-  const isQrView = activeView === 'qr' || window.location.hostname.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(window.location.pathname);
-  const isReadOnlyMenu = isPublicMenuRoute(window.location.hostname, window.location.pathname);
+  const isQrView = activeView === 'qr' || window.location.hostname.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(pdvPathname());
+  const isReadOnlyMenu = isPublicMenuRoute(window.location.hostname, pdvPathname());
 
   return (
     <AntigravityErrorBoundary>
@@ -124,7 +125,7 @@ function App() {
           <div className="flex flex-col items-center justify-center h-screen text-center p-12">
             <h2 className="text-4xl font-black italic mb-4 text-white">Módulo não encontrado</h2>
             <p className="text-gray-500 mb-8">O hostname <span className="text-primary font-bold">{window.location.hostname}</span> não está mapeado para nenhum módulo operacional.</p>
-            <button type="button" onClick={() => window.location.href = 'https://pdv.becoartes.com'} className="btn-beco btn-beco-purple px-8 py-4">Ir ao PDV Central</button>
+            <button type="button" onClick={() => window.location.href = zordonRuntime ? pdvPath('/pdv') : 'https://pdv.becoartes.com'} className="btn-beco btn-beco-purple px-8 py-4">Ir ao PDV Central</button>
           </div>
         )}
       </div>
