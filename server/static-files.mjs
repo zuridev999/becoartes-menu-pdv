@@ -111,7 +111,8 @@ export const createQrSitemap = (tableNumbers = Array.from({ length: 50 }, (_, in
   '',
 ].join('\n');
 
-export const createStaticHandler = ({ distDir, securityHeaders, mimeTypes }) => async (req, res, url) => {
+export const createStaticHandler = ({ distDir, securityHeaders, mimeTypes, handleMenuImage }) => async (req, res, url) => {
+  if (handleMenuImage && await handleMenuImage(req, res, url)) return;
   let pathname = decodeURIComponent(url.pathname);
   const hostname = normalizeHost(req.headers.host);
 

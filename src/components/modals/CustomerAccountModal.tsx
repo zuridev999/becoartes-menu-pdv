@@ -1,29 +1,13 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
-import { X, FileText, Receipt, LayoutDashboard, QrCode, CreditCard, Landmark, Loader2 } from 'lucide-react';
+import { X, FileText, Receipt, LayoutDashboard } from 'lucide-react';
 import { useStore } from '../../store';
-import { CustomerTabApi } from '../../lib/api';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 
-type PaymentMethod = 'pix' | 'credit' | 'debit';
-
-const paymentOptions: Array<{
-  method: PaymentMethod;
-  labelKey: string;
-  descriptionKey: string;
-  icon: typeof QrCode;
-}> = [
-  { method: 'pix', labelKey: 'payPix', descriptionKey: 'pixDescription', icon: QrCode },
-  { method: 'credit', labelKey: 'payCredit', descriptionKey: 'creditDescription', icon: CreditCard },
-  { method: 'debit', labelKey: 'payDebit', descriptionKey: 'debitDescription', icon: Landmark },
-];
-
 export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () => void; locationLabel?: string }) {
-  const { currentTableId, tables, settings, addNotification } = useStore();
-  const { t, locale, catalogText, errorText } = usePublicI18n();
-  const [loadingMethod, setLoadingMethod] = useState<PaymentMethod | null>(null);
+  const { currentTableId, tables, settings } = useStore();
+  const { t, locale, catalogText } = usePublicI18n();
   const table = tables.find(t => t.id === currentTableId);
 
   if (!table) return null;
@@ -40,32 +24,6 @@ export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () =
     .filter(payment => payment.status !== 'cancelled')
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0));
   const balance = Math.max(0, roundMoney(total - paid));
-  const canPayOnline = Boolean(table.customerTab?.id) && balance > 0.009;
-
-  const handlePayment = async (method: PaymentMethod) => {
-    if (!table.customerTab?.id) {
-      addNotification(t('openTabToPay'), 'error');
-      return;
-    }
-
-    setLoadingMethod(method);
-    try {
-      const result = await CustomerTabApi.createPaymentLink({
-        tabId: table.customerTab.id,
-        method,
-        returnUrl: window.location.href,
-      });
-      if (!result.checkoutUrl) {
-        throw new Error(t('onlinePayment'));
-      }
-      window.location.href = result.checkoutUrl;
-    } catch (error) {
-      addNotification(errorText(error), 'error');
-    } finally {
-      setLoadingMethod(null);
-    }
-  };
-
   return (
     <motion.div 
       initial={{ opacity: 0 }}
@@ -76,7 +34,7 @@ export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () =
       <motion.div 
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
-        className="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0a0a0c] shadow-2xl sm:max-h-[90vh] sm:rounded-[3rem]"
+        className="mobile-dialog flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0a0a0c] shadow-2xl sm:max-h-[90vh] sm:rounded-[3rem]"
       >
         <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] p-4 sm:p-10">
           <div className="flex min-w-0 items-center gap-3 sm:gap-6">
@@ -95,7 +53,7 @@ export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () =
           </button>
         </div>
 
-        <div className="custom-scrollbar flex-1 overflow-y-auto p-4 sm:p-12">
+        <div className="ios-touch-scroll custom-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-12">
           <div className="mb-8 space-y-6 sm:mb-12">
             {table.orders.length === 0 ? (
               <div className="text-center py-20 opacity-20">
@@ -105,8 +63,8 @@ export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () =
             ) : (
               table.orders.map((item, idx) => (
                 <div key={idx} className="flex justify-between items-start pb-6 border-b border-white/5 last:border-0 group">
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center mb-1">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap justify-between items-center gap-2 mb-1">
                       <p className="text-2xl font-black italic tracking-tighter">{item.quantity}x {catalogText(item.productId, item.name, 'name')}</p>
                       <p className="text-lg font-black text-white/90 sm:text-2xl">{formatCurrency((item.price + (item.selectedModifiers?.reduce((acc, m) => acc + m.price, 0) || 0)) * item.quantity, locale)}</p>
                     </div>
@@ -146,48 +104,15 @@ export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () =
             </div>
           </section>
 
-          <section className="mt-8 border-t border-white/10 pt-7">
-            <div className="mb-5">
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-accent">{t('onlinePayment')}</p>
-              <h3 className="text-2xl font-black italic tracking-tighter mt-1">{t('choosePayment')}</h3>
-              <p className="text-sm font-bold text-zinc-500 mt-2">
-                {t('securePayment')}
-              </p>
-            </div>
-
-            {!canPayOnline ? (
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 text-sm font-black text-zinc-500">
-                {balance <= 0.009 ? t('noOpenBalance') : t('openTabToPay')}
-              </div>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-3">
-                {paymentOptions.map(option => {
-                  const Icon = option.icon;
-                  const isLoading = loadingMethod === option.method;
-                  return (
-                    <button
-                      key={option.method}
-                      onClick={() => handlePayment(option.method)}
-                      disabled={Boolean(loadingMethod)}
-                      className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 text-left transition-all hover:border-accent/70 hover:bg-accent/10 disabled:opacity-60"
-                    >
-                      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/15 text-accent">
-                        {isLoading ? <Loader2 size={24} className="animate-spin" /> : <Icon size={24} />}
-                      </div>
-                      <p className="text-base font-black uppercase tracking-tight text-white">{isLoading ? t('generating') : t(option.labelKey)}</p>
-                      <p className="mt-1 text-xs font-bold leading-relaxed text-zinc-500">{t(option.descriptionKey)}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+          <p className="mt-6 rounded-2xl border border-white/10 p-4 text-sm text-zinc-300">
+            {balance <= 0.009 ? t('noOpenBalance') : t('payWithStaff')}
+          </p>
         </div>
 
-        <div className="p-10 bg-white/[0.02] border-t border-white/5">
+        <div className="shrink-0 p-3 sm:p-6 bg-white/[0.02] border-t border-white/5">
           <button
             onClick={onClose}
-            className="w-full py-8 btn-beco bg-white/5 text-white/50 text-xl font-black tracking-widest rounded-[2rem] hover:bg-white/10 transition-all uppercase"
+            className="w-full py-3 sm:py-5 btn-beco bg-white/5 text-white/50 text-xl font-black tracking-widest rounded-[2rem] hover:bg-white/10 transition-all uppercase"
           >
             {t('backToMenu')}
           </button>

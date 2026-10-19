@@ -193,7 +193,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
   const renderGridProduct = (p: Product) => (
     <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className={productCardClassName}>
       <div className={productImageClassName}>
-        <img src={getImageSrc(p.image)} alt={p.name} onError={applyImageFallback} className="w-full h-full object-cover object-center group-hover:scale-110 transition-all duration-500" />
+        <img src={getImageSrc(p.image, 320)} alt={p.name} loading="lazy" decoding="async" onError={applyImageFallback} className="w-full h-full object-cover object-center group-hover:scale-110 transition-all duration-500" />
         <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-black/70 backdrop-blur-xl px-3 md:px-4 py-2 rounded-xl font-black text-accent border border-white/10 text-sm md:text-base">{formatCurrency(p.price, locale)}</div>
       </div>
       <h4 className="font-black text-xl md:text-2xl mb-2 italic tracking-tighter leading-none">{catalogText(p.id, p.name, 'name')}</h4>
@@ -216,9 +216,9 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       </div>
       <div className="h-[122px] w-[106px] shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
         <img
-          src={getImageSrc(p.image)}
+          src={getImageSrc(p.image, 320)}
           alt={p.name}
-          onError={applyImageFallback}
+          loading="lazy" decoding="async" onError={applyImageFallback}
           className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
         />
       </div>
@@ -226,11 +226,11 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
   );
 
   return (
-    <div className={`flex min-h-0 overflow-hidden ${constrainToParent ? 'flex-1' : 'h-full'} ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'flex-col' : 'max-md:flex-col'}`}>
+    <div className={`flex min-h-0 min-w-0 overflow-hidden ${constrainToParent ? 'flex-1' : 'h-full'} ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'flex-col' : 'max-md:flex-col'}`}>
       {/* Sidebar de Categorias */}
-      <div className={`${navigationMode === 'menu' || navigationMode === 'continuous' ? 'w-full shrink-0 glass border-b border-white/5 pt-3 sm:pt-5 pb-3 px-3 sm:px-5 z-30' : 'w-full md:w-72 shrink-0 glass border-b md:border-b-0 md:border-r border-white/5 flex flex-col pt-3 md:pt-10 pb-3 md:pb-8 px-3 md:px-4 z-30'}`}>
+      <div className={`menu-navigation ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'w-full shrink-0 glass border-b border-white/5 pt-3 sm:pt-5 pb-3 px-3 sm:px-5 z-30' : 'w-full md:w-72 shrink-0 glass border-b md:border-b-0 md:border-r border-white/5 flex flex-col pt-3 md:pt-10 pb-3 md:pb-8 px-3 md:px-4 z-30'}`}>
         {(navigationMode === 'menu' || navigationMode === 'continuous') && (
-          <div className="flex items-center gap-3 mb-3 px-1">
+          <div className="menu-navigation-intro flex items-center gap-3 mb-3 px-1">
             <div className="w-9 h-9 rounded-2xl bg-primary/15 text-primary flex items-center justify-center">
               <Utensils size={17} />
             </div>
@@ -247,15 +247,15 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
             <button 
               key={cat} 
               onClick={() => handleCategorySelect(cat)} 
-              className={`shrink-0 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'min-w-[9.5rem] max-w-[12rem] px-4 py-3 rounded-2xl' : 'md:w-full px-4 py-3 md:p-6 rounded-2xl md:rounded-[2rem]'} text-left transition-all flex items-center justify-between gap-3 group ${selectedCategory === cat ? 'bg-gradient-to-br from-primary to-purple-600 text-white shadow-2xl md:scale-[1.05]' : 'text-gray-500 hover:bg-white/5'}`}
+              className={`menu-category-button shrink-0 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'min-w-[9.5rem] max-w-[12rem] px-4 py-3 rounded-2xl' : 'md:w-full px-4 py-3 md:p-6 rounded-2xl md:rounded-[2rem]'} text-left transition-all flex items-center justify-between gap-3 group ${selectedCategory === cat ? 'bg-gradient-to-br from-primary to-purple-600 text-white shadow-2xl md:scale-[1.05]' : 'text-gray-500 hover:bg-white/5'}`}
             >
               <div>
-                <p className={`font-black text-[8px] md:text-[10px] uppercase tracking-widest ${selectedCategory === cat ? 'text-white/70' : 'text-primary'}`}>
+                <p className={`menu-category-detail font-black text-[8px] md:text-[10px] uppercase tracking-widest ${selectedCategory === cat ? 'text-white/70' : 'text-primary'}`}>
                   {productCountByCategory.get(cat) || 0} {t(productCountByCategory.get(cat) === 1 ? 'item' : 'items')}
                 </p>
                 <h4 className="font-black text-sm md:text-lg tracking-tighter italic whitespace-nowrap">{getCategoryPresentation(cat).label}</h4>
                 {getCategoryPresentation(cat).subtitle && (
-                  <p className={`mt-1 text-[8px] font-black uppercase tracking-[0.12em] ${selectedCategory === cat ? 'text-white/65' : 'text-zinc-500'}`}>
+                  <p className={`menu-category-detail mt-1 text-[8px] font-black uppercase tracking-[0.12em] ${selectedCategory === cat ? 'text-white/65' : 'text-zinc-500'}`}>
                     {getCategoryPresentation(cat).subtitle}
                   </p>
                 )}
@@ -267,7 +267,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       </div>
 
       {/* Grid de Produtos */}
-      <div className={`ios-touch-scroll flex-1 min-h-0 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'p-4 sm:p-6 lg:p-10' : 'p-4 sm:p-8 lg:p-12'} custom-scrollbar bg-white/[0.01]`}>
+      <div className={`ios-touch-scroll flex-1 min-h-0 min-w-0 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'p-4 sm:p-6 lg:p-10' : 'p-4 sm:p-8 lg:p-12'} custom-scrollbar bg-white/[0.01]`}>
          <div className={`flex flex-col md:flex-row md:justify-between md:items-center gap-4 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'mb-5 sm:mb-8' : 'mb-6 md:mb-16'}`}>
             <div className="min-w-0">
               <h3 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter italic leading-none truncate">{navigationMode === 'continuous' ? t('menu') : catalogText(availableCategories.find((category) => category.name === selectedCategory)?.id || selectedCategory, selectedCategory, 'name')}</h3>
@@ -348,7 +348,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
            <div className="space-y-6">
              {filteredMenu.map(p => (
 	               <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className="glass-card flex items-center p-6 border-white/5 hover:border-primary/30 group transition-all w-full text-left">
-	                 <div className="w-48 h-48 rounded-3xl overflow-hidden mr-8"><img src={getImageSrc(p.image)} alt={p.name} onError={applyImageFallback} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" /></div>
+	                 <div className="w-48 h-48 rounded-3xl overflow-hidden mr-8"><img src={getImageSrc(p.image, 320)} alt={p.name} loading="lazy" decoding="async" onError={applyImageFallback} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" /></div>
                  <div className="flex-1">
                    <h4 className="font-black text-3xl mb-3 italic tracking-tighter">{catalogText(p.id, p.name, 'name')}</h4>
                    <p className="text-gray-500 font-bold text-lg leading-relaxed max-w-2xl">{catalogText(p.id, p.description || '', 'description')}</p>

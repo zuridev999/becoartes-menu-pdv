@@ -63,7 +63,7 @@ export function CustomerOrderModal({
       <motion.div 
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
-        className="w-full max-w-3xl bg-[#0a0a0c] rounded-[2rem] sm:rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] relative"
+        className="mobile-dialog w-full max-w-3xl bg-[#0a0a0c] rounded-[2rem] sm:rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] relative"
       >
         <AnimatePresence>
           {isSent && (
@@ -103,7 +103,7 @@ export function CustomerOrderModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-12 custom-scrollbar">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-12 custom-scrollbar">
           {table.cart.length === 0 ? (
             <div className={`text-center py-16 sm:py-24 ${hasAccountItems ? '' : 'opacity-20'}`}>
               <ShoppingBag size={76} className="mx-auto mb-8 sm:hidden" />

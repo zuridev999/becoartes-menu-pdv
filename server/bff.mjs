@@ -7,6 +7,7 @@ import { createApiHandler } from './routes/api-router.mjs';
 import { createAccessGuards, createRouteAccessEnforcer } from './routes/access-policy.mjs';
 import { createRouteHandlers } from './routes/handlers.mjs';
 import { createStaticHandler } from './static-files.mjs';
+import { compactCatalogImages, createMenuImageHandler } from './menu-images.mjs';
 import { businessDateGapDays, businessDateKey, resolveBusinessTimeZone } from './business-time.mjs';
 import { getPdvPublishBlockers } from './catalog/product-lifecycle.mjs';
 import { availabilitySchema, seedReviewedRecipeLinks, readAvailabilityProjection } from './catalog/availability.mjs';
@@ -2597,7 +2598,7 @@ const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, v
     ));
 
   return filterSnapshotForContext({
-    catalogData,
+    catalogData: isPublicCustomerView ? compactCatalogImages(catalogData) : catalogData,
     catalogVersion,
     sellers,
     kitchenData,
@@ -9261,6 +9262,7 @@ const serveStatic = createStaticHandler({
   distDir,
   securityHeaders,
   mimeTypes,
+  handleMenuImage: createMenuImageHandler({ distDir, getCatalogData }),
 });
 
 // Bootstrap is an explicit startup writer, not a side effect of the first GET.

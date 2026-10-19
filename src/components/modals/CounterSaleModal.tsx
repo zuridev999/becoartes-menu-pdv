@@ -209,7 +209,7 @@ export function CounterSaleModal({
         exit={{ scale: 0.96, y: 20, opacity: 0 }}
         className="fixed inset-0 z-[650] flex items-start xl:items-center justify-center p-2 sm:p-4 xl:p-6 pointer-events-none font-['Outfit'] overflow-y-auto overscroll-contain"
       >
-        <div className="glass-card pointer-events-auto w-full max-w-[1440px] border-white/10 shadow-2xl flex flex-col overflow-hidden h-[calc(100dvh-1.5rem)] max-h-[960px] mb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <div className="mobile-dialog glass-card pointer-events-auto w-full max-w-[1440px] border-white/10 shadow-2xl flex flex-col overflow-hidden h-[calc(100dvh-1.5rem)] max-h-[960px] ">
           <div className="p-4 xl:p-5 border-b border-white/10 flex flex-col lg:flex-row gap-2 lg:items-center lg:justify-between">
             <div className="flex items-center gap-4">
               <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-amber-400 text-black flex items-center justify-center shadow-2xl shadow-amber-500/20 shrink-0">
@@ -226,7 +226,7 @@ export function CounterSaleModal({
             </button>
           </div>
 
-          <div className="lg:flex-1 lg:min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="flex-1 min-h-0 overflow-y-auto ios-touch-scroll lg:overflow-hidden grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px]">
             <div className="lg:min-h-0 flex min-w-0 flex-col p-4">
               <div className="mb-4 flex flex-col gap-3">
                 <div className="relative flex-1">

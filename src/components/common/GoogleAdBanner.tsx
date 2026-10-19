@@ -23,8 +23,21 @@ export function GoogleAdBanner({
   const isQrMenuInline = placement === 'qr-menu-inline';
 
   useEffect(() => {
+    if (!isCompactTop) return;
+    const syncHeight = () => document.documentElement.style.setProperty(
+      '--beco-top-ad-height', `${containerRef.current?.getBoundingClientRect().height || 0}px`,
+    );
+    syncHeight();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncHeight);
+    if (containerRef.current) observer?.observe(containerRef.current);
+    return () => { observer?.disconnect(); document.documentElement.style.removeProperty('--beco-top-ad-height'); };
+  }, [isCompactTop, status]);
+
+  useEffect(() => {
     const ad = adRef.current;
     if (!ad) return undefined;
+    // The QR menu is already usable when its inline advertising slot mounts.
+    if (isQrMenuInline) window.dispatchEvent(new Event('beco:menu-ready'));
 
     const syncStatus = () => {
       if (ad.dataset.adStatus === 'filled') {
@@ -46,7 +59,7 @@ export function GoogleAdBanner({
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [isQrMenuInline]);
 
   useEffect(() => {
     if (placement !== 'mobile-bottom' || status !== 'filled' || !containerRef.current) {

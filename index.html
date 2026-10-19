@@ -33,7 +33,15 @@
       )) {
         adsenseScript.dataset.overlays = 'collapsed-bottom';
       }
-      document.head.appendChild(adsenseScript);
+      const isQrEntry = becoHost.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(window.location.pathname);
+      if (isQrEntry) {
+        // Keep Google's consent flow intact; start it only after the menu is usable.
+        window.addEventListener('beco:menu-ready', () => {
+          window.setTimeout(() => document.head.appendChild(adsenseScript), 1500);
+        }, { once: true });
+      } else {
+        document.head.appendChild(adsenseScript);
+      }
 
       if (becoHost.startsWith('qr.')) {
         const isPublicMenu = /^\/cardapio\/?$/.test(window.location.pathname);
@@ -68,7 +76,7 @@
         window.addEventListener('load', () => {
           let refreshing = false;
           navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (refreshing) return;
+            if (refreshing || isQrEntry) return;
             refreshing = true;
             window.location.reload();
           });

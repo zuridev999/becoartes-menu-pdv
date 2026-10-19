@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 1.28.2 - 2026-10-19
+
+- Corrige altura e largura no QR/PDV móvel; conta e carrinho ficam acessíveis sem reserva fixa para anúncios ausentes.
+- Substitui a sequência de aberturas do QR por uma estrutura única de carregamento e antecipa a validação da mesa em paralelo, preservando a autorização.
+- Serve imagens WebP redimensionadas sob demanda, com cache limitado e originais preservados; catálogo público deixa de embutir fotos base64.
+- Compacta adicionais e rodapés no celular, evita zoom automático dos campos no iOS e carrega fotos do catálogo progressivamente.
+- Remove pagamento online incompleto de Minha conta, orientando atendimento pela equipe em português, inglês, espanhol e francês.
+- Adia publicidade no QR até o cardápio estar pronto, sem suprimir consentimento; evita recarga do QR na instalação do service worker.
+
 ## 1.28.1 - 2026-10-18
 
 - Preserva no navegador o título, descrição e URL canônica da página pública `/cardapio`, sem substituí-los pela instrução de mesa.

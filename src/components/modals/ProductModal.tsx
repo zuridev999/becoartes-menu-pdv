@@ -88,17 +88,17 @@ export function ProductModal({
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[700]" />
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`fixed inset-0 z-[750] flex items-center justify-center pointer-events-none font-['Outfit'] ${modalShellClass}`}>
-        <div className={`glass-card relative flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
-          <div className={`relative shrink-0 overflow-hidden ${mediaPanelClass}`}>
-             <img src={getImageSrc(product.image)} alt={catalogText(product.id, product.name, 'name')} onError={applyImageFallback} className="w-full h-full object-cover" />
+        <div className={`mobile-dialog product-dialog glass-card relative flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
+          <div className={`product-media relative shrink-0 overflow-hidden ${mediaPanelClass}`}>
+             <img src={getImageSrc(product.image, 960)} alt={catalogText(product.id, product.name, 'name')} onError={applyImageFallback} decoding="async" className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
-             <div className={tabletLandscape ? 'absolute bottom-5 left-5 right-5 min-[900px]:bottom-10 min-[900px]:left-10 min-[900px]:right-10' : 'absolute bottom-16 left-16'}>
+             <div className={tabletLandscape ? 'absolute bottom-5 left-5 right-5 min-[900px]:bottom-10 min-[900px]:left-10 min-[900px]:right-10' : 'absolute bottom-3 left-4 right-12 lg:bottom-16 lg:left-16'}>
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2 block">{catalogText(product.categoryId || '', product.categoryName || '', 'name')}</span>
-                <h2 className={`${tabletLandscape ? 'text-3xl min-[900px]:text-5xl' : 'text-7xl'} font-black tracking-tighter italic text-white mb-2 min-[900px]:mb-4 leading-none`}>{catalogText(product.id, product.name, 'name')}</h2>
-                <p className={`${tabletLandscape ? 'hidden min-[900px]:block text-base max-w-sm' : 'text-xl max-w-md'} text-gray-400 font-medium italic`}>"{catalogText(product.id, product.description || '', 'description')}"</p>
+                <h2 className={`${tabletLandscape ? 'text-2xl min-[900px]:text-5xl' : 'text-2xl lg:text-7xl'} font-black tracking-tighter italic text-white mb-2 min-[900px]:mb-4 leading-none`}>{catalogText(product.id, product.name, 'name')}</h2>
+                <p className={`${tabletLandscape ? 'hidden min-[900px]:block text-base max-w-sm' : 'hidden lg:block text-xl max-w-md'} text-gray-400 font-medium italic`}>"{catalogText(product.id, product.description || '', 'description')}"</p>
              </div>
           </div>
-          <div className={`${contentPanelClass} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
+          <div className={`product-panel ${contentPanelClass} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
              <button type="button" aria-label={t('close')} onClick={onClose} className={`${tabletLandscape ? 'top-4 right-4 p-3' : 'top-3 right-3 sm:top-5 sm:right-5 p-3 sm:p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
              {!qrMobileFlow && (
              <div className="flex justify-between items-center mb-5 lg:hidden">
@@ -106,7 +106,7 @@ export function ProductModal({
              </div>
              )}
 
-             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${qrMobileFlow ? 'ios-touch-scroll pt-12 space-y-3 min-[900px]:space-y-6' : ''} ${tabletLandscape && !qrMobileFlow ? 'space-y-4 min-[900px]:space-y-6' : !tabletLandscape ? 'space-y-6 lg:space-y-10' : ''}`}>
+             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${qrMobileFlow ? 'ios-touch-scroll pt-10 space-y-3 min-[900px]:space-y-6' : ''} ${tabletLandscape && !qrMobileFlow ? 'space-y-4 min-[900px]:space-y-6' : !tabletLandscape ? 'space-y-6 lg:space-y-10' : ''}`}>
                 {product.modifierGroups?.map(group => {
                   const selectedInGroup = selectedModifiers.filter(m => group.modifiers.some(gm => gm.id === m.id));
                   const isSingle = group.maxChoices === 1;
@@ -132,8 +132,8 @@ export function ProductModal({
                             <motion.button
                               key={m.id} 
                               type="button"
-                              animate={isSelected ? { y: 0 } : { y: [0, -5, 0] }}
-                              transition={isSelected ? { duration: 0.15 } : { repeat: Infinity, duration: 1.45, ease: 'easeInOut' }}
+                              animate={{ y: 0 }}
+                              transition={{ duration: 0.15 }}
                               onClick={() => {
                                 if (isSelected) {
                                   setSelectedModifiers(selectedModifiers.filter(sm => sm.id !== m.id));
@@ -196,8 +196,8 @@ export function ProductModal({
              )}
 
              <div className={`${tabletLandscape ? qrMobileFlow ? 'mt-2 pt-3 space-y-2.5 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-4 pt-4 space-y-3 min-[900px]:mt-5 min-[900px]:pt-5 min-[900px]:space-y-4' : 'mt-4 sm:mt-8 pt-4 sm:pt-8 space-y-4 sm:space-y-6'} border-t border-white/10 shrink-0`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 glass p-2 rounded-2xl border-white/5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="product-quantity flex items-center gap-4 glass p-2 rounded-2xl border-white/5">
                      <button type="button" aria-label={t('decreaseQuantity')} disabled={!canChangeItemQuantity} onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-11 h-11 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">-</button>
                      <span className="text-xl font-black w-8 text-center">{quantity}</span>
                      <button type="button" aria-label={t('increaseQuantity')} disabled={!canChangeItemQuantity} onClick={() => setQuantity(quantity + 1)} className="w-11 h-11 flex items-center justify-center font-black text-xl hover:text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed">+</button>
@@ -212,7 +212,7 @@ export function ProductModal({
                 type="button"
                 onClick={handleAdd}
                 disabled={isAdding}
-                className={`${tabletLandscape ? qrMobileFlow ? 'py-4 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-5 sm:py-8 text-sm sm:text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4 disabled:opacity-50 disabled:pointer-events-none`}
+                className={`${tabletLandscape ? qrMobileFlow ? 'py-3 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-5 min-[900px]:py-6 text-sm min-[900px]:text-base' : 'py-3 sm:py-8 text-sm sm:text-2xl'} w-full btn-beco btn-beco-purple font-black tracking-widest rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-4 disabled:opacity-50 disabled:pointer-events-none`}
               >
                 {isAdding ? t('adding').toUpperCase() : t('addToOrder').toUpperCase()}
               </button>

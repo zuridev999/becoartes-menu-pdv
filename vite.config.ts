@@ -36,6 +36,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/menu-image': { target: bffDevTarget, changeOrigin: true },
       '/api': {
         target: bffDevTarget,
         changeOrigin: true,

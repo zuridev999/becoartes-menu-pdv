@@ -26,8 +26,12 @@ const normalizeExternalImageUrl = (value: string) => {
   return trimmed;
 };
 
-export const getImageSrc = (src?: string | null) => {
+export const getImageSrc = (src?: string | null, width?: 320 | 640 | 960) => {
   const value = src?.trim();
+  if (width && value?.startsWith('/menu-image?')) return `${value}&w=${width}`;
+  if (width && /^\/(images|slideshow)\/.+\.(png|jpe?g|webp)$/i.test(value || '')) {
+    return `/menu-image?asset=${encodeURIComponent(value!)}&w=${width}`;
+  }
   return value ? normalizeExternalImageUrl(value) : FALLBACK_IMAGE;
 };
 

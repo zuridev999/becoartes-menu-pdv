@@ -32,8 +32,7 @@ html, body {
   height: 100% !important;
   width: 100% !important;
   overflow: hidden !important;
-  position: fixed !important;
-  display: flex;
+  min-width: 0;
   /* Grafite metálico com wash roxo/âmbar — fundo escuro padrão. */
   background:
     radial-gradient(circle at 85% -5%, rgba(250, 204, 21, 0.05), transparent 26rem),
@@ -139,14 +138,16 @@ html.light body {
 }
 
 .qr-mobile-shell {
-  height: calc(100vh - 50px);
-  max-height: calc(100vh - 50px);
+  height: 100vh;
+  max-height: 100vh;
+  width: 100%;
+  min-width: 0;
 }
 
 @supports (height: 100dvh) {
   .qr-mobile-shell {
-    height: calc(100dvh - 50px);
-    max-height: calc(100dvh - 50px);
+    height: 100dvh;
+    max-height: 100dvh;
   }
 }
 
@@ -168,6 +169,35 @@ textarea {
 
 #root {
   width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.app-shell { width: 100%; min-width: 0; height: 100%; overflow: hidden; }
+.pdv-mobile-shell { height: calc(100vh - var(--beco-top-ad-height, 0px)); min-width: 0; }
+.mobile-dialog { max-height: calc(100vh - 24px); min-width: 0; }
+.qr-account-footer {
+  flex-shrink: 0;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid #ffffff12;
+  background: #0a0a0c;
+}
+@supports (height: 100dvh) {
+  .pdv-mobile-shell { height: calc(100dvh - var(--beco-top-ad-height, 0px)); }
+  .mobile-dialog { max-height: calc(100dvh - 24px); }
+}
+@media (max-width: 759px) {
+  .product-dialog { height: calc(100vh - 24px); }
+  .product-media { height: 120px !important; min-height: 120px !important; max-height: 120px !important; }
+  .product-panel { padding: 12px !important; }
+  .product-quantity { gap: 4px !important; padding: 4px !important; }
+  .product-quantity span { width: 24px; }
+  .menu-navigation { padding: 8px 12px !important; }
+  .menu-navigation-intro, .menu-category-detail { display: none; }
+  .menu-category-button { padding: 8px 12px !important; min-width: 0 !important; }
+  input, select, textarea { font-size: 16px !important; }
+  @supports (height: 100dvh) { .product-dialog { height: calc(100dvh - 24px); } }
 }
 
 @theme {

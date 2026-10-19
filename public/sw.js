@@ -26,6 +26,9 @@ self.addEventListener('activate', (event) => {
     }).then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
       .then((clients) => Promise.all(
         clients.map((client) => {
+          // Do not interrupt a customer's menu/cart during first install or update.
+          const page = new URL(client.url);
+          if (page.hostname.startsWith('qr.') || /^\/(qr|mesa|cardapio)(\/|$)/.test(page.pathname)) return;
           if ('navigate' in client) return client.navigate(client.url);
           return client.postMessage({ type: 'BECOARTES_APP_UPDATED', version: CACHE_NAME });
         })

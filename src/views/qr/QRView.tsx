@@ -24,6 +24,8 @@ import { GoogleAdBanner } from '../../components/common/GoogleAdBanner';
 import { getQrVisitId } from '../../lib/qr-analytics';
 import { preserveLocalCart } from '../../lib/order-location';
 import { useBuildRefresh } from '../../hooks/useBuildRefresh';
+import { resolveQrEntry } from '../../lib/qr-entry';
+import { MenuSkeleton } from '../../components/common/MenuSkeleton';
 
 const normalizeCpfInput = (value: string) => value.replace(/\D/g, '').slice(0, 11);
 
@@ -82,13 +84,12 @@ const fireQrAnalytics = (input: {
 };
 
 export function QRView() {
-  const { currentTableId, tables, setCurrentTableId, settings } = useStore();
+  const { currentTableId, tables, setCurrentTableId } = useStore();
   const { t, locale } = usePublicI18n();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
-  const [isInlineAdVisible, setIsInlineAdVisible] = useState(false);
   const [routeTableNumber, setRouteTableNumber] = useState<number | null>(getRouteTableNumber);
   const [qrResolution, setQrResolution] = useState<QrFlowResolution | null>(null);
   const [isTableAccessReady, setIsTableAccessReady] = useState(false);
@@ -113,7 +114,7 @@ export function QRView() {
     setIsTableAccessReady(false);
     setTableAccessError('');
     setQrResolution(null);
-    AppApi.resolveQrFlow(tableNumber, getQrVisitId())
+    resolveQrEntry(tableNumber, tableAccessRetry > 0)
       .then(async (resolution) => {
         if (cancelled) return;
         setQrResolution(resolution);
@@ -139,7 +140,7 @@ export function QRView() {
     return () => {
       cancelled = true;
     };
-  }, [isCouponRulesPage, setCurrentTableId, settings.qrMode, tableAccessRetry]);
+  }, [isCouponRulesPage, setCurrentTableId, tableAccessRetry]);
 
   useEffect(() => {
     if (!isTableAccessReady || !qrResolution) return;
@@ -197,17 +198,7 @@ export function QRView() {
   }
 
   if (routeTableNumber && tables.length === 0) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-8 text-center">
-        <div className="glass-card max-w-md p-8 border-primary/30">
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">{t('validatingTable')}</p>
-          <h1 className="text-4xl font-black tracking-tighter mb-3">{t('table')} {routeTableNumber}</h1>
-          <p className="text-sm font-bold text-gray-400">
-            {t('openingMenu')}
-          </p>
-        </div>
-      </div>
-    );
+    return <MenuSkeleton />;
   }
 
   if (routeTableNumber && tables.length > 0 && !routeTable) {
@@ -244,15 +235,7 @@ export function QRView() {
         </main>
       );
     }
-    return (
-      <div className="min-h-screen bg-[#0a0a0c] text-white font-['Outfit'] flex items-center justify-center p-8 text-center">
-        <div className="glass-card max-w-md p-8 border-primary/30">
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-3">{t('validatingAccess')}</p>
-          <h1 className="text-4xl font-black tracking-tighter mb-3">{t('table')} {routeTableNumber}</h1>
-          <p className="text-sm font-bold text-gray-400">{t('openingSecureMenu')}</p>
-        </div>
-      </div>
-    );
+    return <MenuSkeleton />;
   }
 
   const cartTotal = getOrderItemsTotal(currentTable?.cart || []);
@@ -323,8 +306,7 @@ export function QRView() {
       </div>
 
       <div
-        className="min-h-0 flex flex-1 flex-col overflow-hidden sm:pb-28"
-        style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
+        className="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden"
       >
         <MenuCatalog
           onProductSelect={handleProductSelect}
@@ -332,7 +314,7 @@ export function QRView() {
           navigationMode="continuous"
           presentation="compact-menu"
           constrainToParent
-          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" onViewportVisibilityChange={setIsInlineAdVisible} />}
+          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" />}
           footerContent={(
             <footer className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center shadow-2xl shadow-black/20">
               <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
@@ -345,12 +327,11 @@ export function QRView() {
 
       {/* CTA principal do celular: revisar/enviar pedido quando houver carrinho */}
       <div
-        className={`fixed left-3 right-3 z-50 transition duration-200 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 ${isInlineAdVisible ? 'pointer-events-none translate-y-4 opacity-0' : ''}`}
-        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem + var(--beco-mobile-ad-height, 0px))' }}
+        className="qr-account-footer"
       >
         <button 
           onClick={handlePrimaryAccountAction}
-          className="w-full sm:w-auto glass-card px-5 sm:px-8 py-4 flex items-center justify-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 sm:scale-110 active:scale-95 transition-all"
+          className="w-full glass-card px-4 py-3 flex items-center justify-center gap-3 border-primary/30 shadow-2xl shadow-primary/20 active:scale-95 transition-all"
         >
           {hasCartItems ? <Send size={20} className="text-accent" /> : <FileText size={20} className="text-accent" />}
           <div className="text-left">
@@ -414,7 +395,6 @@ function ComandaQRExperience({
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isServiceOpen, setIsServiceOpen] = useState(false);
-  const [isInlineAdVisible, setIsInlineAdVisible] = useState(false);
   const [tab, setTab] = useState<CustomerTab | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
@@ -756,8 +736,7 @@ function ComandaQRExperience({
       </div>
 
       <div
-        className="min-h-0 flex flex-1 flex-col overflow-hidden sm:pb-28"
-        style={{ paddingBottom: 'calc(6.5rem + var(--beco-mobile-ad-height, 0px))' }}
+        className="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden"
       >
         <MenuCatalog
           onProductSelect={handleProductSelect}
@@ -765,7 +744,7 @@ function ComandaQRExperience({
           navigationMode="continuous"
           presentation="compact-menu"
           constrainToParent
-          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" onViewportVisibilityChange={setIsInlineAdVisible} />}
+          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" />}
           footerContent={(
             <footer className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center shadow-2xl shadow-black/20">
               <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
@@ -777,10 +756,9 @@ function ComandaQRExperience({
       </div>
 
       <div
-        className={`fixed left-3 right-3 z-50 transition duration-200 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 ${isInlineAdVisible ? 'pointer-events-none translate-y-4 opacity-0' : ''}`}
-        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 1rem + var(--beco-mobile-ad-height, 0px))' }}
+        className="qr-account-footer"
       >
-        <button onClick={handlePrimaryAccountAction} className="w-full sm:w-auto glass-card px-5 sm:px-8 py-4 flex items-center justify-center gap-4 border-primary/30 shadow-2xl shadow-primary/20 sm:scale-110 active:scale-95 transition-all">
+        <button onClick={handlePrimaryAccountAction} className="w-full glass-card px-4 py-3 flex items-center justify-center gap-3 border-primary/30 shadow-2xl shadow-primary/20 active:scale-95 transition-all">
           {hasCartItems ? <Send size={20} className="text-accent" /> : <FileText size={20} className="text-accent" />}
           <div className="text-left">
             <p className="text-[8px] font-black uppercase text-gray-500">

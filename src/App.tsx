@@ -13,12 +13,15 @@ import { GoogleAdBanner } from './components/common/GoogleAdBanner';
 import { postOSMessage, subscribeOSMessages } from './lib/osBridge';
 import { PublicI18nProvider } from './lib/public-i18n';
 import { isPublicMenuRoute } from './lib/public-menu-route';
+import { preloadQrEntry } from './lib/qr-entry';
+import { MenuSkeleton } from './components/common/MenuSkeleton';
 
 const TabletView = lazy(() => import('./views/tablet/TabletView').then(module => ({ default: module.TabletView })));
 const PDVView = lazy(() => import('./views/pdv/PDVView').then(module => ({ default: module.PDVView })));
 const KitchenView = lazy(() => import('./views/kitchen/KitchenView').then(module => ({ default: module.KitchenView })));
 const AdminView = lazy(() => import('./views/admin/AdminView').then(module => ({ default: module.AdminView })));
-const QRView = lazy(() => import('./views/qr/QRView').then(module => ({ default: module.QRView })));
+const loadQrView = () => import('./views/qr/QRView').then(module => ({ default: module.QRView }));
+const QRView = lazy(loadQrView);
 const PublicMenuView = lazy(() => import('./views/qr/PublicMenuView').then(module => ({ default: module.PublicMenuView })));
 const DeliveryView = lazy(() => import('./views/delivery/DeliveryView').then(module => ({ default: module.DeliveryView })));
 const ComandaView = lazy(() => import('./views/comanda/ComandaView').then(module => ({ default: module.ComandaView })));
@@ -37,6 +40,10 @@ function App() {
 
   useEffect(() => {
     const start = async () => {
+      if (window.location.hostname.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(window.location.pathname)) {
+        preloadQrEntry();
+        void loadQrView();
+      }
       await init();
       postOSMessage('ready', {
         view: useStore.getState().activeView,
@@ -84,12 +91,12 @@ function App() {
     <AntigravityErrorBoundary>
       <PublicI18nProvider settings={settings}>
       <AnimatePresence>
-        {(!animationFinished || isLoading) && (
+        {!isQrView && (!animationFinished || isLoading) && (
           <PremiumLoader onComplete={handleAnimationComplete} isLoading={isLoading} />
         )}
       </AnimatePresence>
 
-      <div className="min-h-screen bg-transparent">
+      <div className="app-shell bg-transparent">
         <NotificationDisplay />
         {!isLoading && !initError && hasOperationalView && <ChecklistAlertDisplay />}
         {!isLoading && !initError && isPublicTopAdView && <GoogleAdBanner placement="top" />}
@@ -98,9 +105,10 @@ function App() {
           <ConnectionError error={initError} isPublic={isQrView} retry={() => void init()} />
         )}
         {/* Roteamento de Views com Hostname Fallback */}
-        <Suspense fallback={null}>
+        {isQrView && isLoading && <MenuSkeleton />}
+        <Suspense fallback={isQrView && !isLoading ? <MenuSkeleton /> : null}>
           {!initError && activeView === 'tablet' && <TabletView />}
-          {!initError && activeView === 'qr' && (isReadOnlyMenu ? <PublicMenuView /> : <QRView />)}
+          {!isLoading && !initError && activeView === 'qr' && (isReadOnlyMenu ? <PublicMenuView /> : <QRView />)}
           {!initError && activeView === 'pdv' && <PDVView />}
           {!initError && activeView === 'kitchen' && <KitchenView />}
           {!initError && activeView === 'admin' && <AdminView />}
