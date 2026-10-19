@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.28.1 - 2026-10-18
+
+- Preserva no navegador o título, descrição e URL canônica da página pública `/cardapio`, sem substituí-los pela instrução de mesa.
+
 ## 1.28.0 - 2026-10-18
 
 - Adiciona `https://qr.becoartes.com/cardapio` como URL pública fixa, sem número de mesa, para consultar o mesmo catálogo atualizado do QR.

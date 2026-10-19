@@ -36,18 +36,23 @@
       document.head.appendChild(adsenseScript);
 
       if (becoHost.startsWith('qr.')) {
+        const isPublicMenu = /^\/cardapio\/?$/.test(window.location.pathname);
         const tableMatch = window.location.pathname.match(/^\/mesa\/(\d+)\/?$/);
         const tableNumber = tableMatch?.[1];
-        const pageTitle = tableNumber ? `Cardápio Becoartes | Mesa ${tableNumber}` : 'Cardápio Becoartes';
-        const pageDescription = tableNumber
-          ? `Cardápio digital Becoartes da Mesa ${tableNumber}. Consulte pratos, bebidas e acompanhe sua comanda.`
-          : 'Cardápio digital Becoartes. Escaneie o QR code identificado na mesa para consultar e pedir.';
+        const pageTitle = isPublicMenu ? 'Cardápio Becoartes | Pratos e bebidas' : tableNumber ? `Cardápio Becoartes | Mesa ${tableNumber}` : 'Cardápio Becoartes';
+        const pageDescription = isPublicMenu
+          ? 'Consulte pratos, bebidas e preços do cardápio Becoartes. Pedidos são feitos pelo QR code da mesa.'
+          : tableNumber
+            ? `Cardápio digital Becoartes da Mesa ${tableNumber}. Consulte pratos, bebidas e acompanhe sua comanda.`
+            : 'Cardápio digital Becoartes. Escaneie o QR code identificado na mesa para consultar e pedir.';
         document.title = pageTitle;
         document.querySelector('meta[name="description"]')?.setAttribute('content', pageDescription);
         document.querySelector('meta[name="robots"]')?.setAttribute('content', 'index,follow,max-image-preview:large');
-        document.querySelector('link[rel="canonical"]')?.setAttribute('href', tableNumber
-          ? `https://qr.becoartes.com/mesa/${tableNumber}`
-          : 'https://qr.becoartes.com/');
+        document.querySelector('link[rel="canonical"]')?.setAttribute('href', isPublicMenu
+          ? 'https://qr.becoartes.com/cardapio'
+          : tableNumber
+            ? `https://qr.becoartes.com/mesa/${tableNumber}`
+            : 'https://qr.becoartes.com/');
       } else if (becoHost.startsWith('tablet.')) {
         document.title = 'Becoartes Tablet';
       } else if (becoHost.startsWith('coz.')) {
