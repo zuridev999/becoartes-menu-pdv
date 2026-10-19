@@ -26,3 +26,19 @@ export async function isCompanyOwnerSession(db, companyId, session = null) {
   const role = String(result.rows[0]?.role || '').trim().toLowerCase();
   return role === 'super_admin' || (process.env.ZORDON_SAAS_RUNTIME === 'true' && role === 'admin');
 }
+
+export async function validateCompanySession(db, session) {
+  if (process.env.ZORDON_SAAS_RUNTIME !== 'true' || !session) return session;
+  const id=String(session.id||'').replace(/^os:/,'');
+  const result=await db.execute({sql:'SELECT role FROM users WHERE id=? AND empresa_id=? AND COALESCE(ativo,1)=1',args:[id,process.env.OS_EMPRESA_ID]});
+  return result.rows[0] && result.rows[0].role===session.osRole ? session : null;
+}
+
+export async function createSaasStationSession({ pin, station, login, createSessionToken, isAdminSession }) {
+  const result=await login({pin,view:['kitchen','bar'].includes(station)?station:'tablet'});
+  if(!result?.seller||!isAdminSession(result.seller))return {valid:false,sessionToken:null};
+  // Proves owner's PIN, but the customer-facing tablet receives only operator
+  // privileges, never the owner's administrative token.
+  const seller={...result.seller,permission:'operator',stationAccess:true};
+  return {valid:true,seller,sessionToken:createSessionToken(seller)};
+}

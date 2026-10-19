@@ -2559,6 +2559,7 @@ const getRestrictedSnapshot = (view = 'pdv') => ({
 const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, view = 'pdv', session = null, operationAccessAllowed = true } = {}) => {
   const safeView = ['tablet', 'qr', 'delivery', 'kitchen', 'bar', 'pdv', 'admin'].includes(view) ? view : 'pdv';
   const isPublicCustomerView = safeView === 'qr' || safeView === 'delivery';
+  if (process.env.ZORDON_SAAS_RUNTIME === 'true' && !isPublicCustomerView && !session) return { ...getRestrictedSnapshot(safeView), accessRestricted: false };
 
   if (!isPublicCustomerView && !operationAccessAllowed && !canAccessOutsideOperationIp(session)) {
     return getRestrictedSnapshot(safeView);
@@ -2779,6 +2780,7 @@ const authorizeComandaAccess = async ({ pin }) => {
 };
 
 const validateTabletSetupPin = async ({ pin, station }, { operationAccessAllowed = true } = {}) => {
+  if (process.env.ZORDON_SAAS_RUNTIME === 'true') return (await import('./auth/saas-seats.mjs')).createSaasStationSession({pin,station,login,createSessionToken,isAdminSession});
   const safePin = String(pin || '');
   const requestedStation = String(station || '').trim().toLowerCase();
   const isProductionStationRequest = requestedStation === 'kitchen' || requestedStation === 'bar';
