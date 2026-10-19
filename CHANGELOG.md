@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.28.0 - 2026-10-18
+
+- Adiciona `https://qr.becoartes.com/cardapio` como URL pública fixa, sem número de mesa, para consultar o mesmo catálogo atualizado do QR.
+- Mantém a rota de consulta sem carrinho, pedido, comanda ou ação operacional; os QRs específicos das mesas continuam funcionando normalmente.
+- Inclui metadados da rota pública e testes de isolamento entre o cardápio de consulta e o fluxo de pedidos.
+
 ## 1.27.0 - 2026-10-18
 
 - Permite à Zuri conferir e unir duas mesas somente após o Alencar escolher o número que permanece e informar que retirou o outro QR code.

@@ -12,12 +12,14 @@ import { ChecklistAlertDisplay } from './components/common/ChecklistAlertDisplay
 import { GoogleAdBanner } from './components/common/GoogleAdBanner';
 import { postOSMessage, subscribeOSMessages } from './lib/osBridge';
 import { PublicI18nProvider } from './lib/public-i18n';
+import { isPublicMenuRoute } from './lib/public-menu-route';
 
 const TabletView = lazy(() => import('./views/tablet/TabletView').then(module => ({ default: module.TabletView })));
 const PDVView = lazy(() => import('./views/pdv/PDVView').then(module => ({ default: module.PDVView })));
 const KitchenView = lazy(() => import('./views/kitchen/KitchenView').then(module => ({ default: module.KitchenView })));
 const AdminView = lazy(() => import('./views/admin/AdminView').then(module => ({ default: module.AdminView })));
 const QRView = lazy(() => import('./views/qr/QRView').then(module => ({ default: module.QRView })));
+const PublicMenuView = lazy(() => import('./views/qr/PublicMenuView').then(module => ({ default: module.PublicMenuView })));
 const DeliveryView = lazy(() => import('./views/delivery/DeliveryView').then(module => ({ default: module.DeliveryView })));
 const ComandaView = lazy(() => import('./views/comanda/ComandaView').then(module => ({ default: module.ComandaView })));
 
@@ -76,6 +78,7 @@ function App() {
   const isPdvView = activeView === 'pdv';
   const hasOperationalView = ['pdv', 'kitchen', 'admin'].includes(activeView);
   const isQrView = activeView === 'qr' || window.location.hostname.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(window.location.pathname);
+  const isReadOnlyMenu = isPublicMenuRoute(window.location.hostname, window.location.pathname);
 
   return (
     <AntigravityErrorBoundary>
@@ -97,7 +100,7 @@ function App() {
         {/* Roteamento de Views com Hostname Fallback */}
         <Suspense fallback={null}>
           {!initError && activeView === 'tablet' && <TabletView />}
-          {!initError && activeView === 'qr' && <QRView />}
+          {!initError && activeView === 'qr' && (isReadOnlyMenu ? <PublicMenuView /> : <QRView />)}
           {!initError && activeView === 'pdv' && <PDVView />}
           {!initError && activeView === 'kitchen' && <KitchenView />}
           {!initError && activeView === 'admin' && <AdminView />}

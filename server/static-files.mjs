@@ -25,6 +25,15 @@ const escapeHtml = (value) => String(value)
 
 export const resolvePageMetadata = ({ host, pathname }) => {
   const hostname = normalizeHost(host);
+  if (hostname === 'qr.becoartes.com' && /^\/cardapio\/?$/.test(pathname)) {
+    return {
+      title: 'Cardápio Becoartes | Pratos e bebidas',
+      description: 'Consulte pratos, bebidas e preços do cardápio Becoartes. Pedidos são feitos pelo QR code da mesa.',
+      canonical: 'https://qr.becoartes.com/cardapio',
+      robots: 'index,follow,max-image-preview:large',
+      fallback: 'Cardápio Becoartes. Ative o JavaScript para consultar pratos, bebidas e preços.',
+    };
+  }
   const tableMatch = hostname === 'qr.becoartes.com'
     ? pathname.match(/^\/mesa\/(\d+)\/?$/)
     : null;
@@ -96,6 +105,7 @@ export const createQrRobotsTxt = () => [
 export const createQrSitemap = (tableNumbers = Array.from({ length: 50 }, (_, index) => index + 1)) => [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+  '  <url><loc>https://qr.becoartes.com/cardapio</loc></url>',
   ...tableNumbers.map((tableNumber) => `  <url><loc>https://qr.becoartes.com/mesa/${tableNumber}</loc></url>`),
   '</urlset>',
   '',

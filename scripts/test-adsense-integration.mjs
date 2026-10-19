@@ -57,7 +57,7 @@ assert.equal((qrView.match(/afterIntroContent=\{<GoogleAdBanner placement="qr-me
 assert.equal((qrView.match(/pointer-events-none translate-y-4 opacity-0/g) || []).length, 2);
 assert.match(component, /new IntersectionObserver/);
 assert.match(component, /entry\.intersectionRatio >= 0\.2/);
-assert.equal((qrView.match(/h-\[calc\(100dvh-50px\)\] max-h-\[calc\(100dvh-50px\)\] min-h-0/g) || []).length, 2);
+assert.equal((qrView.match(/className="min-h-0 flex flex-1 flex-col overflow-hidden sm:pb-28"/g) || []).length, 2);
 assert.match(pdvView, /h-\[calc\(100dvh-50px\)\]/);
 assert.match(pdvView, /overflow-y-scroll overscroll-contain custom-scrollbar/);
 assert.equal((qrView.match(/className="min-h-0 flex flex-1 flex-col overflow-hidden sm:pb-28"/g) || []).length, 2);
@@ -98,12 +98,18 @@ assert.match(tableHtml, /<link rel="canonical" href="https:\/\/qr\.becoartes\.co
 assert.match(tableHtml, /<meta name="robots" content="index,follow,max-image-preview:large" \/>/);
 assert.match(tableHtml, /Cardápio digital Becoartes da Mesa 22/);
 
+const publicMenuMetadata = resolvePageMetadata({ host: 'qr.becoartes.com', pathname: '/cardapio' });
+assert.equal(publicMenuMetadata.canonical, 'https://qr.becoartes.com/cardapio');
+assert.doesNotMatch(publicMenuMetadata.title, /Mesa \d+/);
+assert.match(publicMenuMetadata.description, /Pedidos são feitos pelo QR code da mesa/);
+
 const qrRobots = createQrRobotsTxt();
 assert.match(qrRobots, /User-agent: Mediapartners-Google\nAllow: \//);
 assert.match(qrRobots, /Sitemap: https:\/\/qr\.becoartes\.com\/sitemap\.xml/);
 
 const qrSitemap = createQrSitemap();
-assert.equal((qrSitemap.match(/<url>/g) || []).length, 50);
+assert.equal((qrSitemap.match(/<url>/g) || []).length, 51);
+assert.match(qrSitemap, /<loc>https:\/\/qr\.becoartes\.com\/cardapio<\/loc>/);
 assert.match(qrSitemap, /<loc>https:\/\/qr\.becoartes\.com\/mesa\/22<\/loc>/);
 assert.doesNotMatch(qrSitemap, /mesa\/51/);
 
