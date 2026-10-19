@@ -1512,6 +1512,8 @@ const activateOsUserAsSeller = async ({ userId, pin }) => {
   return { activated: true, seller };
 };
 
+const insertUserWithinPlan = async (statement) => (await import('./auth/saas-seats.mjs')).insertUserWithinPlan(db, OS_EMPRESA_ID, statement);
+
 const createOsUserAsSeller = async ({ name, pin, employmentType }) => {
   const safeName = requireString(name, 'name').trim();
   const safePin = requireString(pin, 'pin').trim();
@@ -1566,7 +1568,7 @@ const createOsUserAsSeller = async ({ name, pin, employmentType }) => {
   const email = `pdv+${id}@becoartes.local`;
   const passwordHash = hashDeliveryPassword(randomBytes(24).toString('hex'));
 
-  await db.execute({
+  await insertUserWithinPlan({
     sql: `
       INSERT INTO users (
         id, empresa_id, nome, email, password_hash, role, funcao, ativo, pin,
@@ -2142,18 +2144,7 @@ const getPdvLockState = async () => {
   };
 };
 
-const isSuperAdminSession = async (session = null) => {
-  if (String(session?.osRole || '').toLowerCase() === 'super_admin') return true;
-
-  const sessionId = String(session?.id || '').replace(/^os:/, '');
-  if (!sessionId) return false;
-
-  const result = await db.execute({
-    sql: 'SELECT role FROM users WHERE id = ? AND empresa_id = ? AND COALESCE(ativo, 1) = 1 LIMIT 1',
-    args: [sessionId, OS_EMPRESA_ID],
-  });
-  return String(result.rows[0]?.role || '').trim().toLowerCase() === 'super_admin';
-};
+const isSuperAdminSession = async (session = null) => (await import('./auth/saas-seats.mjs')).isCompanyOwnerSession(db, OS_EMPRESA_ID, session);
 
 const assertSuperAdminLockControl = async (session = null) => {
   if (await isSuperAdminSession(session)) return;
@@ -2455,6 +2446,10 @@ const getTables = async () => {
 };
 
 const ensureDefaultSellers = async () => {
+  if (process.env.ZORDON_SAAS_RUNTIME === 'true') {
+    await syncOperationalUsersToSellers();
+    return;
+  }
   const defaults = [
     { id: 'admin-bootstrap', name: 'Admin Full', nickname: 'Admin', role: 'gerente', permission: 'admin', pin: BOOTSTRAP_ADMIN_PIN },
     { id: 'manager-default', name: 'Gerente', nickname: 'Gerente', role: 'gerente', permission: 'manager', pin: DEFAULT_MANAGER_PIN },
@@ -2564,6 +2559,7 @@ const getRestrictedSnapshot = (view = 'pdv') => ({
 const getAppSnapshot = async ({ includeCatalog = true, includeAuditLimit = 50, view = 'pdv', session = null, operationAccessAllowed = true } = {}) => {
   const safeView = ['tablet', 'qr', 'delivery', 'kitchen', 'bar', 'pdv', 'admin'].includes(view) ? view : 'pdv';
   const isPublicCustomerView = safeView === 'qr' || safeView === 'delivery';
+  if (process.env.ZORDON_SAAS_RUNTIME === 'true' && !isPublicCustomerView && !session) return { ...getRestrictedSnapshot(safeView), accessRestricted: false };
 
   if (!isPublicCustomerView && !operationAccessAllowed && !canAccessOutsideOperationIp(session)) {
     return getRestrictedSnapshot(safeView);
@@ -2784,6 +2780,7 @@ const authorizeComandaAccess = async ({ pin }) => {
 };
 
 const validateTabletSetupPin = async ({ pin, station }, { operationAccessAllowed = true } = {}) => {
+  if (process.env.ZORDON_SAAS_RUNTIME === 'true') return (await import('./auth/saas-seats.mjs')).createSaasStationSession({pin,station,login,createSessionToken,isAdminSession});
   const safePin = String(pin || '');
   const requestedStation = String(station || '').trim().toLowerCase();
   const isProductionStationRequest = requestedStation === 'kitchen' || requestedStation === 'bar';
@@ -7787,6 +7784,9 @@ const closeShift = async ({ id, closingBalance }) => {
 
 const addSeller = async ({ seller }, session = null) => {
   const safeSeller = seller || {};
+  if (process.env.ZORDON_SAAS_RUNTIME === 'true') {
+    return createOsUserAsSeller({ name: safeSeller.name, pin: safeSeller.pin, employmentType: safeSeller.employmentType });
+  }
   const pin = requireString(safeSeller.pin, 'seller.pin');
   if (!/^\d{4}$/.test(pin)) {
     const error = new Error('PIN deve ter 4 dígitos.');
@@ -7945,6 +7945,7 @@ const deleteSeller = async ({ id }) => {
 
 const updateSellerStatus = async ({ id, status }) => {
   requireString(id, 'id');
+  if (process.env.ZORDON_SAAS_RUNTIME === 'true' && id.startsWith('os:')) throw new Error('Altere o acesso em Usuários no OS para respeitar o limite do plano.');
   const safeStatus = status === 'inactive' ? 'inactive' : 'active';
   await db.execute({
     sql: "UPDATE sellers SET status = ? WHERE id = ?",
@@ -9267,6 +9268,7 @@ const serveStatic = createStaticHandler({
 
 // Bootstrap is an explicit startup writer, not a side effect of the first GET.
 await ensureDatabaseReady();
+await (await import('./auth/saas-seats.mjs')).seedCompanySettings(db);
 await ensureDefaultSellersReady();
 if (process.env.BFF_DATABASE_BOOTSTRAP !== 'validate') {
   await ensureTablesUpTo(200);

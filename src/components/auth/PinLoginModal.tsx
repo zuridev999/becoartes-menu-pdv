@@ -3,8 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, ChevronRight, User } from 'lucide-react';
 import { useStore } from '../../store';
 import { getPermissionLabel } from '../../lib/permissions';
+import { zordonRuntime } from '../../lib/zordon-runtime';
+import { PdvTerminalLogin } from './PdvTerminalLogin';
 
 export function PinLoginModal() {
+  return zordonRuntime ? <PdvTerminalLogin /> : <LegacyPinLoginModal />;
+}
+
+function LegacyPinLoginModal() {
   const { sellers, login, addNotification } = useStore();
   const [selectedSeller, setSelectedSeller] = useState<any>(null);
   const [pin, setPin] = useState('');

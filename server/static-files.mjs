@@ -24,6 +24,7 @@ const escapeHtml = (value) => String(value)
   .replaceAll("'", '&#39;');
 
 export const resolvePageMetadata = ({ host, pathname }) => {
+  if (process.env.ZORDON_SAAS_RUNTIME === 'true') return { title: process.env.ZORDON_COMPANY_NAME || 'Zordon PDV', description: 'Cardápio e operação da empresa.', canonical: `${process.env.OS_PUBLIC_URL?.replace(/\/os\/app$/, '') || ''}${process.env.ZORDON_PDV_BASE || ''}${pathname}`, robots: 'noindex,nofollow', fallback: 'Ative o JavaScript para acessar o sistema.' };
   const hostname = normalizeHost(host);
   if (hostname === 'qr.becoartes.com' && /^\/cardapio\/?$/.test(pathname)) {
     return {

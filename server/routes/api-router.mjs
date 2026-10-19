@@ -1,6 +1,7 @@
 import { assertSameOrigin, readJsonBody, sendJson } from '../http.mjs';
 import { createHealthPayload } from '../health.mjs';
 import { randomUUID } from 'node:crypto';
+import { validateCompanySession } from '../auth/saas-seats.mjs';
 
 const isTransientServiceError = (error) => /fetch failed|timeout|timed out|etimedout|econnreset|socket hang up/i.test(String(error?.message || error || ''));
 const isExpectedClientError = (error) => (
@@ -61,7 +62,7 @@ export const createApiHandler = ({
     }
 
     const body = req.method === 'GET' ? {} : await readJsonBody(req, { maxBytes: maxJsonBodyBytes });
-    const session = getSessionFromRequest(req);
+    const session = await validateCompanySession(db, getSessionFromRequest(req));
     const isLoginRoute = routeKey === 'POST /api/auth/login' || routeKey === 'POST /api/tablet/setup-login' || routeKey === 'POST /api/comanda/access';
     const isTrustedTerminalSession = Boolean(session?.trustedTerminalId);
     // Login por PIN nunca deve herdar permissão de uma sessão antiga. Isso evita

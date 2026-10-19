@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { pdvPathname, zordonRuntime } from './lib/zordon-runtime';
 import { ProductSchema, SellerSchema } from './lib/schemas';
 import { createId } from './lib/id';
 import { getOrderItemsTotal } from './lib/totals';
@@ -213,10 +214,10 @@ export const useStore = create<AppState>((set, get) => ({
   currentShift: null,
   cashState: null,
   settings: {
-    unitName: 'Becoartes',
-    mode: 'demo',
+    unitName: zordonRuntime ? 'Sua empresa' : 'Becoartes',
+    mode: zordonRuntime ? 'production' : 'demo',
     currency: 'BRL',
-    serviceTax: 13,
+    serviceTax: zordonRuntime ? 0 : 13,
     qrMode: 'mesa',
     qrCodes: {
       tableRevisions: {},
@@ -225,14 +226,14 @@ export const useStore = create<AppState>((set, get) => ({
     pdvPermissions: {},
     pdvUserPermissions: {},
     pdv: {
-      tickerEnabled: true,
+      tickerEnabled: !zordonRuntime,
       tickerText: 'Sempre circular, andar entre as mesas, conversar com os clientes, recolher copos e talheres sujos com agilidade. Nunca deixar copos e talheres sujos na mesa depois do consumo do cliente. Simpatia: recebam o cliente como se aqui fosse a segunda casa deles.'
     },
     theme: 'dark-becoartes',
     tablet: {
       inactivityTimeout: 60,
       autoBanner: true,
-      bannerText: 'Bem-vindo ao Becoartes!',
+      bannerText: zordonRuntime ? 'Bem-vindo!' : 'Bem-vindo ao Becoartes!',
       bannerUrls: ['/slideshow/beco-drinks.jpg', '/slideshow/beco-food.jpg', '/slideshow/beco-bar.jpg'],
       fullscreen: false,
       viewMode: 'grid',
@@ -419,7 +420,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       // 4. Determinar View Inicial pela URL e Hostname
       const hostname = window.location.hostname;
-      const fullPath = window.location.pathname.substring(1);
+      const fullPath = pdvPathname().substring(1);
 
       let initialView: any = 'tablet';
       let initialAdminMode: any = 'settings';

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.29.0 - 2026-10-19
+
+- Adiciona build isolado Zordon, com rotas por empresa, armazenamento de sessão separado e QR da própria operação.
+- Inicializa empresas sem vendedores, metas, anúncios ou mensagens particulares do Becoartes.
+- Aplica limite transacional de usuários por plano e permite ao administrador da própria empresa gerenciar a operação.
+- Este modo é usado pelo novo serviço Zordon; a publicação não altera o runtime operacional Becoartes.
+
 ## 1.28.2 - 2026-10-19
 
 - Corrige altura e largura no QR/PDV móvel; conta e carrinho ficam acessíveis sem reserva fixa para anúncios ausentes.

@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { usePublicI18n } from '../../lib/public-i18n';
 import { useStore } from '../../store';
 import { fallbackImageSrc, getImageSrc } from '../../lib/image';
+import { zordonRuntime } from '../../lib/zordon-runtime';
 
 export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => void, isLoading: boolean }) {
   const { t } = usePublicI18n();
@@ -26,9 +27,9 @@ export function PremiumLoader({ onComplete, isLoading }: { onComplete: () => voi
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[1000] flex flex-col items-center justify-center overflow-hidden bg-[#0a0a0c] p-6 font-['Outfit']"
     >
-      <img src="/favicon.svg" alt="Becoartes" className="mb-6 h-14 w-14 rounded-2xl" />
+      <img src={zordonRuntime ? '/os/logo.svg' : '/favicon.svg'} alt={zordonRuntime ? 'Zordon' : 'Becoartes'} className="mb-6 h-14 w-14 rounded-2xl" />
       <div className="text-center">
-        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Becoartes</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">{zordonRuntime ? 'Zordon OS' : 'Becoartes'}</p>
         <h2 className="mt-2 text-2xl font-black text-white">{isQr ? t('menu') : 'Preparando a operação'}</h2>
         <div className="mt-4 flex items-center justify-center gap-3 text-zinc-400" role="status" aria-live="polite">
           {isLoading ? (

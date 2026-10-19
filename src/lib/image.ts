@@ -1,5 +1,6 @@
-const FALLBACK_IMAGE =
-  '/slideshow/beco-food.jpg';
+import { pdvPath, zordonRuntime } from './zordon-runtime';
+const FALLBACK_IMAGE = zordonRuntime ? '/os/logo.svg' : '/slideshow/beco-food.jpg';
+const scoped = (value: string) => zordonRuntime && value.startsWith('/') && !value.startsWith('/os/') ? pdvPath(value) : value;
 
 const normalizeExternalImageUrl = (value: string) => {
   const trimmed = value.trim();
@@ -28,11 +29,11 @@ const normalizeExternalImageUrl = (value: string) => {
 
 export const getImageSrc = (src?: string | null, width?: 320 | 640 | 960) => {
   const value = src?.trim();
-  if (width && value?.startsWith('/menu-image?')) return `${value}&w=${width}`;
+  if (width && value?.startsWith('/menu-image?')) return scoped(`${value}&w=${width}`);
   if (width && /^\/(images|slideshow)\/.+\.(png|jpe?g|webp)$/i.test(value || '')) {
-    return `/menu-image?asset=${encodeURIComponent(value!)}&w=${width}`;
+    return scoped(`/menu-image?asset=${encodeURIComponent(value!)}&w=${width}`);
   }
-  return value ? normalizeExternalImageUrl(value) : FALLBACK_IMAGE;
+  return value ? scoped(normalizeExternalImageUrl(value)) : FALLBACK_IMAGE;
 };
 
 export const fallbackImageSrc = FALLBACK_IMAGE;

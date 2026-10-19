@@ -2,6 +2,7 @@ import type { Category, ClosedBill, CounterSaleInput, Coupon, CustomerTab, Modif
 import { createPdvTerminalIdentity, signPdvTerminalChallenge } from './pdv-terminal-browser';
 import { createRequestTimeoutSignal } from './request-timeout';
 import { getQrVisitId } from './qr-analytics';
+import { pdvPathname } from './zordon-runtime';
 import type { CashCount } from './cash-count';
 
 export type CashClosureCount = {
@@ -252,7 +253,7 @@ const saveDeliveryTrackingToken = (orderId: string, token?: string | null) => {
 
 const getCurrentView = () => {
   if (typeof window === 'undefined') return 'pdv';
-  const path = window.location.pathname.replace(/^\/+/, '');
+  const path = pdvPathname().replace(/^\/+/, '');
   const host = window.location.hostname;
   if (path.startsWith('admin')) return 'admin';
   if (path.startsWith('delivery')) return 'delivery';
