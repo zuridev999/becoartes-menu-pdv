@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Renova automaticamente a credencial pública da mesa quando o QR recebe a resposta específica de acesso inválido e repete a operação uma única vez com a mesma chave idempotente.
+- Atualiza o Vite para 6.4.5 e elimina os alertas de segurança conhecidos pelo auditor de dependências.
+
 ## 1.29.0 - 2026-10-19
 
 - Adiciona build isolado Zordon, com rotas por empresa, armazenamento de sessão separado e QR da própria operação.

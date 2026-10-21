@@ -4,6 +4,11 @@ import { createRequestTimeoutSignal } from './request-timeout';
 import { getQrVisitId } from './qr-analytics';
 import { pdvPathname } from './zordon-runtime';
 import type { CashCount } from './cash-count';
+import {
+  getPublicTableAccessRefreshTarget,
+  shouldRefreshPublicTableAccess,
+  type PublicTableAccessRefreshTarget,
+} from './public-table-access-retry';
 
 export type CashClosureCount = {
   id: string;
@@ -268,7 +273,7 @@ const getCurrentView = () => {
   return 'pdv';
 };
 
-const postJson = async <T>(path: string, body: unknown, options: RequestInit = {}): Promise<T> => {
+const performPostJson = async <T>(path: string, body: unknown, options: RequestInit = {}) => {
   const response = await fetch(path, {
     ...options,
     method: 'POST',
@@ -277,6 +282,48 @@ const postJson = async <T>(path: string, body: unknown, options: RequestInit = {
   });
 
   const payload = await readApiEnvelope<T>(response);
+
+  return { response, payload };
+};
+
+let publicTableAccessRefreshInFlight: {
+  key: string;
+  promise: Promise<PublicTableAccess>;
+} | null = null;
+
+const refreshPublicTableAccess = (target: PublicTableAccessRefreshTarget) => {
+  const key = `${target.tableId || ''}:${target.tableNumber || ''}`;
+  if (publicTableAccessRefreshInFlight?.key === key) return publicTableAccessRefreshInFlight.promise;
+
+  const promise = (async () => {
+    const { response, payload } = await performPostJson<PublicTableAccess>('/api/table-access-token', {
+      origin: 'qr',
+      ...target,
+    });
+    if (!response.ok || !payload.ok || !payload.data?.token) {
+      throw new Error(payload.error || `Falha ao renovar acesso da mesa (${response.status})`);
+    }
+    setPublicTableAccess(payload.data);
+    return payload.data;
+  })();
+
+  publicTableAccessRefreshInFlight = { key, promise };
+  void promise.finally(() => {
+    if (publicTableAccessRefreshInFlight?.promise === promise) publicTableAccessRefreshInFlight = null;
+  }).catch(() => undefined);
+  return promise;
+};
+
+const postJson = async <T>(path: string, body: unknown, options: RequestInit = {}): Promise<T> => {
+  let { response, payload } = await performPostJson<T>(path, body, options);
+
+  if (shouldRefreshPublicTableAccess({ path, status: response.status, error: payload.error, body })) {
+    const target = getPublicTableAccessRefreshTarget(body);
+    if (target) {
+      await refreshPublicTableAccess(target);
+      ({ response, payload } = await performPostJson<T>(path, body, options));
+    }
+  }
 
   if (!response.ok || !payload.ok) {
     throw new Error(payload.error || `Falha na API (${response.status})`);

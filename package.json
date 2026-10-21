@@ -10,7 +10,7 @@
     "lint:baseline": "node scripts/check-eslint-baseline.mjs",
     "test:module-size": "node scripts/check-mega-module-baseline.mjs",
     "typecheck": "tsc -b --pretty false",
-    "test": "node scripts/test-mobile-fast.mjs && node scripts/test-business-time.mjs && node scripts/test-order-location.mjs && node --experimental-strip-types scripts/test-pdv-catalog.ts && node scripts/test-operational-watchdog.mjs && node scripts/test-migrations.mjs && node scripts/test-distributed-rate-limit.mjs && node scripts/test-bff-modules.mjs && node scripts/test-catalog-modifiers.mjs && node scripts/test-admin-modifier-workflow.mjs && node scripts/test-inventory-attention-summary.mjs && node scripts/test-critical-backend.mjs && node scripts/test-order-cancellation-alerts.mjs && node scripts/test-zuri-cancellation.mjs && node scripts/test-zuri-table-merge.mjs && node scripts/test-checklist-opening-alert.mjs && node scripts/test-qr-comanda-transition.mjs && node scripts/test-qr-legacy-scroll.mjs && node scripts/test-pdv-new-order-request.mjs && node scripts/test-loader-completion.mjs && node scripts/test-catalog-availability.mjs && node scripts/test-cash-count.mjs && node scripts/test-cash-close-record.mjs && npm run test:billing-service-fee && node scripts/test-public-i18n.mjs && npm run test:public-menu-readonly",
+    "test": "node scripts/test-mobile-fast.mjs && node scripts/test-business-time.mjs && node scripts/test-order-location.mjs && node --experimental-strip-types scripts/test-pdv-catalog.ts && node scripts/test-operational-watchdog.mjs && node scripts/test-migrations.mjs && node scripts/test-distributed-rate-limit.mjs && node scripts/test-bff-modules.mjs && node scripts/test-catalog-modifiers.mjs && node scripts/test-admin-modifier-workflow.mjs && node scripts/test-inventory-attention-summary.mjs && node scripts/test-critical-backend.mjs && node scripts/test-order-cancellation-alerts.mjs && node scripts/test-zuri-cancellation.mjs && node scripts/test-zuri-table-merge.mjs && node scripts/test-checklist-opening-alert.mjs && node scripts/test-qr-comanda-transition.mjs && node --experimental-strip-types scripts/test-public-table-access-retry.mjs && node scripts/test-qr-legacy-scroll.mjs && node scripts/test-pdv-new-order-request.mjs && node scripts/test-loader-completion.mjs && node scripts/test-catalog-availability.mjs && node scripts/test-cash-count.mjs && node scripts/test-cash-close-record.mjs && npm run test:billing-service-fee && node scripts/test-public-i18n.mjs && npm run test:public-menu-readonly",
     "test:billing-service-fee": "node --experimental-strip-types scripts/test-billing-service-fee.mjs",
     "audit:inventory-units": "node scripts/reconcile-inventory-unit-contracts-20260815.mjs",
     "validate": "npm run test:shared-db-contract && npm run test:module-size && npm run lint:baseline && npm run lint && npm run typecheck && npm test && npm run build",
@@ -99,6 +99,6 @@
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.65.0",
-    "vite": "^6.0.5"
+    "vite": "^6.4.5"
   }
 }
