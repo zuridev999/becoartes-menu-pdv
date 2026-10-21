@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.28.3 - 2026-10-21
+
+- Renova automaticamente a credencial pública da mesa quando o QR recebe a resposta específica de acesso inválido e repete a operação uma única vez.
+- Preserva a mesma chave idempotente no reenvio para impedir pedidos duplicados, cobrindo envio à cozinha, atualização da mesa, eventos e comandas.
+- Atualiza o Vite para 6.4.5 e elimina os alertas de segurança conhecidos pelo auditor de dependências da release.
+
 ## 1.28.2 - 2026-10-19
 
 - Corrige altura e largura no QR/PDV móvel; conta e carrinho ficam acessíveis sem reserva fixa para anúncios ausentes.
