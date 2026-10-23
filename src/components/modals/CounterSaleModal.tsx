@@ -47,7 +47,10 @@ const formatCurrency = (value: number) => value.toLocaleString('pt-BR', {
 
 const formatPaymentInput = (digits: string) => {
   if (!digits) return '';
-  return (Number(digits) / 100).toFixed(2);
+  return (Number(digits) / 100).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };
 
 const createCounterItem = (
@@ -161,9 +164,6 @@ export function CounterSaleModal({
       return;
     }
     setPaymentValidationMessage('');
-    const label = PAYMENT_OPTIONS.find((option) => option.id === paymentMethod)?.label || paymentMethod;
-    const confirmed = window.confirm(`Confirmar pagamento em ${label}? Confira na maquininha antes de lançar.`);
-    if (!confirmed) return;
     setPayments((current) => [...current, { id: createId(), method: paymentMethod, amount }]);
     setPaymentMethod('');
     setPaymentAmount('');
@@ -209,7 +209,7 @@ export function CounterSaleModal({
         exit={{ scale: 0.96, y: 20, opacity: 0 }}
         className="fixed inset-0 z-[650] flex items-start xl:items-center justify-center p-2 sm:p-4 xl:p-6 pointer-events-none font-['Outfit'] overflow-y-auto overscroll-contain"
       >
-        <div className="mobile-dialog glass-card pointer-events-auto w-full max-w-[1440px] border-white/10 shadow-2xl flex flex-col overflow-hidden h-[calc(100dvh-1.5rem)] max-h-[960px] ">
+        <div className="mobile-dialog glass-card pointer-events-auto w-full max-w-[1120px] border-white/10 shadow-2xl flex flex-col overflow-hidden h-[calc(100dvh-1.5rem)] max-h-[960px] ">
           <div className="p-4 xl:p-5 border-b border-white/10 flex flex-col lg:flex-row gap-2 lg:items-center lg:justify-between">
             <div className="flex items-center gap-4">
               <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-amber-400 text-black flex items-center justify-center shadow-2xl shadow-amber-500/20 shrink-0">
@@ -226,7 +226,7 @@ export function CounterSaleModal({
             </button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto ios-touch-scroll lg:overflow-hidden grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="flex-1 min-h-0 overflow-y-auto ios-touch-scroll lg:overflow-hidden grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_350px]">
             <div className="lg:min-h-0 flex min-w-0 flex-col p-4">
               <div className="mb-4 flex flex-col gap-3">
                 <div className="relative flex-1">
@@ -310,7 +310,7 @@ export function CounterSaleModal({
                 <p className="text-[9px] font-black uppercase tracking-widest text-zinc-600 mt-1">Taxa de serviço: R$ 0,00</p>
               </div>
 
-              <div className="max-h-[28dvh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto custom-scrollbar p-4 space-y-3">
+              <div className="max-h-[28dvh] lg:max-h-[26dvh] lg:shrink-0 overflow-y-auto custom-scrollbar p-4 space-y-3">
                 {cart.length === 0 ? (
                   <div className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-zinc-500 text-sm font-bold">
                     Adicione produtos para iniciar a venda balcão.
@@ -365,12 +365,14 @@ export function CounterSaleModal({
                     );
                   })}
                 </div>
-                <div className="flex gap-2">
+                <label htmlFor="counter-payment-amount" className="block text-[10px] font-black uppercase tracking-widest text-zinc-300">Valor recebido (R$)</label>
+                <div className="flex min-w-0 gap-2">
                   <input
+                    id="counter-payment-amount"
+                    type="text"
                     value={formatPaymentInput(paymentAmount)}
                     inputMode="decimal"
-                    pattern="[0-9.]*"
-                    aria-label="Valor do pagamento"
+                    pattern="[0-9.,]*"
                     onFocus={(event) => event.currentTarget.select()}
                     onChange={(event) => {
                       setPaymentAmount(event.target.value.replace(/\D/g, '').slice(0, 9));
@@ -379,14 +381,14 @@ export function CounterSaleModal({
                     onKeyDown={(event) => {
                       if (['e', 'E', '+', '-', ','].includes(event.key)) event.preventDefault();
                     }}
-                    placeholder={remaining > 0 ? formatPaymentInput(String(Math.round(remaining * 100))) : '0.00'}
-                    className="flex-1 h-14 rounded-2xl bg-white/[0.04] border border-white/10 px-4 text-xl font-black text-white outline-none focus:border-amber-300/60"
+                    placeholder={remaining > 0 ? formatPaymentInput(String(Math.round(remaining * 100))) : '0,00'}
+                    className="min-w-0 flex-1 h-12 rounded-2xl bg-white/[0.04] border border-white/15 px-4 text-xl font-black text-white outline-none focus:border-amber-300/60"
                   />
-                  <button onClick={addPayment} disabled={!canLaunchPayment || !paymentMethod} className="h-14 px-5 rounded-2xl bg-amber-400 text-black text-xs font-black uppercase tracking-widest disabled:opacity-30">
+                  <button type="button" onClick={addPayment} disabled={!canLaunchPayment || !paymentMethod} className="h-12 shrink-0 px-4 rounded-2xl bg-amber-400 text-black text-xs font-black uppercase tracking-widest disabled:opacity-30">
                     Lançar
                   </button>
                 </div>
-                <p className="-mt-2 text-[10px] font-bold text-zinc-500">Digite somente números: 5000 = R$ 50.00.</p>
+                <p className="-mt-1 text-[10px] font-bold text-zinc-400">Digite 5000 para R$ 50,00. Confira o recebimento antes de lançar.</p>
 
                 {paymentValidationMessage && (
                   <div role="alert" className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-xs font-bold leading-relaxed text-rose-200">
