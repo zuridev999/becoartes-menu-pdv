@@ -27,6 +27,8 @@ assert.match(indexHtml, /<meta name="google-adsense-account" content="ca-pub-809
 assert.match(indexHtml, /adsenseScript\.id = 'becoartes-adsense-script'/);
 assert.match(indexHtml, /adsenseScript\.src = 'https:\/\/pagead2\.googlesyndication\.com\/pagead\/js\/adsbygoogle\.js\?client=ca-pub-8099608758666537'/);
 assert.match(indexHtml, /becoHost === 'qr\.becoartes\.com'[\s\S]*adsenseScript\.dataset\.overlays = 'collapsed-bottom'/);
+assert.match(indexHtml, /const isPdvEntry = becoHost\.startsWith\('pdv\.'\)/);
+assert.match(indexHtml, /if \(isPdvEntry\) \{[\s\S]*?\} else if \(isQrEntry\)/);
 assert.equal((indexHtml.match(/nonce="__CSP_NONCE__"/g) || []).length, 2);
 assert.doesNotMatch(component, /document\.createElement\(['"]script['"]\)/);
 assert.match(component, /data-ad-render-status/);
@@ -67,7 +69,7 @@ assert.doesNotMatch(qrView, /top-\[50px\][^"\n]*hidden/);
 assert.match(qrView, /h-14 shrink-0/);
 assert.match(deliveryView, /var\(--beco-mobile-ad-height, 0px\)/);
 assert.match(app, /placement="top"/);
-assert.match(app, /placement="operational-top"/);
+assert.doesNotMatch(app, /<GoogleAdBanner placement="operational-top"/);
 assert.match(app, /const isPublicTopAdView = activeView === 'tablet' \|\| activeView === 'delivery'/);
 assert.doesNotMatch(app, /activeView === 'qr'[^;\n]*placement="top"/);
 assert.match(app, /activeView === 'pdv'/);

@@ -101,7 +101,6 @@ function App() {
         <NotificationDisplay />
         {!isLoading && !initError && hasOperationalView && <ChecklistAlertDisplay />}
         {!isLoading && !initError && isPublicTopAdView && <GoogleAdBanner placement="top" />}
-        {!isLoading && !initError && isPdvView && <GoogleAdBanner placement="operational-top" />}
         {!isLoading && initError && (
           <ConnectionError error={initError} isPublic={isQrView} retry={() => void init()} />
         )}

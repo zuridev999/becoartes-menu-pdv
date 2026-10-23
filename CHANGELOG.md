@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.29.1 - 2026-10-23
+
+- Preserva a recuperação de acesso à mesa quando o token do QR expira, integrando a correção da release operacional à base mais nova.
+- Não carrega publicidade automática nem o banner fixo no PDV, preservando anúncios no QR e no Delivery e evitando que cubram controles em celulares.
+
 ## 1.29.0 - 2026-10-19
 
 - Adiciona build isolado Zordon, com rotas por empresa, armazenamento de sessão separado e QR da própria operação.

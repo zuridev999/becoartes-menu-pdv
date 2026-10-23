@@ -22,6 +22,10 @@
       } catch (e) { /* noop */ }
 
       const becoHost = window.location.hostname;
+      // O PDV é uma tela de trabalho: não carregar AdSense aqui. O script global
+      // também pode inserir anúncios automáticos/âncoras fora dos slots React.
+      const isPdvEntry = becoHost.startsWith('pdv.') ||
+        /^\/(?:pdv(?:\/|$)|os\/pdv\/)/.test(window.location.pathname);
       const adsenseScript = document.createElement('script');
       adsenseScript.id = 'becoartes-adsense-script';
       adsenseScript.async = true;
@@ -34,7 +38,9 @@
         adsenseScript.dataset.overlays = 'collapsed-bottom';
       }
       const isQrEntry = becoHost.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(window.location.pathname);
-      if (isQrEntry) {
+      if (isPdvEntry) {
+        // Nenhum anúncio fixo ou automático pode cobrir controles do PDV.
+      } else if (isQrEntry) {
         // Keep Google's consent flow intact; start it only after the menu is usable.
         window.addEventListener('beco:menu-ready', () => {
           window.setTimeout(() => document.head.appendChild(adsenseScript), 1500);
