@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.29.2 - 2026-10-23
+
+- Compacta o Venda Balcão, melhora o campo de valor em reais e elimina a confirmação duplicada antes do lançamento.
+- Mostra adicionais e observações em branco quando o pedido da cozinha está em vermelho, sem retirar as ações atuais do bar.
+
 ## 1.29.1 - 2026-10-23
 
 - Preserva a recuperação de acesso à mesa quando o token do QR expira, integrando a correção da release operacional à base mais nova.

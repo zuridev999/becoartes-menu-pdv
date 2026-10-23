@@ -232,6 +232,7 @@ function KitchenOrderCard({ order, index, onClick }: { order: any, index: number
           maxItems={10}
           maxModifiers={3}
           tone="light"
+          highContrastOnRed={isDanger}
           operational
           presentItem={getKitchenItemPresentation}
         />

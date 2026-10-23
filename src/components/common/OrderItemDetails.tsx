@@ -13,6 +13,7 @@ type OrderItemDetailsProps = {
   maxItems?: number;
   maxModifiers?: number;
   tone?: 'dark' | 'light';
+  highContrastOnRed?: boolean;
   operational?: boolean;
   presentItem?: (item: OrderItem) => OrderItemPresentation;
 };
@@ -31,6 +32,7 @@ export function OrderItemDetails({
   maxItems,
   maxModifiers,
   tone = 'dark',
+  highContrastOnRed = false,
   operational = false,
   presentItem = defaultPresentation,
 }: OrderItemDetailsProps) {
@@ -76,7 +78,7 @@ export function OrderItemDetails({
                 : 'text-xl sm:text-3xl font-black leading-tight',
               isLight ? 'text-black' : 'text-white',
             ].join(' ')}>
-              <span className={isLight ? 'text-amber-700' : 'text-yellow-300'}>{item.quantity}x</span>{' '}
+              <span className={highContrastOnRed ? 'text-white' : isLight ? 'text-amber-700' : 'text-yellow-300'}>{item.quantity}x</span>{' '}
               {presentation.name}
             </p>
 
@@ -90,7 +92,7 @@ export function OrderItemDetails({
                       compact
                         ? `${operational ? 'text-sm sm:text-xl' : 'text-[10px]'} leading-snug`
                         : 'text-sm sm:text-xl leading-tight',
-                      isLight ? 'text-amber-700' : 'text-yellow-200',
+                      highContrastOnRed ? 'text-white' : isLight ? 'text-amber-700' : 'text-yellow-200',
                     ].join(' ')}
                   >
                     <Plus size={compact ? (operational ? 16 : 11) : 18} strokeWidth={4} className="mt-0.5 shrink-0" />
@@ -114,7 +116,7 @@ export function OrderItemDetails({
                 compact
                   ? `mt-1.5 ${operational ? 'text-xs sm:text-lg' : 'text-[9px]'} leading-snug`
                   : 'mt-3 text-sm sm:text-xl leading-relaxed',
-                isLight ? 'text-rose-700' : 'text-rose-200',
+                highContrastOnRed ? 'text-white' : isLight ? 'text-rose-700' : 'text-rose-200',
               ].join(' ')}>
                 <MessageSquareText size={compact ? (operational ? 15 : 11) : 18} className="mt-0.5 shrink-0" />
                 <span>{item.notes}</span>
