@@ -35,6 +35,7 @@ type ApiEnvelope<T> = {
   ok: boolean;
   data?: T;
   error?: string;
+  errorCode?: string;
 };
 
 export type AvailabilityImpact = {
@@ -326,7 +327,7 @@ const postJson = async <T>(path: string, body: unknown, options: RequestInit = {
   }
 
   if (!response.ok || !payload.ok) {
-    throw new Error(payload.error || `Falha na API (${response.status})`);
+    throw Object.assign(new Error(payload.error || `Falha na API (${response.status})`), { code: payload.errorCode });
   }
 
   return payload.data as T;
@@ -337,7 +338,7 @@ const getJson = async <T>(path: string, options: RequestInit = {}): Promise<T> =
   const payload = await readApiEnvelope<T>(response);
 
   if (!response.ok || !payload.ok) {
-    throw new Error(payload.error || `Falha na API (${response.status})`);
+    throw Object.assign(new Error(payload.error || `Falha na API (${response.status})`), { code: payload.errorCode });
   }
 
   return payload.data as T;

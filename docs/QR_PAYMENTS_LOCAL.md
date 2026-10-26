@@ -6,7 +6,7 @@ Preparação em 26/10/2026, sobre PDV v1.29.2 / bd68b50. Sem deploy.
 
 - “Minha conta” mostra itens, subtotal, taxa de serviço, total e saldo, com um único botão “Pagar com Pix ou cartão”. O formulário só aparece após o toque, no mesmo modal, e “Voltar à conta” retorna ao resumo sem recarregar a página.
 - Pix solicita nome completo, e-mail e CPF. Cartão acrescenta número, validade e código de segurança. Interface, avisos e confirmação traduzidos em português, inglês, espanhol e francês; valores continuam em BRL.
-- Pix e cartão à vista usam Orders dentro da página. O cartão sai do navegador criptografado pelo SDK PagBank. Apple Pay permanece indisponível enquanto certificados e homologação não forem concluídos.
+- Pix e cartão à vista usam Orders dentro da página. Pix usa `charges.payment_method.type=PIX` e lê `charges.qr_code.text`, conforme o formato atual do PagBank. O cartão sai do navegador criptografado pelo SDK PagBank. Apple Pay permanece indisponível enquanto certificados e homologação não forem concluídos.
 - Total calculado no servidor. O cliente não modifica a taxa; ajuste é feito pela equipe no PDV antes do pagamento.
 - Confirmação aceita somente `PAID`, com identidade, moeda, método e centavos correspondentes à cobrança salva. `AUTHORIZED` não dá baixa.
 - Uma cobrança pendente por mesa, chave de idempotência e lançamento único por cobrança. Webhooks assinados consultam o pedido no PagBank antes de registrar o recebimento.
@@ -44,3 +44,7 @@ Testar Pix no celular exige copiar o código Pix da tela local. Os links localho
 Produção mantém v1.29.2 / bd68b50. Publicação depende de aprovação do teste, versão/tag/manifesto e regras de release. O recurso inicia desativado (`QR_PAYMENTS_PROVIDER=disabled`). A ativação usa `pagbank`, credencial do próprio PDV e URL HTTPS do webhook. Débito e Apple Pay não são anunciados.
 
 Referências: https://developer.pagbank.com.br/reference/criar-pagar-pedido-com-cartao e https://developer.pagbank.com.br/reference/criar-pedido .
+
+Erros do provedor registram apenas HTTP, código, campo e categoria do erro nos logs/auditoria; dados do comprador, cartão e credenciais não entram nesses registros. A interface traduz erros de valor não aceito, CPF rejeitado e conta não habilitada. Os testes de R$ 0,10 validam cálculo e payload; a aceitação desse valor pelo gateway depende da resposta real e não é presumida.
+
+Para reiniciar sem perder as tentativas locais: `QR_PREVIEW_RESUME_DB=/caminho/temporario/beco-qr-payment-preview-XXXX/preview.db npm run preview:qr-payments -- --real`. Somente bancos temporários desta prévia são aceitos.

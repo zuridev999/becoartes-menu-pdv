@@ -99,6 +99,7 @@ export const createApiHandler = ({
       ok: false,
       error: status >= 500 ? 'Serviço temporariamente indisponível.' : error instanceof Error ? error.message : 'Erro interno',
       requestId,
+      ...(['paymentAmountRejected', 'paymentCpfInvalid', 'paymentSetupError', 'paymentError'].includes(error?.publicCode) ? { errorCode: error.publicCode } : {}),
     });
   }
 };

@@ -56,12 +56,16 @@ const real = createQrPaymentServices({ ...dependencies, provider: 'pagbank', tok
     const payload = JSON.parse(options.body);
     assert.ok(url.endsWith('/orders'));
     assert.equal(options.headers['x-idempotency-key'], payload.reference_id);
-    assert.equal(payload.qr_codes[0].amount.value, 1130);
-    authoritative = { id: 'ORDE_TEST', reference_id: payload.reference_id, charges: [] };
+    assert.equal(payload.qr_codes, undefined);
+    assert.equal(payload.charges[0].amount.value, 1130);
+    assert.equal(payload.charges[0].payment_method.type, 'PIX');
+    assert.ok(payload.charges[0].payment_method.pix.expiration_date);
+    authoritative = { id: 'ORDE_TEST', reference_id: payload.reference_id, charges: [{ status: 'WAITING', payment_method: payload.charges[0].payment_method, qr_code: { text: 'PIX-V2-TEST' } }] };
   }
   return { ok: true, json: async () => authoritative };
 } });
 const order = await real.create({ ...input, expectedAmount: 11.30 });
+assert.equal(order.instructions.qrCodeText, 'PIX-V2-TEST');
 authoritative.charges = [{ status: 'PAID', amount: { value: 100, currency: 'BRL' }, payment_method: { type: 'PIX' } }];
 assert.equal((await real.webhook({ reference_id: order.id, status: 'PAID', amount: 1130 })).status, 'review');
 assert.equal(calls, 2, 'Webhook must re-fetch the provider order');
@@ -75,5 +79,19 @@ assert.equal(smallSummary.serviceFee, 0.01);
 assert.equal(smallSummary.balance, 0.10);
 const small = await service.create({ ...input, expectedAmount: 0.10 });
 assert.equal(small.amount, 0.10);
+await db.execute('DELETE FROM qr_payment_intents');
+const logs = [];
+const originalError = console.error;
+console.error = value => logs.push(value);
+try {
+  const rejected = createQrPaymentServices({ ...dependencies, provider: 'pagbank', token: 'test-token', fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ error_messages: [{ code: '40002', parameter_name: 'charges[0].amount.value', description: 'must be between 100 and 999999900' }], customer: input.customer }) }) });
+  await assert.rejects(rejected.create({ ...input, expectedAmount: 0.10 }), error => error.publicCode === 'paymentAmountRejected');
+  assert.equal((await db.execute('SELECT status FROM qr_payment_intents')).rows[0].status, 'failed');
+  const evidence = (await db.execute("SELECT details FROM audit_logs WHERE action='qr_payment_provider_error'")).rows.map(row => row.details).join('');
+  assert.match(evidence, /40002/);
+  assert.match(evidence, /amount_range/);
+  assert.ok(!evidence.includes(input.customer.taxId) && !logs.join('').includes(input.customer.email));
+  assert.equal((await db.execute('SELECT COUNT(*) n FROM table_payments')).rows[0].n, 0);
+} finally { console.error = originalError; }
 db.close();
 console.log('QR payments: totals, possession, immutable amount, duplicate clicks/events, capture, refusal, stale table and provider recheck passed.');

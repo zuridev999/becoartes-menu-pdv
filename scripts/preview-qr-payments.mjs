@@ -1,6 +1,6 @@
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtemp } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdtemp, realpath } from 'node:fs/promises';
+import { join, dirname, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@libsql/client';
@@ -8,7 +8,9 @@ import { businessDateKey } from '../server/business-time.mjs';
 
 const real = process.argv.includes('--real');
 const port = Number(process.env.QR_PREVIEW_PORT || (real ? 18442 : 18441));
-const folder = await mkdtemp(join(tmpdir(), 'beco-qr-payment-preview-'));
+const resumeDb = process.env.QR_PREVIEW_RESUME_DB ? await realpath(process.env.QR_PREVIEW_RESUME_DB) : '';
+if (resumeDb && (dirname(dirname(resumeDb)) !== await realpath(tmpdir()) || !basename(dirname(resumeDb)).startsWith('beco-qr-payment-preview-') || basename(resumeDb) !== 'preview.db')) throw new Error('Retomada permitida somente em banco temporário desta prévia.');
+const folder = resumeDb ? dirname(resumeDb) : await mkdtemp(join(tmpdir(), 'beco-qr-payment-preview-'));
 const url = `http://127.0.0.1:${port}`;
 const dbUrl = `file:${join(folder, 'preview.db')}`;
 let gateway = {};
@@ -44,6 +46,7 @@ for (let i = 0; i < 80; i++) {
   await new Promise(resolve => setTimeout(resolve, 150));
 }
 if (!ready) { child.kill(); throw new Error('Prévia não iniciou.'); }
+if (!resumeDb) {
 const db = createClient({ url: dbUrl });
 const settings = { serviceTax: 13, qrMode: 'mesa', pdv: { tickerEnabled: false }, tables: { count: 12 } };
 await db.execute({ sql: "INSERT OR REPLACE INTO app_settings(key,value) VALUES ('settings',?)", args: [JSON.stringify(settings)] });
@@ -62,6 +65,7 @@ for (const fixture of fixtures) {
   }
 }
 db.close();
+}
 console.log(real ? '\nTESTE REAL: total de R$ 0,10 por mesa. A cobrança só é criada ao confirmar no formulário.' : '\nSIMULAÇÃO: nenhuma cobrança real e nenhum acesso ao banco do restaurante.');
-for (const fixture of fixtures) console.log(`${url}/mesa/${fixture.number}`);
+for (const number of (real ? [7, 8] : [6, 7])) console.log(`${url}/mesa/${number}`);
 console.log(`PDV local: ${url}/pdv — PIN de teste 8642`);

@@ -53,7 +53,25 @@ export function createQrPaymentServices({ db, authorize, getItems, getSettings, 
       signal: AbortSignal.timeout(20000), headers: { authorization: `Bearer ${token}`,
         'content-type': 'application/json', ...options.headers } });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) fail('O PagBank não concluiu o pagamento. Confira os dados ou chame a equipe.', response.status >= 500 ? 503 : 422);
+    if (!response.ok) {
+      // Keep useful diagnostics without logging customer data, credentials or card values.
+      const errors = (Array.isArray(data.error_messages) ? data.error_messages : []).slice(0, 5).map(error => {
+        const rawParameter = String(error.parameter_name || '');
+        const parameter = /^(customer\.(name|email|tax_id)|(?:qr_codes|charges|items)(?:\[\d+\])?\.(?:amount\.value|unit_amount|payment_method(?:\.pix\.expiration_date)?))$/.test(rawParameter) ? rawParameter : 'other';
+        const description = String(error.description || '').toLowerCase();
+        const reason = /must be between|minimum|at least/.test(description) && /amount|unit_amount/.test(parameter) ? 'amount_range'
+          : /tax_id/.test(parameter) ? 'customer_tax_id' : /not enabled|not authorized|not allowed|forbidden/.test(description) ? 'not_enabled' : 'validation';
+        return { code: /^\d{4,6}$/.test(String(error.code)) ? String(error.code) : 'unknown', parameter, reason };
+      });
+      const diagnostic = { httpStatus: response.status, errors };
+      console.error(JSON.stringify({ event: 'qr_payment_provider_error', ...diagnostic }));
+      const publicCode = errors.some(error => error.reason === 'amount_range') ? 'paymentAmountRejected'
+        : errors.some(error => error.reason === 'customer_tax_id') ? 'paymentCpfInvalid'
+        : [401, 403].includes(response.status) || errors.some(error => error.reason === 'not_enabled') ? 'paymentSetupError' : 'paymentError';
+      throw Object.assign(new Error('O PagBank não concluiu o pagamento. Confira os dados ou chame a equipe.'), {
+        statusCode: response.status >= 500 ? 503 : 422, publicCode, providerDiagnostic: diagnostic,
+      });
+    }
     return data;
   };
   const review = async (row, reason) => {
@@ -129,19 +147,22 @@ export function createQrPaymentServices({ db, authorize, getItems, getSettings, 
     const payload = { reference_id: id, customer: { name: String(customer.name).trim(), email: String(customer.email).trim(), tax_id: taxId },
       items: [{ reference_id: id, name: 'Consumo e taxa de serviço', quantity: 1, unit_amount: totals.amountCents }],
       ...(notificationUrl ? { notification_urls: [notificationUrl] } : {}),
-      ...(input.method === 'pix' ? { qr_codes: [{ amount: { value: totals.amountCents }, expiration_date: expires }] }
-        : { charges: [{ reference_id: id, description: 'Becoartes - consumo e taxa de serviço', amount: { value: totals.amountCents, currency: 'BRL' }, payment_method: { type: 'CREDIT_CARD', installments: 1, capture: true,
-          card: { encrypted: input.encryptedCard, store: false }, holder: { name: String(customer.name).trim(), tax_id: taxId } } }] }) };
+      charges: [{ reference_id: id, description: 'Becoartes - consumo e taxa de serviço', amount: { value: totals.amountCents, currency: 'BRL' },
+        payment_method: input.method === 'pix' ? { type: 'PIX', pix: { expiration_date: expires } }
+          : { type: 'CREDIT_CARD', installments: 1, capture: true, card: { encrypted: input.encryptedCard, store: false }, holder: { name: String(customer.name).trim(), tax_id: taxId } } }] };
     try {
-      const result = provider === 'simulator' ? { id: `SIM_${id}`, reference_id: id, qr_codes: [{ text: 'SIMULACAO-SEM-VALOR-FINANCEIRO', expiration_date: expires }], charges: [] }
+      const result = provider === 'simulator' ? { id: `SIM_${id}`, reference_id: id, charges: [{ status: 'WAITING', payment_method: payload.charges[0].payment_method, ...(input.method === 'pix' ? { qr_code: { text: 'SIMULACAO-SEM-VALOR-FINANCEIRO' } } : {}) }] }
         : await request('/orders', { method: 'POST', headers: { 'x-idempotency-key': id }, body: JSON.stringify(payload) });
       if (!result.id) throw new Error('Resposta de pagamento incompleta');
-      const qr = result.qr_codes?.[0];
-      const instructions = input.method === 'pix' ? { qrCodeText: qr?.text || '', expiresAt: qr?.expiration_date || expires } : {};
+      const pixCharge = result.charges?.find(charge => charge.payment_method?.type === 'PIX');
+      const qr = pixCharge?.qr_code || result.qr_codes?.[0];
+      const instructions = input.method === 'pix' ? { qrCodeText: qr?.text || '', expiresAt: pixCharge?.payment_method?.pix?.expiration_date || qr?.expiration_date || expires } : {};
       await db.execute({ sql: "UPDATE qr_payment_intents SET external_id=?,status='pending',instructions=? WHERE id=?", args: [result.id, JSON.stringify(instructions), id] });
-      return reconcile(await get(id), result);
+      const reconciled = await reconcile(await get(id), result);
+      return input.method === 'pix' && reconciled.status === 'pending' && !instructions.qrCodeText ? review(await get(id), 'pix_instructions_missing') : reconciled;
     } catch (error) {
       await db.execute({ sql: 'UPDATE qr_payment_intents SET status=? WHERE id=?', args: [error.statusCode === 422 ? 'failed' : 'unknown', id] });
+      if (error.providerDiagnostic) await db.execute({ sql: "INSERT INTO audit_logs (id,action,details,table_number,origin,author_name,timestamp) VALUES (?,'qr_payment_provider_error',?,?,'pagbank','PagBank',?)", args: [randomUUID(), JSON.stringify({ intentId: id, ...error.providerDiagnostic }), target.tableId, new Date().toISOString()] });
       throw error;
     }
   };

@@ -2,6 +2,9 @@ import type { PublicLanguageCode } from '../types';
 
 export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> = {
   "pt-BR": {
+    "paymentAmountRejected": "O PagBank não aceitou este valor. Nenhum pagamento foi confirmado. Chame a equipe.",
+    "paymentCpfInvalid": "O PagBank não aceitou o CPF. Confira os 11 números.",
+    "paymentSetupError": "Pagamento indisponível nesta conta PagBank. Chame a equipe.",
     "paymentStart": "Pagar com Pix ou cartão",
     "paymentView": "Ver pagamento",
     "paymentTitle": "Como você prefere pagar?",
@@ -49,6 +52,9 @@ export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> =
     "serviceFeePlain": "Taxa de serviço"
   },
   "en-US": {
+    "paymentAmountRejected": "PagBank did not accept this amount. No payment has been confirmed. Please ask a team member.",
+    "paymentCpfInvalid": "PagBank did not accept the CPF. Check the 11 digits.",
+    "paymentSetupError": "Payments are unavailable for this PagBank account. Please ask a team member.",
     "paymentStart": "Pay with Pix or card",
     "paymentView": "View payment",
     "paymentTitle": "How would you like to pay?",
@@ -96,6 +102,9 @@ export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> =
     "serviceFeePlain": "Service fee"
   },
   "es-ES": {
+    "paymentAmountRejected": "PagBank no aceptó este importe. No se confirmó ningún pago. Llama al equipo.",
+    "paymentCpfInvalid": "PagBank no aceptó el CPF. Revisa los 11 números.",
+    "paymentSetupError": "El pago no está disponible en esta cuenta PagBank. Llama al equipo.",
     "paymentStart": "Pagar con Pix o tarjeta",
     "paymentView": "Ver pago",
     "paymentTitle": "¿Cómo prefieres pagar?",
@@ -143,6 +152,9 @@ export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> =
     "serviceFeePlain": "Servicio"
   },
   "fr-FR": {
+    "paymentAmountRejected": "PagBank n’a pas accepté ce montant. Aucun paiement n’a été confirmé. Contactez l’équipe.",
+    "paymentCpfInvalid": "PagBank n’a pas accepté le CPF. Vérifiez les 11 chiffres.",
+    "paymentSetupError": "Le paiement est indisponible sur ce compte PagBank. Contactez l’équipe.",
     "paymentStart": "Payer par Pix ou carte",
     "paymentView": "Voir le paiement",
     "paymentTitle": "Comment souhaitez-vous payer ?",
