@@ -37,7 +37,7 @@ try {
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const account = await read('src/components/modals/CustomerAccountModal.tsx');
 assert.doesNotMatch(account, /createPaymentLink|window\.location|canPayOnline|paymentOptions/);
-assert.match(account, /payWithStaff/);
+assert.match(account, /QrPaymentPanel/);
 assert.match(account, /calculateBillTotal/);
 const qr = await read('src/views/qr/QRView.tsx');
 assert.equal((qr.match(/className="qr-account-footer"/g) || []).length, 2);
@@ -49,4 +49,4 @@ assert.match(qr, /if \(routeTableNumber && currentTable && !isTableAccessReady\)
 const styles = await read('src/index.css');
 assert.match(styles, /\.qr-mobile-shell\s*\{\s*height: 100vh/);
 assert.doesNotMatch(styles, /position: fixed !important/);
-console.log('Mobile fast: optimized images, cache, path safety, direct QR entry and staff-only payment passed.');
+console.log('Mobile fast: optimized images, cache, path safety, direct QR entry and inline payment panel passed.');

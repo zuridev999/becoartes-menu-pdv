@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { qrPaymentSchema, qrPaymentActiveIndex } from '../payments/qr-payments.mjs';
 
 const addColumn = (table, column, definition) => ({
   type: 'add_column',
@@ -10,6 +11,11 @@ const addColumn = (table, column, definition) => ({
 const executeSql = (sql) => ({ type: 'execute_sql', sql });
 
 export const SCHEMA_MIGRATIONS = [
+  {
+    id: '20261026_0001_qr_transparent_payments',
+    description: 'Persist immutable online payment intents and prevent duplicate pending charges.',
+    steps: [executeSql(qrPaymentSchema), executeSql(qrPaymentActiveIndex)],
+  },
   {
     id: '20260628_0001_legacy_additive_columns',
     description: 'Add columns introduced before versioned migrations.',

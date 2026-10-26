@@ -4,6 +4,8 @@
   "version": "1.29.2",
   "type": "module",
   "scripts": {
+    "test:qr-payments": "node scripts/test-qr-payments.mjs && node scripts/test-online-paid-conference.mjs",
+    "preview:qr-payments": "node scripts/preview-qr-payments.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

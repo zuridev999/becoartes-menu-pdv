@@ -52,7 +52,7 @@ export const createApiHandler = ({
     }
 
     if (await isPinRateLimited(req, url.pathname)) {
-      sendJson(res, 429, { ok: false, error: 'Muitas tentativas de PIN. Aguarde 1 minuto.' });
+      sendJson(res, 429, { ok: false, error: 'Muitas tentativas. Aguarde 1 minuto.' });
       return;
     }
 

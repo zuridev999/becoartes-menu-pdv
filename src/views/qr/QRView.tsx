@@ -777,6 +777,7 @@ function ComandaQRExperience({
           <CustomerAccountModal
             onClose={() => setIsAccountOpen(false)}
             locationLabel={`${t('tab')} ${tab.tableNumber} • ${t('table')} ${sourceTableNumber}`}
+            customerTabContext={{ customerTabId: tab.id, sourceTableId, sourceTableNumber }}
           />
         )}
         {isOrderOpen && (

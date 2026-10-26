@@ -47,6 +47,7 @@ import { createZuriCancellationServices } from './zuri-cancellation.mjs';
 import { createZuriTableMergeServices, zuriTableMergeSchema } from './zuri-table-merge.mjs';
 import { createLioRuntime } from './lio/runtime.mjs';
 import { startBffServer } from './http-server.mjs';
+import { createQrPaymentServices } from './payments/qr-payments.mjs';
 
 let lioService = null;
 
@@ -969,6 +970,10 @@ const throwIpRestricted = (req) => {
 };
 
 const isPinRateLimited = async (req, pathname) => {
+  if (['/api/qr/payments/create', '/api/qr/payments/public-key'].includes(pathname)) {
+    const bucket = await distributedRateLimiter.consume({ scope: 'qr-payment', identity: `${pathname}:${getClientIp(req)}`, limit: 20, windowMs: 60000 });
+    return bucket.blocked;
+  }
   if (!['/api/auth/login', '/api/tablet/setup-login', '/api/comanda/access', '/api/pdv-terminal/authorize', '/api/cash/open', '/api/cash/close'].includes(pathname)) return false;
 
   const bucket = await distributedRateLimiter.consume({
@@ -4496,62 +4501,6 @@ const getDeliveryPublicConfig = () => ({
   },
 });
 
-const createPagBankCustomerTabPayload = ({ referenceId, customer, items, amount, paymentMethod, returnUrl }) => {
-  const methodMap = {
-    pix: [{ type: 'PIX' }],
-    credit: [{ type: 'CREDIT_CARD' }],
-    debit: [{ type: 'DEBIT_CARD' }],
-  };
-  const phone = splitBrazilianPhone(customer.phone);
-  const itemTotalCents = items.reduce((sum, item) => {
-    return sum + Math.round(Number(item.price || 0) * 100) * Number(item.quantity || 1);
-  }, 0);
-  const amountCents = Math.round(Number(amount || 0) * 100);
-  const payload = {
-    reference_id: referenceId.slice(0, 64),
-    customer: {
-      name: customer.name,
-      phones: phone.areaCode && phone.number ? [{
-        country: phone.countryCode,
-        area: phone.areaCode,
-        number: phone.number,
-        type: 'MOBILE',
-      }] : [],
-    },
-    customer_modifiable: true,
-    items: items.length > 0 ? items.map((item) => ({
-      reference_id: String(item.productId || item.id).slice(0, 64),
-      name: String(item.name || 'Item').slice(0, 100),
-      quantity: Number(item.quantity || 1),
-      unit_amount: Math.round(Number(item.price || 0) * 100),
-    })) : [{
-      reference_id: referenceId.slice(0, 64),
-      name: 'Comanda Becoartes',
-      quantity: 1,
-      unit_amount: Math.round(Number(amount || 0) * 100),
-    }],
-    payment_methods: methodMap[paymentMethod] || [{ type: 'PIX' }, { type: 'CREDIT_CARD' }, { type: 'DEBIT_CARD' }],
-    soft_descriptor: 'BECOARTES',
-  };
-
-  if (itemTotalCents > amountCents) {
-    payload.discount_amount = itemTotalCents - amountCents;
-  }
-
-  const notificationUrls = PAGBANK_NOTIFICATION_URL ? [PAGBANK_NOTIFICATION_URL] : [];
-  if (notificationUrls.length > 0) {
-    payload.notification_urls = notificationUrls;
-    payload.payment_notification_urls = notificationUrls;
-  }
-
-  const safeReturnUrl = String(returnUrl || PAGBANK_REDIRECT_URL || '').trim();
-  if (safeReturnUrl) {
-    payload.redirect_url = safeReturnUrl;
-    payload.return_url = safeReturnUrl;
-  }
-
-  return payload;
-};
 
 const getPagBankPublicKey = async () => {
   if (!PAGBANK_TOKEN) {
@@ -5649,6 +5598,10 @@ const handlePagBankDeliveryWebhook = async (body, context = {}) => {
   }
 
   const referenceId = requireString(getPagBankWebhookReferenceId(body), 'reference_id');
+  if (String(referenceId).startsWith('qrpay_')) {
+    if (!pagBankSignatureOk) throw Object.assign(new Error('Assinatura PagBank inválida.'), { statusCode: 401 });
+    return qrPayments.webhook(body);
+  }
   const status = getPagBankWebhookStatus(body);
   const paidAt = status === 'paid' ? new Date().toISOString() : null;
 
@@ -6975,6 +6928,7 @@ const cancelTablePayment = async (data, session) => {
   const payment = paymentRes.rows[0];
   if (!payment) throw new Error('Pagamento não encontrado.');
   if (payment.status !== 'active') throw new Error('Este pagamento já foi aplicado ou cancelado.');
+  if (String(payment.id).startsWith('qr_qrpay_')) throw new Error('Pagamento online confirmado. Confira o estorno no PagBank antes de ajustar o recebimento.');
   await ensureTableAccess(payment.table_id, session);
 
   const cancelledAt = new Date().toISOString();
@@ -8960,78 +8914,19 @@ const createCustomerTabPaymentLink = async ({
   }
   if (!['open', 'paid'].includes(String(row.status))) throw new Error('Esta comanda não está aberta para pagamento.');
 
-  const items = await getCustomerTabOrderItems(row.table_id);
-  const balance = await getCustomerTabPayableBalance(row.table_id, items);
-  if (balance <= 0.009) throw new Error('Esta comanda não tem saldo em aberto.');
-  if (!PAGBANK_TOKEN) {
-    const error = new Error('PagBank não está configurado neste ambiente.');
-    error.statusCode = 503;
-    throw error;
-  }
-
-  const referenceId = `customer_tab_${safeTabId}_${Date.now()}`;
-  const payload = createPagBankCustomerTabPayload({
-    referenceId,
-    customer: {
-      name: row.customer_name,
-      phone: row.phone,
-    },
-    items,
-    amount: balance,
-    paymentMethod: safeMethod,
-    returnUrl,
-  });
-
-  const response = await fetch(`${PAGBANK_API_BASE_URL}/checkouts`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${PAGBANK_TOKEN}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const pagBankError = result?.error_messages?.[0];
-    const code = pagBankError?.error || '';
-    const description = pagBankError?.description || result?.message || '';
-    const allowlistMessage = code === 'allowlist_access_required'
-      ? 'PagBank ainda não liberou esta conta para criar checkouts por API. Peça a homologação/liberação da API Checkout em produção.'
-      : '';
-    const error = new Error(allowlistMessage || description || `PagBank recusou checkout (${response.status}).`);
-    error.statusCode = 502;
-    throw error;
-  }
-
-  const checkoutUrl = Array.isArray(result.links)
-    ? result.links.find((link) => link?.rel === 'PAY' || link?.media === 'text/html')?.href || null
-    : null;
-  if (!checkoutUrl) throw new Error('PagBank não retornou link de pagamento.');
-
-  await db.execute({
-    sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_name, timestamp) VALUES (?, 'customer_tab_payment_link_created', ?, ?, 'qr', 'Cliente QR', ?)",
-    args: [
-      createId(),
-      JSON.stringify({
-        tabId: safeTabId,
-        referenceId,
-        paymentExternalId: result.id || null,
-        method: safeMethod,
-        amount: balance,
-      }),
-      String(row.table_number),
-      new Date().toISOString(),
-    ],
-  });
-
-  return {
-    checkoutUrl,
-    externalId: result.id || null,
-    status: 'payment_pending',
-    amount: balance,
-    provider: 'pagbank',
-  };
+  throw Object.assign(new Error("Pagamento atualizado. Reabra Minha conta no cardápio."), { statusCode: 503 });
 };
+
+const qrPayments = createQrPaymentServices({
+  db, getItems: getCustomerTabOrderItems, getSettings, getPublicKey: getPagBankPublicKey,
+  token: PAGBANK_TOKEN, apiBase: PAGBANK_API_BASE_URL, notificationUrl: PAGBANK_NOTIFICATION_URL,
+  provider: process.env.QR_PAYMENTS_PROVIDER || "disabled", localDatabase: isLocalLibsqlUrl,
+  maxAmountCents: isLocalLibsqlUrl && process.env.QR_PAYMENT_MAX_CENTS ? Number(process.env.QR_PAYMENT_MAX_CENTS) : Infinity,
+  authorize: async input => {
+    await getPublicTableState(input);
+    return { tableId: String(input.tableId), tabId: input.customerTabId || null };
+  },
+});
 
 const lookupCustomerTabs = async ({ query = '' }) => {
   const rawQuery = String(query || '').trim();
@@ -9126,6 +9021,7 @@ const enforceRouteAccess = createRouteAccessEnforcer({
 });
 
 const handlers = createRouteHandlers({
+  qrPayments,
   activateOsUserAsSeller,
   addAuditLog,
   authorizePdvTerminal,

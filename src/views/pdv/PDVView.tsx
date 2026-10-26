@@ -35,6 +35,7 @@ import { TableOrderDetailsDialog } from '../../components/pdv/TableOrderDetailsD
 import { CANCEL_REASONS } from '../../lib/order-cancel-reasons';
 import { cashCountTotalCents, emptyCashCount, type CashCount } from '../../lib/cash-count';
 import { CashRegisterDialog } from '../../components/pdv/CashRegisterDialog';
+import { isOnlinePaidAwaitingConference } from '../../lib/online-payment';
 
 const DAILY_GOALS_BY_WEEKDAY: Record<number, number> = {
   0: 6000,
@@ -183,6 +184,8 @@ export function PDVView() {
   const [isSendingOrder, setIsSendingOrder] = useState(false);
   const [selectedTable, setSelectedTable] = useState<TableType | null>(null);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [onlinePaidTableId, setOnlinePaidTableId] = useState<string | null>(null);
+  const [onlineConference, setOnlineConference] = useState(false);
   const [showProductMenu, setShowProductMenu] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [sendToKitchenStation, setSendToKitchenStation] = useState(true);
@@ -648,6 +651,11 @@ export function PDVView() {
       addNotification('Mesa vinculada a outro operador.', 'error');
       return;
     }
+    if (isOnlinePaidAwaitingConference(table, settings.serviceTax)) {
+      setOnlinePaidTableId(table.id);
+      return;
+    }
+    setOnlineConference(false);
     setSelectedTable(table);
     setCurrentTableId(table.id);
     if (table.status === 'available' && !(isComandaMode && table.number <= 50)) {
@@ -661,6 +669,7 @@ export function PDVView() {
   };
 
   const getStatusColor = (table: TableType) => {
+    if (isOnlinePaidAwaitingConference(table, settings.serviceTax)) return 'pdv-paid-online bg-emerald-500/25 border-emerald-300 text-emerald-200';
     if (table.customerTab?.status === 'paid') return 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300';
     if (table.customerTab?.status === 'open') return 'bg-amber-500/20 border-amber-400/40 text-amber-300';
     switch (table.status) {
@@ -1030,12 +1039,13 @@ export function PDVView() {
                 key={table.id}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => handleTableClick(table)}
+                aria-label={isOnlinePaidAwaitingConference(table, settings.serviceTax) ? `Mesa ${table.number}, paga pelo cliente, aguardando conferência` : `Mesa ${table.number}`}
                 className={`h-24 sm:h-28 rounded-2xl border p-3.5 flex flex-col justify-between transition-colors relative overflow-hidden group ${getStatusColor(table)}`}
               >
                 <div className="flex justify-between items-start relative z-10">
                   <span className="text-2xl font-black tabular-nums tracking-tight leading-none">{table.number}</span>
                   {table.status !== 'available' && (
-                    <Users size={16} className="opacity-40" />
+                    isOnlinePaidAwaitingConference(table, settings.serviceTax) ? <Check size={18} /> : <Users size={16} className="opacity-40" />
                   )}
                 </div>
 
@@ -1052,6 +1062,7 @@ export function PDVView() {
                           {table.customerTab.customerName}
                         </span>
                       )}
+                      {isOnlinePaidAwaitingConference(table, settings.serviceTax) && <span className="mt-1 text-[9px] font-black uppercase tracking-wide text-emerald-200">Paga pelo cliente</span>}
                     </div>
                   )}
                 </div>
@@ -1262,6 +1273,25 @@ export function PDVView() {
       </div>
 
       {/* SELECTED TABLE OVERLAY (Management) */}
+      <ActionDialog
+        isOpen={Boolean(onlinePaidTableId)}
+        title="Esta mesa já foi paga pelo cliente"
+        description="Pagamento confirmado pelo PagBank. Abra a conferência dos itens e do valor recebido para dar baixa na mesa."
+        confirmLabel="Sim, abrir conferência"
+        cancelLabel="Agora não"
+        confirmDisabled={!canCloseBill}
+        onClose={() => setOnlinePaidTableId(null)}
+        onConfirm={() => {
+          const table = tables.find(item => item.id === onlinePaidTableId);
+          if (!table || !canAccessTable(table) || !canCloseBill) return;
+          if (!isOnlinePaidAwaitingConference(table, settings.serviceTax)) {
+            addNotification('A conta mudou. Confira o saldo atualizado antes de dar baixa.', 'info');
+            return;
+          }
+          setSelectedTable(table); setCurrentTableId(table.id);
+          setOnlineConference(true); setShowCheckout(true);
+        }}
+      />
       <AnimatePresence>
         {selectedTable && managedTable && canAccessTable(managedTable) && (
           <motion.div 
@@ -1908,8 +1938,10 @@ export function PDVView() {
         {showCheckout && selectedTable && managedTable && canAccessTable(managedTable) && (
           <CheckoutModal 
             table={managedTable || selectedTable} 
+            onlineConference={onlineConference}
             onClose={() => {
               setShowCheckout(false);
+              setOnlineConference(false);
               setSelectedTable(null);
             }} 
           />

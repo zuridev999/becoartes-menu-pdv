@@ -23,6 +23,7 @@
     { "name": "order_items", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
     { "name": "closed_bills", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
     { "name": "table_payments", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
+    { "name": "qr_payment_intents", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV"] },
     { "name": "integration_events", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
     { "name": "delivery_orders", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] },
     { "name": "delivery_order_items", "owner": "PDV", "writers": ["PDV"], "readers": ["PDV", "OS"] }

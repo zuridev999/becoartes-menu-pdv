@@ -1,11 +1,13 @@
 import { motion } from 'framer-motion';
 import { X, FileText, Receipt, LayoutDashboard } from 'lucide-react';
 import { useStore } from '../../store';
-import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, formatPercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
+import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
+import { QrPaymentPanel } from '../shared/QrPaymentPanel';
+import { AppApi, type QrPaymentContext } from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 
-export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () => void; locationLabel?: string }) {
+export function CustomerAccountModal({ onClose, locationLabel, customerTabContext }: { onClose: () => void; locationLabel?: string; customerTabContext?: QrPaymentContext['customerTabContext'] }) {
   const { currentTableId, tables, settings } = useStore();
   const { t, locale, catalogText } = usePublicI18n();
   const table = tables.find(t => t.id === currentTableId);
@@ -85,7 +87,7 @@ export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () =
               <span>{formatCurrency(subtotal, locale)}</span>
             </div>
             <div className="flex justify-between items-center text-gray-500 font-black uppercase tracking-[0.2em] text-sm">
-              <span>{t('serviceFee', { rate: formatPercent(serviceFeePercent) })}</span>
+              <span>{t('serviceFee').replace(/\s*\([^)]*\)/g, '')}</span>
               <span>{formatCurrency(serviceFee, locale)}</span>
             </div>
             <div className="pt-6 border-t border-white/10 flex justify-between items-center">
@@ -104,9 +106,11 @@ export function CustomerAccountModal({ onClose, locationLabel }: { onClose: () =
             </div>
           </section>
 
-          <p className="mt-6 rounded-2xl border border-white/10 p-4 text-sm text-zinc-300">
-            {balance <= 0.009 ? t('noOpenBalance') : t('payWithStaff')}
-          </p>
+          <QrPaymentPanel context={{ tableId: table.id, tableNumber: table.number, customerTabContext }} onPaid={() => {
+            void AppApi.getPublicTableState({ tableId: table.id, tableNumber: table.number, customerTabContext }).then(({ table: refreshed }) => {
+              useStore.setState(state => ({ tables: state.tables.map(item => item.id === refreshed.id ? { ...item, ...refreshed } : item) }));
+            }).catch(() => undefined);
+          }} />
         </div>
 
         <div className="shrink-0 p-3 sm:p-6 bg-white/[0.02] border-t border-white/5">

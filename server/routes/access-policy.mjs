@@ -15,6 +15,11 @@ const PUBLIC_BOOTSTRAP_ROUTES = new Set([
 ]);
 
 const PUBLIC_CUSTOMER_ROUTES = new Set([
+  'POST /api/qr/payments/summary',
+  'POST /api/qr/payments/create',
+  'POST /api/qr/payments/status',
+  'POST /api/qr/payments/public-key',
+  'POST /api/qr/payments/simulate',
   'POST /api/delivery/checkout',
   'POST /api/delivery/checkout/mock',
   'POST /api/delivery/quote',

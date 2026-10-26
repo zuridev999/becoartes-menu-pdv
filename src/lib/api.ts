@@ -476,6 +476,25 @@ export const CustomerTabApi = {
   },
 };
 
+export type QrPaymentContext = { tableId: string; tableNumber?: number; customerTabContext?: CustomerTabOrderContext };
+export type QrPaymentIntent = { id: string; method: 'pix' | 'credit'; amount: number; status: string; expiresAt: string; needsReview: boolean; instructions: { qrCodeText?: string; expiresAt?: string } };
+export type QrPaymentSummary = { enabled: boolean; environment: 'simulator' | 'sandbox' | 'production'; testLimit: number | null; methods: string[]; applePay: boolean; subtotal: number; serviceFee: number; paid: number; total: number; balance: number; intent: QrPaymentIntent | null };
+const qrPaymentContext = (input: QrPaymentContext) => ({
+  tableId: input.tableId, tableNumber: input.tableNumber, origin: 'qr',
+  publicAccessToken: getPublicTableAccessToken(input.customerTabContext?.sourceTableId || input.tableId, 'qr'),
+  customerTabId: input.customerTabContext?.customerTabId,
+  customerTabAccessToken: input.customerTabContext ? getCustomerTabAccessToken() : undefined,
+  sourceTableId: input.customerTabContext?.sourceTableId,
+  sourceTableNumber: input.customerTabContext?.sourceTableNumber,
+});
+export const QrPaymentsApi = {
+  summary: (context: QrPaymentContext) => postJson<QrPaymentSummary>('/api/qr/payments/summary', qrPaymentContext(context)),
+  publicKey: (context: QrPaymentContext) => postJson<{ publicKey: string }>('/api/qr/payments/public-key', qrPaymentContext(context)),
+  create: (context: QrPaymentContext, input: { method: 'pix' | 'credit'; expectedAmount: number; customer: { name: string; email: string; taxId: string }; encryptedCard?: string }) => postJson<QrPaymentIntent>('/api/qr/payments/create', { ...qrPaymentContext(context), ...input }),
+  status: (context: QrPaymentContext, intentId: string) => postJson<QrPaymentIntent>('/api/qr/payments/status', { ...qrPaymentContext(context), intentId }),
+  simulate: (context: QrPaymentContext, intentId: string, outcome: string) => postJson<QrPaymentIntent>('/api/qr/payments/simulate', { ...qrPaymentContext(context), intentId, outcome }),
+};
+
 export const ComandaApi = {
   access(pin: string) {
     return postJson<{ authorized: boolean; sessionToken?: string | null }>('/api/comanda/access', { pin }).then((result) => {

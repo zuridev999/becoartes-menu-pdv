@@ -244,7 +244,7 @@ export const buildReceiptHtml = (data: ReceiptData, options: ReceiptHtmlOptions 
     ${itemsHtml || '<div class="muted">Sem itens.</div>'}
     <div class="rule"></div>
     <div class="line"><span>Subtotal</span><strong>${escapeHtml(formatMoney(data.subtotal))}</strong></div>
-    <div class="line"><span>Taxa servico${data.serviceFeePercent !== undefined ? ` ${escapeHtml(data.serviceFeePercent)}%` : ''}</span><strong>${escapeHtml(formatMoney(data.serviceFee || 0))}</strong></div>
+    <div class="line"><span>Taxa de serviço</span><strong>${escapeHtml(formatMoney(data.serviceFee || 0))}</strong></div>
     ${(data.discount || 0) > 0 ? `<div class="line"><span>Desconto</span><strong>- ${escapeHtml(formatMoney(data.discount || 0))}</strong></div>` : ''}
     ${(data.couponAmount || 0) > 0 || data.couponCode ? `<div class="line"><span>Cupom ${escapeHtml(data.couponCode || '')}</span><strong>- ${escapeHtml(formatMoney(data.couponAmount || 0))}</strong></div>` : ''}
     <div class="line total"><span>Total</span><strong>${escapeHtml(formatMoney(data.total))}</strong></div>

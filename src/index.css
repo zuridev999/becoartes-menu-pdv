@@ -3,6 +3,13 @@
 @import "@fontsource/jetbrains-mono/latin-700.css";
 @import "tailwindcss";
 
+@keyframes pdv-paid-online-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(52 211 153 / 0.15); }
+  50% { box-shadow: 0 0 0 4px rgb(52 211 153 / 0.4), 0 0 22px rgb(52 211 153 / 0.25); }
+}
+.pdv-paid-online { animation: pdv-paid-online-glow 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pdv-paid-online { animation: none; } }
+
 :root {
   font-family: 'Outfit', 'Avenir Next', sans-serif;
   line-height: 1.5;
