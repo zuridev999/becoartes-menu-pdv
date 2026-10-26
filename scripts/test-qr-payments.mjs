@@ -67,5 +67,13 @@ assert.equal((await real.webhook({ reference_id: order.id, status: 'PAID', amoun
 assert.equal(calls, 2, 'Webhook must re-fetch the provider order');
 assert.equal((await db.execute('SELECT COUNT(*) n FROM table_payments')).rows[0].n, 0);
 assert.equal((await db.execute("SELECT COUNT(*) n FROM qr_payment_intents WHERE snapshot LIKE '%52998224725%' OR snapshot LIKE '%ENCRYPTED_TEST%'")).rows[0].n, 0);
+await db.execute('DELETE FROM qr_payment_intents');
+items = [{ id: 'ten-cents', name: 'Água sem gás · teste', price: 0.09, quantity: 1 }];
+const smallSummary = await service.summary(context);
+assert.equal(smallSummary.subtotal, 0.09);
+assert.equal(smallSummary.serviceFee, 0.01);
+assert.equal(smallSummary.balance, 0.10);
+const small = await service.create({ ...input, expectedAmount: 0.10 });
+assert.equal(small.amount, 0.10);
 db.close();
 console.log('QR payments: totals, possession, immutable amount, duplicate clicks/events, capture, refusal, stale table and provider recheck passed.');

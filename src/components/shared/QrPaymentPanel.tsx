@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import { motion, useReducedMotion } from 'framer-motion';
 import { CheckCircle2, CreditCard, Loader2, QrCode } from 'lucide-react';
 import { QrPaymentsApi, type QrPaymentContext, type QrPaymentIntent, type QrPaymentSummary } from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
+import { usePublicI18n } from '../../lib/public-i18n';
 
 let sdkPromise: Promise<void> | null = null;
 async function loadCardSdk() {
@@ -12,16 +14,20 @@ async function loadCardSdk() {
     script.src = 'https://assets.pagseguro.com.br/checkout-sdk-js/rc/dist/browser/pagseguro.min.js';
     script.async = true;
     script.onload = () => resolve();
-    script.onerror = () => { script.remove(); sdkPromise = null; reject(new Error('Não foi possível carregar o pagamento. Tente novamente.')); };
+    script.onerror = () => { script.remove(); sdkPromise = null; reject(new Error('paymentError')); };
     document.head.appendChild(script);
   });
   await sdkPromise;
-  if (!window.PagSeguro?.encryptCard) throw new Error('Pagamento por cartão indisponível.');
+  if (!window.PagSeguro?.encryptCard) throw new Error('paymentError');
   return window.PagSeguro;
 }
 const inputClass = 'min-h-12 w-full min-w-0 rounded-xl border border-white/15 bg-white/5 px-3 text-base text-white';
 
-export function QrPaymentPanel({ context, onPaid }: { context: QrPaymentContext; onPaid: () => void }) {
+export function QrPaymentPanel({ context, onPaid, expanded, onExpand }: { context: QrPaymentContext; onPaid: () => void; expanded: boolean; onExpand: () => void }) {
+  const { t, locale } = usePublicI18n();
+  const reducedMotion = useReducedMotion();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { if (expanded) headingRef.current?.focus({ preventScroll: true }); }, [expanded]);
   const [summary, setSummary] = useState<QrPaymentSummary | null>(null);
   const [intent, setIntent] = useState<QrPaymentIntent | null>(null);
   const [method, setMethod] = useState<'pix' | 'credit'>('pix');
@@ -37,7 +43,7 @@ export function QrPaymentPanel({ context, onPaid }: { context: QrPaymentContext;
   const contextKey = JSON.stringify(context);
   useEffect(() => {
     let active = true;
-    QrPaymentsApi.summary(context).then(result => { if (active) { setSummary(result); setIntent(result.intent); } }).catch(() => { if (active) setError('Não foi possível consultar o pagamento. Tente reabrir Minha conta.'); });
+    QrPaymentsApi.summary(context).then(result => { if (active) { setSummary(result); setIntent(result.intent); } }).catch(() => { if (active) setError('paymentLoadError'); });
     return () => { active = false; };
   // contextKey represents the complete authorization target.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,15 +89,16 @@ export function QrPaymentPanel({ context, onPaid }: { context: QrPaymentContext;
           const result = sdk.encryptCard({ publicKey: key.publicKey, holder: customer.name,
             number: card.number.replace(/\D/g, ''), expMonth: parts[0],
             expYear: parts[1]?.length === 2 ? `20${parts[1]}` : parts[1], securityCode: card.cvv });
-          if (result.hasErrors || !result.encryptedCard) throw new Error('Confira número, validade, código e nome do cartão.');
+          if (result.hasErrors || !result.encryptedCard) throw new Error('paymentCardInvalid');
           encryptedCard = result.encryptedCard;
         }
       }
       const next = await QrPaymentsApi.create(context, { method, expectedAmount: summary.balance, customer, encryptedCard });
-      setIntent(next); setCard({ number: '', expiry: '', cvv: '' });
+      setIntent(next); setCopied(false); setCard({ number: '', expiry: '', cvv: '' });
       if (next.status === 'paid') paidCallback.current();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível concluir o pagamento.');
+      const message = cause instanceof Error ? cause.message : '';
+      setError(message === 'paymentCardInvalid' ? message : message.includes('conta foi atualizada') ? 'paymentUpdated' : message.includes('Informe nome') ? 'paymentCustomerRequired' : 'paymentError');
       const current = await QrPaymentsApi.summary(context).catch(() => null);
       if (current) { setSummary(current); setIntent(current.intent); }
     } finally { lock.current = false; setBusy(false); }
@@ -100,42 +107,52 @@ export function QrPaymentPanel({ context, onPaid }: { context: QrPaymentContext;
     if (!intent || lock.current) return;
     lock.current = true; setBusy(true); setError('');
     try { const next = await QrPaymentsApi.simulate(context, intent.id, outcome); setIntent(next); if (next.status === 'paid') paidCallback.current(); }
-    catch { setError('Falha ao simular. Tente novamente.'); }
+    catch { setError('paymentSimulateError'); }
     finally { lock.current = false; setBusy(false); }
   };
-  if (intent?.status === 'paid') return <div role="status" className="mt-6 space-y-2 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5 text-emerald-300"><CheckCircle2 /><p className="text-xl font-bold">Pagamento confirmado</p><p>{formatCurrency(intent.amount)} registrados nesta conta. A equipe já pode conferir no PDV.</p></div>;
-  if (!summary) return <p role="status" className="mt-6 text-sm text-zinc-300">{error || 'Consultando opções de pagamento…'}</p>;
-  if (!summary.enabled) return <p className="mt-6 text-sm text-zinc-300">Para pagar, chame a equipe.</p>;
+  if (!summary) return <p role="status" className="mt-6 text-sm text-zinc-300">{t(error || 'paymentLoading')}</p>;
+  if (!summary.enabled) return <p className="mt-6 text-sm text-zinc-300">{t('paymentUnavailable')}</p>;
   if (summary.balance <= 0 && !intent) return null;
   const blocked = intent && ['creating', 'pending', 'unknown', 'review'].includes(intent.status);
-  return <section className="mt-6 min-w-0 space-y-4 border-t border-white/10 pt-6" aria-label="Pagamento da conta">
-    <h3 className="text-2xl font-bold">Pagar minha conta</h3>
-    {summary.testLimit && <p className="rounded-xl bg-amber-400/15 p-3 text-sm text-amber-200">TESTE REAL · até {formatCurrency(summary.testLimit)}. Ao confirmar, você cria uma cobrança real na conta PagBank do Becoartes.</p>}
-    {summary.environment !== 'production' && <p className="rounded-xl bg-amber-400/15 p-3 text-sm text-amber-200">{summary.environment === 'simulator' ? 'DEMONSTRAÇÃO LOCAL — nenhuma cobrança real.' : 'SANDBOX PAGBANK — use somente dados de teste.'}</p>}
-    {error && <p role="alert" className="rounded-xl bg-rose-500/15 p-3 text-sm text-rose-200">{error}</p>}
-    {blocked ? <div className="min-w-0 space-y-3">
-      <p className="font-semibold">{formatCurrency(intent.amount)} · {intent.method === 'pix' ? 'Pix' : 'Cartão de crédito'}</p>
-      <p role="status" className="text-sm text-zinc-300">{intent.status === 'review' ? 'Recebemos uma divergência na confirmação. Chame a equipe para conferir este pagamento.' : intent.status === 'unknown' || intent.status === 'creating' ? 'Conferindo a cobrança. Aguarde a confirmação antes de tentar outro pagamento.' : 'Aguardando confirmação do pagamento.'}</p>
+  if (!expanded) return <button type="button" onClick={onExpand} className="mt-6 flex min-h-16 w-full items-center justify-center gap-3 rounded-2xl bg-accent px-4 py-4 text-base font-bold text-white transition hover:brightness-110 sm:text-lg">
+    <CreditCard size={22} className="shrink-0" />{t(blocked || intent?.status === 'paid' ? 'paymentView' : 'paymentStart')}
+  </button>;
+  return <motion.section initial={{ opacity: 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reducedMotion ? 0 : 0.2 }} className="mx-auto min-w-0 max-w-lg space-y-6" aria-label={t('paymentTitle')}>
+    <div className="space-y-2 text-center">
+      <h3 ref={headingRef} tabIndex={-1} className="text-xl font-bold outline-none sm:text-2xl">{t('paymentTitle')}</h3>
+      <p className="text-sm text-zinc-400">{t('paymentAmount')}</p>
+      <p className="break-words text-4xl font-black tracking-tight">{formatCurrency(intent && (blocked || intent.status === 'paid') ? intent.amount : summary.balance, locale)}</p>
+    </div>
+    {summary.environment !== 'production' && <p className="rounded-xl bg-amber-400/15 p-3 text-sm text-amber-200">{t(summary.environment === 'simulator' ? 'paymentSimulator' : 'paymentSandbox')}</p>}
+    {error && <p role="alert" className="rounded-xl bg-rose-500/15 p-3 text-sm text-rose-200">{t(error)}</p>}
+    {intent?.status === 'paid' ? <div role="status" className="space-y-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5 text-emerald-300"><CheckCircle2 size={32} /><p className="text-xl font-bold">{t('paymentConfirmed')}</p><p>{t('paymentConfirmedDetail', { amount: formatCurrency(intent.amount, locale) })}</p></div>
+    : blocked ? <div className="min-w-0 space-y-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5">
+      <p className="font-semibold">{intent.method === 'pix' ? 'Pix' : t('paymentCredit')}</p>
+      <p role="status" className="text-sm text-zinc-300">{t(intent.status === 'review' ? 'paymentReview' : intent.status === 'unknown' || intent.status === 'creating' ? 'paymentChecking' : 'paymentWaiting')}</p>
       {intent.method === 'pix' && intent.status === 'pending' && <>
-        {image && <img src={image} alt="QR Code para pagar com Pix" className="mx-auto h-56 w-56 max-w-full rounded-xl" />}
-        <p className="text-sm text-zinc-400">Válido até {new Date(intent.instructions.expiresAt || intent.expiresAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.</p>
-        <textarea aria-label="Pix copia e cola" readOnly value={intent.instructions.qrCodeText || ''} className={`${inputClass} h-20 break-all py-3 text-xs`} />
-        {summary.environment !== 'simulator' && <button type="button" className="min-h-12 w-full rounded-xl bg-accent p-3 font-bold text-white" onClick={async () => { try { await navigator.clipboard.writeText(intent.instructions.qrCodeText || ''); setCopied(true); } catch { setError('Selecione e copie o código Pix no campo acima.'); } }}>{copied ? 'Código copiado' : 'Copiar código Pix'}</button>}
+        {image && <img src={image} alt={t('paymentPixQr')} className="mx-auto h-56 w-56 max-w-full rounded-xl" />}
+        <p className="text-sm text-zinc-400">{t('paymentExpires', { time: new Date(intent.instructions.expiresAt || intent.expiresAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) })}</p>
+        <textarea aria-label={t('paymentPixCode')} readOnly value={intent.instructions.qrCodeText || ''} className={`${inputClass} h-20 break-all py-3 text-xs`} />
+        {summary.environment !== 'simulator' && <button type="button" className="min-h-12 w-full rounded-xl bg-accent p-3 font-bold text-white" onClick={async () => { try { await navigator.clipboard.writeText(intent.instructions.qrCodeText || ''); setCopied(true); } catch { setError('paymentCopyError'); } }}>{t(copied ? 'paymentCopied' : 'paymentCopy')}</button>}
       </>}
-      {summary.environment === 'simulator' && intent.status === 'pending' && <div className="flex flex-wrap gap-2"><button disabled={busy} type="button" className="min-h-12 rounded-xl bg-emerald-600 p-3 font-bold" onClick={() => void simulate('paid')}>Simular aprovação</button><button disabled={busy} type="button" className="min-h-12 rounded-xl bg-white/10 p-3" onClick={() => void simulate('declined')}>Simular recusa</button></div>}
-    </div> : <form onSubmit={submit} className="min-w-0 space-y-4">
-      {intent && ['failed', 'expired'].includes(intent.status) && <p role="status" className="text-amber-200">{intent.status === 'expired' ? 'O Pix expirou. Você pode gerar outro.' : 'Pagamento recusado. Confira os dados e tente novamente.'}</p>}
-      <div className="grid grid-cols-2 gap-2">{(['pix', 'credit'] as const).map(value => <button key={value} type="button" aria-pressed={method === value} onClick={() => setMethod(value)} className={`flex min-h-14 items-center justify-center gap-2 rounded-xl border p-3 text-sm font-bold ${method === value ? 'border-accent bg-accent/20' : 'border-white/15'}`}>{value === 'pix' ? <QrCode size={18} /> : <CreditCard size={18} />}{value === 'pix' ? 'Pix' : 'Crédito'}</button>)}</div>
-      <label className="block text-sm">Nome completo<input autoComplete="name" required maxLength={100} className={`${inputClass} mt-1`} value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} /></label>
-      <label className="block text-sm">E-mail<input type="email" autoComplete="email" required maxLength={150} className={`${inputClass} mt-1`} value={customer.email} onChange={e => setCustomer({ ...customer, email: e.target.value })} /></label>
-      <label className="block text-sm">CPF<input inputMode="numeric" required pattern="[0-9]{11}" maxLength={11} placeholder="Somente os 11 números" className={`${inputClass} mt-1`} value={customer.taxId} onChange={e => setCustomer({ ...customer, taxId: e.target.value.replace(/\D/g, '') })} /></label>
-      {method === 'credit' && <fieldset className="min-w-0 space-y-3"><legend className="mb-2 text-sm font-bold">Cartão de crédito · à vista</legend>
-        <label className="block text-sm">Número do cartão<input autoComplete="cc-number" inputMode="numeric" required maxLength={23} className={`${inputClass} mt-1`} value={card.number} onChange={e => setCard({ ...card, number: e.target.value.replace(/[^\d ]/g, '') })} /></label>
-        <div className="grid grid-cols-2 gap-3"><label className="block text-sm">Validade<input autoComplete="cc-exp" inputMode="numeric" placeholder="MM/AA" required maxLength={7} className={`${inputClass} mt-1`} value={card.expiry} onChange={e => { const digits = e.target.value.replace(/\D/g, '').slice(0, 6); setCard({ ...card, expiry: digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits }); }} /></label><label className="block text-sm">Código de segurança<input type="password" autoComplete="cc-csc" inputMode="numeric" required minLength={3} maxLength={4} className={`${inputClass} mt-1`} value={card.cvv} onChange={e => setCard({ ...card, cvv: e.target.value.replace(/\D/g, '') })} /></label></div>
-        <p className="text-xs text-zinc-400">O nome informado deve ser o do titular. O cartão é criptografado no navegador pelo PagBank.</p>
+      {summary.environment === 'simulator' && intent.status === 'pending' && <div className="flex flex-wrap gap-2"><button disabled={busy} type="button" className="min-h-12 rounded-xl bg-emerald-600 p-3 font-bold" onClick={() => void simulate('paid')}>{t('paymentSimulatePaid')}</button><button disabled={busy} type="button" className="min-h-12 rounded-xl bg-white/10 p-3" onClick={() => void simulate('declined')}>{t('paymentSimulateDeclined')}</button></div>}
+    </div> : <form aria-busy={busy} onSubmit={submit} className="min-w-0">
+      <fieldset disabled={busy} className="min-w-0 space-y-5">
+      <legend className="sr-only">{t('paymentMethod')}</legend>
+      {intent && ['failed', 'expired'].includes(intent.status) && <p role="status" className="text-amber-200">{t(intent.status === 'expired' ? 'paymentExpired' : 'paymentDeclined')}</p>}
+      <div className="grid grid-cols-2 gap-3">{(['pix', 'credit'] as const).map(value => <button key={value} type="button" aria-pressed={method === value} onClick={() => { setMethod(value); setError(''); }} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl border px-2 py-3 text-sm font-bold transition ${method === value ? 'border-accent bg-accent/20 text-white' : 'border-white/15 bg-white/[0.02] text-zinc-400 hover:bg-white/5'}`}>{value === 'pix' ? <QrCode size={24} /> : <CreditCard size={24} />}{value === 'pix' ? 'Pix' : t('paymentCredit')}</button>)}</div>
+      <div className="space-y-4">
+        <label className="block text-sm text-zinc-300">{t('paymentFullName')}<input autoComplete="name" required maxLength={100} className={`${inputClass} mt-2`} value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} /></label>
+        <label className="block text-sm text-zinc-300">{t('paymentEmail')}<input type="email" autoComplete="email" autoCapitalize="none" required maxLength={150} className={`${inputClass} mt-2`} value={customer.email} onChange={e => setCustomer({ ...customer, email: e.target.value })} /></label>
+        <label className="block text-sm text-zinc-300">{t('paymentCpf')}<input inputMode="numeric" required pattern="[0-9]{11}" maxLength={11} placeholder={t('paymentCpfHint')} className={`${inputClass} mt-2`} value={customer.taxId} onChange={e => setCustomer({ ...customer, taxId: e.target.value.replace(/\D/g, '') })} /></label>
+      </div>
+      {method === 'credit' && <fieldset className="min-w-0 space-y-4 border-t border-white/10 pt-5"><legend className="sr-only">{t('paymentCredit')}</legend>
+        <label className="block text-sm text-zinc-300">{t('paymentCardNumber')}<input autoComplete="cc-number" inputMode="numeric" required maxLength={23} className={`${inputClass} mt-2`} value={card.number} onChange={e => setCard({ ...card, number: e.target.value.replace(/[^\d ]/g, '') })} /></label>
+        <div className="grid grid-cols-2 gap-3"><label className="block text-sm text-zinc-300">{t('paymentExpiry')}<input autoComplete="cc-exp" inputMode="numeric" placeholder={t('paymentExpiryHint')} required maxLength={7} className={`${inputClass} mt-2`} value={card.expiry} onChange={e => { const digits = e.target.value.replace(/\D/g, '').slice(0, 6); setCard({ ...card, expiry: digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits }); }} /></label><label className="block text-sm text-zinc-300">{t('paymentSecurityCode')}<input type="password" autoComplete="cc-csc" inputMode="numeric" required minLength={3} maxLength={4} className={`${inputClass} mt-2`} value={card.cvv} onChange={e => setCard({ ...card, cvv: e.target.value.replace(/\D/g, '') })} /></label></div>
+        <p className="text-xs leading-relaxed text-zinc-400">{t('paymentCardHint')}</p>
       </fieldset>}
-      <p className="text-sm text-zinc-300">Total: <strong>{formatCurrency(summary.balance)}</strong>, com taxa de serviço incluída. Para ajustar a taxa, chame a equipe.</p>
-      <button disabled={busy} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-accent p-3 text-lg font-bold text-white disabled:opacity-50">{busy && <Loader2 className="animate-spin" size={20} />}{busy ? 'Processando…' : method === 'pix' ? 'Gerar Pix' : `Pagar ${formatCurrency(summary.balance)}`}</button>
+      <button disabled={busy} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 text-lg font-bold text-white disabled:opacity-50">{busy && <Loader2 className="animate-spin" size={20} />}{busy ? t('paymentProcessing') : method === 'pix' ? t('paymentGeneratePix') : t('paymentPayAmount', { amount: formatCurrency(summary.balance, locale) })}</button>
+      </fieldset>
     </form>}
-  </section>;
+  </motion.section>;
 }

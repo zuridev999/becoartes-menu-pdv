@@ -26,7 +26,7 @@ const child = spawn(process.execPath, ['server/bff.mjs'], {
     DEFAULT_MANAGER_PIN: '7531', DEFAULT_OPERATOR_PIN: '1357', TABLET_SETUP_PIN: '9753',
     BOOTSTRAP_ADMIN_PIN: '8642', COMANDA_ACCESS_PIN: '8642',
     QR_PAYMENTS_PROVIDER: real ? 'pagbank' : 'simulator',
-    ...(real ? { PAGBANK_TOKEN: gateway.token, PAGBANK_API_BASE_URL: gateway.apiBase, QR_PAYMENT_MAX_CENTS: '113' } : {}),
+    ...(real ? { PAGBANK_TOKEN: gateway.token, PAGBANK_API_BASE_URL: gateway.apiBase, QR_PAYMENT_MAX_CENTS: '10' } : {}),
     // No webhook URL: local preview confirms by authenticated Orders polling.
     CASH_SANDBOX_MODE: '1', INVENTORY_RECONCILIATION_DISABLED: '1',
     DELIVERY_OS_CRM_SYNC: 'disabled', DELIVERY_LOGISTICS_PROVIDER: 'disabled',
@@ -45,11 +45,11 @@ for (let i = 0; i < 80; i++) {
 }
 if (!ready) { child.kill(); throw new Error('Prévia não iniciou.'); }
 const db = createClient({ url: dbUrl });
-const settings = { serviceTax: 13, qrMode: 'mesa', publicLanguages: ['pt'], pdv: { tickerEnabled: false }, tables: { count: 12 } };
+const settings = { serviceTax: 13, qrMode: 'mesa', pdv: { tickerEnabled: false }, tables: { count: 12 } };
 await db.execute({ sql: "INSERT OR REPLACE INTO app_settings(key,value) VALUES ('settings',?)", args: [JSON.stringify(settings)] });
 await db.execute({ sql: "INSERT INTO pdv_cash_sandbox(id,empresa_id,data,responsavel_id,status,created_at,updated_at) VALUES ('preview-cash','local-qr-payment-demo',?,'admin-bootstrap','Aberto',?,?)", args: [businessDateKey(new Date()), Math.floor(Date.now()/1000), Math.floor(Date.now()/1000)] });
-const fixtures = real ? [{ number: 7, products: [{ id: 'test-real', name: 'Teste de pagamento', price: 1 }] }, { number: 8, products: [{ id: 'test-real-card', name: 'Teste de cartão', price: 1 }] }]
-  : [{ number: 6, products: [{ id: 'demo-water', name: 'Água sem gás', price: 7.99 }, { id: 'demo-fries', name: 'Batata frita', price: 32.99 }] }, { number: 7, products: [{ id: 'demo-credit', name: 'Conta para testar cartão', price: 0.88 }] }];
+const fixtures = real ? [{ number: 7, products: [{ id: 'test-real', name: 'Água sem gás · teste', price: 0.09 }] }, { number: 8, products: [{ id: 'test-real-card', name: 'Água sem gás · teste', price: 0.09 }] }]
+  : [{ number: 6, products: [{ id: 'demo-water', name: 'Água sem gás', price: 7.99 }, { id: 'demo-fries', name: 'Batata frita', price: 32.99 }] }, { number: 7, products: [{ id: 'demo-credit', name: 'Água sem gás · teste', price: 0.09 }] }];
 await db.execute("INSERT INTO categories(id,name,visible) VALUES ('qr-demo','Itens de demonstração',1)");
 for (const fixture of fixtures) {
   const table = (await db.execute({ sql: 'SELECT id FROM tables WHERE CAST(number AS INTEGER)=?', args: [fixture.number] })).rows[0];
@@ -62,6 +62,6 @@ for (const fixture of fixtures) {
   }
 }
 db.close();
-console.log(real ? '\nTESTE REAL: cada mesa tem total de R$ 1,13 (R$ 1,00 + taxa de serviço). A cobrança só é criada ao confirmar no formulário.' : '\nSIMULAÇÃO: nenhuma cobrança real e nenhum acesso ao banco do restaurante.');
+console.log(real ? '\nTESTE REAL: total de R$ 0,10 por mesa. A cobrança só é criada ao confirmar no formulário.' : '\nSIMULAÇÃO: nenhuma cobrança real e nenhum acesso ao banco do restaurante.');
 for (const fixture of fixtures) console.log(`${url}/mesa/${fixture.number}`);
 console.log(`PDV local: ${url}/pdv — PIN de teste 8642`);

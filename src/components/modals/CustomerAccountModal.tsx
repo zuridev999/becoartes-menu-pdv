@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, FileText, Receipt, LayoutDashboard } from 'lucide-react';
 import { useStore } from '../../store';
@@ -10,6 +11,9 @@ import { usePublicI18n } from '../../lib/public-i18n';
 export function CustomerAccountModal({ onClose, locationLabel, customerTabContext }: { onClose: () => void; locationLabel?: string; customerTabContext?: QrPaymentContext['customerTabContext'] }) {
   const { currentTableId, tables, settings } = useStore();
   const { t, locale, catalogText } = usePublicI18n();
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; }, [paymentOpen]);
   const table = tables.find(t => t.id === currentTableId);
 
   if (!table) return null;
@@ -55,58 +59,61 @@ export function CustomerAccountModal({ onClose, locationLabel, customerTabContex
           </button>
         </div>
 
-        <div className="ios-touch-scroll custom-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-12">
-          <div className="mb-8 space-y-6 sm:mb-12">
-            {table.orders.length === 0 ? (
-              <div className="text-center py-20 opacity-20">
-                <FileText size={80} className="mx-auto mb-6" />
-                <p className="text-2xl font-black uppercase tracking-widest">{t('noConsumption')}</p>
-              </div>
-            ) : (
-              table.orders.map((item, idx) => (
-                <div key={idx} className="flex justify-between items-start pb-6 border-b border-white/5 last:border-0 group">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap justify-between items-center gap-2 mb-1">
-                      <p className="text-2xl font-black italic tracking-tighter">{item.quantity}x {catalogText(item.productId, item.name, 'name')}</p>
-                      <p className="text-lg font-black text-white/90 sm:text-2xl">{formatCurrency((item.price + (item.selectedModifiers?.reduce((acc, m) => acc + m.price, 0) || 0)) * item.quantity, locale)}</p>
-                    </div>
-                    {item.selectedModifiers && item.selectedModifiers.length > 0 && (
-                      <p className="text-sm text-gray-500 font-bold">
-                        + {item.selectedModifiers.map(m => catalogText(m.id, m.name, 'name')).join(', ')}
-                      </p>
-                    )}
-                  </div>
+        <div ref={scrollRef} className="ios-touch-scroll custom-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-12">
+          <div hidden={paymentOpen}>
+            <div className="mb-8 space-y-6 sm:mb-12">
+              {table.orders.length === 0 ? (
+                <div className="text-center py-20 opacity-20">
+                  <FileText size={80} className="mx-auto mb-6" />
+                  <p className="text-2xl font-black uppercase tracking-widest">{t('noConsumption')}</p>
                 </div>
-              ))
-            )}
+              ) : (
+                table.orders.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-start pb-6 border-b border-white/5 last:border-0 group">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap justify-between items-center gap-2 mb-1">
+                        <p className="text-2xl font-black italic tracking-tighter">{item.quantity}x {catalogText(item.productId, item.name, 'name')}</p>
+                        <p className="text-lg font-black text-white/90 sm:text-2xl">{formatCurrency((item.price + (item.selectedModifiers?.reduce((acc, m) => acc + m.price, 0) || 0)) * item.quantity, locale)}</p>
+                      </div>
+                      {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                        <p className="text-sm text-gray-500 font-bold">
+                          + {item.selectedModifiers.map(m => catalogText(m.id, m.name, 'name')).join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <section className="space-y-4 border-y border-white/10 py-6 sm:space-y-6 sm:py-8">
+              <div className="flex justify-between items-center text-gray-500 font-black uppercase tracking-[0.2em] text-sm">
+                <span>{t('subtotal')}</span>
+                <span>{formatCurrency(subtotal, locale)}</span>
+              </div>
+              <div className="flex justify-between items-center text-gray-500 font-black uppercase tracking-[0.2em] text-sm">
+                <span>{t('serviceFeePlain')}</span>
+                <span>{formatCurrency(serviceFee, locale)}</span>
+              </div>
+              <div className="pt-6 border-t border-white/10 flex justify-between items-center">
+                <span className="text-3xl font-black italic tracking-tighter uppercase">{t('total')}</span>
+                <span className="text-3xl font-black text-accent italic tracking-tighter sm:text-5xl">{formatCurrency(total, locale)}</span>
+              </div>
+              {paid > 0 && (
+                <div className="flex justify-between items-center text-emerald-400 font-black uppercase tracking-[0.2em] text-sm">
+                  <span>{t('paid')}</span>
+                  <span>{formatCurrency(paid, locale)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center text-white font-black uppercase tracking-[0.2em] text-sm">
+                <span>{t('openBalance')}</span>
+                <span>{formatCurrency(balance, locale)}</span>
+              </div>
+            </section>
+
           </div>
 
-          <section className="space-y-4 border-y border-white/10 py-6 sm:space-y-6 sm:py-8">
-            <div className="flex justify-between items-center text-gray-500 font-black uppercase tracking-[0.2em] text-sm">
-              <span>{t('subtotal')}</span>
-              <span>{formatCurrency(subtotal, locale)}</span>
-            </div>
-            <div className="flex justify-between items-center text-gray-500 font-black uppercase tracking-[0.2em] text-sm">
-              <span>{t('serviceFee').replace(/\s*\([^)]*\)/g, '')}</span>
-              <span>{formatCurrency(serviceFee, locale)}</span>
-            </div>
-            <div className="pt-6 border-t border-white/10 flex justify-between items-center">
-              <span className="text-3xl font-black italic tracking-tighter uppercase">{t('total')}</span>
-              <span className="text-3xl font-black text-accent italic tracking-tighter sm:text-5xl">{formatCurrency(total, locale)}</span>
-            </div>
-            {paid > 0 && (
-              <div className="flex justify-between items-center text-emerald-400 font-black uppercase tracking-[0.2em] text-sm">
-                <span>{t('paid')}</span>
-                <span>{formatCurrency(paid, locale)}</span>
-              </div>
-            )}
-            <div className="flex justify-between items-center text-white font-black uppercase tracking-[0.2em] text-sm">
-              <span>{t('openBalance')}</span>
-              <span>{formatCurrency(balance, locale)}</span>
-            </div>
-          </section>
-
-          <QrPaymentPanel context={{ tableId: table.id, tableNumber: table.number, customerTabContext }} onPaid={() => {
+          <QrPaymentPanel expanded={paymentOpen} onExpand={() => setPaymentOpen(true)} context={{ tableId: table.id, tableNumber: table.number, customerTabContext }} onPaid={() => {
             void AppApi.getPublicTableState({ tableId: table.id, tableNumber: table.number, customerTabContext }).then(({ table: refreshed }) => {
               useStore.setState(state => ({ tables: state.tables.map(item => item.id === refreshed.id ? { ...item, ...refreshed } : item) }));
             }).catch(() => undefined);
@@ -115,10 +122,10 @@ export function CustomerAccountModal({ onClose, locationLabel, customerTabContex
 
         <div className="shrink-0 p-3 sm:p-6 bg-white/[0.02] border-t border-white/5">
           <button
-            onClick={onClose}
+            onClick={() => paymentOpen ? setPaymentOpen(false) : onClose()}
             className="w-full py-3 sm:py-5 btn-beco bg-white/5 text-white/50 text-xl font-black tracking-widest rounded-[2rem] hover:bg-white/10 transition-all uppercase"
           >
-            {t('backToMenu')}
+            {t(paymentOpen ? 'paymentBack' : 'backToMenu')}
           </button>
         </div>
       </motion.div>

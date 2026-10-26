@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AppSettings, PublicLanguageCode, PublicLanguageConfig } from '../types';
+import { qrPaymentCopy } from './public-payment-copy';
 import { extraPublicCopy } from './public-copy-extra';
 import { additionalCatalogCopy, normalizeCatalogText } from './public-catalog-copy';
 
@@ -26,7 +27,7 @@ const copy: Record<PublicLanguageCode, Record<string, string>> = {
   },
 };
 
-for (const locale of PUBLIC_LANGUAGE_CODES) copy[locale] = { ...copy[locale], ...extraPublicCopy[locale] };
+for (const locale of PUBLIC_LANGUAGE_CODES) copy[locale] = { ...copy[locale], ...extraPublicCopy[locale], ...qrPaymentCopy[locale] };
 
 const catalogCopy: Partial<Record<PublicLanguageCode, Record<string, string>>> = {
   'en-US': {
