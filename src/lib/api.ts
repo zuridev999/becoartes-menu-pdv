@@ -493,6 +493,7 @@ export const QrPaymentsApi = {
   publicKey: (context: QrPaymentContext) => postJson<{ publicKey: string }>('/api/qr/payments/public-key', qrPaymentContext(context)),
   create: (context: QrPaymentContext, input: { method: 'pix' | 'credit'; expectedAmount: number; customer: { name: string; email: string; taxId: string }; encryptedCard?: string }) => postJson<QrPaymentIntent>('/api/qr/payments/create', { ...qrPaymentContext(context), ...input }),
   status: (context: QrPaymentContext, intentId: string) => postJson<QrPaymentIntent>('/api/qr/payments/status', { ...qrPaymentContext(context), intentId }),
+  abandon: (context: QrPaymentContext, intentId: string) => postJson<QrPaymentIntent>('/api/qr/payments/abandon', { ...qrPaymentContext(context), intentId }),
   simulate: (context: QrPaymentContext, intentId: string, outcome: string) => postJson<QrPaymentIntent>('/api/qr/payments/simulate', { ...qrPaymentContext(context), intentId, outcome }),
 };
 

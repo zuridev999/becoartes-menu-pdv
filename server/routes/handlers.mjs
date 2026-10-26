@@ -63,6 +63,7 @@ export const createRouteHandlers = (services) => ({
   'POST /api/qr/payments/summary': async body => services.qrPayments.summary(body),
   'POST /api/qr/payments/create': async body => services.qrPayments.create(body),
   'POST /api/qr/payments/status': async body => services.qrPayments.status(body),
+  'POST /api/qr/payments/abandon': async body => services.qrPayments.abandon(body),
   'POST /api/qr/payments/public-key': async body => services.qrPayments.publicKey(body),
   'POST /api/qr/payments/simulate': async body => services.qrPayments.simulate(body),
   'GET /api/customer-tabs/lookup': async (_body, context) => services.lookupCustomerTabs({ query: context.url.searchParams.get('q') || '' }),

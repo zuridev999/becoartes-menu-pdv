@@ -59,7 +59,7 @@ export function createQrPaymentServices({ db, authorize, getItems, getSettings, 
         const rawParameter = String(error.parameter_name || '');
         const parameter = /^(customer\.(name|email|tax_id)|(?:qr_codes|charges|items)(?:\[\d+\])?\.(?:amount\.value|unit_amount|payment_method(?:\.pix\.expiration_date)?))$/.test(rawParameter) ? rawParameter : 'other';
         const description = String(error.description || '').toLowerCase();
-        const reason = /must be between|minimum|at least/.test(description) && /amount|unit_amount/.test(parameter) ? 'amount_range'
+        const reason = (/must be between|minimum|at least/.test(description) || String(error.code) === '40002') && /amount|unit_amount/.test(parameter) ? 'amount_range'
           : /tax_id/.test(parameter) ? 'customer_tax_id' : /not enabled|not authorized|not allowed|forbidden/.test(description) ? 'not_enabled' : 'validation';
         return { code: /^\d{4,6}$/.test(String(error.code)) ? String(error.code) : 'unknown', parameter, reason };
       });
@@ -85,6 +85,7 @@ export function createQrPaymentServices({ db, authorize, getItems, getSettings, 
     const charges = Array.isArray(result.charges) ? result.charges : [];
     const paidCharges = charges.filter(c => c.status === 'PAID');
     if (!paidCharges.length) {
+      if (row.status === 'abandoned') return publicIntent(row);
       const failed = charges.some(c => ['DECLINED', 'CANCELED', 'CANCELLED'].includes(c.status));
       // AUTHORIZED is not captured and must never become a settled payment.
       const expired = row.method === 'pix' && Date.parse(row.expires_at) < Date.now() && !charges.length;
@@ -120,6 +121,24 @@ export function createQrPaymentServices({ db, authorize, getItems, getSettings, 
     if (provider !== 'simulator' && token && row.external_id && !row.applied_at && row.status !== 'review') return reconcile(row, await request(`/orders/${encodeURIComponent(row.external_id)}`));
     return publicIntent(row);
   };
+  const abandon = async input => {
+    const target = await authorize(input);
+    const row = await get(input.intentId);
+    if (!row || row.table_id !== target.tableId || (row.tab_id || null) !== (target.tabId || null)) fail('Pagamento não encontrado.', 404);
+    if (row.method !== 'pix') fail('Somente um Pix pendente pode ser abandonado.');
+    if (row.applied_at || row.status === 'paid') return publicIntent(row);
+    if (row.status !== 'pending' || !row.external_id) fail('Este Pix não pode ser trocado agora. Chame a equipe.', 409);
+    if (provider !== 'simulator' && token) {
+      const checked = await reconcile(row, await request(`/orders/${encodeURIComponent(row.external_id)}`));
+      if (checked.status === 'paid' || checked.status === 'review') return checked;
+    }
+    const abandonedAt = new Date().toISOString();
+    await db.batch([
+      { sql: "UPDATE qr_payment_intents SET status='abandoned' WHERE id=? AND status='pending' AND applied_at IS NULL", args: [row.id] },
+      { sql: "INSERT INTO audit_logs (id,action,details,table_number,origin,author_name,timestamp) SELECT ?,'qr_payment_abandoned',?,?,'pagbank','Cliente',? WHERE EXISTS (SELECT 1 FROM qr_payment_intents WHERE id=? AND status='abandoned')", args: [randomUUID(), JSON.stringify({ intentId: row.id, externalId: row.external_id, warning: 'pix_remains_valid_until_expiration' }), row.table_id, abandonedAt, row.id] },
+    ], 'write');
+    return publicIntent(await get(row.id));
+  };
   const create = async input => {
     const target = await authorize(input);
     if (!enabled) fail('Pagamento online indisponível. Chame a equipe.', 503);
@@ -128,6 +147,7 @@ export function createQrPaymentServices({ db, authorize, getItems, getSettings, 
     if (active) return publicIntent(active);
     const totals = await balance(target);
     if (!totals.amountCents) fail('Esta conta não tem saldo em aberto.');
+    if (provider === 'pagbank' && totals.amountCents < 100) throw Object.assign(new Error('O PagBank exige um valor mínimo de R$ 1,00.'), { statusCode: 422, publicCode: 'paymentAmountRejected' });
     if (totals.amountCents > maxAmountCents) fail('Valor acima do limite desta prévia de teste.');
     if (cents(input.expectedAmount) !== totals.amountCents) fail('A conta foi atualizada. Confira o novo total antes de pagar.', 409);
     const customer = input.customer || {};
@@ -147,11 +167,15 @@ export function createQrPaymentServices({ db, authorize, getItems, getSettings, 
     const payload = { reference_id: id, customer: { name: String(customer.name).trim(), email: String(customer.email).trim(), tax_id: taxId },
       items: [{ reference_id: id, name: 'Consumo e taxa de serviço', quantity: 1, unit_amount: totals.amountCents }],
       ...(notificationUrl ? { notification_urls: [notificationUrl] } : {}),
-      charges: [{ reference_id: id, description: 'Becoartes - consumo e taxa de serviço', amount: { value: totals.amountCents, currency: 'BRL' },
-        payment_method: input.method === 'pix' ? { type: 'PIX', pix: { expiration_date: expires } }
-          : { type: 'CREDIT_CARD', installments: 1, capture: true, card: { encrypted: input.encryptedCard, store: false }, holder: { name: String(customer.name).trim(), tax_id: taxId } } }] };
+      ...(input.method === 'pix'
+        ? { qr_codes: [{ amount: { value: totals.amountCents }, expiration_date: expires }] }
+        : { charges: [{ reference_id: id, description: 'Becoartes - consumo e taxa de serviço', amount: { value: totals.amountCents, currency: 'BRL' },
+          payment_method: { type: 'CREDIT_CARD', installments: 1, capture: true, card: { encrypted: input.encryptedCard, store: false }, holder: { name: String(customer.name).trim(), tax_id: taxId } } }] }) };
     try {
-      const result = provider === 'simulator' ? { id: `SIM_${id}`, reference_id: id, charges: [{ status: 'WAITING', payment_method: payload.charges[0].payment_method, ...(input.method === 'pix' ? { qr_code: { text: 'SIMULACAO-SEM-VALOR-FINANCEIRO' } } : {}) }] }
+      const result = provider === 'simulator' ? { id: `SIM_${id}`, reference_id: id,
+        ...(input.method === 'pix'
+          ? { qr_codes: [{ text: 'SIMULACAO-SEM-VALOR-FINANCEIRO', expiration_date: expires }] }
+          : { charges: [{ status: 'WAITING', payment_method: payload.charges[0].payment_method }] }) }
         : await request('/orders', { method: 'POST', headers: { 'x-idempotency-key': id }, body: JSON.stringify(payload) });
       if (!result.id) throw new Error('Resposta de pagamento incompleta');
       const pixCharge = result.charges?.find(charge => charge.payment_method?.type === 'PIX');
@@ -182,5 +206,5 @@ export function createQrPaymentServices({ db, authorize, getItems, getSettings, 
     const result = { id: row.external_id, reference_id: row.id, charges: [{ status: input.outcome === 'declined' ? 'DECLINED' : input.outcome === 'authorized' ? 'AUTHORIZED' : 'PAID', amount: { value: row.amount_cents, currency: 'BRL' }, payment_method: { type: row.method === 'pix' ? 'PIX' : 'CREDIT_CARD' } }] };
     return reconcile(row, result);
   };
-  return { summary, create, status, webhook, simulate, publicKey: async input => { await authorize(input); if (!enabled) fail('Pagamento online indisponível.', 503); return getPublicKey(); } };
+  return { summary, create, status, abandon, webhook, simulate, publicKey: async input => { await authorize(input); if (!enabled) fail('Pagamento online indisponível.', 503); return getPublicKey(); } };
 }

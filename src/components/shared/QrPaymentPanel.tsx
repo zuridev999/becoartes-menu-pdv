@@ -37,6 +37,7 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand }: { contex
   const [error, setError] = useState('');
   const [image, setImage] = useState('');
   const [copied, setCopied] = useState(false);
+  const [confirmSwitch, setConfirmSwitch] = useState(false);
   const lock = useRef(false);
   const paidCallback = useRef(onPaid);
   paidCallback.current = onPaid;
@@ -73,6 +74,7 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand }: { contex
     if (text && summary?.environment !== 'simulator') QRCode.toDataURL(text, { margin: 2, width: 256 }).then(value => { if (active) setImage(value); });
     return () => { active = false; };
   }, [intent?.instructions.qrCodeText, summary?.environment]);
+  useEffect(() => { setError(''); }, [summary?.balance]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -111,6 +113,18 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand }: { contex
     catch { setError('paymentSimulateError'); }
     finally { lock.current = false; setBusy(false); }
   };
+  const switchFromPix = async () => {
+    if (!intent || lock.current) return;
+    lock.current = true; setBusy(true); setError('');
+    try {
+      const next = await QrPaymentsApi.abandon(context, intent.id);
+      if (next.status === 'paid') { setIntent(next); paidCallback.current(); return; }
+      if (next.status !== 'abandoned') { setIntent(next); setError(next.status === 'review' ? 'paymentReview' : 'paymentChangeError'); return; }
+      const current = await QrPaymentsApi.summary(context);
+      setSummary(current); setIntent(current.intent); setMethod('credit'); setConfirmSwitch(false); setCopied(false); setImage('');
+    } catch { setError('paymentChangeError'); }
+    finally { lock.current = false; setBusy(false); }
+  };
   if (!summary) return <p role="status" className="mt-6 text-sm text-zinc-300">{t(error || 'paymentLoading')}</p>;
   if (!summary.enabled) return <p className="mt-6 text-sm text-zinc-300">{t('paymentUnavailable')}</p>;
   if (summary.balance <= 0 && !intent) return null;
@@ -135,6 +149,8 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand }: { contex
         <p className="text-sm text-zinc-400">{t('paymentExpires', { time: new Date(intent.instructions.expiresAt || intent.expiresAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) })}</p>
         <textarea aria-label={t('paymentPixCode')} readOnly value={intent.instructions.qrCodeText || ''} className={`${inputClass} h-20 break-all py-3 text-xs`} />
         {summary.environment !== 'simulator' && <button type="button" className="min-h-12 w-full rounded-xl bg-white p-3 font-bold text-red-700 hover:bg-red-50" onClick={async () => { try { await navigator.clipboard.writeText(intent.instructions.qrCodeText || ''); setCopied(true); } catch { setError('paymentCopyError'); } }}>{t(copied ? 'paymentCopied' : 'paymentCopy')}</button>}
+        {!confirmSwitch ? <button type="button" disabled={busy} className="min-h-12 w-full rounded-xl border border-white/20 p-3 font-semibold text-white hover:bg-white/5" onClick={() => setConfirmSwitch(true)}>{t('paymentChangeMethod')}</button>
+        : <div className="space-y-3 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4"><p className="text-sm leading-relaxed text-amber-100">{t('paymentChangeWarning')}</p><div className="grid gap-2 sm:grid-cols-2"><button type="button" disabled={busy} className="min-h-12 rounded-xl border border-white/20 p-3 font-semibold" onClick={() => setConfirmSwitch(false)}>{t('paymentKeepPix')}</button><button type="button" disabled={busy} className="min-h-12 rounded-xl bg-white p-3 font-bold text-red-700 hover:bg-red-50" onClick={() => void switchFromPix()}>{busy ? t('paymentProcessing') : t('paymentConfirmChange')}</button></div></div>}
       </>}
       {summary.environment === 'simulator' && intent.status === 'pending' && <div className="flex flex-wrap gap-2"><button disabled={busy} type="button" className="min-h-12 rounded-xl bg-emerald-600 p-3 font-bold" onClick={() => void simulate('paid')}>{t('paymentSimulatePaid')}</button><button disabled={busy} type="button" className="min-h-12 rounded-xl bg-white/10 p-3" onClick={() => void simulate('declined')}>{t('paymentSimulateDeclined')}</button></div>}
     </div> : <form aria-busy={busy} onSubmit={submit} className="min-w-0">

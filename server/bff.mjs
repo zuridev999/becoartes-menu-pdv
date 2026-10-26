@@ -970,7 +970,7 @@ const throwIpRestricted = (req) => {
 };
 
 const isPinRateLimited = async (req, pathname) => {
-  if (['/api/qr/payments/create', '/api/qr/payments/public-key'].includes(pathname)) {
+  if (['/api/qr/payments/create', '/api/qr/payments/abandon', '/api/qr/payments/public-key'].includes(pathname)) {
     const bucket = await distributedRateLimiter.consume({ scope: 'qr-payment', identity: `${pathname}:${getClientIp(req)}`, limit: 20, windowMs: 60000 });
     return bucket.blocked;
   }
