@@ -2,6 +2,9 @@ import type { PublicLanguageCode } from '../types';
 
 export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> = {
   "pt-BR": {
+    "paymentCpfNotice": "Para pagar pelo celular, é necessário ter CPF brasileiro, tanto no Pix quanto no cartão de crédito.",
+    "paymentVisitorNotice": "Não tem CPF ou está visitando o Brasil? Peça a maquininha e pague com a equipe na mesa.",
+    "paymentStaffPendingWarning": "Se já iniciou um Pix ou pagamento com cartão, avise a equipe antes de pagar novamente para evitar cobrança em duplicidade.",
     "accountStaffTitle": "Prefere pagar com a equipe?",
     "accountStaffDescription": "Peça a conta para conferir ou solicite a maquininha na mesa.",
     "accountRequestMachine": "Pedir maquininha",
@@ -64,6 +67,9 @@ export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> =
     "serviceFeePlain": "Taxa de serviço"
   },
   "en-US": {
+    "paymentCpfNotice": "A Brazilian tax ID (CPF) is required to pay on your phone, whether by Pix or credit card.",
+    "paymentVisitorNotice": "No CPF or visiting Brazil? Ask for a card terminal and pay with our staff at your table.",
+    "paymentStaffPendingWarning": "If you already started a Pix or card payment, tell our staff before paying again to avoid a duplicate charge.",
     "accountStaffTitle": "Prefer to pay with our staff?",
     "accountStaffDescription": "Request the bill to review it, or ask for a card terminal at your table.",
     "accountRequestMachine": "Request card terminal",
@@ -126,6 +132,9 @@ export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> =
     "serviceFeePlain": "Service fee"
   },
   "es-ES": {
+    "paymentCpfNotice": "Para pagar desde el móvil necesitas un CPF brasileño, tanto con Pix como con tarjeta de crédito.",
+    "paymentVisitorNotice": "¿No tienes CPF o estás de visita en Brasil? Pide el datáfono y paga con el personal en tu mesa.",
+    "paymentStaffPendingWarning": "Si ya iniciaste un pago con Pix o tarjeta, avisa al personal antes de volver a pagar para evitar un cobro duplicado.",
     "accountStaffTitle": "¿Prefieres pagar con el equipo?",
     "accountStaffDescription": "Pide la cuenta para revisarla o solicita el terminal de pago en tu mesa.",
     "accountRequestMachine": "Pedir terminal de pago",
@@ -188,6 +197,9 @@ export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> =
     "serviceFeePlain": "Servicio"
   },
   "fr-FR": {
+    "paymentCpfNotice": "Un identifiant fiscal brésilien (CPF) est nécessaire pour payer sur votre téléphone, par Pix ou carte de crédit.",
+    "paymentVisitorNotice": "Vous n’avez pas de CPF ou vous visitez le Brésil ? Demandez un terminal de paiement pour régler à table avec notre équipe.",
+    "paymentStaffPendingWarning": "Si vous avez déjà lancé un paiement Pix ou par carte, prévenez notre équipe avant de payer à nouveau pour éviter un double débit.",
     "accountStaffTitle": "Vous préférez régler avec le personnel ?",
     "accountStaffDescription": "Demandez l’addition pour la vérifier ou un terminal de paiement à votre table.",
     "accountRequestMachine": "Demander le terminal",

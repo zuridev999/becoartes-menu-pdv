@@ -36,9 +36,12 @@ function loadedScripts(hostname, pathname) {
 assert.equal(loadedScripts('pdv.becoartes.com', '/').appended.length, 0, 'PDV público não pode carregar AdSense global.');
 assert.equal(loadedScripts('localhost', '/pdv').appended.length, 0, 'Rota /pdv não pode carregar AdSense global.');
 assert.equal(loadedScripts('zordon.com.br', '/os/pdv/empresa').appended.length, 0, 'PDV Zordon não pode carregar AdSense global.');
-const qr = loadedScripts('qr.becoartes.com', '/mesa/1');
-assert.equal(qr.appended.length, 0, 'QR aguarda o cardápio ficar pronto.');
-qr.listeners.get('beco:menu-ready')?.();
-assert.equal(qr.appended.length, 1, 'QR preserva publicidade após abrir o cardápio.');
+for (const [host, path] of [['qr.becoartes.com', '/'], ['qr.becoartes.com', '/mesa/1'], ['localhost', '/mesa/7'], ['localhost', '/qr'], ['127.0.0.1', '/cardapio']]) {
+  const qr = loadedScripts(host, path);
+  qr.listeners.get('beco:menu-ready')?.();
+  assert.equal(qr.appended.length, 0, `QR sem script de anúncios: ${host}${path}`);
+}
+const qrView = readFileSync(new URL('../src/views/qr/QRView.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(qrView, /GoogleAdBanner/);
 assert.equal(loadedScripts('delivery.becoartes.com', '/').appended.length, 1, 'Delivery continua com publicidade.');
-console.log('PDV sem anúncios fixos/automáticos; QR e Delivery preservados.');
+console.log('PDV sem anúncios fixos/automáticos; QR sem anúncios; Delivery preservado.');

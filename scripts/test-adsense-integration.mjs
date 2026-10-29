@@ -26,9 +26,9 @@ const [indexHtml, component, nginx, staticFiles, viteConfig, adsTxt, qrView, men
 assert.match(indexHtml, /<meta name="google-adsense-account" content="ca-pub-8099608758666537"/);
 assert.match(indexHtml, /adsenseScript\.id = 'becoartes-adsense-script'/);
 assert.match(indexHtml, /adsenseScript\.src = 'https:\/\/pagead2\.googlesyndication\.com\/pagead\/js\/adsbygoogle\.js\?client=ca-pub-8099608758666537'/);
-assert.match(indexHtml, /becoHost === 'qr\.becoartes\.com'[\s\S]*adsenseScript\.dataset\.overlays = 'collapsed-bottom'/);
+assert.doesNotMatch(qrView, /GoogleAdBanner/);
+assert.match(indexHtml, /if \(!isPdvEntry && !isQrEntry\)/);
 assert.match(indexHtml, /const isPdvEntry = becoHost\.startsWith\('pdv\.'\)/);
-assert.match(indexHtml, /if \(isPdvEntry\) \{[\s\S]*?\} else if \(isQrEntry\)/);
 assert.equal((indexHtml.match(/nonce="__CSP_NONCE__"/g) || []).length, 2);
 assert.doesNotMatch(component, /document\.createElement\(['"]script['"]\)/);
 assert.match(component, /data-ad-render-status/);
@@ -55,7 +55,6 @@ assert.match(viteConfig, /order: 'post'/);
 assert.match(viteConfig, /<script nonce="__CSP_NONCE__"/);
 assert.equal(adsTxt.trim(), 'google.com, pub-8099608758666537, DIRECT, f08c47fec0942fa0');
 assert.doesNotMatch(qrView, /6\.5rem|sm:pb-28/);
-assert.equal((qrView.match(/afterIntroContent=\{<GoogleAdBanner placement="qr-menu-inline" \/>\}/g) || []).length, 2);
 assert.doesNotMatch(qrView, /isInlineAdVisible/);
 assert.match(component, /new IntersectionObserver/);
 assert.match(component, /entry\.intersectionRatio >= 0\.2/);
@@ -74,7 +73,7 @@ assert.match(app, /const isPublicTopAdView = activeView === 'tablet' \|\| active
 assert.doesNotMatch(app, /activeView === 'qr'[^;\n]*placement="top"/);
 assert.match(app, /activeView === 'pdv'/);
 assert.match(app, /placement="mobile-bottom"/);
-assert.match(app, /placement="operational-bottom"/);
+assert.doesNotMatch(app, /placement="operational-bottom"/);
 assert.doesNotMatch(app, /activeView === 'qr' && <GoogleAdBanner placement="mobile-bottom"/);
 assert.match(serviceWorker, /requestUrl\.origin !== self\.location\.origin/);
 assert.match(component, /width: '320px', height: '50px'/);

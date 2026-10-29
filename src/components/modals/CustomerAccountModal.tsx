@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../../lib/use-dialog-focus';
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, FileText, Receipt, LayoutDashboard } from 'lucide-react';
@@ -10,6 +11,7 @@ import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 
 export function CustomerAccountModal({ onClose, locationLabel, customerTabContext }: { onClose: () => void; locationLabel?: string; customerTabContext?: QrPaymentContext['customerTabContext'] }) {
+  const dialogRef = useDialogFocus(onClose);
   const { currentTableId, tables, settings } = useStore();
   const { t, locale, catalogText } = usePublicI18n();
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -38,7 +40,7 @@ export function CustomerAccountModal({ onClose, locationLabel, customerTabContex
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-3 backdrop-blur-md sm:p-8"
     >
-      <motion.div 
+      <motion.div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('account')} tabIndex={-1}
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         className="mobile-dialog flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0a0a0c] shadow-2xl sm:max-h-[90vh] sm:rounded-[3rem]"
@@ -64,8 +66,8 @@ export function CustomerAccountModal({ onClose, locationLabel, customerTabContex
           <div hidden={paymentOpen}>
             <div className="mb-8 space-y-6 sm:mb-12">
               {table.orders.length === 0 ? (
-                <div className="text-center py-20 opacity-20">
-                  <FileText size={80} className="mx-auto mb-6" />
+                <div className="text-center py-12 text-zinc-300">
+                  <FileText size={80} className="mx-auto mb-6 text-zinc-400" />
                   <p className="text-2xl font-black uppercase tracking-widest">{t('noConsumption')}</p>
                 </div>
               ) : (

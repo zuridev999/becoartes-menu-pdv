@@ -195,10 +195,10 @@ entries.push(
   ["Red Bull Energy Drink 250 ml", "Red Bull Energy Drink 250 ml", "Red Bull Energy Drink 250 ml", "Red Bull Energy Drink 250 ml"],
   ["Red Bull Zero 250 ml", "Red Bull Zero 250 ml", "Red Bull Zero 250 ml", "Red Bull Zero 250 ml"],
   ["Monster Energy Original 473 ml", "Monster Energy Original 473 ml", "Monster Energy Original 473 ml", "Monster Energy Original 473 ml"],
-  ["Cadastro reconciliado em 03/10/2026. Mantido invisivel ate liberacao operacional.", "Catalog record reconciled on 3 October 2026. Hidden pending staff release.", "Fiche rapprochée le 3 octobre 2026. Masquée en attendant sa mise à disposition.", "Registro conciliado el 3 de octubre de 2026. Oculto hasta su habilitación operativa."],
-  ["Lata 250 ml. GTIN 9002490100094. NCM 2202.99.00. Custo de compra pendente.", "250 ml can. GTIN 9002490100094. NCM 2202.99.00. Purchase cost pending.", "Canette 250 ml. GTIN 9002490100094. NCM 2202.99.00. Coût d’achat en attente.", "Lata de 250 ml. GTIN 9002490100094. NCM 2202.99.00. Costo de compra pendiente."],
-  ["Lata 250 ml, zero acucar. GTIN 9002490283063. NCM 2202.99.00. Custo de compra pendente.", "250 ml can, no sugar. GTIN 9002490283063. NCM 2202.99.00. Purchase cost pending.", "Canette 250 ml, sans sucre. GTIN 9002490283063. NCM 2202.99.00. Coût d’achat en attente.", "Lata de 250 ml, sin azúcar. GTIN 9002490283063. NCM 2202.99.00. Costo de compra pendiente."],
-  ["Monster Energy Original Green, lata 473 ml. UPC 70847022015. NCM 2202.99.00.", "Monster Energy Original Green, 473 ml can. UPC 70847022015. NCM 2202.99.00.", "Monster Energy Original Green, canette 473 ml. UPC 70847022015. NCM 2202.99.00.", "Monster Energy Original Green, lata de 473 ml. UPC 70847022015. NCM 2202.99.00."]
+  ["Suco de caju, copo de 400 ml.", "Cashew fruit juice, 400 ml glass.", "Jus de pomme de cajou, verre de 400 ml.", "Jugo de anacardo, vaso de 400 ml."],
+  ["Energético Red Bull, lata de 250 ml.", "Red Bull energy drink, 250 ml can.", "Boisson énergisante Red Bull, canette de 250 ml.", "Bebida energética Red Bull, lata de 250 ml."],
+  ["Energético Red Bull Zero, sem açúcar, lata de 250 ml.", "Sugar-free Red Bull Zero energy drink, 250 ml can.", "Boisson énergisante Red Bull Zero sans sucre, canette de 250 ml.", "Bebida energética Red Bull Zero sin azúcar, lata de 250 ml."],
+  ["Energético Monster Energy Original, lata de 473 ml.", "Monster Energy Original energy drink, 473 ml can.", "Boisson énergisante Monster Energy Original, canette de 473 ml.", "Bebida energética Monster Energy Original, lata de 473 ml."]
 );
 
 export const normalizeCatalogText = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -236,3 +236,17 @@ for (const [source, translation] of Object.entries({
   "Coca Zero": "Coca-Cola Zero",
   "Heineken 600ml": "Heineken 600 ml"
 })) additionalCatalogCopy['es-ES'][normalizeCatalogText(source)] = translation;
+
+const legacyPublicDescriptions: Record<string, string> = {
+  "Cadastro reconciliado em 03/10/2026. Mantido invisivel ate liberacao operacional.": "Suco de caju, copo de 400 ml.",
+  "Lata 250 ml. GTIN 9002490100094. NCM 2202.99.00. Custo de compra pendente.": "Energético Red Bull, lata de 250 ml.",
+  "Lata 250 ml, zero acucar. GTIN 9002490283063. NCM 2202.99.00. Custo de compra pendente.": "Energético Red Bull Zero, sem açúcar, lata de 250 ml.",
+  "Monster Energy Original Green, lata 473 ml. UPC 70847022015. NCM 2202.99.00.": "Energético Monster Energy Original, lata de 473 ml."
+};
+additionalCatalogCopy['pt-BR'] = {};
+for (const [legacy, clean] of Object.entries(legacyPublicDescriptions)) {
+  const oldKey = normalizeCatalogText(legacy);
+  const cleanKey = normalizeCatalogText(clean);
+  additionalCatalogCopy['pt-BR'][oldKey] = clean;
+  for (const locale of ['en-US', 'es-ES', 'fr-FR']) additionalCatalogCopy[locale][oldKey] = additionalCatalogCopy[locale][cleanKey];
+}

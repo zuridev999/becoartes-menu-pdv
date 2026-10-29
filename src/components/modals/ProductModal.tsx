@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../../lib/use-dialog-focus';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, X } from 'lucide-react';
@@ -35,6 +36,7 @@ export function ProductModal({
   canEditItemNotes?: boolean;
   onAddToCart?: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
 }) {
+  const dialogRef = useDialogFocus(onClose);
   const { addToCart, menu } = useStore();
   const { t, locale, catalogText } = usePublicI18n();
   const [quantity, setQuantity] = useState(1);
@@ -89,7 +91,7 @@ export function ProductModal({
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[700]" />
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`fixed inset-0 z-[750] flex items-center justify-center pointer-events-none font-['Outfit'] ${modalShellClass}`}>
-        <div className={`mobile-dialog product-dialog glass-card relative flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
+        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={catalogText(product.id, product.name, 'name')} tabIndex={-1} className={`mobile-dialog product-dialog glass-card relative flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
           <div className={`product-media relative shrink-0 overflow-hidden ${mediaPanelClass}`}>
              <img data-product-image={/suco/i.test(product.name) ? 'juice' : undefined} src={getImageSrc(product.image, 960)} alt={catalogText(product.id, product.name, 'name')} onError={applyImageFallback} decoding="async" className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
@@ -154,17 +156,17 @@ export function ProductModal({
                               className={`w-full ${tabletLandscape ? qrMobileFlow ? 'min-h-[55px] grid-cols-[56px_1fr_auto] gap-3 px-3 py-1.5' : 'min-h-[78px] grid-cols-[56px_1fr_auto] gap-4 p-4' : 'min-h-[76px] sm:min-h-[88px] grid-cols-[56px_1fr_auto] sm:grid-cols-[56px_1fr_auto] gap-4 sm:gap-5 p-4 sm:p-5'} grid items-center ${qrMobileFlow ? 'rounded-[1.25rem]' : 'rounded-[1.7rem]'} border text-left transition-all ${
                                 isSelected
                                   ? 'bg-gradient-to-br from-primary to-[#6f2dff] border-primary text-white shadow-2xl shadow-primary/30'
-                                  : 'bg-gradient-to-br from-accent to-[#ffad1f] border-accent text-black shadow-xl shadow-accent/20 hover:scale-[1.015]'
+                                  : 'bg-white/5 border-white/20 text-white hover:bg-white/10 hover:border-white/40'
                               }`}
                             >
                               <span className="relative"><ModifierThumbnail modifier={m} products={menu} name={catalogText(m.id, m.name, 'name')} />{isSelected && <Check className="modifier-selected-check" size={20} strokeWidth={3}/>}</span>
                               <div className="min-w-0">
                                 <span className={`block font-black ${tabletLandscape ? qrMobileFlow ? 'text-base' : 'text-lg' : 'text-base sm:text-xl'} tracking-tight leading-tight`}>{catalogText(m.id, m.name, 'name')}</span>
-                                <span className={`${qrMobileFlow ? 'mt-0.5 text-[8px]' : 'mt-1 text-[10px]'} block font-black uppercase tracking-[0.16em] ${isSelected ? 'text-white/65' : 'text-black/55'}`}>
+                                <span className={`${qrMobileFlow ? 'mt-0.5 text-[8px]' : 'mt-1 text-[10px]'} block font-black uppercase tracking-[0.16em] ${isSelected ? 'text-white/90' : 'text-zinc-300'}`}>
                                   {isSelected ? t('selectedRemove') : t('tapToAdd')}
                                 </span>
                               </div>
-                              {m.price > 0 && <span className={`${tabletLandscape ? qrMobileFlow ? 'text-base' : 'text-lg' : 'text-sm sm:text-xl'} font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-black'}`}>+ {formatCurrency(m.price, locale)}</span>}
+                              {m.price > 0 && <span className={`${tabletLandscape ? qrMobileFlow ? 'text-base' : 'text-lg' : 'text-sm sm:text-xl'} font-black whitespace-nowrap ${isSelected ? 'text-accent' : 'text-white'}`}>+ {formatCurrency(m.price, locale)}</span>}
                             </motion.button>
                           );
                         })}
@@ -188,7 +190,7 @@ export function ProductModal({
              </div>
 
              {errors.length > 0 && (
-               <div className="mt-4 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl">
+               <div role="alert" className="mt-4 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl">
                  {errors.map((e, i) => <p key={i} className="text-rose-400 text-xs font-bold flex items-center gap-2">⚠️ {e}</p>)}
                </div>
              )}

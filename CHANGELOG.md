@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 1.30.1 - 2026-10-29
+
+- Remove integralmente o AdSense do QR e do cardápio público, incluindo SDK e anúncios automáticos que encobriam conta e controles de rolagem.
+- Explica a exigência de CPF para Pix/cartão pelo celular e oferece solicitação de maquininha em português, inglês, espanhol e francês.
+- Melhora contraste, seleção de sabores, navegação por teclado e rolagem dos diálogos de conta, pedido e atendimento.
+- Revalida bloqueios de insumos no envio de pedidos QR e preserva a indisponibilidade herdada dos adicionais no catálogo público.
+- Substitui notas internas por descrições públicas de Red Bull, caju e Monster, preservando histórico de auditoria, preços, custos e saldos.
+
 ## 1.30.0 - 2026-10-29
 
 - Redesenha o mapa de mesas e a Venda Balcão para telas pequenas, com busca por cliente ou apelido e alertas claros de conta e maquininha.

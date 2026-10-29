@@ -10,6 +10,7 @@ const sanitizePublicModifier = (modifier) => ({
   name: modifier.name,
   price: Number(modifier.price || 0),
   status: modifier.status === 'inactive' ? 'inactive' : 'active',
+  inheritedUnavailable: Boolean(modifier.inheritedUnavailable),
 });
 
 const sanitizePublicModifierGroup = (group) => ({

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useDialogFocus } from '../../lib/use-dialog-focus';
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   X, Utensils, 
@@ -9,8 +10,10 @@ import { usePublicI18n } from '../../lib/public-i18n';
 import type { CustomerTabOrderContext } from '../../lib/api';
 
 export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: () => void; customerTabContext?: CustomerTabOrderContext }) {
+  const dialogRef = useDialogFocus(onClose);
   const { currentTableId, requestService, addNotification } = useStore();
   const { t, errorText } = usePublicI18n();
+  const sendingRef = useRef(false);
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
 
@@ -22,7 +25,8 @@ export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: 
   ];
 
   const handleSend = async (type: string, directLabel?: string) => {
-    if (!currentTableId) return;
+    if (!currentTableId || sendingRef.current) return;
+    sendingRef.current = true;
     setIsSending(true);
     try {
       await requestService(currentTableId, type, message || directLabel || '', customerTabContext);
@@ -31,6 +35,7 @@ export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: 
     } catch (error) {
       addNotification(errorText(error), 'error');
     } finally {
+      sendingRef.current = false;
       setIsSending(false);
     }
   };
@@ -42,7 +47,7 @@ export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: 
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-3 backdrop-blur-md sm:p-8"
     >
-      <motion.div 
+      <motion.div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('service')} tabIndex={-1}
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         className="flex max-h-[94dvh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/5 bg-[#111115] shadow-2xl sm:max-h-[90vh] sm:rounded-[3rem]"
@@ -57,12 +62,13 @@ export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: 
           </button>
         </div>
 
-        <div className="custom-scrollbar flex-1 overflow-y-auto p-5 sm:p-10">
+        <div className="ios-touch-scroll custom-scrollbar min-h-0 flex-1 overflow-y-auto p-5 sm:p-10">
           <div className="mb-8 grid grid-cols-1 gap-3 sm:mb-10 sm:grid-cols-2 sm:gap-4">
             {options.map((opt) => (
               <button
                 key={opt.id}
                 type="button"
+                disabled={isSending}
                 onClick={() => handleSend(opt.id)}
                 className="flex items-center gap-6 p-6 glass rounded-3xl border border-white/5 hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
               >
@@ -87,12 +93,12 @@ export function ServiceRequestModal({ onClose, customerTabContext }: { onClose: 
           </div>
         </div>
 
-        <div className="p-10 bg-white/[0.02] border-t border-white/5">
+        <div className="shrink-0 p-4 sm:p-10 bg-white/[0.02] border-t border-white/5">
           <button
             type="button"
             onClick={() => handleSend('other', message)}
             disabled={isSending || !message.trim()}
-            className="w-full py-8 btn-beco btn-beco-purple text-2xl font-black tracking-widest rounded-[2rem] disabled:opacity-20 shadow-2xl shadow-primary/20"
+            className="w-full py-4 sm:py-8 btn-beco btn-beco-purple text-2xl font-black tracking-widest rounded-[2rem] disabled:opacity-20 shadow-2xl shadow-primary/20"
           >
             {t('sendRequest').toUpperCase()}
           </button>

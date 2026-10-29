@@ -6,7 +6,8 @@ const ADSENSE_SLOT = import.meta.env.VITE_ADSENSE_SLOT || '6877500198';
 const MOBILE_AD_HEIGHT_PROPERTY = '--beco-mobile-ad-height';
 
 export function GoogleAdBanner(props: Parameters<typeof GoogleAdBannerInner>[0]) {
-  return import.meta.env.VITE_ZORDON_MODE === 'true' ? null : <GoogleAdBannerInner {...props} />;
+  const qrEntry = window.location.hostname.startsWith('qr.') || /^\/(qr|mesa|cardapio)(\/|$)/.test(window.location.pathname);
+  return qrEntry || props.placement === 'qr-menu-inline' || import.meta.env.VITE_ZORDON_MODE === 'true' ? null : <GoogleAdBannerInner {...props} />;
 }
 
 type GoogleAdPlacement = 'top' | 'operational-top' | 'mobile-bottom' | 'operational-bottom' | 'qr-menu-inline';

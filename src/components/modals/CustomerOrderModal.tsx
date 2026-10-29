@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../../lib/use-dialog-focus';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ShoppingBag, Trash2, Send, CheckCircle2 } from 'lucide-react';
@@ -18,6 +19,7 @@ export function CustomerOrderModal({
   origin?: 'tablet' | 'qr';
   customerTabContext?: CustomerTabOrderContext;
 }) {
+  const dialogRef = useDialogFocus(onClose);
   const { currentTableId, tables, removeFromCart, sendToKitchen } = useStore();
   const { t, locale, catalogText } = usePublicI18n();
   const [isSending, setIsSending] = useState(false);
@@ -60,7 +62,7 @@ export function CustomerOrderModal({
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-8 bg-black/80 backdrop-blur-md"
     >
-      <motion.div 
+      <motion.div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('order')} tabIndex={-1}
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         className="mobile-dialog w-full max-w-3xl bg-[#0a0a0c] rounded-[2rem] sm:rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] relative"

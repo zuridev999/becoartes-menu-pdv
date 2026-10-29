@@ -1,0 +1,22 @@
+[
+  {
+    "id": "suco_caju_400ml_20261003",
+    "before": "Cadastro reconciliado em 03/10/2026. Mantido invisivel ate liberacao operacional.",
+    "after": "Suco de caju, copo de 400 ml."
+  },
+  {
+    "id": "pdv_red_bull_energy_drink_250ml_20261016",
+    "before": "Lata 250 ml. GTIN 9002490100094. NCM 2202.99.00. Custo de compra pendente.",
+    "after": "Energético Red Bull, lata de 250 ml."
+  },
+  {
+    "id": "pdv_red_bull_zero_250ml_20261016",
+    "before": "Lata 250 ml, zero acucar. GTIN 9002490283063. NCM 2202.99.00. Custo de compra pendente.",
+    "after": "Energético Red Bull Zero, sem açúcar, lata de 250 ml."
+  },
+  {
+    "id": "pdv_monster_energy_original_473ml_20261016",
+    "before": "Monster Energy Original Green, lata 473 ml. UPC 70847022015. NCM 2202.99.00.",
+    "after": "Energético Monster Energy Original, lata de 473 ml."
+  }
+]

@@ -26,26 +26,15 @@
       // também pode inserir anúncios automáticos/âncoras fora dos slots React.
       const isPdvEntry = becoHost.startsWith('pdv.') ||
         /^\/(?:pdv(?:\/|$)|os\/pdv\/)/.test(window.location.pathname);
-      const adsenseScript = document.createElement('script');
-      adsenseScript.id = 'becoartes-adsense-script';
-      adsenseScript.async = true;
-      adsenseScript.crossOrigin = 'anonymous';
-      adsenseScript.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8099608758666537';
-      if (becoHost === 'qr.becoartes.com' || (
-        (becoHost === 'localhost' || becoHost === '127.0.0.1') &&
-        /^\/(?:mesa\/\d+|qr(?:\/|$))/.test(window.location.pathname)
-      )) {
-        adsenseScript.dataset.overlays = 'collapsed-bottom';
-      }
-      const isQrEntry = becoHost.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(window.location.pathname);
-      if (isPdvEntry) {
-        // Nenhum anúncio fixo ou automático pode cobrir controles do PDV.
-      } else if (isQrEntry) {
-        // Keep Google's consent flow intact; start it only after the menu is usable.
-        window.addEventListener('beco:menu-ready', () => {
-          window.setTimeout(() => document.head.appendChild(adsenseScript), 1500);
-        }, { once: true });
-      } else {
+      const isQrEntry = becoHost.startsWith('qr.') || /^\/(qr|mesa|cardapio)(\/|$)/.test(window.location.pathname);
+      // QR e PDV precisam manter conta, pedido e rolagem livres de anúncios.
+      // Não carregar o SDK: ele injeta âncoras e consentimento fora do React.
+      if (!isPdvEntry && !isQrEntry) {
+        const adsenseScript = document.createElement('script');
+        adsenseScript.id = 'becoartes-adsense-script';
+        adsenseScript.async = true;
+        adsenseScript.crossOrigin = 'anonymous';
+        adsenseScript.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8099608758666537';
         document.head.appendChild(adsenseScript);
       }
 

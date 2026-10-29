@@ -12,6 +12,7 @@ import { businessDateGapDays, businessDateKey, resolveBusinessTimeZone } from '.
 import { getPdvPublishBlockers } from './catalog/product-lifecycle.mjs';
 import { availabilitySchema, seedReviewedRecipeLinks, readAvailabilityProjection } from './catalog/availability.mjs';
 import { createAvailabilityServices } from './catalog/availability-service.mjs';
+import { assertQrOrderAvailability } from './catalog/qr-order-availability.mjs';
 import { createGetMenu } from './catalog/menu-query.mjs';
 import { countCashCents } from './cash-count.mjs';
 import { persistCashClosure, listCashClosureCounts } from './cash-close-record.mjs';
@@ -4123,6 +4124,7 @@ const sendToKitchen = async ({
     settings,
     isPublicOrigin: safeOrigin === 'tablet' || safeOrigin === 'qr',
   });
+  if (safeOrigin === 'qr') await assertQrOrderAvailability(db, safeItems);
 
   const dispatch = await resolveOrderDispatch({
     origin: safeOrigin, dispatchTargets, items: safeItems, db, splitItemsByProductionStation,

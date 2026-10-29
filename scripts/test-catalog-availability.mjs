@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createClient } from '@libsql/client';
+import { assertQrOrderAvailability } from '../server/catalog/qr-order-availability.mjs';
 import {
   availabilitySchema,
   getSourceImpact,
@@ -60,9 +61,14 @@ let projection = await readAvailabilityProjection(db);
 assert.ok(projection.productBlocked.has('na1'));
 assert.ok(projection.modifierBlocked.has('na1'));
 assert.ok(projection.modifierBlocked.has('d0db2d63-da73-4f0b-9fc6-d25de649e867'));
+await assert.rejects(assertQrOrderAvailability(db, [{ productId: 'na1' }]), { statusCode: 403 });
+for (const id of ['na1', 'd0db2d63-da73-4f0b-9fc6-d25de649e867']) {
+  await assert.rejects(assertQrOrderAvailability(db, [{ productId: 'br4', selectedModifiers: [{ id }] }]), { statusCode: 403 });
+}
 await setSourceVisibility(db, { sourceId: coca, productId: 'na1', hidden: false, selectedKeys: [] });
 projection = await readAvailabilityProjection(db);
 assert.equal(projection.productBlocked.size, 0);
+await assertQrOrderAvailability(db, [{ productId: 'na1', selectedModifiers: [{ id: 'na1' }] }]);
 
 const chickenImpact = await getSourceImpact(db, { productId: 'br4', sourceId: chicken });
 assert.equal(chickenImpact.candidates.filter(row => row.reviewed).length, 5);
@@ -76,6 +82,8 @@ assert.ok(projection.productBlocked.has('br4'));
 assert.ok(!projection.productBlocked.has('p3'), 'Exception preserves this use of chicken');
 assert.ok(!projection.productBlocked.has('hd778ft4e'), 'Suspicious recipe is not an automatic dependency');
 assert.ok(!projection.productBlocked.has('p8'), 'Distinct chicken SKU is unaffected');
+await assert.rejects(assertQrOrderAvailability(db, [{ productId: 'br4' }]), { statusCode: 403 });
+await assertQrOrderAvailability(db, [{ productId: 'p3' }, { productId: 'p8' }]);
 const hiddenChicken = await getSourceImpact(db, { productId: 'br4', sourceId: chicken });
 assert.equal(hiddenChicken.candidates.find(row => row.key === 'product:p3')?.selected, false);
 await setSourceVisibility(db, { sourceId: chicken, productId: 'br4', hidden: false, selectedKeys: [] });
@@ -93,5 +101,6 @@ await setSourceVisibility(db, {
 await db.execute({ sql: "DELETE FROM ficha_ingredientes WHERE ficha_tecnica_id='f-pr2_file_frango' AND estoque_produto_id=?", args: [chicken] });
 projection = await readAvailabilityProjection(db);
 assert.ok(!projection.productBlocked.has('pr2_file_frango'), 'Removed recipe link cannot keep item hidden');
+await assertQrOrderAvailability(db, [{ productId: 'pr2_file_frango' }]);
 console.log('catalog availability: direct SKU, upsell, ID collision, chicken, exceptions, separate SKU, base visibility and unreviewed garnish passed');
 db.close();

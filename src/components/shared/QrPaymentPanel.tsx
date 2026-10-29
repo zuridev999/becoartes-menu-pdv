@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { AccountStaffActions } from './AccountStaffActions';
 import QRCode from 'qrcode';
 import { motion, useReducedMotion } from 'framer-motion';
 import { CheckCircle2, CreditCard, Loader2, QrCode } from 'lucide-react';
@@ -129,9 +130,11 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: 
   if (!summary.enabled) return <p className="mt-6 text-sm text-zinc-300">{t('paymentUnavailable')}</p>;
   if (summary.balance <= 0 && !intent) return null;
   const blocked = intent && ['creating', 'pending', 'unknown', 'review'].includes(intent.status);
-  if (!expanded) return <button type="button" onClick={onExpand} className="mt-6 flex min-h-16 w-full items-center justify-center gap-3 rounded-2xl bg-white px-4 py-4 text-base font-bold text-red-700 transition hover:bg-red-50 sm:text-lg">
+  if (!expanded) return <div><button type="button" onClick={onExpand} className="mt-6 flex min-h-16 w-full items-center justify-center gap-3 rounded-2xl bg-white px-4 py-4 text-base font-bold text-red-700 transition hover:bg-red-50 sm:text-lg">
     <CreditCard size={22} className="shrink-0" />{t(blocked || intent?.status === 'paid' ? 'paymentView' : 'paymentStart')}
-  </button>;
+  </button>
+    {!blocked && intent?.status !== 'paid' && <p className="mt-3 text-sm leading-relaxed text-zinc-300">{t('paymentCpfNotice')} {t('paymentVisitorNotice')}</p>}
+  </div>;
   return <motion.section initial={{ opacity: 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reducedMotion ? 0 : 0.2 }} className="mx-auto min-w-0 max-w-lg space-y-6" aria-label={t('paymentTitle')}>
     <button type="button" disabled={busy} onClick={onBack} className="min-h-12 rounded-xl border border-white/20 px-4 py-3 text-sm font-semibold">← {t('paymentBack')}</button>
     <div className="space-y-2 text-center">
@@ -139,6 +142,10 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: 
       <p className="text-sm text-zinc-400">{t('paymentAmount')}</p>
       <p className="break-words text-4xl font-black tracking-tight">{formatCurrency(intent && (blocked || intent.status === 'paid') ? intent.amount : summary.balance, locale)}</p>
     </div>
+    {!blocked && intent?.status !== 'paid' && <>
+      <p id="qr-payment-cpf-notice" className="text-sm leading-relaxed text-zinc-300">{t('paymentCpfNotice')}</p>
+      <AccountStaffActions context={context} machineOnly />
+    </>}
     {summary.environment !== 'production' && <p className="rounded-xl bg-amber-400/15 p-3 text-sm text-amber-200">{t(summary.environment === 'simulator' ? 'paymentSimulator' : 'paymentSandbox')}</p>}
     {error && <p role="alert" className="rounded-xl bg-rose-500/15 p-3 text-sm text-rose-200">{t(error)}</p>}
     {intent?.status === 'paid' ? <div role="status" className="space-y-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5 text-emerald-300"><CheckCircle2 size={32} /><p className="text-xl font-bold">{t('paymentConfirmed')}</p><p>{t('paymentConfirmedDetail', { amount: formatCurrency(intent.amount, locale) })}</p></div>
@@ -162,7 +169,7 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: 
       <div className="space-y-4">
         <label className="block text-sm text-zinc-300">{t('paymentFullName')}<input autoComplete="name" required maxLength={100} className={`${inputClass} mt-2`} value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} /></label>
         <label className="block text-sm text-zinc-300">{t('paymentEmail')}<input type="email" autoComplete="email" autoCapitalize="none" required maxLength={150} className={`${inputClass} mt-2`} value={customer.email} onChange={e => setCustomer({ ...customer, email: e.target.value })} /></label>
-        <label className="block text-sm text-zinc-300">{t('paymentCpf')}<input inputMode="numeric" required pattern="[0-9]{11}" maxLength={11} placeholder={t('paymentCpfHint')} className={`${inputClass} mt-2`} value={customer.taxId} onChange={e => setCustomer({ ...customer, taxId: e.target.value.replace(/\D/g, '') })} /></label>
+        <label className="block text-sm text-zinc-300">{t('paymentCpf')}<input aria-describedby="qr-payment-cpf-notice" inputMode="numeric" required pattern="[0-9]{11}" maxLength={11} placeholder={t('paymentCpfHint')} className={`${inputClass} mt-2`} value={customer.taxId} onChange={e => setCustomer({ ...customer, taxId: e.target.value.replace(/\D/g, '') })} /></label>
       </div>
       {method === 'credit' && <fieldset className="min-w-0 space-y-4 border-t border-white/10 pt-5"><legend className="sr-only">{t('paymentCredit')}</legend>
         <label className="block text-sm text-zinc-300">{t('paymentCardNumber')}<input autoComplete="cc-number" inputMode="numeric" required maxLength={23} className={`${inputClass} mt-2`} value={card.number} onChange={e => setCard({ ...card, number: e.target.value.replace(/[^\d ]/g, '') })} /></label>
@@ -172,5 +179,9 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: 
       <button disabled={busy} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-lg font-bold text-red-700 hover:bg-red-50 disabled:opacity-50">{busy && <Loader2 className="animate-spin" size={20} />}{busy ? t('paymentProcessing') : method === 'pix' ? t('paymentGeneratePix') : t('paymentPayAmount', { amount: formatCurrency(summary.balance, locale) })}</button>
       </fieldset>
     </form>}
+    {blocked && <>
+      <p className="text-sm leading-relaxed text-amber-200">{t('paymentStaffPendingWarning')}</p>
+      <AccountStaffActions context={context} machineOnly />
+    </>}
   </motion.section>;
 }

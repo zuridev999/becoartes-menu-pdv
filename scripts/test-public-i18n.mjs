@@ -5,6 +5,18 @@ import { build } from 'esbuild';
 const { outputFiles } = await build({ entryPoints: ['src/lib/public-i18n.tsx'], bundle: true, platform: 'node', format: 'esm', write: false });
 const { getDefaultPublicCopy, getCatalogBaseTranslation, getPublicLanguages } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
 const pt = getDefaultPublicCopy('pt-BR');
+const { corrections } = await import('./catalog/clean-public-descriptions.mjs');
+for (const locale of ['pt-BR', 'en-US', 'es-ES', 'fr-FR']) {
+  const payment = getDefaultPublicCopy(locale);
+  assert.match(payment.paymentCpfNotice, /CPF/);
+  assert.ok(payment.paymentVisitorNotice && payment.accountRequestMachine && payment.paymentStaffPendingWarning);
+  for (const { before, after } of corrections) {
+    const translated = getCatalogBaseTranslation(locale, before);
+    assert.ok(translated && !/GTIN|NCM|UPC|pendente|pending|invisivel|reconciliado/i.test(translated), `${locale}: internal notes must not leak`);
+    if (locale === 'pt-BR') assert.equal(translated, after);
+    else assert.equal(translated, getCatalogBaseTranslation(locale, after));
+  }
+}
 const placeholders = (text) => [...text.matchAll(/{{(\w+)}}/g)].map((match) => match[1]).sort();
 for (const locale of ['en-US', 'es-ES', 'fr-FR']) {
   const copy = getDefaultPublicCopy(locale);

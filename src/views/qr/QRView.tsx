@@ -20,7 +20,6 @@ import {
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 import { PublicLanguageMenu } from '../../components/shared/PublicLanguageMenu';
-import { GoogleAdBanner } from '../../components/common/GoogleAdBanner';
 import { getQrVisitId } from '../../lib/qr-analytics';
 import { preserveLocalCart } from '../../lib/order-location';
 import { useBuildRefresh } from '../../hooks/useBuildRefresh';
@@ -314,7 +313,6 @@ export function QRView() {
           navigationMode="continuous"
           presentation="compact-menu"
           constrainToParent
-          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" />}
           footerContent={(
             <footer className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center shadow-2xl shadow-black/20">
               <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
@@ -744,7 +742,6 @@ function ComandaQRExperience({
           navigationMode="continuous"
           presentation="compact-menu"
           constrainToParent
-          afterIntroContent={<GoogleAdBanner placement="qr-menu-inline" />}
           footerContent={(
             <footer className="mx-auto max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center shadow-2xl shadow-black/20">
               <p className="text-[10px] sm:text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
