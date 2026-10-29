@@ -11,6 +11,7 @@
 - Introduz a escolha inicial de idioma no QR e completa textos públicos de conta, atendimento e pagamento em português, inglês, espanhol e francês.
 - Integra ao QR o fluxo de pagamento PagBank por Pix e cartão, com troca segura de método, retorno à conta e conferência explícita no PDV antes da baixa.
 - Permite ao cliente pedir conta ou maquininha pelo QR; a solicitação destaca a mesa e gera aviso operacional até o atendimento.
+- Atualiza a validação de dados para a versão corrigida do Zod, eliminando a vulnerabilidade bloqueada pelo auditor da imagem de produção.
 
 ## 1.29.2 - 2026-10-23
 
