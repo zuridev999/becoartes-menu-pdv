@@ -90,6 +90,7 @@ export type ProductionDispatchTargets = { kitchen: boolean; bar: boolean };
 
 export interface Table {
   id: string;
+  nickname?: string;
   number: number;
   status: 'available' | 'ordering' | 'waiting' | 'paid' | 'bill_requested';
   orders: OrderItem[];

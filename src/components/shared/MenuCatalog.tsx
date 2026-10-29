@@ -193,7 +193,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
   const renderGridProduct = (p: Product) => (
     <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className={productCardClassName}>
       <div className={productImageClassName}>
-        <img src={getImageSrc(p.image, 320)} alt={p.name} loading="lazy" decoding="async" onError={applyImageFallback} className="w-full h-full object-cover object-center group-hover:scale-110 transition-all duration-500" />
+        <img data-product-image={/suco/i.test(p.name) ? 'juice' : undefined} src={getImageSrc(p.image, 320)} alt={p.name} loading="lazy" decoding="async" onError={applyImageFallback} className="w-full h-full object-cover object-center group-hover:scale-110 transition-all duration-500" />
         <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-black/70 backdrop-blur-xl px-3 md:px-4 py-2 rounded-xl font-black text-accent border border-white/10 text-sm md:text-base">{formatCurrency(p.price, locale)}</div>
       </div>
       <h4 className="font-black text-xl md:text-2xl mb-2 italic tracking-tighter leading-none">{catalogText(p.id, p.name, 'name')}</h4>
@@ -216,7 +216,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
       </div>
       <div className="h-[122px] w-[106px] shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
         <img
-          src={getImageSrc(p.image, 320)}
+          data-product-image={/suco/i.test(p.name) ? 'juice' : undefined} src={getImageSrc(p.image, 320)}
           alt={p.name}
           loading="lazy" decoding="async" onError={applyImageFallback}
           className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
@@ -348,7 +348,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
            <div className="space-y-6">
              {filteredMenu.map(p => (
 	               <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className="glass-card flex items-center p-6 border-white/5 hover:border-primary/30 group transition-all w-full text-left">
-	                 <div className="w-48 h-48 rounded-3xl overflow-hidden mr-8"><img src={getImageSrc(p.image, 320)} alt={p.name} loading="lazy" decoding="async" onError={applyImageFallback} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" /></div>
+	                 <div className="w-48 h-48 rounded-3xl overflow-hidden mr-8"><img data-product-image={/suco/i.test(p.name) ? 'juice' : undefined} src={getImageSrc(p.image, 320)} alt={p.name} loading="lazy" decoding="async" onError={applyImageFallback} className="w-full h-full object-cover group-hover:scale-110 transition-all duration-500" /></div>
                  <div className="flex-1">
                    <h4 className="font-black text-3xl mb-3 italic tracking-tighter">{catalogText(p.id, p.name, 'name')}</h4>
                    <p className="text-gray-500 font-bold text-lg leading-relaxed max-w-2xl">{catalogText(p.id, p.description || '', 'description')}</p>

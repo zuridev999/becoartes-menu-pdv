@@ -1,6 +1,6 @@
 # Pagamento pelo QR — prévia local
 
-Preparação em 26/10/2026, sobre PDV v1.29.2 / bd68b50. Sem deploy.
+Preparação iniciada em 26/10/2026 sobre PDV v1.29.2 / bd68b50 e incorporada à release v1.30.0.
 
 ## Comportamento
 
@@ -37,11 +37,11 @@ Testar Pix no celular exige copiar o código Pix da tela local. Os links localho
 5. Conferir pagamento já lançado e usar “Conferir e dar baixa”. Mesa fica livre; pagamento não é duplicado.
 6. Testar recusa, conta alterada e confirmação repetida no simulador.
 
-## Validação e publicação futura
+## Validação e publicação
 
 `npm test`, `npm run test:qr-payments`, `node scripts/test-online-paid-conference.mjs`, `npm run build` e lint dos componentes alterados.
 
-Produção mantém v1.29.2 / bd68b50. Publicação depende de aprovação do teste, versão/tag/manifesto e regras de release. O recurso inicia desativado (`QR_PAYMENTS_PROVIDER=disabled`). A ativação usa `pagbank`, credencial do próprio PDV e URL HTTPS do webhook. Débito e Apple Pay não são anunciados.
+A release v1.30.0 leva o fluxo ao operacional com `QR_PAYMENTS_PROVIDER=pagbank`, a credencial do próprio PDV e a URL HTTPS do webhook. Débito e Apple Pay não são anunciados. A confirmação da publicação continua dependendo da conferência de versão, commit, saúde e chave pública do provedor no ambiente real.
 
 Referências: https://developer.pagbank.com.br/reference/criar-pagar-pedido-com-cartao e https://developer.pagbank.com.br/reference/criar-pedido .
 

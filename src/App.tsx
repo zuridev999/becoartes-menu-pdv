@@ -12,6 +12,7 @@ import { NotificationDisplay } from './components/common/NotificationDisplay';
 import { ChecklistAlertDisplay } from './components/common/ChecklistAlertDisplay';
 import { GoogleAdBanner } from './components/common/GoogleAdBanner';
 import { postOSMessage, subscribeOSMessages } from './lib/osBridge';
+import { QrLanguageEntry } from './components/shared/QrLanguageEntry';
 import { PublicI18nProvider } from './lib/public-i18n';
 import { isPublicMenuRoute } from './lib/public-menu-route';
 import { preloadQrEntry } from './lib/qr-entry';
@@ -83,7 +84,6 @@ function App() {
   }, []);
 
   const isPublicTopAdView = activeView === 'tablet' || activeView === 'delivery';
-  const isPdvView = activeView === 'pdv';
   const hasOperationalView = ['pdv', 'kitchen', 'admin'].includes(activeView);
   const isQrView = activeView === 'qr' || window.location.hostname.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(pdvPathname());
   const isReadOnlyMenu = isPublicMenuRoute(window.location.hostname, pdvPathname());
@@ -105,10 +105,10 @@ function App() {
           <ConnectionError error={initError} isPublic={isQrView} retry={() => void init()} />
         )}
         {/* Roteamento de Views com Hostname Fallback */}
-        {isQrView && isLoading && <MenuSkeleton />}
+        {isQrView && isLoading && <QrLanguageEntry><MenuSkeleton /></QrLanguageEntry>}
         <Suspense fallback={isQrView && !isLoading ? <MenuSkeleton /> : null}>
           {!initError && activeView === 'tablet' && <TabletView />}
-          {!isLoading && !initError && activeView === 'qr' && (isReadOnlyMenu ? <PublicMenuView /> : <QRView />)}
+          {!isLoading && !initError && activeView === 'qr' && (isReadOnlyMenu ? <PublicMenuView /> : <QrLanguageEntry><QRView /></QrLanguageEntry>)}
           {!initError && activeView === 'pdv' && <PDVView />}
           {!initError && activeView === 'kitchen' && <KitchenView />}
           {!initError && activeView === 'admin' && <AdminView />}
@@ -117,7 +117,6 @@ function App() {
         </Suspense>
 
         {!isLoading && !initError && activeView === 'delivery' && <GoogleAdBanner placement="mobile-bottom" />}
-        {!isLoading && !initError && hasOperationalView && !isPdvView && <GoogleAdBanner placement="operational-bottom" />}
         
         {/* Fallback amigável para URLs desconhecidas */}
         {!isLoading && !initError && !['tablet', 'pdv', 'kitchen', 'admin', 'qr', 'delivery', 'comanda'].includes(activeView) && (

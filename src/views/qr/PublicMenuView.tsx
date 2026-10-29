@@ -40,7 +40,7 @@ export function PublicMenuView() {
             onClick={(event) => event.stopPropagation()}
           >
             <button type="button" aria-label={t('close')} className="absolute right-3 top-3 rounded-full bg-black/70 p-3" onClick={() => setSelectedProduct(null)}><X size={20} /></button>
-            <img src={getImageSrc(selectedProduct.image)} alt={selectedProduct.name} onError={applyImageFallback} className="h-56 w-full object-cover" />
+            <img data-product-image={/suco/i.test(selectedProduct.name) ? 'juice' : undefined} src={getImageSrc(selectedProduct.image)} alt={selectedProduct.name} onError={applyImageFallback} className="h-56 w-full object-cover" />
             <div className="space-y-3 p-6">
               <p className="text-xs font-black uppercase tracking-widest text-primary">{catalogText(selectedProduct.categoryId || '', selectedProduct.categoryName || '', 'name')}</p>
               <h2 className="text-3xl font-black italic">{catalogText(selectedProduct.id, selectedProduct.name, 'name')}</h2>

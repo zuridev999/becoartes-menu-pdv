@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'qrcode';
 import { publicPdvBase, zordonRuntime } from '../../lib/zordon-runtime';
@@ -28,6 +28,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore, type Product } from '../../store';
+import { commitModifierGroup } from '../../lib/commit-modifier-group';
 import { PinLoginModal } from '../../components/auth/PinLoginModal';
 import { ActionDialog } from '../../components/common/ActionDialog';
 import {
@@ -54,7 +55,10 @@ import { getDefaultPublicCopy, getPublicLanguages } from '../../lib/public-i18n'
 import type { PublicLanguageConfig } from '../../types';
 
 import { ScheduleModal } from '../../components/modals/ScheduleModal';
-import { ModifierOptionEditor } from './ModifierOptionEditor';
+import { SharedGroupEditor } from './SharedGroupEditor';
+import { ProductPhotoEditor } from './ProductPhotoEditor';
+import { ProductEditorFrame } from './ProductEditorFrame';
+import './pdv-workspace.css';
 import { ModifierGroupCatalog } from './ModifierGroupCatalog';
 import { ProductModifierGroupsEditor } from './ProductModifierGroupsEditor';
 import type { ClosedBill, ScheduleConfig, Seller } from '../../types';
@@ -343,7 +347,7 @@ const formatAuditDetails = (details: string) => {
 
 // Componente de Input fora para evitar perda de foco
 const ConfigInput = ({ label, value, onChange, type = 'text', placeholder, disabled = false }: { label: string, value: any, onChange: (val: any) => void, type?: string, placeholder?: string, disabled?: boolean }) => {
-  const isMoney = label.toLowerCase().includes('preço') || label.toLowerCase().includes('custo') || label.toLowerCase().includes('taxa');
+  const isMoney = label.toLowerCase().includes('preço') || label.toLowerCase().includes('custo');
 
   // Formata o valor para exibição (ex: 12.50 -> "12,50")
   const formatMoney = (val: any) => {
@@ -382,6 +386,8 @@ const ConfigInput = ({ label, value, onChange, type = 'text', placeholder, disab
         <div className="relative">
           <input
             type="text"
+            aria-label={label}
+            inputMode={type === 'number' ? 'decimal' : undefined}
             value={isMoney ? formatMoney(value) : value}
             placeholder={placeholder}
             autoComplete="off"
@@ -478,7 +484,7 @@ function SortableCategoryItem({ cat, menu, setSchedulingItem, toggleCategoryVisi
                 categoryProducts.map((p: any) => (
                   <div key={p.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all">
                     <div className="flex items-center gap-4 min-w-0">
-                      <img src={getImageSrc(p.image)} onError={applyImageFallback} className="w-10 h-10 rounded-lg object-cover" />
+                      <img loading="lazy" decoding="async" alt={p.name} src={getImageSrc(p.image, 320)} onError={applyImageFallback} className="w-10 h-10 rounded-lg object-cover" />
                       <p className="font-bold text-sm truncate">{p.name}</p>
                     </div>
                     <div className="flex items-center gap-3 sm:gap-4">
@@ -660,7 +666,7 @@ export function AdminView() {
     menu, updateProduct, addProduct, deleteProduct,
     settings, updateSettings,
     tables, sellers, addSeller, updateSeller, toggleSellerStatus, deleteSeller,
-    categories, upsertCategory, modifierGroups, updateModifierGroup, deleteModifierGroup, addModifierGroup,
+    categories, upsertCategory, modifierGroups, deleteModifierGroup, addModifierGroup,
     adminTab, setAdminTab, adminMode, toggleProductVisibility, toggleProductDeliveryVisibility, deleteCategory, reorderCategories, reorderProducts, toggleCategoryVisibility,
     linkGroupToCategory, linkGroupToProduct, currentSeller, closedBills, addNotification,
     productModifierMapping, categoryModifierMapping, syncData
@@ -732,8 +738,18 @@ export function AdminView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [modifierSearchTerm, setModifierSearchTerm] = useState('');
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
-  const productImageInputRef = useRef<HTMLInputElement | null>(null);
-  const productEditorRef = useRef<HTMLDivElement | null>(null);
+  const [editorTab, setEditorTab] = useState('data');
+  const [dirtyGroups, setDirtyGroups] = useState<Record<string, boolean>>({});
+  const [groupDirty, setGroupDirty] = useState(false);
+  const [savingProduct, setSavingProduct] = useState(false);
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
+  const closeProductEditor = () => {
+    if (savingProduct || preparingPhoto) return;
+    if (Object.values(dirtyGroups).some(Boolean) && !window.confirm('Há alterações de sabores ou adicionais não salvas. Descartar e sair?')) return;
+    setEditingProduct(null); setDirtyGroups({});
+  };
+  const trackDirtyGroup = (id: string, dirty: boolean) => setDirtyGroups(current => current[id] === dirty ? current : { ...current, [id]: dirty });
+
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -764,9 +780,7 @@ export function AdminView() {
 
   const openProductEditor = useCallback((product: Product) => {
     setEditingProduct({ ...product, visible: product.baseVisible ?? product.visible, deliveryVisible: product.deliveryVisible !== false });
-    window.setTimeout(() => {
-      productEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 80);
+    setEditorTab('data'); setDirtyGroups({});
   }, []);
 
   const ensureProductCmv = async () => {
@@ -1058,6 +1072,7 @@ export function AdminView() {
   const userPermissionOverrides = settings.pdvUserPermissions as UserPermissionMatrix | undefined;
   const isAdminProfile = currentSeller.permission === 'admin';
   const isSuperAdmin = currentSeller.permission === 'admin' && ['admin-bootstrap', 'admin-bypass', 'master'].includes(currentSeller.id);
+  const canCreateModifierGroups = String((currentSeller as Seller & { osRole?: string }).osRole || '').toLowerCase() === 'super_admin';
   const canManageOperationalLocks = String((currentSeller as Seller & { osRole?: string }).osRole || '').toLowerCase() === 'super_admin';
   const canManageSettings = can(currentSeller, 'manageSettings', permissionOverrides, userPermissionOverrides);
   const canManagePDVUsers = can(currentSeller, 'managePDVUsers', permissionOverrides, userPermissionOverrides);
@@ -1721,65 +1736,9 @@ export function AdminView() {
     return Boolean(categoryModifierMapping[product.categoryId]?.includes(groupId));
   };
 
-  const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new window.Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const max = 800;
-
-          if (width > height) {
-            if (width > max) {
-              height *= max / width;
-              width = max;
-            }
-          } else {
-            if (height > max) {
-              width *= max / height;
-              height = max;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.7));
-        };
-        img.onerror = () => reject(new Error('Imagem inválida ou corrompida.'));
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => reject(reader.error || new Error('Não foi possível ler a imagem.'));
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const handleProductImageFile = async (file?: File | null) => {
-    if (!file) return;
-    if (!canEditProductFields) {
-      addNotification('Sem permissão para alterar a imagem deste produto.', 'error');
-      return;
-    }
-    if (!file.type.startsWith('image/')) {
-      addNotification('Selecione um arquivo de imagem.', 'error');
-      return;
-    }
-    try {
-      const compressed = await compressImage(file);
-      setEditingProduct((current) => current ? { ...current, image: compressed } : current);
-      addNotification('Imagem carregada. Salve o produto para publicar a alteração.', 'info');
-    } catch (error) {
-      console.error('Erro ao carregar imagem do produto:', error);
-      addNotification('Não foi possível carregar essa imagem.', 'error');
-    }
-  };
 
   return (
-    <div className="p-4 sm:p-6 bg-transparent min-h-screen text-white font-['Outfit'] pb-32 sm:pb-48 overflow-x-hidden overflow-y-auto custom-scrollbar h-screen">
+    <div className="admin-workspace p-4 sm:p-6 text-white font-['Outfit'] overflow-x-hidden overflow-y-auto custom-scrollbar">
       <div className="flex flex-col gap-3 mb-4">
         <div className="flex items-center gap-3 min-w-0">
           <button
@@ -1854,14 +1813,14 @@ export function AdminView() {
             </button>
           </div>
         )}
-        <div className="w-full max-w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
+        <div className="admin-section-nav">
         <div className="metal-surface flex w-max min-w-full p-1.5 rounded-[1.25rem]">
           {[
             { id: 'config', name: 'Geral', icon: Settings },
             { id: 'languages', name: 'Idiomas', icon: Languages },
             { id: 'categories', name: 'Categorias', icon: LayoutDashboard },
             { id: 'products', name: 'Produtos', icon: Package },
-            { id: 'optionals', name: 'Opcionais', icon: Sparkles },
+            { id: 'optionals', name: 'Adicionais', icon: Sparkles },
             { id: 'sellers', name: 'Equipe', icon: User },
             { id: 'qrcodes', name: 'QR Mesas', icon: QrCode },
             { id: 'finance', name: 'Fechamentos', icon: Wallet },
@@ -1872,7 +1831,7 @@ export function AdminView() {
             return allowedTabIds.has(tab.id);
           })
           .map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-3.5 sm:px-5 py-2.5 rounded-[0.9rem] flex items-center gap-2 font-black text-[10px] sm:text-[11px] uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+            <button key={tab.id} onClick={() => { if (!groupDirty || window.confirm('Descartar alterações não salvas do grupo?')) { setGroupDirty(false); setActiveTab(tab.id as any); } }} className={`px-3.5 sm:px-5 py-2.5 rounded-[0.9rem] flex items-center gap-2 font-black text-[10px] sm:text-[11px] uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
               <tab.icon size={15}/> {tab.name}
             </button>
           ))}
@@ -2161,7 +2120,7 @@ export function AdminView() {
             <div className="mb-3 px-2 sm:px-4 text-[10px] font-black uppercase tracking-[0.22em] text-gray-500">
               Ordem salva aqui aparece igual no Tablet, QR e Delivery.
             </div>
-            <div className="glass rounded-[2rem] sm:rounded-[3rem] border-white/5 overflow-hidden max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <div className="glass rounded-[2rem] sm:rounded-[3rem] border-white/5 overflow-hidden catalog-list">
               {categories.map((cat) => {
                 const items = menu.filter(p => p.categoryId === cat.id);
                 const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -2188,7 +2147,7 @@ export function AdminView() {
                         key={p.id}
                         id={p.id}
                         disabled={!canEditProduct || Boolean(searchTerm)}
-                        className={`flex items-center justify-between gap-3 p-4 sm:p-6 border-b border-white/5 hover:bg-white/[0.02] transition-colors group ${!p.visible ? 'opacity-40 grayscale' : ''}`}
+                        className={`flex items-center justify-between gap-3 p-4 sm:p-6 border-b border-white/5 hover:bg-white/[0.02] transition-colors group ${!p.visible ? 'catalog-row-hidden' : ''}`}
                       >
                         {({ attributes, listeners }) => (
                         <>
@@ -2204,7 +2163,7 @@ export function AdminView() {
                             </div>
                           )}
                           <div className="relative">
-                            <img src={getImageSrc(p.image)} onError={applyImageFallback} className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
+                            <img loading="lazy" decoding="async" alt={p.name} src={getImageSrc(p.image, 320)} onError={applyImageFallback} className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-2xl border border-white/5" />
                             {!p.visible && <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center"><EyeOff size={20} className="text-white/40" /></div>}
                           </div>
                           <div className="min-w-0">
@@ -2217,7 +2176,7 @@ export function AdminView() {
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 sm:gap-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
+                        <div className="flex items-center gap-2 sm:gap-3 catalog-row-actions transition-all shrink-0">
                           {canToggleVisibility && (
                             <>
                               <button
@@ -2265,99 +2224,70 @@ export function AdminView() {
             </div>
           </div>
 
-          <AnimatePresence>
-            {editingProduct && (
-              <motion.div ref={productEditorRef} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="glass-card p-5 sm:p-8 lg:p-12 border-primary/20 lg:sticky lg:top-12 h-fit max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar shadow-2xl shadow-primary/10">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-5 mb-8 sm:mb-10">
-                  <div className="flex flex-col gap-1">
-                    <h3 className="text-3xl font-black">
-                      {menu.some(p => p.id === editingProduct.id) ? 'Editar Produto' : 'Novo Produto'}
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-                    {canAddProduct && menu.some(p => p.id === editingProduct.id) && (
-                      <button
-                        onClick={async () => {
-                          try {
-                            const duplicatedProduct = {
-                              ...editingProduct,
-                              id: createId(),
-                              name: `${editingProduct.name} (Cópia)`,
-                              price: typeof editingProduct.price === 'string'
-                                ? parseFloat(String(editingProduct.price).replace(',', '.')) || 0
-                                : Number(editingProduct.price) || 0,
-                              cost: typeof editingProduct.cost === 'string'
-                                ? parseFloat(String(editingProduct.cost).replace(',', '.')) || 0
-                                : Number(editingProduct.cost) || 0,
-                              description: editingProduct.description || '',
-                              image: editingProduct.image || '',
-                              visible: false,
-                              deliveryVisible: editingProduct.deliveryVisible !== false,
-                              productCode: undefined,
-                              erpCode: '',
-                              remoteStockId: '',
-                              sortOrder: Math.max(-1, ...menu.filter(product => product.categoryId === editingProduct.categoryId).map(product => Number(product.sortOrder ?? 0))) + 1,
-                            };
+          {editingProduct && <ProductEditorFrame
+            title={editingProductExists ? 'Editar produto' : 'Novo produto'}
+            productName={editingProduct.name}
+            onClose={closeProductEditor}
+            tabs={<nav className="product-editor-tabs" aria-label="Edição do produto">{[{ id: 'data', name: 'Dados' }, { id: 'extras', name: 'Adicionais' }, { id: 'display', name: 'Exibição' }].map(tab => <button type="button" key={tab.id} aria-current={editorTab === tab.id ? 'page' : undefined} onClick={() => setEditorTab(tab.id)}>{tab.name}{tab.id === 'extras' && Object.values(dirtyGroups).some(Boolean) ? ' •' : ''}</button>)}</nav>}
+            footer={<><button className="editor-secondary" disabled={savingProduct || preparingPhoto} onClick={closeProductEditor}>Cancelar</button>                  {canSaveEditingProduct && (
+                  <button
+                    onClick={async () => {
+                      if (Object.values(dirtyGroups).some(Boolean)) { addNotification('Salve ou descarte as alterações na aba Adicionais primeiro.', 'error'); return; }
+                      if (!editingProduct.name.trim()) { addNotification('Informe o nome do produto.', 'error'); return; }
+                      setSavingProduct(true);
+                      try {
+                        const cleanProduct: any = {
+                          ...editingProduct,
+                          price: typeof editingProduct.price === 'string'
+                            ? parseFloat(String(editingProduct.price).replace(',', '.')) || 0
+                            : Number(editingProduct.price) || 0,
+                          cost: typeof editingProduct.cost === 'string'
+                            ? parseFloat(String(editingProduct.cost).replace(',', '.')) || 0
+                            : Number(editingProduct.cost) || 0,
+                          description: editingProduct.description || "",
+                          image: editingProduct.image || "",
+                          erpCode: editingProduct.erpCode || "",
+                          remoteStockId: editingProduct.remoteStockId || "",
+                          sortOrder: Number(editingProduct.sortOrder ?? 0),
+                        };
+                        const exists = menu.find(p => p.id === editingProduct.id);
+                        if (exists || !canEditProductFields) {
+                          // Existing products expose a merged catalog projection (direct + inherited).
+                          // Links are persisted independently above so saving fields cannot flatten or
+                          // accidentally replace category inheritance with direct links.
+                          delete cleanProduct.modifierGroups;
+                        }
+                        if (exists) {
+                          await updateProduct(editingProduct.id, cleanProduct);
+                        } else {
+                          await addProduct(cleanProduct);
+                        }
+                        setEditingProduct(null);
+                      } catch (err: any) {
+                        console.error("Erro no form:", err);
+                        addNotification(`Erro ao salvar: ${err.message}`, 'error');
+                      } finally { setSavingProduct(false); }
+                    }}
+                    disabled={savingProduct || preparingPhoto || Object.values(dirtyGroups).some(Boolean)}
+                    title={Object.values(dirtyGroups).some(Boolean) ? "Salve o grupo na aba Adicionais primeiro" : undefined}
+                    className="editor-primary"
+                  >
+                    {preparingPhoto ? 'Preparando foto…' : savingProduct ? 'Salvando…' : 'Salvar produto'}
+                  </button>
+                  )}
 
-                            await addProduct(duplicatedProduct);
-                            setEditingProduct(duplicatedProduct);
-                            addNotification('Produto duplicado como oculto. Revise nome, estoque e publique quando estiver pronto.', 'info');
-                          } catch (err: any) {
-                            console.error('Erro ao duplicar produto:', err);
-                            addNotification(`Erro ao duplicar: ${err.message}`, 'error');
-                          }
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-white/5 text-zinc-300 hover:bg-primary/10 hover:text-primary"
-                      >
-                        <Copy size={14}/> Duplicar
-                      </button>
-                    )}
-                    {canToggleVisibility && (
-                      <button
-                        onClick={async () => {
-                          if (editingProduct.id.startsWith('new_')) {
-                            setEditingProduct({...editingProduct, visible: !editingProduct.visible});
-                          } else {
-                            const currentProduct = menu.find(product => product.id === editingProduct.id);
-                            if (currentProduct) await openAvailabilityImpact(currentProduct);
-                          }
-                        }}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
-                      >
-                        {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
-                      </button>
-                    )}
-                    {canToggleVisibility && (
-                      <button
-                        onClick={async () => {
-                          const nextVisible = editingProduct.deliveryVisible === false;
-                          if (menu.some(p => p.id === editingProduct.id)) {
-                            await toggleProductDeliveryVisibility(editingProduct.id);
-                          }
-                          setEditingProduct({ ...editingProduct, deliveryVisible: nextVisible });
-                        }}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.deliveryVisible !== false ? 'bg-sky-500/10 text-sky-400' : 'bg-rose-500/10 text-rose-500'}`}
-                        title={editingProduct.deliveryVisible !== false ? 'Inativar Delivery' : 'Ativar Delivery'}
-                      >
-                        <Bike size={14}/> {editingProduct.deliveryVisible !== false ? 'Ativo Delivery' : 'Inativo Delivery'}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setEditingProduct(null)}
-                      className="w-10 h-10 glass rounded-full flex items-center justify-center hover:bg-rose-500/10 hover:text-rose-500 transition-all"
-                    >
-                      <X size={20} />
-                    </button>
-                  </div>
-                </div>
-                <div className="space-y-8">
+</>}
+          >
+            <div hidden={editorTab !== 'data'} className="product-editor-data">
+              <ProductPhotoEditor onBusyChange={setPreparingPhoto} key={editingProduct.id} value={editingProduct.image || ''} name={editingProduct.name} disabled={!canEditProductFields || savingProduct} onChange={image => setEditingProduct(current => current?.id === editingProduct.id ? { ...current, image } : current)}/>
                   <ConfigInput label="Nome do Produto" value={editingProduct.name} onChange={(v) => setEditingProduct({...editingProduct, name: v})} placeholder="Ex: Suco de Laranja 400ml" disabled={!canEditProductFields} />
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-5 sm:gap-6">
-                    <ConfigInput label="Código" value={editingProduct.productCode || 'Automático'} onChange={() => undefined} disabled />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
+
                     <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 ml-1">Categoria</label>
                       <div className="relative group">
                         <select
+                          aria-label="Categoria do produto"
                           value={editingProduct.categoryId}
                           onChange={(e) => setEditingProduct({...editingProduct, categoryId: e.target.value})}
                           disabled={!canEditProductFields}
@@ -2371,9 +2301,14 @@ export function AdminView() {
                       </div>
                     </div>
                     <ConfigInput label="Preço" type="number" value={editingProduct.price} onChange={(v) => setEditingProduct({...editingProduct, price: v})} placeholder="0,00" disabled={!canEditProductMoney} />
-                    <ConfigInput label={editingProduct.costSource === 'cmv' ? "Custo oficial do CMV" : editingProduct.costSource === 'stock' ? "Custo médio do estoque" : "Custo"} type="number" value={editingProduct.cost || 0} onChange={(v) => setEditingProduct({...editingProduct, cost: v})} placeholder="0,00" disabled={!canEditProductMoney || editingProduct.costSource === 'cmv' || editingProduct.costSource === 'stock'} />
+
                   </div>
-                  <div className={`rounded-2xl border p-4 ${editingProduct.cmvStatus === 'complete' || editingProduct.cmvStatus === 'direct_stock' ? 'border-emerald-500/20 bg-emerald-500/10' : 'border-amber-500/25 bg-amber-500/10'}`}>
+                  <ConfigInput label="Descrição" value={editingProduct.description || ''} onChange={(v) => setEditingProduct({...editingProduct, description: v})} disabled={!canEditProductFields} />
+
+<details className="editor-rules"><summary>Estoque e ficha técnica</summary>                    <ConfigInput label="Código" value={editingProduct.productCode || 'Automático'} onChange={() => undefined} disabled />                    <ConfigInput label={editingProduct.costSource === 'cmv' ? "Custo oficial do CMV" : editingProduct.costSource === 'stock' ? "Custo médio do estoque" : "Custo"} type="number" value={editingProduct.cost || 0} onChange={(v) => setEditingProduct({...editingProduct, cost: v})} placeholder="0,00" disabled={!canEditProductMoney || editingProduct.costSource === 'cmv' || editingProduct.costSource === 'stock'} />                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <ConfigInput label="Código ERP" value={editingProduct.erpCode || ''} onChange={(v) => setEditingProduct({...editingProduct, erpCode: v})} placeholder="Ex: PRD-001" disabled={!canEditProductFields} />
+                    <ConfigInput label="ID Estoque Remoto" value={editingProduct.remoteStockId || ''} onChange={(v) => setEditingProduct({...editingProduct, remoteStockId: v})} placeholder="Ex: stock_abc" disabled={!canEditProductFields} />
+                  </div>                  <div className={`rounded-2xl border p-4 ${editingProduct.cmvStatus === 'complete' || editingProduct.cmvStatus === 'direct_stock' ? 'border-emerald-500/20 bg-emerald-500/10' : 'border-amber-500/25 bg-amber-500/10'}`}>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Origem do custo e baixa de estoque</p>
@@ -2412,7 +2347,9 @@ export function AdminView() {
                       </div>
                     </div>
                   </div>
-                  <ProductModifierGroupsEditor
+</details>
+            </div>
+            <div hidden={editorTab !== 'extras'}>                  <ProductModifierGroupsEditor key={editingProduct.id}
                     product={editingProduct}
                     products={menu}
                     groups={modifierGroups}
@@ -2425,129 +2362,76 @@ export function AdminView() {
                     onLinkDirect={async (groupId, linked) => {
                       await linkGroupToProduct(editingProduct.id, groupId, linked);
                     }}
-                    onUpdateGroup={(groupId, data) => updateModifierGroup(groupId, data)}
-                    onOpenFullGroup={(groupId) => {
-                      setEditingGroup(groupId);
-                      setActiveTab('optionals');
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                  />
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-1">Imagem do Produto</label>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const file = e.dataTransfer.files?.[0];
-                        void handleProductImageFile(file);
-                      }}
-                      onClick={() => {
-                        if (!canEditProductFields) {
-                          addNotification('Sem permissão para alterar a imagem deste produto.', 'error');
-                          return;
-                        }
-                        productImageInputRef.current?.click();
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          if (!canEditProductFields) {
-                            addNotification('Sem permissão para alterar a imagem deste produto.', 'error');
-                            return;
+                    onSaveGroup={commitModifierGroup}
+                    onDirtyChange={trackDirtyGroup}
+                  /></div>
+            <div hidden={editorTab !== 'display'} className="product-editor-display"><h4>Onde o produto aparece</h4><p className="editor-help">A visibilidade do produto e do delivery é salva ao confirmar a mudança.</p><div className="editor-actions">                    {canToggleVisibility && (
+                      <button
+                        onClick={async () => {
+                          if (!editingProductExists) {
+                            setEditingProduct({...editingProduct, visible: !editingProduct.visible});
+                          } else {
+                            const currentProduct = menu.find(product => product.id === editingProduct.id);
+                            if (currentProduct) await openAvailabilityImpact(currentProduct);
                           }
-                          productImageInputRef.current?.click();
-                        }
-                      }}
-                      className={`relative h-48 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 group hover:border-primary/40 hover:bg-white/[0.04] transition-all overflow-hidden ${canEditProductFields ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
-                    >
-                      {editingProduct.image ? (
-                        <>
-                          <img src={getImageSrc(editingProduct.image)} onError={applyImageFallback} className="absolute inset-0 w-full h-full object-cover opacity-40" />
-                          <div className="relative z-10 flex flex-col items-center gap-2">
-                             <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md group-hover:scale-110 transition-all">
-                               <Plus size={24} />
-                             </div>
-                             <span className="text-[10px] font-black uppercase tracking-widest">Trocar Imagem</span>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="w-16 h-16 bg-white/5 rounded-3xl flex items-center justify-center text-gray-500 group-hover:text-primary transition-all">
-                            <Image size={32} />
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs font-black uppercase tracking-widest">Arraste a foto aqui</p>
-                            <p className="text-[10px] font-bold text-gray-500 mt-1">ou clique para selecionar</p>
-                          </div>
-                        </>
-                      )}
-                      <input
-                        ref={productImageInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={!canEditProductFields}
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          await handleProductImageFile(file);
-                          e.currentTarget.value = '';
                         }}
-                      />
-                    </div>
-                  </div>
-                  <ConfigInput label="Descrição" value={editingProduct.description || ''} onChange={(v) => setEditingProduct({...editingProduct, description: v})} disabled={!canEditProductFields} />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <ConfigInput label="Código ERP" value={editingProduct.erpCode || ''} onChange={(v) => setEditingProduct({...editingProduct, erpCode: v})} placeholder="Ex: PRD-001" disabled={!canEditProductFields} />
-                    <ConfigInput label="ID Estoque Remoto" value={editingProduct.remoteStockId || ''} onChange={(v) => setEditingProduct({...editingProduct, remoteStockId: v})} placeholder="Ex: stock_abc" disabled={!canEditProductFields} />
-                  </div>
-                  <div className="relative group">
-                    <ConfigInput label="Ou cole a URL da Imagem" value={editingProduct.image || ''} onChange={(v) => setEditingProduct({...editingProduct, image: v})} disabled={!canEditProductFields} />
-                  </div>
-                  {canSaveEditingProduct && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        const cleanProduct: any = {
-                          ...editingProduct,
-                          price: typeof editingProduct.price === 'string'
-                            ? parseFloat(String(editingProduct.price).replace(',', '.')) || 0
-                            : Number(editingProduct.price) || 0,
-                          cost: typeof editingProduct.cost === 'string'
-                            ? parseFloat(String(editingProduct.cost).replace(',', '.')) || 0
-                            : Number(editingProduct.cost) || 0,
-                          description: editingProduct.description || "",
-                          image: editingProduct.image || "",
-                          erpCode: editingProduct.erpCode || "",
-                          remoteStockId: editingProduct.remoteStockId || "",
-                          sortOrder: Number(editingProduct.sortOrder ?? 0),
-                        };
-                        const exists = menu.find(p => p.id === editingProduct.id);
-                        if (exists || !canEditProductFields) {
-                          // Existing products expose a merged catalog projection (direct + inherited).
-                          // Links are persisted independently above so saving fields cannot flatten or
-                          // accidentally replace category inheritance with direct links.
-                          delete cleanProduct.modifierGroups;
-                        }
-                        if (exists) {
-                          await updateProduct(editingProduct.id, cleanProduct);
-                        } else {
-                          await addProduct(cleanProduct);
-                        }
-                        setEditingProduct(null);
-                      } catch (err: any) {
-                        console.error("Erro no form:", err);
-                        addNotification(`Erro ao salvar: ${err.message}`, 'error');
-                      }
-                    }}
-                    className="w-full btn-beco btn-beco-purple py-6 font-black shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all"
-                  >
-                    SALVAR ALTERAÇÕES
-                  </button>
-                  )}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.visible ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}
+                      >
+                        {editingProduct.visible ? <><Eye size={14}/> Visível</> : <><EyeOff size={14}/> Oculto</>}
+                      </button>
+                    )}
+                    {canToggleVisibility && (
+                      <button
+                        onClick={async () => {
+                          const nextVisible = editingProduct.deliveryVisible === false;
+                          if (menu.some(p => p.id === editingProduct.id)) {
+                            await toggleProductDeliveryVisibility(editingProduct.id);
+                          }
+                          setEditingProduct({ ...editingProduct, deliveryVisible: nextVisible });
+                        }}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingProduct.deliveryVisible !== false ? 'bg-sky-500/10 text-sky-400' : 'bg-rose-500/10 text-rose-500'}`}
+                        title={editingProduct.deliveryVisible !== false ? 'Inativar Delivery' : 'Ativar Delivery'}
+                      >
+                        <Bike size={14}/> {editingProduct.deliveryVisible !== false ? 'Ativo Delivery' : 'Inativo Delivery'}
+                      </button>
+                    )}
+</div><hr/><h4>Outras ações</h4>                    {canAddProduct && menu.some(p => p.id === editingProduct.id) && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const duplicatedProduct = {
+                              ...editingProduct,
+                              id: createId(),
+                              name: `${editingProduct.name} (Cópia)`,
+                              price: typeof editingProduct.price === 'string'
+                                ? parseFloat(String(editingProduct.price).replace(',', '.')) || 0
+                                : Number(editingProduct.price) || 0,
+                              cost: typeof editingProduct.cost === 'string'
+                                ? parseFloat(String(editingProduct.cost).replace(',', '.')) || 0
+                                : Number(editingProduct.cost) || 0,
+                              description: editingProduct.description || '',
+                              image: editingProduct.image || '',
+                              visible: false,
+                              deliveryVisible: editingProduct.deliveryVisible !== false,
+                              productCode: undefined,
+                              erpCode: '',
+                              remoteStockId: '',
+                              sortOrder: Math.max(-1, ...menu.filter(product => product.categoryId === editingProduct.categoryId).map(product => Number(product.sortOrder ?? 0))) + 1,
+                            };
 
+                            await addProduct(duplicatedProduct);
+                            setEditingProduct(duplicatedProduct);
+                            addNotification('Produto duplicado como oculto. Revise nome, estoque e publique quando estiver pronto.', 'info');
+                          } catch (err: any) {
+                            console.error('Erro ao duplicar produto:', err);
+                            addNotification(`Erro ao duplicar: ${err.message}`, 'error');
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-white/5 text-zinc-300 hover:bg-primary/10 hover:text-primary"
+                      >
+                        <Copy size={14}/> Duplicar
+                      </button>
+                    )}
                   {canDeleteProduct && (
                   <div className="pt-6 border-t border-white/5 flex flex-col items-center gap-4">
 	                    <button
@@ -2561,15 +2445,13 @@ export function AdminView() {
                     <p className="text-[9px] text-zinc-700 font-bold uppercase italic">Ação irreversível • Requer autorização nível Admin</p>
                   </div>
                   )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+</div>
+          </ProductEditorFrame>}
         </div>
       )}
 
       {activeTab === 'optionals' && canManageOptionals && (
-        <div className="mx-auto max-w-6xl space-y-10">
+        <div className="modifier-workspace">
           <ModifierGroupCatalog
             groups={modifierGroups || []}
             productMapping={productModifierMapping}
@@ -2578,11 +2460,12 @@ export function AdminView() {
             searchTerm={modifierSearchTerm}
             onSearchChange={setModifierSearchTerm}
             onCreate={() => {
+              if (!canCreateModifierGroups) return;
               const id = createId();
-              addModifierGroup({ id, name: 'Novo Grupo', minChoices: 0, maxChoices: 1, isRequired: false, status: 'active', modifiers: [] });
-              setEditingGroup(id);
+              void addModifierGroup({ id, name: 'Novo Grupo', minChoices: 0, maxChoices: 1, isRequired: false, status: 'active', modifiers: [] }).then(() => setEditingGroup(id)).catch(() => addNotification('Não foi possível criar o grupo.', 'error'));
             }}
-            onSelect={setEditingGroup}
+            onSelect={id => { if (!groupDirty || window.confirm('Descartar alterações não salvas deste grupo?')) { setGroupDirty(false); setEditingGroup(id); } }}
+            canCreate={canCreateModifierGroups}
           />
 
           <div>
@@ -2590,79 +2473,8 @@ export function AdminView() {
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
                 {modifierGroups.filter(g => g.id === editingGroup).map(group => (
                   <div key={group.id} className="space-y-12">
-                    {/* Configuração Básica */}
-                    <div className="glass-card p-10 border-white/5 shadow-2xl">
-                      <div className="flex justify-between items-center mb-8">
-                        <h4 className="text-2xl font-black tracking-tighter">Configurar "{group.name}"</h4>
-                        <button onClick={() => requestModifierGroupDelete(group.id)} className="p-4 glass rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all"><Trash2 size={18}/></button>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <ConfigInput label="Nome do Grupo" value={group.name} onChange={(v) => updateModifierGroup(group.id, { name: v })} />
-                        <div className="grid grid-cols-2 gap-4">
-                          <ConfigInput label="Min" type="number" value={group.minChoices} onChange={(v) => updateModifierGroup(group.id, { minChoices: Number(v) })} />
-                          <ConfigInput label="Max" type="number" value={group.maxChoices} onChange={(v) => updateModifierGroup(group.id, { maxChoices: Number(v) })} />
-                        </div>
-                        <button
-                          onClick={() => updateModifierGroup(group.id, { isRequired: !group.isRequired })}
-                          className={`md:col-span-2 p-5 rounded-2xl border text-left transition-all ${group.isRequired ? 'bg-primary/10 border-primary/30 text-primary' : 'glass border-white/5 text-gray-500 hover:text-white'}`}
-                        >
-                          <span className="block text-[10px] font-black uppercase tracking-[0.2em] mb-1">Obrigatoriedade</span>
-                          <span className="font-black text-sm">{group.isRequired ? 'Cliente precisa escolher dentro deste grupo' : 'Opcional livre, cliente escolhe se quiser'}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Opções */}
-                    <div className="glass-card p-10 border-white/5">
-                      <h4 className="text-xl font-black mb-8 flex items-center gap-3"><Plus size={20} className="text-primary"/> Opções de Escolha</h4>
-                      <div className="space-y-3">
-                        {group.modifiers.map((m, idx) => (
-                          <div key={m.id || idx} className={`grid grid-cols-1 gap-3 p-4 glass rounded-2xl border-white/5 hover:border-white/10 transition-all sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center ${m.status === 'inactive' ? 'opacity-45 grayscale' : ''}`}>
-                            <ModifierOptionEditor
-                              modifier={m}
-                              products={menu}
-                              siblingModifiers={group.modifiers}
-                              index={idx}
-                              onChange={(nextModifier) => {
-                                const newMods = [...group.modifiers];
-                                newMods[idx] = nextModifier;
-                                updateModifierGroup(group.id, { modifiers: newMods });
-                              }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newMods = [...group.modifiers];
-                                newMods[idx] = { ...m, status: m.status === 'inactive' ? 'active' : 'inactive' };
-                                updateModifierGroup(group.id, { modifiers: newMods });
-                              }}
-                              title={m.status === 'inactive' ? 'Ativar adicional' : 'Desativar adicional'}
-                              className={`p-2 rounded-lg transition-all ${
-                                m.status === 'inactive'
-                                  ? 'text-gray-500 hover:bg-white/10 hover:text-white'
-                                  : 'text-emerald-400 hover:bg-emerald-500/10'
-                              }`}
-                            >
-                              {m.status === 'inactive' ? <EyeOff size={16}/> : <Eye size={16}/>}
-                            </button>
-                            <button onClick={() => {
-                              const newMods = group.modifiers.filter((_, i) => i !== idx);
-                              updateModifierGroup(group.id, { modifiers: newMods });
-                            }} className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"><X size={16}/></button>
-                          </div>
-                        ))}
-                        <button
-                          onClick={() => {
-                            const newMods = [...group.modifiers, { id: createId(), name: '', price: 0, status: 'active' as const }];
-                            updateModifierGroup(group.id, { modifiers: newMods });
-                          }}
-                          className="w-full p-4 glass border-dashed border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white/5 text-primary transition-all"
-                        >
-                          + Adicionar adicional
-                        </button>
-                      </div>
-                    </div>
-
+                    <div className="modifier-detail-heading"><h3>{group.name}</h3><button className="editor-icon" aria-label="Desativar grupo" onClick={() => requestModifierGroupDelete(group.id)}><Trash2 size={18}/></button></div>
+                    <SharedGroupEditor key={group.id} group={group} products={menu} affectedProducts={menu.filter(p => productModifierMapping[p.id]?.includes(group.id) || categoryModifierMapping[p.categoryId]?.includes(group.id))} canEdit={canManageOptionals} onSave={commitModifierGroup} onDirtyChange={setGroupDirty}/>
                     {/* Vínculos */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="glass-card p-10 border-white/5">

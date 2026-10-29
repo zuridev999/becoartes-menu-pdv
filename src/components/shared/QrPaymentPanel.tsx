@@ -23,7 +23,7 @@ async function loadCardSdk() {
 }
 const inputClass = 'min-h-12 w-full min-w-0 rounded-xl border border-white/15 bg-white/5 px-3 text-base text-white';
 
-export function QrPaymentPanel({ context, onPaid, expanded, onExpand }: { context: QrPaymentContext; onPaid: () => void; expanded: boolean; onExpand: () => void }) {
+export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: { context: QrPaymentContext; onPaid: () => void; expanded: boolean; onExpand: () => void; onBack: () => void }) {
   const { t, locale } = usePublicI18n();
   const reducedMotion = useReducedMotion();
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -133,6 +133,7 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand }: { contex
     <CreditCard size={22} className="shrink-0" />{t(blocked || intent?.status === 'paid' ? 'paymentView' : 'paymentStart')}
   </button>;
   return <motion.section initial={{ opacity: 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reducedMotion ? 0 : 0.2 }} className="mx-auto min-w-0 max-w-lg space-y-6" aria-label={t('paymentTitle')}>
+    <button type="button" disabled={busy} onClick={onBack} className="min-h-12 rounded-xl border border-white/20 px-4 py-3 text-sm font-semibold">← {t('paymentBack')}</button>
     <div className="space-y-2 text-center">
       <h3 ref={headingRef} tabIndex={-1} className="text-xl font-bold outline-none sm:text-2xl">{t('paymentTitle')}</h3>
       <p className="text-sm text-zinc-400">{t('paymentAmount')}</p>

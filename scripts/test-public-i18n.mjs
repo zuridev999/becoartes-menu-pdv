@@ -33,7 +33,7 @@ if (snapshotPath) {
   const sources = [...categories, ...products, ...groups, ...groups.flatMap((g) => g.modifiers.filter((m) => m.status === 'active'))];
   for (const item of sources) for (const field of ['name', 'description']) {
     if (!item[field]?.trim()) continue;
-    for (const locale of ['en-US', 'fr-FR']) {
+    for (const locale of ['en-US', 'es-ES', 'fr-FR']) {
       assert.ok(getCatalogBaseTranslation(locale, item[field]), `${locale}: untranslated ${field}: ${item[field]}`);
       checked++;
     }

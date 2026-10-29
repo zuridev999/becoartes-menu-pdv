@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, useRef, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Users, 
   Plus, 
   Minus,
   X,
@@ -35,7 +34,9 @@ import { TableOrderDetailsDialog } from '../../components/pdv/TableOrderDetailsD
 import { CANCEL_REASONS } from '../../lib/order-cancel-reasons';
 import { cashCountTotalCents, emptyCashCount, type CashCount } from '../../lib/cash-count';
 import { CashRegisterDialog } from '../../components/pdv/CashRegisterDialog';
-import { isOnlinePaidAwaitingConference } from '../../lib/online-payment';
+import { TableNicknameEditor } from '../../components/pdv/TableNicknameEditor';
+import { PdvTableMap } from './PdvTableMap';
+import { getOnlinePaymentLabel, isOnlinePaidAwaitingConference } from '../../lib/online-payment';
 
 const DAILY_GOALS_BY_WEEKDAY: Record<number, number> = {
   0: 6000,
@@ -230,6 +231,9 @@ export function PDVView() {
     const rightCreatedAt = right.createdAt instanceof Date ? right.createdAt : new Date(right.createdAt);
     return rightCreatedAt.getTime() - leftCreatedAt.getTime();
   });
+  const pendingBillRequests = panelRequests.filter(request => request.type === 'bill' && request.status === 'pending' && !tables.some(table => table.id === request.tableId && isOnlinePaidAwaitingConference(table, settings.serviceTax)));
+  const [dismissedBillAlert, setDismissedBillAlert] = useState('');
+  const billAlert = pendingBillRequests.find(request => request.id !== dismissedBillAlert);
   const pendingRequests = panelRequests.filter(req => req.status !== 'resolved');
   const resolvedRequests = panelRequests.filter(req => req.status === 'resolved');
   const hasPendingOrderReadyRequests = pendingRequests.some(req => req.type === 'order_ready');
@@ -699,6 +703,10 @@ export function PDVView() {
         }
       }}
     >
+      {billAlert && !selectedTable && !showCounterSale && <aside className="pdv-bill-corner pdv-bill-attention" aria-label="Solicitação de conta" role="status">
+        <button className="pdv-bill-open" onClick={() => setSelectedRequestForDetails(billAlert)}><Bell size={24}/><span><strong>Cliente mesa {billAlert.sourceTableNumber || billAlert.tableNumber} pediu {billAlert.message?.includes('maquininha') ? 'a maquininha' : 'a conta'}</strong><small>{pendingBillRequests.length > 1 ? `${pendingBillRequests.length} solicitações · ` : ''}Toque para atender</small></span></button>
+        <button aria-label="Recolher aviso de conta" className="pdv-bill-dismiss" onClick={() => setDismissedBillAlert(billAlert.id)}><X size={19}/></button>
+      </aside>}
       {/* MODO PÂNICO OVERLAY */}
       <AnimatePresence>
         {pdvLockState?.locked && currentSeller.permission !== 'admin' && (
@@ -995,84 +1003,16 @@ export function PDVView() {
         </motion.div>
       )}
 
-      <div className={`grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-8 min-h-[calc(100vh-220px)] xl:h-[calc(100vh-200px)] transition-all duration-300 ${
+      <div className={`pdv-main-layout transition-all duration-300 ${
         isCashOpen || canPreviewTablesWithClosedCash ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
       }`}>
-        {/* LEFT: MAPA DE MESAS */}
-        <div className="xl:col-span-8 flex flex-col gap-5 xl:gap-6 xl:overflow-y-auto xl:pr-4 custom-scrollbar min-w-0">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <h2 className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
-              <LayoutDashboard size={14} className="text-primary" /> Mapa de Mesas
-            </h2>
-            <div className="flex flex-wrap gap-3 sm:gap-4">
-              {isComandaMode && (
-                <button type="button" onClick={() => { setShowPhysicalTables(value => !value); setShowOnlyActive(false); }} className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-primary">
-                  {showPhysicalTables ? 'Ver comandas' : 'Mesas físicas'}
-                </button>
-              )}
-              <button 
-                onClick={() => setShowOnlyActive(!showOnlyActive)}
-                className={`px-5 sm:px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${showOnlyActive ? 'bg-primary text-black' : 'bg-white/5 text-zinc-500'}`}
-              >
-                {showOnlyActive ? 'Apenas Ativas' : 'Todas as Mesas'}
-              </button>
-              <span className="flex items-center gap-2 text-[10px] font-black uppercase text-zinc-500">
-                <div className="w-3 h-3 rounded-full bg-zinc-800 border border-zinc-700" /> Livre
-              </span>
-              <span className="flex items-center gap-2 text-[10px] font-black uppercase text-purple-400">
-                <div className="w-3 h-3 rounded-full bg-purple-600/40 border border-purple-500" /> Ocupada
-              </span>
-              <span className="flex items-center gap-2 text-[10px] font-black uppercase text-amber-400">
-                <div className="w-3 h-3 rounded-full bg-amber-500/40 border border-amber-400" /> Em preparo
-              </span>
-              <span className="flex items-center gap-2 text-[10px] font-black uppercase text-rose-400">
-                <div className="w-3 h-3 rounded-full bg-rose-600/40 border border-rose-500" /> Conta
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
-            {visibleTables
-              .filter(t => !showOnlyActive || t.status !== 'available' || t.customerTab)
-              .map((table) => (
-              <motion.button
-                key={table.id}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => handleTableClick(table)}
-                aria-label={isOnlinePaidAwaitingConference(table, settings.serviceTax) ? `Mesa ${table.number}, paga pelo cliente, aguardando conferência` : `Mesa ${table.number}`}
-                className={`h-24 sm:h-28 rounded-2xl border p-3.5 flex flex-col justify-between transition-colors relative overflow-hidden group ${getStatusColor(table)}`}
-              >
-                <div className="flex justify-between items-start relative z-10">
-                  <span className="text-2xl font-black tabular-nums tracking-tight leading-none">{table.number}</span>
-                  {table.status !== 'available' && (
-                    isOnlinePaidAwaitingConference(table, settings.serviceTax) ? <Check size={18} /> : <Users size={16} className="opacity-40" />
-                  )}
-                </div>
-
-                <div className="relative z-10 text-left">
-                  {table.status === 'available' ? (
-                    <span className="text-[9px] font-black uppercase tracking-[0.16em] opacity-50 group-hover:opacity-100 transition-opacity">Iniciar</span>
-                  ) : (
-                    <div className="flex flex-col items-start">
-                      <span className="text-sm sm:text-base font-black tabular-nums tracking-tight leading-tight">
-                        {formatCurrency(getOrderItemsTotal(table.orders))}
-                      </span>
-                      {table.customerTab && (
-                        <span className="mt-0.5 max-w-full truncate text-[9px] font-black uppercase tracking-[0.12em] text-white/55">
-                          {table.customerTab.customerName}
-                        </span>
-                      )}
-                      {isOnlinePaidAwaitingConference(table, settings.serviceTax) && <span className="mt-1 text-[9px] font-black uppercase tracking-wide text-emerald-200">Paga pelo cliente</span>}
-                    </div>
-                  )}
-                </div>
-              </motion.button>
-            ))}
-          </div>
+        <div>
+          <PdvTableMap requests={serviceRequests} tables={visibleTables} serviceTax={settings.serviceTax} onlyActive={showOnlyActive} onOnlyActive={setShowOnlyActive} onOpen={handleTableClick} isPreparing={hasProductionInProgress} statusClass={getStatusColor}
+            modeAction={isComandaMode ? <button type="button" onClick={() => { setShowPhysicalTables(value => !value); setShowOnlyActive(false); }}>{showPhysicalTables ? 'Ver comandas' : 'Mesas físicas'}</button> : undefined}/>
         </div>
 
         {/* RIGHT: LANÇAMENTOS & ACTIVITY */}
-        <div className="xl:col-span-4 glass-card border-white/5 flex flex-col overflow-hidden min-h-[360px] xl:min-h-0">
+        <div className="glass-card border-white/5 flex flex-col overflow-hidden min-h-[360px]">
           {isComandaMode && canInspectCustomerTabs && (
             <div className="border-b border-white/5 bg-amber-400/[0.03] p-5 sm:p-6">
               <div className="flex items-start justify-between gap-4 mb-4">
@@ -1195,7 +1135,7 @@ export function PDVView() {
                            <div className="flex items-center gap-2 mb-1">
                              <p className={`font-black uppercase tracking-tight truncate ${isPendingOrderReady ? 'animate-pulse text-lg text-white drop-shadow-[0_1px_0_rgba(0,0,0,0.45)] sm:text-xl' : 'text-sm text-white sm:text-base'}`}>
                                {req.type === 'waiter' ? 'Chamar Garçom' : 
-                                req.type === 'bill' ? 'Pedido de Conta' : 
+                                req.type === 'bill' ? (req.message?.includes('maquininha') ? 'Pedir maquininha' : 'Pedido de Conta') :
                                 req.type === 'glass' ? 'Copo Extra' :
                                 req.type === 'cutlery' ? 'Pedir Talher' :
                                 req.type === 'order_ready' ? 'Pedido Pronto' :
@@ -1276,7 +1216,7 @@ export function PDVView() {
       <ActionDialog
         isOpen={Boolean(onlinePaidTableId)}
         title="Esta mesa já foi paga pelo cliente"
-        description="Pagamento confirmado pelo PagBank. Abra a conferência dos itens e do valor recebido para dar baixa na mesa."
+        description={`Pagamento confirmado via ${getOnlinePaymentLabel(tables.find(table => table.id === onlinePaidTableId) || { payments: [] } as TableType)}. Não cobre novamente. Confira os itens e o valor recebido antes de dar baixa na mesa.`}
         confirmLabel="Sim, abrir conferência"
         cancelLabel="Agora não"
         confirmDisabled={!canCloseBill}
@@ -1289,7 +1229,7 @@ export function PDVView() {
             return;
           }
           setSelectedTable(table); setCurrentTableId(table.id);
-          setOnlineConference(true); setShowCheckout(true);
+          setOnlinePaidTableId(null); setOnlineConference(true); setShowCheckout(true);
         }}
       />
       <AnimatePresence>
@@ -1304,6 +1244,8 @@ export function PDVView() {
               <h2 className="text-4xl sm:text-5xl font-black italic tracking-tighter">Mesa <span className="text-primary">{selectedTable.number}</span></h2>
               <button type="button" aria-label="Fechar mesa" onClick={() => setSelectedTable(null)} className="p-4 glass rounded-2xl hover:text-rose-500 transition-all"><X size={24}/></button>
             </div>
+
+            <TableNicknameEditor key={managedTable.id} table={managedTable} canEdit={can(currentSeller, 'updateTableStatus', permissionOverrides, userPermissionOverrides)} />
 
             {isComandaMode && managedTable.number >= 1 && managedTable.number <= 50 && !managedTable.customerTab && (
               <div className="mb-5 shrink-0 rounded-2xl border border-primary/25 bg-primary/5 p-3">
@@ -1535,7 +1477,7 @@ export function PDVView() {
                       >
                          <div className="relative order-2 h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 sm:h-24 sm:w-24">
                            <img
-                             src={getImageSrc(product.image)}
+                             data-product-image={/suco/i.test(product.name) ? 'juice' : undefined} src={getImageSrc(product.image)}
                              alt={product.name}
                              onError={applyImageFallback}
                              className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"

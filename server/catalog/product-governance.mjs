@@ -121,9 +121,15 @@ export const prepareCanonicalModifiers = async ({ db, modifiers, createId, requi
   return prepared;
 };
 
-export const saveCanonicalModifierGroup = async ({ db, group, createId, requireString, bumpCatalogVersion }) => {
+export const saveCanonicalModifierGroup = async ({ db, group, createId, requireString, bumpCatalogVersion, canCreate = async () => false }) => {
   const safeGroup = group || {};
   const groupId = requireString(safeGroup.id, 'group.id');
+  const exists = (await db.execute({ sql: 'SELECT id FROM modifier_groups WHERE id = ?', args: [groupId] })).rows.length > 0;
+  if (!exists && !await canCreate()) {
+    const error = new Error('Somente o superadmin pode criar grupos de sabores e adicionais.');
+    error.statusCode = 403;
+    throw error;
+  }
   const prepared = await prepareCanonicalModifiers({
     db,
     modifiers: safeGroup.modifiers,
@@ -131,28 +137,26 @@ export const saveCanonicalModifierGroup = async ({ db, group, createId, requireS
     requireString,
   });
 
-  await db.execute({
-    sql: 'INSERT OR REPLACE INTO modifier_groups (id, name, description, min_choices, max_choices, is_required, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    args: [
-      groupId,
-      requireString(safeGroup.name, 'group.name'),
-      safeGroup.description || '',
-      Number(safeGroup.minChoices || 0),
-      Number(safeGroup.maxChoices || 1),
-      safeGroup.isRequired ? 1 : 0,
-      safeGroup.status || 'active',
-    ],
-  });
-
+  const statements = [{
+    sql: `INSERT INTO modifier_groups (id, name, description, min_choices, max_choices, is_required, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name, description = excluded.description, min_choices = excluded.min_choices,
+      max_choices = excluded.max_choices, is_required = excluded.is_required, status = excluded.status`,
+    args: [groupId, requireString(safeGroup.name, 'group.name'), safeGroup.description || '',
+      Number(safeGroup.minChoices || 0), Number(safeGroup.maxChoices || 1),
+      safeGroup.isRequired ? 1 : 0, safeGroup.status || 'active'],
+  }];
   if (Array.isArray(safeGroup.modifiers)) {
-    await db.batch([
+    statements.push(
       { sql: 'DELETE FROM modifiers WHERE group_id = ?', args: [groupId] },
       ...prepared.map((modifier, index) => ({
         sql: 'INSERT INTO modifiers (id, group_id, linked_product_id, name, price, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
         args: [modifier.id, groupId, modifier.linkedProductId, modifier.name, modifier.price, modifier.status, index],
       })),
-    ], 'write');
+    );
   }
+  // Group metadata and options must either both persist or both roll back.
+  await db.batch(statements, 'write');
 
   return { catalogVersion: await bumpCatalogVersion() };
 };

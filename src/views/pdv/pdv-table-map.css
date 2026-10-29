@@ -1,0 +1,45 @@
+.pdv-table-map { min-width:0; }
+.pdv-map-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; }
+.pdv-map-heading h2 { font-size:26px; font-weight:650; letter-spacing:-.025em; }
+.pdv-map-heading p { font-size:14px; color:#b1adba; margin-top:3px; }
+.pdv-map-tools { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+.pdv-map-tools label { display:flex; align-items:center; flex:1; min-width:140px; gap:10px; border:1px solid #49434f; border-radius:10px; padding:0 12px; background:#211e26; color:#b9b2c4; }
+.pdv-map-tools input { min-width:0; width:100%; background:transparent; color:white; padding:12px 0; font-size:16px; outline:none; }
+.pdv-map-tools button, .pdv-map-heading button { border:1px solid #49434f; border-radius:10px; padding:10px 14px; font-size:14px; min-height:44px; color:#e1dce8; }
+.pdv-map-tools button[aria-pressed=true] { background:#42305f; border-color:#a78bda; }
+.pdv-tables-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:10px; }
+.pdv-table-tile { display:flex; align-items:center; gap:14px; width:100%; min-width:0; min-height:100px; padding:14px; border-width:1px; border-radius:12px; text-align:left; transition:background .15s; }
+.pdv-table-tile.is-free { min-height:100px; background:#1e1d23; border-color:#3c3843; color:#a6a0af; }
+.pdv-table-number { width:40px; flex:0 0 40px; }
+.pdv-table-number small { display:block; font-size:12px; font-weight:500; }
+.pdv-table-number strong { display:block; font-size:28px; line-height:1.15; font-weight:700; font-variant-numeric:tabular-nums; }
+.pdv-table-detail { display:flex; flex-direction:column; flex:1; min-width:0; gap:3px; }
+.pdv-table-detail > strong { color:#fff; font-weight:650; font-size:18px; font-variant-numeric:tabular-nums; }
+.pdv-table-detail > span { font-size:14px; font-weight:550; }
+.pdv-table-detail small { font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pdv-table-tile.is-free .pdv-table-detail > strong { color:#bcb6c6; font-size:16px; }
+.pdv-table-tile:focus-visible, .pdv-map-tools button:focus-visible { outline:3px solid #b99aff; outline-offset:2px; }
+.pdv-paid-summary { display:flex; align-items:center; gap:12px; width:100%; padding:14px; margin-bottom:14px; background:#113a2a; border:1px solid #4bab7a; border-radius:12px; color:#c4f8df; text-align:left; }
+.pdv-paid-summary span { flex:1; }
+.pdv-paid-summary strong,.pdv-paid-summary small { display:block; }
+.pdv-paid-summary strong { font-size:17px; font-weight:650; }
+.pdv-paid-summary small { font-size:14px; margin-top:3px; }
+.pdv-map-empty { padding:28px 0; color:#bcb6c6; }
+.pdv-main-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:24px; align-items:start; }
+.pdv-main-layout > div { min-width:0; }
+@media(min-width:1024px) { .pdv-main-layout { grid-template-columns:minmax(0,2fr) minmax(290px,1fr); } }
+@media(max-width:480px) { .pdv-tables-grid { grid-template-columns:1fr; } .pdv-table-tile { min-height:82px; } }
+.light .pdv-table-tile.is-free,.light .pdv-map-tools label { background:#fff; color:#49424f; }
+.light .pdv-table-detail > strong,.light .pdv-map-tools input { color:#26212b; }
+.light .pdv-map-heading p,.light .pdv-map-tools button { color:#49424f; }
+.pdv-table-nickname { color:inherit; font-size:16px!important; font-weight:650; }
+@keyframes pdv-bill-attention { 0%,100% {background-color:#fb7185;border-color:#fb7185;} 50% {background-color:#facc15;border-color:#facc15;} }
+.pdv-bill-attention { animation:pdv-bill-attention 2.4s ease-in-out infinite; color:#171318!important; }
+.pdv-bill-attention .pdv-table-detail > strong { color:#171318; }
+.pdv-bill-corner { position:fixed; bottom:max(16px,env(safe-area-inset-bottom)); right:16px; width:min(330px,calc(100vw - 32px)); z-index:80; display:flex; border:2px solid; border-radius:14px; box-shadow:0 6px 24px #0006; }
+.pdv-bill-open { display:flex; flex:1; min-width:0; gap:10px; align-items:center; padding:14px 4px 14px 14px; text-align:left; }
+.pdv-bill-open svg { flex-shrink:0; }
+.pdv-bill-open strong { display:block; font-size:16px; line-height:1.3; }
+.pdv-bill-open small { display:block; font-size:13px; margin-top:4px; }
+.pdv-bill-dismiss { width:44px; align-self:stretch; display:flex; align-items:center; justify-content:center; }
+@media(prefers-reduced-motion:reduce) { .pdv-bill-attention { animation:none; background:#facc15; border-color:#facc15; } }

@@ -12,6 +12,14 @@ const executeSql = (sql) => ({ type: 'execute_sql', sql });
 
 export const SCHEMA_MIGRATIONS = [
   {
+    id: '20261029_0001_table_attendance_nickname',
+    description: 'Optional internal nickname scoped to the current table attendance.',
+    steps: [
+      addColumn('tables', 'nickname', "TEXT NOT NULL DEFAULT ''"),
+      executeSql("CREATE TRIGGER IF NOT EXISTS clear_table_nickname_on_release AFTER UPDATE OF status ON tables WHEN NEW.status = 'available' AND NEW.nickname <> '' BEGIN UPDATE tables SET nickname = '' WHERE id = NEW.id; END"),
+    ],
+  },
+  {
     id: '20261026_0001_qr_transparent_payments',
     description: 'Persist immutable online payment intents and prevent duplicate pending charges.',
     steps: [executeSql(qrPaymentSchema), executeSql(qrPaymentActiveIndex)],

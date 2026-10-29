@@ -3,6 +3,7 @@ import fs from 'node:fs';
 
 const adminView = fs.readFileSync(new URL('../src/views/admin/AdminView.tsx', import.meta.url), 'utf8');
 const productEditor = fs.readFileSync(new URL('../src/views/admin/ProductModifierGroupsEditor.tsx', import.meta.url), 'utf8');
+const sharedEditor = fs.readFileSync(new URL('../src/views/admin/SharedGroupEditor.tsx', import.meta.url), 'utf8');
 const groupCatalog = fs.readFileSync(new URL('../src/views/admin/ModifierGroupCatalog.tsx', import.meta.url), 'utf8');
 const optionEditor = fs.readFileSync(new URL('../src/views/admin/ModifierOptionEditor.tsx', import.meta.url), 'utf8');
 
@@ -22,12 +23,12 @@ assert.match(
   'A interface precisa identificar a origem de cada vínculo.',
 );
 assert.match(
-  productEditor,
+  sharedEditor,
   /Alterações nas opções valem em todos os produtos que usam este grupo/,
   'A edição inline precisa avisar sobre o impacto global do grupo.',
 );
 assert.match(
-  productEditor,
+  sharedEditor,
   /disabled=\{!canEdit\}[\s\S]*?Adicionar opção/,
   'Usuários sem permissão não podem alterar opções pelo produto.',
 );

@@ -565,3 +565,21 @@ html {
   border: 1px dashed rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.025);
 }
+
+/* Keep the whole juice glass visible at every card size. */
+img[data-product-image="juice"] { object-fit:contain!important; object-position:center; max-width:100%; transform:none!important; }
+
+/* Photos have identical semantics in the staff editor and customer selections. */
+.modifier-thumbnail { display:inline-flex; align-items:center; justify-content:center; width:56px; height:56px; flex:0 0 56px; overflow:hidden; border-radius:10px; background:#25252b; color:#a3a3b0; }
+.modifier-thumbnail img { width:100%; height:100%; object-fit:contain; }
+.modifier-selected-check { position:absolute; bottom:-3px; right:-3px; color:#fff; background:#6d28d9; border:2px solid white; border-radius:50%; padding:2px; width:24px; height:24px; }
+.qr-language-entry { min-height:100dvh; display:grid; place-items:center; padding:24px 20px; background:#141217; color:white; }
+.qr-language-entry section { width:100%; max-width:420px; }
+.qr-language-entry section > svg { color:#b9a1f2; margin-bottom:24px; }
+.qr-language-entry h1 { font-size:clamp(28px,7vw,36px); font-weight:700; line-height:1.2; }
+.qr-language-entry p { color:#b9b5c4; font-size:18px; margin:10px 0 28px; }
+.qr-language-entry nav { display:grid; gap:12px; }
+.qr-language-entry button { display:flex; align-items:center; gap:16px; width:100%; padding:20px; background:#24212b; border:1px solid #45404f; border-radius:14px; text-align:left; font-size:19px; }
+.qr-language-entry button strong { flex:1; font-weight:600; }
+.qr-language-entry button:focus-visible { outline:3px solid #ba99ff; outline-offset:3px; }
+.qr-language-entry button:hover { background:#30283d; border-color:#ba99ff; }

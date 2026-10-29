@@ -9,6 +9,7 @@ type Props = {
   searchTerm: string;
   onSearchChange: (value: string) => void;
   onCreate: () => void;
+  canCreate: boolean;
   onSelect: (groupId: string) => void;
 };
 
@@ -20,11 +21,12 @@ export function ModifierGroupCatalog({
   searchTerm,
   onSearchChange,
   onCreate,
+  canCreate,
   onSelect,
 }: Props) {
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase('pt-BR');
   const visibleGroups = groups.filter((group) => {
-    if (!normalizedSearch) return true;
+    if (!normalizedSearch) return group.status !== 'inactive';
     return [group.name, group.id, ...group.modifiers.map(modifier => modifier.name)]
       .some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(normalizedSearch));
   });
@@ -47,14 +49,14 @@ export function ModifierGroupCatalog({
               className="min-w-0 flex-1 bg-transparent py-4 text-sm font-bold outline-none placeholder:text-zinc-700"
             />
           </label>
-          <button
+          {canCreate && <button
             type="button"
             onClick={onCreate}
             className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-primary text-white shadow-lg shadow-primary/20 transition-all hover:scale-105"
             title="Criar grupo"
           >
             <Plus size={20}/>
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -83,7 +85,7 @@ export function ModifierGroupCatalog({
                   </span>
                   {group.status === 'inactive' && <span className="rounded-full bg-zinc-500/15 px-2 py-1 text-[8px] font-black uppercase text-zinc-400">Inativo</span>}
                 </div>
-                <p className="mt-1 truncate text-[9px] font-black uppercase tracking-widest text-zinc-600">ID {group.id}</p>
+
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold text-zinc-400">
                   <span>{visibleOptions}/{group.modifiers.length} opções visíveis</span>
                   <span>{categoryLinks} categoria{categoryLinks === 1 ? '' : 's'}</span>

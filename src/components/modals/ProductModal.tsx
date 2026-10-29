@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, X } from 'lucide-react';
+import { ModifierThumbnail } from '../shared/ModifierThumbnail';
 import { useStore, type Product, type Modifier } from '../../store';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { formatCurrency } from '../../lib/format';
@@ -34,7 +35,7 @@ export function ProductModal({
   canEditItemNotes?: boolean;
   onAddToCart?: (product: Product, quantity: number, selectedModifiers: Modifier[], notes?: string) => void;
 }) {
-  const { addToCart } = useStore();
+  const { addToCart, menu } = useStore();
   const { t, locale, catalogText } = usePublicI18n();
   const [quantity, setQuantity] = useState(1);
   // The individual Brazilian dish starts with fries selected, but customers can remove it.
@@ -90,7 +91,7 @@ export function ProductModal({
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className={`fixed inset-0 z-[750] flex items-center justify-center pointer-events-none font-['Outfit'] ${modalShellClass}`}>
         <div className={`mobile-dialog product-dialog glass-card relative flex overflow-hidden pointer-events-auto border-white/10 shadow-2xl ${modalCardClass}`}>
           <div className={`product-media relative shrink-0 overflow-hidden ${mediaPanelClass}`}>
-             <img src={getImageSrc(product.image, 960)} alt={catalogText(product.id, product.name, 'name')} onError={applyImageFallback} decoding="async" className="w-full h-full object-cover" />
+             <img data-product-image={/suco/i.test(product.name) ? 'juice' : undefined} src={getImageSrc(product.image, 960)} alt={catalogText(product.id, product.name, 'name')} onError={applyImageFallback} decoding="async" className="w-full h-full object-cover" />
              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
              <div className={tabletLandscape ? 'absolute bottom-5 left-5 right-5 min-[900px]:bottom-10 min-[900px]:left-10 min-[900px]:right-10' : 'absolute bottom-3 left-4 right-12 lg:bottom-16 lg:left-16'}>
                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2 block">{catalogText(product.categoryId || '', product.categoryName || '', 'name')}</span>
@@ -107,7 +108,7 @@ export function ProductModal({
              )}
 
              <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${qrMobileFlow ? 'ios-touch-scroll pt-10 space-y-3 min-[900px]:space-y-6' : ''} ${tabletLandscape && !qrMobileFlow ? 'space-y-4 min-[900px]:space-y-6' : !tabletLandscape ? 'space-y-6 lg:space-y-10' : ''}`}>
-                {product.modifierGroups?.map(group => {
+                {[...(product.modifierGroups || [])].sort((a, b) => Number(b.isRequired || b.minChoices > 0) - Number(a.isRequired || a.minChoices > 0)).map(group => {
                   const selectedInGroup = selectedModifiers.filter(m => group.modifiers.some(gm => gm.id === m.id));
                   const isSingle = group.maxChoices === 1;
 
@@ -132,6 +133,7 @@ export function ProductModal({
                             <motion.button
                               key={m.id} 
                               type="button"
+                              aria-pressed={Boolean(isSelected)}
                               animate={{ y: 0 }}
                               transition={{ duration: 0.15 }}
                               onClick={() => {
@@ -149,17 +151,13 @@ export function ProductModal({
                                   }
                                 }
                               }}
-                              className={`w-full ${tabletLandscape ? qrMobileFlow ? 'min-h-[55px] grid-cols-[36px_1fr_auto] gap-3 px-3 py-1.5' : 'min-h-[78px] grid-cols-[48px_1fr_auto] gap-4 p-4' : 'min-h-[76px] sm:min-h-[88px] grid-cols-[48px_1fr_auto] sm:grid-cols-[54px_1fr_auto] gap-4 sm:gap-5 p-4 sm:p-5'} grid items-center ${qrMobileFlow ? 'rounded-[1.25rem]' : 'rounded-[1.7rem]'} border text-left transition-all ${
+                              className={`w-full ${tabletLandscape ? qrMobileFlow ? 'min-h-[55px] grid-cols-[56px_1fr_auto] gap-3 px-3 py-1.5' : 'min-h-[78px] grid-cols-[56px_1fr_auto] gap-4 p-4' : 'min-h-[76px] sm:min-h-[88px] grid-cols-[56px_1fr_auto] sm:grid-cols-[56px_1fr_auto] gap-4 sm:gap-5 p-4 sm:p-5'} grid items-center ${qrMobileFlow ? 'rounded-[1.25rem]' : 'rounded-[1.7rem]'} border text-left transition-all ${
                                 isSelected
                                   ? 'bg-gradient-to-br from-primary to-[#6f2dff] border-primary text-white shadow-2xl shadow-primary/30'
                                   : 'bg-gradient-to-br from-accent to-[#ffad1f] border-accent text-black shadow-xl shadow-accent/20 hover:scale-[1.015]'
                               }`}
                             >
-                              <div className={`${tabletLandscape ? qrMobileFlow ? 'w-9 h-9' : 'w-12 h-12' : 'w-12 h-12 sm:w-[54px] sm:h-[54px]'} ${qrMobileFlow ? 'rounded-xl text-lg' : 'rounded-2xl text-xl'} flex items-center justify-center border font-black ${
-                                isSelected ? 'bg-white text-primary border-white' : 'bg-black/10 text-black border-black/10'
-                              }`}>
-                                {isSelected ? <Check size={qrMobileFlow ? 20 : 26} strokeWidth={5} /> : '+'}
-                              </div>
+                              <span className="relative"><ModifierThumbnail modifier={m} products={menu} name={catalogText(m.id, m.name, 'name')} />{isSelected && <Check className="modifier-selected-check" size={20} strokeWidth={3}/>}</span>
                               <div className="min-w-0">
                                 <span className={`block font-black ${tabletLandscape ? qrMobileFlow ? 'text-base' : 'text-lg' : 'text-base sm:text-xl'} tracking-tight leading-tight`}>{catalogText(m.id, m.name, 'name')}</span>
                                 <span className={`${qrMobileFlow ? 'mt-0.5 text-[8px]' : 'mt-1 text-[10px]'} block font-black uppercase tracking-[0.16em] ${isSelected ? 'text-white/65' : 'text-black/55'}`}>

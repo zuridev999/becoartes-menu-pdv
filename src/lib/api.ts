@@ -1343,6 +1343,10 @@ export const OpsApi = {
     });
   },
 
+  setTableNickname(tableId: string, nickname: string) {
+    return postJson<{tableId: string; nickname: string}>('/api/tables/nickname', {tableId, nickname});
+  },
+
   updateTableStatus(tableId: string, status: string) {
     return postJson<{ status: string }>('/api/tables/status', { tableId, status });
   },

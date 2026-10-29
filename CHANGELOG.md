@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.30.0 - 2026-10-29
+
+- Redesenha o mapa de mesas e a Venda Balcão para telas pequenas, com busca por cliente ou apelido e alertas claros de conta e maquininha.
+- Permite nomear temporariamente a mesa sem alterar seu número, preserva o nome da comanda e remove o apelido ao liberar o atendimento.
+- Reorganiza a edição de produtos e grupos de adicionais, restringe a criação de grupos ao superadministrador e compartilha o mesmo grupo de sabores entre caipirinha, caipiroska e saquerinha.
+- Adiciona miniaturas de sabores, recheios e sucos no catálogo e no QR, com tratamento responsivo e imagens WebP.
+- Introduz a escolha inicial de idioma no QR e completa textos públicos de conta, atendimento e pagamento em português, inglês, espanhol e francês.
+- Integra ao QR o fluxo de pagamento PagBank por Pix e cartão, com troca segura de método, retorno à conta e conferência explícita no PDV antes da baixa.
+- Permite ao cliente pedir conta ou maquininha pelo QR; a solicitação destaca a mesa e gera aviso operacional até o atendimento.
+
 ## 1.29.2 - 2026-10-23
 
 - Compacta o Venda Balcão, melhora o campo de valor em reais e elimina a confirmação duplicada antes do lançamento.

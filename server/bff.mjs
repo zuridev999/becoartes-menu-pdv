@@ -122,7 +122,6 @@ const DELIVERY_PUBLIC_STATUS = process.env.DELIVERY_PUBLIC_STATUS || 'building';
 const PAGBANK_API_BASE_URL = process.env.PAGBANK_API_BASE_URL || 'https://api.pagseguro.com';
 const PAGBANK_TOKEN = process.env.PAGBANK_TOKEN || '';
 const PAGBANK_NOTIFICATION_URL = process.env.PAGBANK_NOTIFICATION_URL || '';
-const PAGBANK_REDIRECT_URL = process.env.PAGBANK_REDIRECT_URL || '';
 const IFOOD_API_BASE_URL = process.env.IFOOD_API_BASE_URL || 'https://merchant-api.ifood.com.br';
 const IFOOD_ACCESS_TOKEN = process.env.IFOOD_ACCESS_TOKEN || '';
 const IFOOD_MERCHANT_ID = process.env.IFOOD_MERCHANT_ID || '';
@@ -2439,6 +2438,7 @@ const getTables = async () => {
     id: row.id,
     number: Number(row.number),
     status: row.status,
+    nickname: row.nickname || '',
     qrFlowOverride: row.qr_flow_override || null,
     qrSessionRevision: Number(row.qr_session_revision || 1),
     orders: ordersByTable[row.id] || [],
@@ -6450,8 +6450,9 @@ const reorderCatalogProducts = async ({ items }, session = null) => {
   return { catalogVersion: await bumpCatalogVersion() };
 };
 
-const saveModifierGroup = ({ group }) => saveCanonicalModifierGroup({
+const saveModifierGroup = ({ group }, session) => saveCanonicalModifierGroup({
   db, group, createId, requireString, bumpCatalogVersion,
+  canCreate: () => isSuperAdminSession(session),
 });
 
 const deleteModifierGroup = async ({ id }) => {
@@ -7220,6 +7221,27 @@ const ensureTableAccess = async (tableId, session) => {
   throw error;
 };
 
+const setTableNickname = async ({ tableId, nickname }, session) => {
+  requireString(tableId, 'tableId');
+  await ensureTableAccess(tableId, session);
+  const hasControlCharacter = typeof nickname === 'string' && [...nickname].some((character) => {
+    const code = character.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
+  if (typeof nickname !== 'string' || nickname.length > 60 || hasControlCharacter) {
+    const error = new Error('Use um nome de até 60 caracteres, em uma linha.'); error.statusCode = 400; throw error;
+  }
+  const row = (await db.execute({ sql: 'SELECT number, status, nickname FROM tables WHERE id = ?', args: [tableId] })).rows[0];
+  if (!row || row.status === 'available') { const error = new Error('Abra a mesa antes de definir o nome.'); error.statusCode = 409; throw error; }
+  const name = nickname.trim();
+  await db.batch([
+    { sql: "UPDATE tables SET nickname = ? WHERE id = ? AND status <> 'available'", args: [name, tableId] },
+    { sql: "INSERT INTO audit_logs (id, action, details, table_number, origin, author_id, author_name) VALUES (?, 'table_nickname_changed', ?, ?, 'pdv', ?, ?)", args: [createId(), JSON.stringify({ tableId, before: row.nickname || '', after: name }), String(row.number), session.id, session.name || 'Operador'] },
+  ], 'write');
+  const saved = (await db.execute({sql: 'SELECT nickname FROM tables WHERE id = ?', args:[tableId]})).rows[0];
+  return { tableId, nickname: saved?.nickname || '' };
+};
+
 const updateTableStatus = async ({ tableId, status }, session) => {
   requireString(tableId, 'tableId');
   const allowed = new Set(['available', 'ordering', 'waiting', 'paid', 'bill_requested']);
@@ -7307,7 +7329,7 @@ const transferTable = async ({ fromTableId, toTableId }, session) => {
   await ensureTableAccess(fromTableId, session);
   await ensureTableAccess(toTableId, session);
   const ownerRes = await db.execute({
-    sql: "SELECT current_seller_id, qr_flow_override FROM tables WHERE id = ? LIMIT 1",
+    sql: "SELECT current_seller_id, qr_flow_override, nickname FROM tables WHERE id = ? LIMIT 1",
     args: [fromTableId],
   });
   const ownerId = ownerRes.rows[0]?.current_seller_id || session?.id || null;
@@ -7321,10 +7343,11 @@ const transferTable = async ({ fromTableId, toTableId }, session) => {
         UPDATE tables
         SET status = 'ordering',
             current_seller_id = ?,
+            nickname = CASE WHEN nickname = '' THEN ? ELSE nickname END,
             qr_flow_override = CASE WHEN qr_flow_override = 'mesa' THEN 'mesa' WHEN ? THEN 'mesa_until_close' ELSE qr_flow_override END
         WHERE id = ?
       `,
-      args: [ownerId, inheritsMesaFlow ? 1 : 0, toTableId],
+      args: [ownerId, ownerRes.rows[0]?.nickname || '', inheritsMesaFlow ? 1 : 0, toTableId],
     },
   ], 'write');
   return { moved: true };
@@ -8892,7 +8915,6 @@ const getCustomerTabPayableBalance = async (tableId, items = null) => {
 const createCustomerTabPaymentLink = async ({
   tabId,
   method = 'pix',
-  returnUrl = '',
   accessToken = '',
 }, session = null) => {
   await ensureDatabaseReady();
@@ -9096,6 +9118,7 @@ const handlers = createRouteHandlers({
   regenerateTableQr,
   reorderCatalogProducts,
   requestBill,
+  setTableNickname,
   requestDeliveryPasswordReset,
   resetDeliveryCustomerPassword,
   resolveServiceRequest,

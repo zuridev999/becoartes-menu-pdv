@@ -2,10 +2,17 @@ import type { PublicLanguageCode } from '../types';
 
 export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> = {
   "pt-BR": {
+    "accountStaffTitle": "Prefere pagar com a equipe?",
+    "accountStaffDescription": "Peça a conta para conferir ou solicite a maquininha na mesa.",
+    "accountRequestMachine": "Pedir maquininha",
+    "accountBillSent": "Conta solicitada. A equipe foi avisada.",
+    "accountMachineSent": "Maquininha solicitada. A equipe foi avisada.",
+    "accountStaffPending": "Sua solicitação de conta está aguardando atendimento.",
+
     "paymentAmountRejected": "O PagBank não aceitou este valor. Nenhum pagamento foi confirmado. Chame a equipe.",
     "paymentCpfInvalid": "O PagBank não aceitou o CPF. Confira os 11 números.",
     "paymentSetupError": "Pagamento indisponível nesta conta PagBank. Chame a equipe.",
-    "paymentStart": "Pagar com Pix ou cartão",
+    "paymentStart": "Pagar pelo celular · Pix ou cartão",
     "paymentView": "Ver pagamento",
     "paymentTitle": "Como você prefere pagar?",
     "paymentBack": "Voltar à conta",
@@ -57,10 +64,17 @@ export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> =
     "serviceFeePlain": "Taxa de serviço"
   },
   "en-US": {
+    "accountStaffTitle": "Prefer to pay with our staff?",
+    "accountStaffDescription": "Request the bill to review it, or ask for a card terminal at your table.",
+    "accountRequestMachine": "Request card terminal",
+    "accountBillSent": "Bill requested. Our staff has been notified.",
+    "accountMachineSent": "Card terminal requested. Our staff has been notified.",
+    "accountStaffPending": "Your bill request is awaiting assistance.",
+
     "paymentAmountRejected": "PagBank did not accept this amount. No payment has been confirmed. Please ask a team member.",
     "paymentCpfInvalid": "PagBank did not accept the CPF. Check the 11 digits.",
     "paymentSetupError": "Payments are unavailable for this PagBank account. Please ask a team member.",
-    "paymentStart": "Pay with Pix or card",
+    "paymentStart": "Pay on your phone · Pix or card",
     "paymentView": "View payment",
     "paymentTitle": "How would you like to pay?",
     "paymentBack": "Back to bill",
@@ -112,10 +126,17 @@ export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> =
     "serviceFeePlain": "Service fee"
   },
   "es-ES": {
+    "accountStaffTitle": "¿Prefieres pagar con el equipo?",
+    "accountStaffDescription": "Pide la cuenta para revisarla o solicita el terminal de pago en tu mesa.",
+    "accountRequestMachine": "Pedir terminal de pago",
+    "accountBillSent": "Cuenta solicitada. Avisamos al equipo.",
+    "accountMachineSent": "Terminal solicitado. Avisamos al equipo.",
+    "accountStaffPending": "Tu solicitud de cuenta está pendiente de atención.",
+
     "paymentAmountRejected": "PagBank no aceptó este importe. No se confirmó ningún pago. Llama al equipo.",
     "paymentCpfInvalid": "PagBank no aceptó el CPF. Revisa los 11 números.",
     "paymentSetupError": "El pago no está disponible en esta cuenta PagBank. Llama al equipo.",
-    "paymentStart": "Pagar con Pix o tarjeta",
+    "paymentStart": "Pagar desde el móvil · Pix o tarjeta",
     "paymentView": "Ver pago",
     "paymentTitle": "¿Cómo prefieres pagar?",
     "paymentBack": "Volver a la cuenta",
@@ -167,10 +188,17 @@ export const qrPaymentCopy: Record<PublicLanguageCode, Record<string, string>> =
     "serviceFeePlain": "Servicio"
   },
   "fr-FR": {
+    "accountStaffTitle": "Vous préférez régler avec le personnel ?",
+    "accountStaffDescription": "Demandez l’addition pour la vérifier ou un terminal de paiement à votre table.",
+    "accountRequestMachine": "Demander le terminal",
+    "accountBillSent": "Addition demandée. Le personnel a été prévenu.",
+    "accountMachineSent": "Terminal demandé. Le personnel a été prévenu.",
+    "accountStaffPending": "Votre demande d’addition est en attente.",
+
     "paymentAmountRejected": "PagBank n’a pas accepté ce montant. Aucun paiement n’a été confirmé. Contactez l’équipe.",
     "paymentCpfInvalid": "PagBank n’a pas accepté le CPF. Vérifiez les 11 chiffres.",
     "paymentSetupError": "Le paiement est indisponible sur ce compte PagBank. Contactez l’équipe.",
-    "paymentStart": "Payer par Pix ou carte",
+    "paymentStart": "Payer sur le téléphone · Pix ou carte",
     "paymentView": "Voir le paiement",
     "paymentTitle": "Comment souhaitez-vous payer ?",
     "paymentBack": "Retour à l’addition",

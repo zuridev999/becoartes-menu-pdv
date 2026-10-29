@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { X, FileText, Receipt, LayoutDashboard } from 'lucide-react';
 import { useStore } from '../../store';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, MAX_SERVICE_FEE_PERCENT, roundMoney } from '../../lib/billing';
+import { AccountStaffActions } from '../shared/AccountStaffActions';
 import { QrPaymentPanel } from '../shared/QrPaymentPanel';
 import { AppApi, type QrPaymentContext } from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
@@ -113,11 +114,12 @@ export function CustomerAccountModal({ onClose, locationLabel, customerTabContex
 
           </div>
 
-          <QrPaymentPanel expanded={paymentOpen} onExpand={() => setPaymentOpen(true)} context={{ tableId: table.id, tableNumber: table.number, customerTabContext }} onPaid={() => {
+          <QrPaymentPanel onBack={() => setPaymentOpen(false)} expanded={paymentOpen} onExpand={() => setPaymentOpen(true)} context={{ tableId: table.id, tableNumber: table.number, customerTabContext }} onPaid={() => {
             void AppApi.getPublicTableState({ tableId: table.id, tableNumber: table.number, customerTabContext }).then(({ table: refreshed }) => {
               useStore.setState(state => ({ tables: state.tables.map(item => item.id === refreshed.id ? { ...item, ...refreshed } : item) }));
             }).catch(() => undefined);
           }} />
+          {!paymentOpen && balance > 0 && <AccountStaffActions context={{ tableId: table.id, tableNumber: table.number, customerTabContext }} />}
         </div>
 
         <div className="shrink-0 p-3 sm:p-6 bg-white/[0.02] border-t border-white/5">

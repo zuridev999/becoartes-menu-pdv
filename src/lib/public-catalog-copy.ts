@@ -185,6 +185,22 @@ for (const [pt, en, fr, es] of [['Abacaxi', 'Pineapple', 'ananas', 'piña'], ['M
 
 for (const brand of ['Original', 'Heineken', 'Amstel']) entries.push([`Cerveja ${brand} 600ml gelada.`, `Chilled ${brand} beer 600 ml.`, `Bière ${brand} fraîche de 600 ml.`, `Cerveza ${brand} fría de 600 ml.`]);
 
+entries.push(
+  ["Sabores de caipirinhas", "Cocktail flavors", "Saveurs des cocktails", "Sabores de los cócteles"],
+  ["Grupo compartilhado por caipirinha, caipiroska e saquerinha.", "Choose a flavor for your caipirinha, caipiroska or saquerinha.", "Choisissez la saveur de votre caipirinha, caipiroska ou saquerinha.", "Elige un sabor para tu caipirinha, caipiroska o saquerinha."],
+  ["Calabresa pra 2", "Brazilian sausage for two", "Saucisse brésilienne pour deux", "Salchicha brasileña para dos"],
+  ["File de Frango pra dois", "Chicken fillet for two", "Filet de poulet pour deux", "Filete de pollo para dos"],
+  ["Contra Filé pra dois", "Sirloin steak for two", "Faux-filet pour deux", "Bistec de lomo para dos"],
+  ["Omelete pra dois", "Omelette for two", "Omelette pour deux", "Tortilla para dos"],
+  ["Red Bull Energy Drink 250 ml", "Red Bull Energy Drink 250 ml", "Red Bull Energy Drink 250 ml", "Red Bull Energy Drink 250 ml"],
+  ["Red Bull Zero 250 ml", "Red Bull Zero 250 ml", "Red Bull Zero 250 ml", "Red Bull Zero 250 ml"],
+  ["Monster Energy Original 473 ml", "Monster Energy Original 473 ml", "Monster Energy Original 473 ml", "Monster Energy Original 473 ml"],
+  ["Cadastro reconciliado em 03/10/2026. Mantido invisivel ate liberacao operacional.", "Catalog record reconciled on 3 October 2026. Hidden pending staff release.", "Fiche rapprochée le 3 octobre 2026. Masquée en attendant sa mise à disposition.", "Registro conciliado el 3 de octubre de 2026. Oculto hasta su habilitación operativa."],
+  ["Lata 250 ml. GTIN 9002490100094. NCM 2202.99.00. Custo de compra pendente.", "250 ml can. GTIN 9002490100094. NCM 2202.99.00. Purchase cost pending.", "Canette 250 ml. GTIN 9002490100094. NCM 2202.99.00. Coût d’achat en attente.", "Lata de 250 ml. GTIN 9002490100094. NCM 2202.99.00. Costo de compra pendiente."],
+  ["Lata 250 ml, zero acucar. GTIN 9002490283063. NCM 2202.99.00. Custo de compra pendente.", "250 ml can, no sugar. GTIN 9002490283063. NCM 2202.99.00. Purchase cost pending.", "Canette 250 ml, sans sucre. GTIN 9002490283063. NCM 2202.99.00. Coût d’achat en attente.", "Lata de 250 ml, sin azúcar. GTIN 9002490283063. NCM 2202.99.00. Costo de compra pendiente."],
+  ["Monster Energy Original Green, lata 473 ml. UPC 70847022015. NCM 2202.99.00.", "Monster Energy Original Green, 473 ml can. UPC 70847022015. NCM 2202.99.00.", "Monster Energy Original Green, canette 473 ml. UPC 70847022015. NCM 2202.99.00.", "Monster Energy Original Green, lata de 473 ml. UPC 70847022015. NCM 2202.99.00."]
+);
+
 export const normalizeCatalogText = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 export const additionalCatalogCopy: Record<string, Record<string, string>> = { 'en-US': {}, 'fr-FR': {}, 'es-ES': {} };
@@ -194,3 +210,29 @@ for (const [source, en, fr, es] of entries) {
   additionalCatalogCopy['fr-FR'][key] = fr;
   if (es) additionalCatalogCopy['es-ES'][key] = es;
 }
+
+for (const [source, translation] of Object.entries({
+  "Campari": "Campari",
+  "ROBIN VEGGIE": "Robin Veggie",
+  "Gin": "Ginebra",
+  "Cachaça": "Cachaça",
+  "Corona": "Corona",
+  "Heineken Long Neck": "Heineken Long Neck",
+  "Eisenbahn Ipa 330ml": "Eisenbahn IPA 330 ml",
+  "Caipiroska": "Caipiroska",
+  "Saquerinha": "Saquerinha",
+  "Gin Tropical": "Ginebra tropical",
+  "Negroni": "Negroni",
+  "Eisenbahn Pilsen": "Eisenbahn Pilsen",
+  "Caipirinha": "Caipirinha",
+  "Cachaça Premium": "Cachaça prémium",
+  "Guaraná Zero 350ml": "Guaraná Zero 350 ml",
+  "Refrigerante Guaraná Zero 350ml.": "Refresco Guaraná Zero de 350 ml.",
+  "Opcional para pratos brasileiros individuais.": "Opcional para platos brasileños individuales.",
+  "Selecione um sabor para a caipirinha.": "Elige un sabor para la caipirinha.",
+  "Bebidas e adicionais para completar o pedido.": "Bebidas y extras para completar el pedido.",
+  "Selecione um sabor para a caipirinha Premium.": "Elige un sabor para la caipirinha prémium.",
+  "Coca-Cola": "Coca-Cola",
+  "Coca Zero": "Coca-Cola Zero",
+  "Heineken 600ml": "Heineken 600 ml"
+})) additionalCatalogCopy['es-ES'][normalizeCatalogText(source)] = translation;

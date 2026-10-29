@@ -224,6 +224,13 @@ try {
   assert.equal(Number(migrationLedger.count) > 0, true, 'empty database bootstrap should apply versioned migrations');
   await seedCatalogAndStock();
   const cashier = await login('1122');
+  const ownerFixtureDb = createClient({ url: dbUrl });
+  await ownerFixtureDb.execute("INSERT INTO users(id,empresa_id,nome,email,role,ativo,pin,is_operador,permitir_acesso_remoto,pdv_sell_enabled) VALUES ('owner_test','empresa_test','Owner Test','owner@localhost','super_admin',1,'8642',1,1,1)");
+  ownerFixtureDb.close();
+  const owner = await login('8642');
+  await post('/api/catalog/modifier-group', {group: {id: 'forbidden_new_group', name: 'Forbidden', modifiers: []}}, admin.sessionToken, 403);
+  assert.equal((await getScalar("SELECT count(*) n FROM modifier_groups WHERE id='forbidden_new_group'")).n, 0);
+
 
   const linkedProduct = {
     id: 'prod_linked_modifier',
@@ -260,7 +267,7 @@ try {
         status: 'active',
       }],
     },
-  }, admin.sessionToken);
+  }, owner.sessionToken);
   const linkedModifierRow = await getScalar('SELECT linked_product_id, name, price FROM modifiers WHERE id = ?', ['modifier_linked_product']);
   assert.equal(linkedModifierRow.linked_product_id, linkedProduct.id, 'modifier must persist its canonical product link');
   assert.equal(linkedModifierRow.name, linkedProduct.name, 'linked modifier name must come from the product');
@@ -299,7 +306,7 @@ try {
         { id: 'duplicate_link_2', linkedProductId: linkedProduct.id, status: 'active' },
       ],
     },
-  }, admin.sessionToken, 409);
+  }, owner.sessionToken, 409);
 
   const openedCash = await post('/api/cash/open', {
     openingBalance: 108.35,
@@ -397,6 +404,16 @@ try {
     args: [Math.floor(Date.now() / 1000) - (48 * 60 * 60), staleCashId],
   });
   const operationWithOverdueCash = await post('/api/tables/open', { tableId: '1', wasAvailable: true }, admin.sessionToken);
+  await post('/api/tables/nickname', { tableId: '1', nickname: 'Mesa do João' }, undefined, 401);
+  await post('/api/tables/nickname', { tableId: '1', nickname: 'x'.repeat(61) }, admin.sessionToken, 400);
+  const nicknameSaved = await post('/api/tables/nickname', { tableId: '1', nickname: '  Mesa do João  ' }, admin.sessionToken);
+  assert.equal(nicknameSaved.data.nickname, 'Mesa do João');
+  assert.equal((await getScalar("SELECT nickname FROM tables WHERE id='1'")).nickname, 'Mesa do João');
+  await post('/api/tables/status', {tableId:'1',status:'available'}, admin.sessionToken);
+  assert.equal((await getScalar("SELECT nickname FROM tables WHERE id='1'")).nickname, '');
+  await post('/api/tables/nickname', {tableId:'1',nickname:'Nome indevido'}, admin.sessionToken, 409);
+  await post('/api/tables/open', {tableId:'1',wasAvailable:true}, admin.sessionToken);
+
   assert.equal(operationWithOverdueCash.ok, true, 'cash older than one day must not lock the PDV operation');
   await testDb.execute("UPDATE tables SET status = 'available', current_seller_id = NULL WHERE id = '1'");
 
