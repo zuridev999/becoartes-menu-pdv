@@ -1,7 +1,7 @@
 {
   "name": "becoartes-menu-pdv",
   "private": true,
-  "version": "1.30.1",
+  "version": "1.30.2",
   "type": "module",
   "scripts": {
     "test:qr-payments": "node scripts/test-qr-payments.mjs && node scripts/test-online-paid-conference.mjs",
@@ -61,7 +61,7 @@
     "test:public-i18n": "node scripts/test-public-i18n.mjs",
     "test:public-menu-readonly": "node --experimental-strip-types scripts/test-public-menu-readonly.mjs",
     "test:qr-languages:browser": "node scripts/test-qr-languages-browser.mjs",
-    "test:qr-ux": "npm run test:pdv-no-ads && npm run test:adsense && node scripts/test-public-description-cleanup.mjs"
+    "test:qr-ux": "npm run test:pdv-no-ads && npm run test:adsense && node scripts/test-public-description-cleanup.mjs && node --experimental-strip-types scripts/test-catalog-scroll.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

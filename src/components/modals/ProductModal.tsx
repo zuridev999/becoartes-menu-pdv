@@ -102,14 +102,16 @@ export function ProductModal({
              </div>
           </div>
           <div className={`product-panel ${contentPanelClass} flex flex-col overflow-hidden bg-[#0a0a0c]/80 relative`}>
-             <button type="button" aria-label={t('close')} onClick={onClose} className={`${tabletLandscape ? 'top-4 right-4 p-3' : 'top-3 right-3 sm:top-5 sm:right-5 p-3 sm:p-4'} absolute glass rounded-full hover:bg-white/10 text-white z-[400]`}><X size={tabletLandscape ? 24 : 32}/></button>
+             <button type="button" aria-label={t(qrMobileFlow ? 'backToMenu' : 'close')} onClick={onClose} className={`${tabletLandscape ? 'top-4 right-4 p-3' : 'top-3 right-3 sm:top-5 sm:right-5 p-3 sm:p-4'} absolute bg-zinc-900 border border-white/15 rounded-full hover:bg-zinc-800 text-white z-[400] flex items-center gap-2`}>
+               {qrMobileFlow && <span className="text-xs font-bold">{t('backToMenu')}</span>}<X size={tabletLandscape ? 24 : 32}/>
+             </button>
              {!qrMobileFlow && (
              <div className="flex justify-between items-center mb-5 lg:hidden">
                 <h2 className="text-3xl sm:text-4xl font-black italic leading-none pr-14">{catalogText(product.id, product.name, 'name')}</h2>
              </div>
              )}
 
-             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${qrMobileFlow ? 'ios-touch-scroll pt-10 space-y-3 min-[900px]:space-y-6' : ''} ${tabletLandscape && !qrMobileFlow ? 'space-y-4 min-[900px]:space-y-6' : !tabletLandscape ? 'space-y-6 lg:space-y-10' : ''}`}>
+             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 min-[900px]:pr-4 ${qrMobileFlow ? 'ios-touch-scroll mt-14 space-y-3 min-[900px]:space-y-6' : ''} ${tabletLandscape && !qrMobileFlow ? 'space-y-4 min-[900px]:space-y-6' : !tabletLandscape ? 'space-y-6 lg:space-y-10' : ''}`}>
                 {[...(product.modifierGroups || [])].sort((a, b) => Number(b.isRequired || b.minChoices > 0) - Number(a.isRequired || a.minChoices > 0)).map(group => {
                   const selectedInGroup = selectedModifiers.filter(m => group.modifiers.some(gm => gm.id === m.id));
                   const isSingle = group.maxChoices === 1;

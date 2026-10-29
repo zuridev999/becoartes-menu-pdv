@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Search, ChevronRight, Plus, Utensils } from 'lucide-react';
 import { useStore, type Product } from '../../store';
@@ -6,6 +6,7 @@ import { isItemAvailable } from '../../lib/utils';
 import { applyImageFallback, getImageSrc } from '../../lib/image';
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
+import { scrollCatalogToSection } from '../../lib/catalog-scroll';
 
 interface MenuCatalogProps {
   onProductSelect: (product: Product) => void;
@@ -114,6 +115,9 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
   const [selectedCategory, setSelectedCategory] = useState(availableCategoryNames[0] || '');
   const [searchQuery, setSearchQuery] = useState('');
   const categorySectionRefs = useRef<Record<string, HTMLElement | null>>({});
+  const catalogScrollRef = useRef<HTMLDivElement>(null);
+  const categoryNavigationRef = useRef<HTMLDivElement>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<{ category: string | null } | null>(null);
   const getCategoryPresentation = (categoryName: string) => {
     const category = availableCategories.find((item) => item.name === categoryName);
     const featured = category ? featuredCategoryCopy[category.id]?.[locale] : undefined;
@@ -174,12 +178,20 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
 
   const handleCategorySelect = (category: string) => {
     setSelectedCategory(category);
+    setSearchQuery('');
     if (navigationMode === 'continuous') {
-      categorySectionRefs.current[category]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      setSearchQuery('');
+      setPendingNavigation({ category });
     }
   };
+
+  // Wait for the cleared search to restore all sections before locating the target.
+  useLayoutEffect(() => {
+    if (!pendingNavigation || !catalogScrollRef.current) return;
+    const section = pendingNavigation.category ? categorySectionRefs.current[pendingNavigation.category] : null;
+    scrollCatalogToSection(catalogScrollRef.current, section || null);
+    if (!pendingNavigation.category) categoryNavigationRef.current?.scrollTo({ left: 0 });
+    setPendingNavigation(null);
+  }, [pendingNavigation]);
 
   const isContinuousMenu = navigationMode === 'continuous';
   const isCompactMenu = presentation === 'compact-menu';
@@ -191,7 +203,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
     ? "relative aspect-[4/3] sm:aspect-auto sm:h-48 md:h-64 mb-4 md:mb-6 rounded-2xl md:rounded-3xl overflow-hidden bg-zinc-950"
     : "relative h-40 sm:h-48 md:h-64 mb-4 md:mb-6 rounded-2xl md:rounded-3xl overflow-hidden";
   const renderGridProduct = (p: Product) => (
-    <motion.button layout key={p.id} onClick={() => onProductSelect(p)} className={productCardClassName}>
+    <motion.button layout={!isContinuousMenu} key={p.id} onClick={() => onProductSelect(p)} className={productCardClassName}>
       <div className={productImageClassName}>
         <img data-product-image={/suco/i.test(p.name) ? 'juice' : undefined} src={getImageSrc(p.image, 320)} alt={p.name} loading="lazy" decoding="async" onError={applyImageFallback} className="w-full h-full object-cover object-center group-hover:scale-110 transition-all duration-500" />
         <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-black/70 backdrop-blur-xl px-3 md:px-4 py-2 rounded-xl font-black text-accent border border-white/10 text-sm md:text-base">{formatCurrency(p.price, locale)}</div>
@@ -202,7 +214,7 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
   );
   const renderCompactProduct = (p: Product) => (
     <motion.button
-      layout
+      layout={!isContinuousMenu}
       key={p.id}
       onClick={() => onProductSelect(p)}
       className="glass-card group flex min-h-[148px] w-full items-stretch gap-3 p-3 text-left active:scale-[0.99]"
@@ -242,11 +254,22 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
             </div>
           </div>
         )}
-        <div className={`${navigationMode === 'menu' || navigationMode === 'continuous' ? 'flex flex-nowrap gap-2 overflow-x-auto custom-scrollbar pb-1' : 'flex md:flex-col flex-nowrap md:flex-1 gap-2 md:gap-3 overflow-x-auto md:overflow-y-auto md:pr-2 custom-scrollbar'}`}>
+        <div className={isContinuousMenu ? 'flex min-w-0 items-center gap-2' : 'contents'}>
+        {isContinuousMenu && (
+          <button type="button" aria-label={t('backToMenu')} onClick={() => {
+            setSearchQuery('');
+            setSelectedCategory(availableCategoryNames[0] || '');
+            setPendingNavigation({ category: null });
+          }} className="min-h-11 shrink-0 flex items-center gap-1.5 rounded-xl border border-white/15 px-3 py-2 text-xs font-bold text-white">
+            <Utensils size={15} />{t('menu')}
+          </button>
+        )}
+        <div ref={categoryNavigationRef} className={`${navigationMode === 'menu' || navigationMode === 'continuous' ? 'flex min-w-0 flex-nowrap gap-2 overflow-x-auto custom-scrollbar pb-1' : 'flex md:flex-col flex-nowrap md:flex-1 gap-2 md:gap-3 overflow-x-auto md:overflow-y-auto md:pr-2 custom-scrollbar'}`}>
           {availableCategoryNames.map(cat => (
             <button 
               key={cat} 
               onClick={() => handleCategorySelect(cat)} 
+              aria-current={selectedCategory === cat ? 'true' : undefined}
               className={`menu-category-button shrink-0 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'min-w-[9.5rem] max-w-[12rem] px-4 py-3 rounded-2xl' : 'md:w-full px-4 py-3 md:p-6 rounded-2xl md:rounded-[2rem]'} text-left transition-all flex items-center justify-between gap-3 group ${selectedCategory === cat ? 'bg-gradient-to-br from-primary to-purple-600 text-white shadow-2xl md:scale-[1.05]' : 'text-gray-500 hover:bg-white/5'}`}
             >
               <div>
@@ -264,10 +287,11 @@ export function MenuCatalog({ onProductSelect, viewMode = 'grid', navigationMode
             </button>
           ))}
         </div>
+        </div>
       </div>
 
       {/* Grid de Produtos */}
-      <div className={`ios-touch-scroll flex-1 min-h-0 min-w-0 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'p-4 sm:p-6 lg:p-10' : 'p-4 sm:p-8 lg:p-12'} custom-scrollbar bg-white/[0.01]`}>
+      <div ref={catalogScrollRef} data-catalog-scroll className={`ios-touch-scroll flex-1 min-h-0 min-w-0 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'p-4 sm:p-6 lg:p-10' : 'p-4 sm:p-8 lg:p-12'} custom-scrollbar bg-white/[0.01]`}>
          <div className={`flex flex-col md:flex-row md:justify-between md:items-center gap-4 ${navigationMode === 'menu' || navigationMode === 'continuous' ? 'mb-5 sm:mb-8' : 'mb-6 md:mb-16'}`}>
             <div className="min-w-0">
               <h3 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter italic leading-none truncate">{navigationMode === 'continuous' ? t('menu') : catalogText(availableCategories.find((category) => category.name === selectedCategory)?.id || selectedCategory, selectedCategory, 'name')}</h3>

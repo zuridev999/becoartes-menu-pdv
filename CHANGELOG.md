@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.30.2 - 2026-10-29
+
+- Limita o salto por categoria à lista de produtos, restaura o catálogo completo após buscas e mantém um retorno ao início sempre visível.
+- Identifica o retorno ao cardápio dentro dos produtos nos quatro idiomas, sem sobrepor os adicionais.
+
 ## 1.30.1 - 2026-10-29
 
 - Remove integralmente o AdSense do QR e do cardápio público, incluindo SDK e anúncios automáticos que encobriam conta e controles de rolagem.
