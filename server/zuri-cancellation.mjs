@@ -38,7 +38,7 @@ export const createZuriCancellationServices = ({ db, token, safeSecretEqual, can
     if (!supplied || !safeSecretEqual(supplied, token)) fail('Acesso não autorizado.', 403);
   };
 
-  const getTable = async (tableNumber) => {
+  const getTable = async (tableNumber, { allowActivePayment = false } = {}) => {
     const number = Number(tableNumber);
     if (!Number.isInteger(number) || number < 1 || number > 200) fail('Informe o número da mesa.', 400);
     const row = (await db.execute({
@@ -50,8 +50,11 @@ export const createZuriCancellationServices = ({ db, token, safeSecretEqual, can
       sql: `SELECT id FROM table_payments WHERE table_id = ? AND status = 'active' LIMIT 1`,
       args: [row.id],
     })).rows[0];
-    if (payment) fail('Esta mesa já tem pagamento lançado; revisão manual necessária.');
-    return row;
+    const paymentActive = Boolean(payment);
+    if (paymentActive && !allowActivePayment) {
+      fail('Esta mesa já tem pagamento lançado; revisão manual necessária.');
+    }
+    return { ...row, paymentActive };
   };
 
   const itemsForTable = async (tableId) => (await db.execute({
@@ -81,12 +84,13 @@ export const createZuriCancellationServices = ({ db, token, safeSecretEqual, can
   const lookup = async ({ tableNumber, requesterPhone }, req) => {
     authenticate(req);
     authorizeRequester(requesterPhone);
-    const table = await getTable(tableNumber);
+    const table = await getTable(tableNumber, { allowActivePayment: true });
     const items = await itemsForTable(table.id);
     return {
       tableNumber: Number(table.number),
       items,
       currentTotal: items.reduce((total, item) => total + item.lineTotal, 0),
+      paymentActive: table.paymentActive,
     };
   };
 
@@ -94,7 +98,7 @@ export const createZuriCancellationServices = ({ db, token, safeSecretEqual, can
     authenticate(req);
     const requester = authorizeRequester(requesterPhone);
     const reason = String(reasonNotes || '').trim();
-    if (reason.length < 10 || reason.length > 500 || /^(cliente desistiu|desistiu|erro|cancelar)$/i.test(reason)) {
+    if (reason.length < 10 || reason.length > 500 || /^(cliente (?:desistiu|cancelou)|desistiu|cancelou|erro|cancelar)$/i.test(reason)) {
       fail('Motivo insuficiente; explique brevemente a situação antes de cancelar.', 400);
     }
     if (!sourceMessageId || String(sourceMessageId).length > 180) fail('Mensagem de confirmação ausente.', 400);

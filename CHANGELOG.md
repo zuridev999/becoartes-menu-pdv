@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.31.1 - 2026-10-30
+
+- Permite que a Zuri consulte os itens atuais de uma mesa mesmo quando já existe pagamento ativo, informando esse estado sem modificar a cobrança.
+- Mantém o cancelamento bloqueado enquanto o pagamento estiver ativo e revalida mesa, item, motivo, solicitante e pagamento no momento da operação.
+- Rejeita motivos genéricos como “cliente cancelou” ou “cliente desistiu”, preservando auditoria e exigindo uma explicação curta antes de qualquer cancelamento.
+
 ## 1.31.0 - 2026-10-30
 
 - Permite que somente Guilherme e Matheus Alencar consultem a comanda ativa e solicitem à Zuri o cancelamento de item simples no PDV.

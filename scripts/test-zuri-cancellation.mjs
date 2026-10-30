@@ -46,6 +46,11 @@ assert.equal(cancelled.cancelled, true);
 assert.equal(calls[0].input.itemId, 'i1');
 assert.equal(calls[0].session.name, 'Matheus Alencar via Zuri');
 await db.execute("INSERT INTO table_payments VALUES ('pay1','t6','active')");
-await assert.rejects(services.lookup({ tableNumber: 6, requesterPhone: '5561983440871' }, req), /pagamento lançado/);
+const duringPayment = await services.lookup({ tableNumber: 6, requesterPhone: '5561983440871' }, req);
+assert.equal(duringPayment.paymentActive, true);
+assert.equal(duringPayment.items.length, 1);
+await assert.rejects(services.commit({ tableNumber: 6, itemId: 'i1',
+  reasonNotes: 'Cliente achou caro e recusou outra opção',
+  requesterPhone: '5561983440871', sourceMessageId: 'in-3' }, req), /pagamento lançado/);
 db.close();
 console.log('Zuri cancellation endpoint tests passed');
