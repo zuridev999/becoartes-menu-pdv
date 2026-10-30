@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.31.0 - 2026-10-30
+
+- Permite que somente Guilherme e Matheus Alencar consultem a comanda ativa e solicitem à Zuri o cancelamento de item simples no PDV.
+- A consulta autenticada informa horário, valor por linha e total atual da mesa sem expor contas fechadas ou dados do cliente.
+- Revalida mesa, item, pagamento e solicitante no momento da operação, preserva estoque, auditoria e aviso individual ao proprietário.
+
 ## 1.30.2 - 2026-10-29
 
 - Limita o salto por categoria à lista de produtos, restaura o catálogo completo após buscas e mantém um retorno ao início sempre visível.

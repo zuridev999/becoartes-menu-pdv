@@ -1,7 +1,7 @@
 {
   "name": "becoartes-menu-pdv",
   "private": true,
-  "version": "1.30.3",
+  "version": "1.31.0",
   "type": "module",
   "scripts": {
     "test:qr-payments": "node scripts/test-qr-payments.mjs && node scripts/test-online-paid-conference.mjs",
