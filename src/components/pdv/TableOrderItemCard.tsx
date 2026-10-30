@@ -1,64 +1,88 @@
-import { MessageSquareText, Pencil, Plus } from 'lucide-react';
+import { Clock3, CopyPlus, MessageSquareText, Pencil } from 'lucide-react';
 import type { OrderItem } from '../../types';
 import { getOrderItemTotal } from '../../lib/totals';
+import './table-order-item-card.css';
 
 type Props = {
   item: OrderItem;
   canCancel: boolean;
+  canRepeat: boolean;
   expanded: boolean;
   onView: () => void;
   onToggle: () => void;
+  onRepeat: () => void;
   onCancel: (mode: 'all' | 'modifier' | 'product', modifier?: OrderItem['selectedModifiers'][number]) => void;
 };
 
-export function TableOrderItemCard({ item, canCancel, expanded, onView, onToggle, onCancel }: Props) {
+const formatOrderTime = (value?: Date) => {
+  if (!value) return '';
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'America/Sao_Paulo',
+  }).format(parsed);
+};
+
+export function TableOrderItemCard({ item, canCancel, canRepeat, expanded, onView, onToggle, onRepeat, onCancel }: Props) {
   const modifiers = item.selectedModifiers || [];
   const notes = String(item.notes || '').trim();
+  const orderTime = formatOrderTime(item.orderedAt);
+  const hasDetails = modifiers.length > 0 || Boolean(notes);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.045] px-3.5 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:border-primary/35 hover:bg-white/[0.06] sm:px-4">
-      <button type="button" onClick={onView} className="block w-full text-left" aria-label={`Ver detalhes de ${item.quantity}x ${item.name}`}>
-        <div className="flex items-start justify-between gap-3">
-          <p className="min-w-0 flex-1 text-base font-black leading-tight text-zinc-50">{item.quantity}x {item.name}</p>
-          <p className="shrink-0 text-sm font-black tabular-nums text-zinc-200">
-            {getOrderItemTotal(item).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-          </p>
+    <article className={`pdv-order-card ${hasDetails ? 'pdv-order-card-detailed' : 'pdv-order-card-simple'} ${canCancel ? 'pdv-order-card-admin' : 'pdv-order-card-operator'}`}>
+      <button type="button" onClick={onView} className="pdv-order-card-main" aria-label={`Ver detalhes de ${item.quantity}x ${item.name}`}>
+        <div className="pdv-order-card-heading">
+          <p className="pdv-order-card-title">{item.quantity}x {item.name}</p>
+          <div className="pdv-order-card-numbers">
+            <strong>{getOrderItemTotal(item).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+            {orderTime && (
+              <small title="Horário em que o item foi lançado"><Clock3 size={12} /> {orderTime}</small>
+            )}
+          </div>
         </div>
-        {(item.categoryName || item.categoryId) && (
-          <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-zinc-500">{item.categoryName || item.categoryId}</p>
-        )}
         {modifiers.length > 0 && (
-          <div className="mt-2">
-            <p className="text-[8px] font-black uppercase tracking-[0.16em] text-zinc-500">Opções</p>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {modifiers.map((modifier, index) => (
-                <span key={`${modifier.id}-${index}`} className="inline-flex items-center gap-0.5 rounded-lg bg-violet-500/10 px-2 py-1 text-[9px] font-black text-violet-200">
-                  <Plus size={9} strokeWidth={4} /> {modifier.name}
-                </span>
-              ))}
-            </div>
+          <div className="pdv-order-card-meta">
+            {modifiers.map((modifier, index) => (
+              <span className="pdv-order-card-option" key={`${modifier.id}-${index}`}>+ {modifier.name}</span>
+            ))}
           </div>
         )}
         {notes && (
-          <div className="mt-2 flex items-start gap-1.5 rounded-xl bg-amber-400/10 px-2.5 py-2 text-amber-100">
+          <div className="pdv-order-card-note">
             <MessageSquareText size={13} className="mt-0.5 shrink-0" />
-            <p className="min-w-0 text-[10px] font-bold leading-snug">
-              <span className="font-black uppercase tracking-[0.1em]">Observações:</span>{' '}
+            <p>
+              <span>Obs.:</span>{' '}
               {notes}
             </p>
           </div>
         )}
-        <p className="mt-2 text-[8px] font-black uppercase tracking-[0.14em] text-primary/75">Toque para conferir o pedido</p>
       </button>
-      {canCancel && (
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-violet-200"
-        >
-          <Pencil size={12} /> {expanded ? 'Fechar edição' : 'Editar item'}
-        </button>
+      {(canRepeat || canCancel) && (
+        <footer className={`pdv-order-card-actions${canCancel ? ' pdv-order-card-actions-admin' : ''}`}>
+          {canCancel && (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={expanded}
+              className="pdv-order-edit"
+            >
+              <Pencil size={12} /> {expanded ? 'Fechar edição' : 'Editar item'}
+            </button>
+          )}
+          {canRepeat && (
+            <button
+              type="button"
+              onClick={onRepeat}
+              className="pdv-order-repeat"
+            >
+              <CopyPlus size={14} /> Repetir item
+            </button>
+          )}
+        </footer>
       )}
       {canCancel && expanded && (
         <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3">
@@ -77,6 +101,6 @@ export function TableOrderItemCard({ item, canCancel, expanded, onView, onToggle
           ))}
         </div>
       )}
-    </div>
+    </article>
   );
 }

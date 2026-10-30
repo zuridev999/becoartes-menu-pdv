@@ -43,6 +43,12 @@ export const createRouteHandlers = (services) => ({
     }),
   }),
   'POST /api/orders/send-to-kitchen': async (body, context) => services.sendToKitchen(body, context.session, context.req),
+  'GET /api/delivery/settings': async () => services.deliveryCommerce.publicConfig(),
+  'POST /api/delivery/settings': async (body, context) => services.deliveryCommerce.saveSettings(body.settings, context.session),
+  'POST /api/delivery/payment/recover': async (body, context) => services.deliveryCommerce.recover(body, context.session),
+  'POST /api/delivery/fulfillment': async (body, context) => services.updateDeliveryFulfillment(body, context.session),
+  'POST /api/delivery/payment/abandon': async (body) => services.deliveryCommerce.abandon(body),
+  'POST /api/delivery/payment/simulate': async (body) => services.deliveryCommerce.simulate(body),
   'POST /api/delivery/quote': async (body) => services.getDeliveryQuote(body),
   'POST /api/delivery/postal-code': async (body) => ({ postalCode: await services.lookupDeliveryPostalCode(body) }),
   'POST /api/delivery/geocode': async (body) => ({ geocode: await services.geocodeDeliveryAddress(body?.customer || body) }),
@@ -71,7 +77,7 @@ export const createRouteHandlers = (services) => ({
   'POST /api/customer-tabs/finalize': async (body, context) => services.finalizeCustomerTab(body, context.session),
   'GET /api/delivery/customer/session': async (_body, context) => services.getDeliveryCustomerSession({ token: context.req?.headers['x-beco-delivery-session'] || '' }),
   'GET /api/delivery/customer/orders': async (_body, context) => services.listDeliveryCustomerOrders({ token: context.req?.headers['x-beco-delivery-session'] || '' }),
-  'GET /api/delivery/order': async (_body, context) => services.getDeliveryOrder({
+  'GET /api/delivery/order': async (_body, context) => services.deliveryCommerce.refresh({
     orderId: context.url.searchParams.get('orderId') || '',
     session: context.session,
     customerSessionToken: context.req?.headers['x-beco-delivery-session'] || '',

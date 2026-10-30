@@ -22,7 +22,7 @@ import { PdvTicker } from '../../components/pdv/PdvTicker';
 import { can, getPermissionLabel } from '../../lib/permissions';
 import { getOrderItemTotal, getOrderItemsTotal } from '../../lib/totals';
 import { calculateBillTotal, calculateServiceFee, clampServiceFeePercent, MAX_SERVICE_FEE_PERCENT } from '../../lib/billing';
-import { AdminApi, AppApi, CustomerTabApi, OpsApi, type PdvLockState } from '../../lib/api';
+import { AdminApi, AppApi, CustomerTabApi, OperationalApi, OpsApi, type PdvLockState } from '../../lib/api';
 import type { ReceiptData } from '../../lib/receiptPrint';
 import { businessDateKey, businessWeekday } from '../../lib/business-time';
 import { getOrderLocation, getPhysicalTablesPendingTransition, isTableVisibleForQrMode } from '../../lib/order-location';
@@ -37,6 +37,7 @@ import { CashRegisterDialog } from '../../components/pdv/CashRegisterDialog';
 import { TableNicknameEditor } from '../../components/pdv/TableNicknameEditor';
 import { PdvTableMap } from './PdvTableMap';
 import { getOnlinePaymentLabel, isOnlinePaidAwaitingConference } from '../../lib/online-payment';
+import { createId } from '../../lib/id';
 
 const DAILY_GOALS_BY_WEEKDAY: Record<number, number> = {
   0: 6000,
@@ -199,6 +200,7 @@ export function PDVView() {
   const [cancelItemDialog, setCancelItemDialog] = useState<{ item: OrderItem; tableId: string; tableNumber: number; mode: 'all' | 'modifier' | 'product'; modifier?: OrderItem['selectedModifiers'][number] } | null>(null);
   const [expandedOrderItemId, setExpandedOrderItemId] = useState<string | null>(null);
   const [selectedOrderItemDetails, setSelectedOrderItemDetails] = useState<OrderItem | null>(null);
+  const [repeatItemDialog, setRepeatItemDialog] = useState<{ item: OrderItem; tableId: string; tableNumber: number } | null>(null);
   const [cancelReasonCode, setCancelReasonCode] = useState('');
   const [cancelReasonNotes, setCancelReasonNotes] = useState('');
   
@@ -454,6 +456,8 @@ export function PDVView() {
     { method: 'pix' as const, label: 'Pix', tone: 'text-amber-300', bg: 'bg-amber-500/10', border: 'border-amber-400/20' },
   ];
   const isCashOpen = Boolean(cashState?.isOpen);
+  const isSandboxMode = Boolean(cashState?.sandbox);
+  const isOperationEnabled = isCashOpen || isSandboxMode;
   const isCashOverdue = Boolean(cashState?.requiresClosing);
   const canViewSalesTotals = can(currentSeller, 'viewSalesTotals', permissionOverrides, userPermissionOverrides);
   const canCancelTableItem = can(currentSeller, 'cancelTableItem', permissionOverrides, userPermissionOverrides)
@@ -480,18 +484,18 @@ export function PDVView() {
   const canUseQrModeSwitch = Boolean(currentSeller);
   const canInspectCustomerTabs = canViewSalesTotals;
   const isAdminProfile = currentSeller.permission === 'admin';
-  const canPreviewTablesWithClosedCash = isAdminProfile;
+  const canPreviewTablesWithClosedCash = isAdminProfile || isSandboxMode;
   const isComandaMode = settings.qrMode === 'comanda';
   const cashActionLabel = isCashOpen ? 'Fechar caixa' : 'Abrir caixa';
   const canAccessTable = (table: TableType) => (
     canViewOtherOperatorTables || !table.currentSellerId || table.currentSellerId === currentSeller.id
   );
-  const visibleTables = tables
+  const visibleTables = tables.filter(table => table.number > 0)
     .filter(table => isComandaMode && showPhysicalTables
       ? table.number >= 1 && table.number <= 50
       : isTableVisibleForQrMode(table, isComandaMode))
     .filter(canAccessTable);
-  const operationalTables = tables.filter(table => isTableVisibleForQrMode(table, isComandaMode)).filter(canAccessTable);
+  const operationalTables = tables.filter(table => table.number > 0).filter(table => isTableVisibleForQrMode(table, isComandaMode)).filter(canAccessTable);
   const activeVisibleTables = operationalTables.filter(t => t.status === 'ordering' || t.status === 'bill_requested' || t.customerTab);
   const physicalTablesPendingTransition = getPhysicalTablesPendingTransition(tables);
   const activeTablesCount = activeVisibleTables.length;
@@ -754,16 +758,15 @@ export function PDVView() {
       <header className="mb-3 flex flex-wrap items-center justify-between gap-3 py-1">
         <div className="flex min-w-0 items-center gap-3">
           <span className="relative flex h-2.5 w-2.5 shrink-0">
-            <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${isCashOpen ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isCashOpen ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${isOperationEnabled ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isOperationEnabled ? 'bg-emerald-500' : 'bg-amber-500'}`} />
           </span>
           <div className="min-w-0">
             <p className="truncate text-base font-black leading-tight">
               PDV <span className="text-primary">{settings.unitName}</span>
             </p>
             <p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
-              {isCashOpen ? 'Caixa aberto' : 'Caixa fechado'}
-              {cashState?.sandbox && ' · sandbox'}
+              {isSandboxMode ? 'Sandbox liberado' : (isCashOpen ? 'Caixa aberto' : 'Caixa fechado')}
               {' · '}{currentSeller.nickname || currentSeller.name}
               {' · '}{getPermissionLabel(currentSeller)}
             </p>
@@ -904,21 +907,28 @@ export function PDVView() {
             <span className="ml-1.5 text-white/35">QR {isComandaMode ? '200' : '50'}</span>
           </span>
         </button>
-        <button
-          onClick={() => canUseCashAction && setCashDialog(isCashOpen ? 'close' : 'open')}
-          disabled={!canUseCashAction}
-          className={`flex h-11 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-[0.14em] transition-colors ${
-            canUseCashAction
-              ? (isCashOpen
-                ? 'border-rose-400/25 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15'
-                : 'border-emerald-400/25 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15')
-              : 'cursor-not-allowed border-white/5 opacity-40 text-zinc-600'
-          }`}
-          title={cashActionLabel}
-        >
-          <Wallet size={16} />
-          {cashActionLabel}
-        </button>
+        {isSandboxMode ? (
+          <div className="flex h-11 items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-3.5 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-300">
+            <Wallet size={16} />
+            Sandbox liberado
+          </div>
+        ) : (
+          <button
+            onClick={() => canUseCashAction && setCashDialog(isCashOpen ? 'close' : 'open')}
+            disabled={!canUseCashAction}
+            className={`flex h-11 items-center gap-2 rounded-xl border px-3.5 text-[10px] font-black uppercase tracking-[0.14em] transition-colors ${
+              canUseCashAction
+                ? (isCashOpen
+                  ? 'border-rose-400/25 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15'
+                  : 'border-emerald-400/25 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15')
+                : 'cursor-not-allowed border-white/5 opacity-40 text-zinc-600'
+            }`}
+            title={cashActionLabel}
+          >
+            <Wallet size={16} />
+            {cashActionLabel}
+          </button>
+        )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <button
             onClick={() => { setShowOnlyActive(false); if (isComandaMode) setShowPhysicalTables(true); }}
@@ -936,9 +946,9 @@ export function PDVView() {
           {/* Venda balcão: ação principal do turno — destaque amarelo, canto direito. */}
           <button
             onClick={() => setShowCounterSale(true)}
-            disabled={!isCashOpen || !canAddOrderItem || !canLaunchPayment || !canCloseBill}
+            disabled={!isOperationEnabled || !canAddOrderItem || !canLaunchPayment || !canCloseBill}
             className={`flex h-12 items-center gap-2.5 rounded-xl px-6 text-[11px] font-black uppercase tracking-[0.16em] transition-all ${
-              isCashOpen && canAddOrderItem && canLaunchPayment && canCloseBill
+              isOperationEnabled && canAddOrderItem && canLaunchPayment && canCloseBill
                 ? 'bg-gradient-to-b from-yellow-300 to-amber-400 text-black shadow-lg shadow-amber-400/30 hover:brightness-105 hover:shadow-amber-400/45 active:scale-[0.98]'
                 : 'cursor-not-allowed border border-white/5 bg-white/[0.02] opacity-40 text-zinc-600'
             }`}
@@ -960,7 +970,7 @@ export function PDVView() {
         </button>
       )}
 
-      {!isCashOpen && !canPreviewTablesWithClosedCash && (
+      {!isOperationEnabled && !canPreviewTablesWithClosedCash && (
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1004,7 +1014,7 @@ export function PDVView() {
       )}
 
       <div className={`pdv-main-layout transition-all duration-300 ${
-        isCashOpen || canPreviewTablesWithClosedCash ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
+        isOperationEnabled || canPreviewTablesWithClosedCash ? '' : 'blur-sm opacity-40 pointer-events-none select-none'
       }`}>
         <div>
           <PdvTableMap requests={serviceRequests} tables={visibleTables} serviceTax={settings.serviceTax} onlyActive={showOnlyActive} onOnlyActive={setShowOnlyActive} onOpen={handleTableClick} isPreparing={hasProductionInProgress} statusClass={getStatusColor}
@@ -1296,9 +1306,15 @@ export function PDVView() {
                       key={o.id}
                       item={o}
                       canCancel={canCancelTableItem}
+                      canRepeat={canAddItems}
                       expanded={expandedOrderItemId === o.id}
                       onView={() => setSelectedOrderItemDetails(o)}
                       onToggle={() => setExpandedOrderItemId(expandedOrderItemId === o.id ? null : o.id)}
+                      onRepeat={() => setRepeatItemDialog({
+                        item: o,
+                        tableId: managedTable?.id || selectedTable.id,
+                        tableNumber: selectedTable.number,
+                      })}
                       onCancel={(mode, modifier) => {
                         setCancelReasonCode('');
                         setCancelReasonNotes('');
@@ -1762,6 +1778,71 @@ export function PDVView() {
               await submitQrModeSwitch(value);
             }}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {repeatItemDialog && (
+          <ActionDialog
+            isOpen
+            title="Adicionar o mesmo item?"
+            description={`Uma nova unidade será lançada agora na Mesa ${repeatItemDialog.tableNumber}, mantendo as mesmas opções e observações.`}
+            cancelLabel="Voltar"
+            confirmLabel="Adicionar 1 igual"
+            onClose={() => setRepeatItemDialog(null)}
+            onConfirm={async () => {
+              const source = repeatItemDialog.item;
+              const orderId = `order_${createId()}`;
+              const repeatedItem: OrderItem = {
+                ...source,
+                id: createId(),
+                orderId,
+                quantity: 1,
+                selectedModifiers: (source.selectedModifiers || []).map(modifier => ({ ...modifier })),
+                orderedAt: new Date(),
+                status: 'pending',
+              };
+
+              try {
+                await OperationalApi.sendToKitchen({
+                  orderId,
+                  tableId: repeatItemDialog.tableId,
+                  total: getOrderItemTotal(repeatedItem),
+                  origin: 'pdv',
+                  sellerId: currentSeller?.id || null,
+                  clientRequestId: orderId,
+                  items: [repeatedItem],
+                  dispatchTargets: { kitchen: true, bar: true },
+                });
+                await syncData({ includeCatalog: false });
+                await addAuditLog({
+                  action: 'item_repeated',
+                  details: { source_item_id: source.id, product_id: source.productId, quantity: 1 },
+                  table_number: String(repeatItemDialog.tableNumber),
+                  origin: 'pdv',
+                });
+                addNotification(`1x ${source.name} adicionado novamente.`, 'order', repeatItemDialog.tableId);
+              } catch (error) {
+                addNotification(error instanceof Error ? error.message : 'Não foi possível repetir o item.', 'error');
+                throw error;
+              }
+            }}
+          >
+            <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-base font-black text-white">1x {repeatItemDialog.item.name}</p>
+                  {(repeatItemDialog.item.selectedModifiers || []).length > 0 && (
+                    <p className="mt-1 text-xs font-bold text-violet-200">
+                      {(repeatItemDialog.item.selectedModifiers || []).map(modifier => `+ ${modifier.name}`).join(' · ')}
+                    </p>
+                  )}
+                  {repeatItemDialog.item.notes && <p className="mt-2 text-xs font-bold text-amber-100">{repeatItemDialog.item.notes}</p>}
+                </div>
+                <p className="shrink-0 text-sm font-black text-emerald-300">{formatCurrency(getOrderItemTotal({ ...repeatItemDialog.item, quantity: 1 }))}</p>
+              </div>
+            </div>
+          </ActionDialog>
         )}
       </AnimatePresence>
 

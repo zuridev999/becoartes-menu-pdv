@@ -29,7 +29,8 @@
       const isQrEntry = becoHost.startsWith('qr.') || /^\/(qr|mesa|cardapio)(\/|$)/.test(window.location.pathname);
       // QR e PDV precisam manter conta, pedido e rolagem livres de anúncios.
       // Não carregar o SDK: ele injeta âncoras e consentimento fora do React.
-      if (!isPdvEntry && !isQrEntry) {
+      const isDeliveryEntry = becoHost.startsWith('delivery.') || /^\/delivery(\/|$)/.test(window.location.pathname);
+      if (!isPdvEntry && !isQrEntry && !isDeliveryEntry) {
         const adsenseScript = document.createElement('script');
         adsenseScript.id = 'becoartes-adsense-script';
         adsenseScript.async = true;

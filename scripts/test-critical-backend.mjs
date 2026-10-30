@@ -599,6 +599,12 @@ try {
   assert.equal(orderRequest.items[0].name, 'Produto Teste');
   assert.equal(orderRequest.items[0].selectedModifiers[0].name, 'Limão');
   assert.equal(orderRequest.items[0].notes, 'Pouco açúcar');
+  const activeTableItem = orderSnapshot.data.tables
+    .find((table) => table.id === '1')
+    ?.orders.find((item) => item.id === 'item_partial');
+  assert.ok(activeTableItem, 'the active table must expose the persisted order item');
+  assert.ok(activeTableItem.orderedAt, 'the active item must expose the server order timestamp for the PDV');
+  assert.equal(Number.isNaN(Date.parse(activeTableItem.orderedAt)), false, 'the PDV order timestamp must be ISO-compatible');
 
   const deliveredCompletion = await post('/api/orders/status', {
     orderId: 'order_partial:kitchen',

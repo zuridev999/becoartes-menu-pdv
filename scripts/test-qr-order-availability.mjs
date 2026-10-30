@@ -175,14 +175,12 @@ try {
   await rejectWithoutWrites([item('base-hidden')]);
   await submit([item('sku')], { origin: 'tablet' });
 
-  const deliveryCustomer = { name: 'Fixture', phone: '11999999999', email: 'fixture@example.test', fulfillment: 'pickup', paymentMethod: 'pix' };
-  await request('/api/delivery/checkout', {
-    body: { orderId: 'delivery-denied', customer: deliveryCustomer, items: [item('sku')] }, status: 403,
-  });
+  const deliveryCatalogBefore = await catalog('delivery');
+  assert.equal(deliveryCatalogBefore.menuItems.find(product => product.id === 'sku').deliveryVisible, false);
   await db.execute("UPDATE menu SET delivery_visible=1 WHERE id='sku'");
-  await request('/api/delivery/checkout', {
-    body: { orderId: 'delivery-existing-policy', customer: deliveryCustomer, items: [item('sku')] },
-  }); // delivery does not gain the QR-only source check
+  await db.execute("INSERT OR REPLACE INTO app_settings (key,value) VALUES ('catalog_version','delivery-visible')");
+  const deliveryCatalogAfter = await catalog('delivery');
+  assert.equal(deliveryCatalogAfter.menuItems.find(product => product.id === 'sku').deliveryVisible, true);
 
   await db.execute('UPDATE catalog_availability_sources SET hidden=0,event_id=NULL');
   await db.execute("INSERT OR REPLACE INTO app_settings (key,value) VALUES ('catalog_version','fixture-restored')");

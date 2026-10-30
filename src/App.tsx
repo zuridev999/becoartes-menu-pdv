@@ -83,7 +83,7 @@ function App() {
     sessionStorage.setItem(`beco_anim_done_${window.location.hostname}`, 'true');
   }, []);
 
-  const isPublicTopAdView = activeView === 'tablet' || activeView === 'delivery';
+  const isPublicTopAdView = activeView === 'tablet';
   const hasOperationalView = ['pdv', 'kitchen', 'admin'].includes(activeView);
   const isQrView = activeView === 'qr' || window.location.hostname.startsWith('qr.') || /^\/(qr|mesa)(\/|$)/.test(pdvPathname());
   const isReadOnlyMenu = isPublicMenuRoute(window.location.hostname, pdvPathname());
@@ -116,7 +116,6 @@ function App() {
           {!initError && activeView === 'comanda' && <ComandaView />}
         </Suspense>
 
-        {!isLoading && !initError && activeView === 'delivery' && <GoogleAdBanner placement="mobile-bottom" />}
         
         {/* Fallback amigável para URLs desconhecidas */}
         {!isLoading && !initError && !['tablet', 'pdv', 'kitchen', 'admin', 'qr', 'delivery', 'comanda'].includes(activeView) && (

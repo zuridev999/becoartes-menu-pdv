@@ -1,3 +1,4 @@
+import { createDeliveryCommerce, deliveryCommerceSchema } from './delivery/commerce.mjs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -154,9 +155,6 @@ if (
 const DELIVERY_VIRTUAL_TABLE_ID = 'delivery_virtual';
 const DELIVERY_CLUB_CYCLE_SIZE = Math.max(1, Number(process.env.DELIVERY_CLUB_CYCLE_SIZE || 10));
 const DELIVERY_CLUB_REWARD_LABEL = process.env.DELIVERY_CLUB_REWARD_LABEL || '1 prato gratuito';
-const DELIVERY_DEFAULT_COUPONS = [
-  { code: 'BECO10', type: 'percent', value: 10, maxDiscount: 30, minSubtotal: 0, label: '10% de desconto' },
-];
 const APP_VERSION = process.env.APP_VERSION || process.env.VITE_APP_VERSION || 'unknown';
 const APP_COMMIT = process.env.APP_COMMIT || process.env.VITE_APP_COMMIT || 'unknown';
 const APP_BUILD_DATE = process.env.APP_BUILD_DATE || process.env.VITE_APP_BUILD_DATE || '';
@@ -222,7 +220,6 @@ const convertInventoryQuantity = (quantity, fromUnit, toUnit) => {
 };
 const getBusinessDate = () => businessDateKey(new Date(), BUSINESS_TIME_ZONE);
 const { recordQrAnalyticsEvent, getQrAnalyticsFunnel } = createQrAnalyticsService({ db, createId, getBusinessDate });
-const formatMoneyForNotification = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const hashToken = (value) => createHash('sha256').update(String(value || '')).digest('hex');
 const hashDeliveryCustomerCode = (value) => createHmac('sha256', DELIVERY_CUSTOMER_CODE_SECRET)
   .update(String(value || ''))
@@ -281,44 +278,8 @@ const parseJsonObject = (value) => {
   }
 };
 
-const normalizeDeliveryCoupon = (coupon = {}) => {
-  const code = normalizeText(coupon.code).toUpperCase();
-  if (!code) return null;
-  const type = coupon.type === 'fixed' ? 'fixed' : 'percent';
-  const value = Number(coupon.value || 0);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  const maxDiscount = coupon.maxDiscount === undefined || coupon.maxDiscount === null || coupon.maxDiscount === ''
-    ? null
-    : Math.max(0, Number(coupon.maxDiscount || 0));
-  const minSubtotal = Math.max(0, Number(coupon.minSubtotal || 0));
-  return {
-    code,
-    type,
-    value,
-    maxDiscount: Number.isFinite(maxDiscount) ? maxDiscount : null,
-    minSubtotal,
-    label: normalizeText(coupon.label) || (type === 'fixed' ? `R$ ${value} de desconto` : `${value}% de desconto`),
-  };
-};
-
-const getDeliveryCoupons = () => {
-  const configured = process.env.DELIVERY_COUPONS_JSON;
-  if (!configured) return DELIVERY_DEFAULT_COUPONS;
-  try {
-    const parsed = JSON.parse(configured);
-    const coupons = (Array.isArray(parsed) ? parsed : [])
-      .map(normalizeDeliveryCoupon)
-      .filter(Boolean);
-    return coupons.length ? coupons : DELIVERY_DEFAULT_COUPONS;
-  } catch (error) {
-    console.error('DELIVERY_COUPONS_JSON invalido; usando cupom padrao.', error);
-    return DELIVERY_DEFAULT_COUPONS;
-  }
-};
-
 const toSessionSeller = (seller) => ({ ...seller, pin: '' });
 const normalizeText = (value) => String(value || '').trim().replace(/\s+/g, ' ');
-const DELIVERY_COUPONS = getDeliveryCoupons();
 const normalizeSellerIdentity = (value) => normalizeText(value)
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -802,6 +763,7 @@ const ensureDatabase = async () => {
     "CREATE TABLE IF NOT EXISTS sellers (id TEXT PRIMARY KEY, name TEXT NOT NULL, nickname TEXT, status TEXT NOT NULL, role TEXT NOT NULL, permission TEXT DEFAULT 'standard', pin TEXT DEFAULT '1234', notes TEXT, tipo_vinculo TEXT DEFAULT 'fixo', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS pdv_terminals (id TEXT PRIMARY KEY, public_key_jwk TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', device_info TEXT, first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP, last_seen_at DATETIME, last_ip TEXT)",
     "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, details TEXT, table_number TEXT, origin TEXT, author_id TEXT, author_name TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
+    ...deliveryCommerceSchema,
     ...cancellationAlertSchema,
     ...zuriTableMergeSchema,
     "CREATE TABLE IF NOT EXISTS closed_bills (id TEXT PRIMARY KEY, table_id TEXT, table_number INTEGER NOT NULL, seller_id TEXT, seller_name TEXT, subtotal REAL NOT NULL, service_fee REAL DEFAULT 0, discount REAL DEFAULT 0, discount_reason TEXT, coupon_code TEXT, coupon_amount REAL DEFAULT 0, coupon_benefit TEXT, total REAL NOT NULL, payments TEXT, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -2268,7 +2230,13 @@ const getAuditLogs = async ({ limit = 50, startDate = '', endDate = '', author =
 
 const getActiveOrdersByTable = async () => {
   const res = await db.execute(`
-    SELECT oi.*, o.table_id, m.name, m.category_id, c.name as category_name
+    SELECT
+      oi.*,
+      o.table_id,
+      strftime('%Y-%m-%dT%H:%M:%SZ', o.created_at) AS ordered_at,
+      m.name,
+      m.category_id,
+      c.name as category_name
     FROM order_items oi
     JOIN orders o ON oi.order_id = o.id
     LEFT JOIN menu m ON oi.product_id = m.id
@@ -2290,6 +2258,7 @@ const getActiveOrdersByTable = async () => {
       quantity: Number(row.quantity || 0),
       selectedModifiers: parseJsonArray(row.selected_modifiers),
       notes: row.notes || '',
+      orderedAt: row.ordered_at || null,
     });
   });
   return ordersByTable;
@@ -4303,46 +4272,6 @@ const {
   clubRewardLabel: DELIVERY_CLUB_REWARD_LABEL,
 });
 
-const getDeliveryCouponForCode = (code) => {
-  const normalizedCode = normalizeText(code).toUpperCase();
-  if (!normalizedCode) return null;
-  return DELIVERY_COUPONS.find((coupon) => coupon.code === normalizedCode) || null;
-};
-
-const calculateDeliveryCouponDiscount = ({ subtotal, couponCode }) => {
-  const coupon = getDeliveryCouponForCode(couponCode);
-  if (!coupon) return { discount: 0, coupon: null, status: couponCode ? 'not_found' : 'empty' };
-  if (subtotal < coupon.minSubtotal) {
-    return { discount: 0, coupon, status: 'min_subtotal_not_reached' };
-  }
-  const rawDiscount = coupon.type === 'fixed' ? coupon.value : subtotal * (coupon.value / 100);
-  const cappedDiscount = coupon.maxDiscount === null ? rawDiscount : Math.min(rawDiscount, coupon.maxDiscount);
-  return {
-    discount: Number(Math.min(subtotal, Math.max(0, cappedDiscount)).toFixed(2)),
-    coupon,
-    status: 'applied',
-  };
-};
-
-const calculateDeliveryTotals = ({ items, customer }) => {
-  const subtotal = items.reduce((acc, item) => {
-    const modifiersTotal = (Array.isArray(item.selectedModifiers) ? item.selectedModifiers : [])
-      .reduce((sum, modifier) => sum + Number(modifier.price || 0), 0);
-    return acc + (requireNumber(item.price, 'item.price') + modifiersTotal) * requireNumber(item.quantity, 'item.quantity');
-  }, 0);
-  const coupon = calculateDeliveryCouponDiscount({ subtotal, couponCode: customer.coupon });
-  const discount = coupon.discount;
-  const deliveryFee = customer.fulfillment === 'delivery' && subtotal > 0 ? 8 : 0;
-  const total = Math.max(0, subtotal + deliveryFee - discount);
-  return { subtotal, deliveryFee, discount, total, coupon };
-};
-
-const calculateDeliverySubtotal = (items = []) => items.reduce((acc, item) => {
-  const modifiersTotal = (Array.isArray(item.selectedModifiers) ? item.selectedModifiers : [])
-    .reduce((sum, modifier) => sum + Number(modifier.price || 0), 0);
-  return acc + (requireNumber(item.price, 'item.price') + modifiersTotal) * requireNumber(item.quantity, 'item.quantity');
-}, 0);
-
 const deliveryAddressIsComplete = (customer = {}) => Boolean(
   normalizeText(customer.street)
   && normalizeText(customer.number)
@@ -4476,32 +4405,11 @@ const getDeliveryClubConfig = () => ({
   rewardLabel: DELIVERY_CLUB_REWARD_LABEL,
 });
 
-const getDeliveryPublicConfig = () => ({
-  mode: getDeliveryIntegrationMode(),
-  club: getDeliveryClubConfig(),
-  coupons: DELIVERY_COUPONS.map((coupon) => ({
-    code: coupon.code,
-    type: coupon.type,
-    value: coupon.value,
-    maxDiscount: coupon.maxDiscount,
-    minSubtotal: coupon.minSubtotal,
-    label: coupon.label,
-  })),
-  routes: {
-    checkout: '/api/delivery/checkout',
-    quote: '/api/delivery/quote',
-    postalCode: '/api/delivery/postal-code',
-    geocode: '/api/delivery/geocode',
-    orderStatus: '/api/delivery/order?orderId=...',
-    pagbankWebhook: '/api/delivery/webhooks/pagbank',
-  },
-  webhookSecretEnabled: Boolean(DELIVERY_WEBHOOK_SECRET),
-  notifications: {
-    email: DELIVERY_EMAIL_PROVIDER,
-    sms: DELIVERY_SMS_PROVIDER,
-    whatsapp: DELIVERY_WHATSAPP_PROVIDER,
-  },
-});
+const getDeliveryPublicConfig = async () => {
+  const config = await deliveryCommerce.publicConfig();
+  return { ...config, mode: { ...getDeliveryIntegrationMode(), publicStatus: config.openNow ? 'open' : 'building' },
+    club: { ...getDeliveryClubConfig(), enabled: config.settings.clubEnabled }, coupons: config.settings.coupons };
+};
 
 
 const getPagBankPublicKey = async () => {
@@ -4510,6 +4418,7 @@ const getPagBankPublicKey = async () => {
   }
   const response = await fetch(`${PAGBANK_API_BASE_URL}/public-keys`, {
     method: 'POST',
+    signal: AbortSignal.timeout(20000),
     headers: {
       accept: 'application/json',
       'content-type': 'application/json',
@@ -4547,7 +4456,7 @@ const createPagBankDeliveryOrderItems = ({ items, totals }) => {
     reference_id: String(item.productId || item.id).slice(0, 64),
     name: String(item.name || 'Item').slice(0, 100),
     quantity: Number(item.quantity || 1),
-    unit_amount: moneyToCents(Number(item.price || 0), 'delivery.item.price'),
+    unit_amount: moneyToCents(Number(item.price || 0) + (item.selectedModifiers || []).reduce((sum, m) => sum + Number(m.price || 0), 0), 'delivery.item.price'),
   }));
   if (totals.deliveryFee > 0) {
     orderItems.push({
@@ -4642,7 +4551,7 @@ const getPagBankPaymentStatusFromOrder = (method, result = {}) => {
     result.charges?.[0]?.status,
     result.charges?.[0]?.payment_response?.status,
   ].filter(Boolean).map((value) => String(value).toUpperCase());
-  if (statuses.some((status) => ['PAID', 'AUTHORIZED', 'APPROVED'].includes(status))) return 'paid';
+  if (statuses.some((status) => status === 'PAID')) return 'paid';
   if (statuses.some((status) => ['DECLINED', 'CANCELED', 'CANCELLED'].includes(status))) return 'payment_failed';
   return 'payment_pending';
 };
@@ -4671,60 +4580,6 @@ const createPagBankPaymentInstructions = (method, result = {}) => {
       : status === 'payment_failed'
         ? (charge?.payment_response?.message || 'Pagamento recusado.')
         : 'Aguardando confirmação do pagamento.',
-  };
-};
-
-const prepareDeliveryPayment = async ({ orderId, customer, items, totals, payment }) => {
-  if (DELIVERY_PAYMENT_PROVIDER === 'disabled') {
-    return { status: 'disabled', provider: 'disabled', externalId: null, checkoutUrl: null, payload: null, instructions: null };
-  }
-
-  if (DELIVERY_PAYMENT_PROVIDER !== 'pagbank') {
-    return {
-      status: 'paid_mock',
-      provider: 'mock',
-      externalId: `pagbank_mock_${createId()}`,
-      checkoutUrl: null,
-      payload: { total: totals.total, paymentMethod: customer.paymentMethod },
-      instructions: { type: customer.paymentMethod, status: 'paid_mock', message: 'Pagamento mock aprovado.' },
-    };
-  }
-
-  const payload = createPagBankDeliveryOrderPayload({ orderId, customer, items, totals, payment });
-  if (!PAGBANK_TOKEN) {
-    return { status: 'missing_credentials', provider: 'pagbank', externalId: null, checkoutUrl: null, payload, instructions: null };
-  }
-
-  // Chamada real mantida atras de env explicito. Em producao, o webhook confirma o pagamento.
-  const response = await fetch(`${PAGBANK_API_BASE_URL}/orders`, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/json',
-      authorization: `Bearer ${PAGBANK_TOKEN}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const pagBankError = result?.error_messages?.[0];
-    const code = pagBankError?.error || '';
-    const description = pagBankError?.description || result?.message || '';
-    const allowlistMessage = code === 'allowlist_access_required'
-      ? 'PagBank ainda não liberou esta conta para criar pedidos por API Orders em produção.'
-      : '';
-    const error = new Error(allowlistMessage || description || `PagBank recusou pagamento (${response.status}).`);
-    error.statusCode = 502;
-    throw error;
-  }
-
-  return {
-    status: getPagBankPaymentStatusFromOrder(customer.paymentMethod, result),
-    provider: 'pagbank',
-    externalId: result.id || null,
-    checkoutUrl: null,
-    payload,
-    instructions: createPagBankPaymentInstructions(customer.paymentMethod, result),
   };
 };
 
@@ -4783,129 +4638,12 @@ const createIFoodShippingPayload = ({ orderId, customer, items, totals, quoteId 
   },
 });
 
-const getDeliveryQuote = async ({ customer = {}, items = [] } = {}) => {
-  await ensureDatabaseReady();
-  const geocode = await geocodeDeliveryAddress(customer);
-  const safeCustomer = normalizeDeliveryCustomer({
-    ...customer,
-    latitude: customer.latitude ?? geocode.latitude,
-    longitude: customer.longitude ?? geocode.longitude,
-  });
-  const safeItems = Array.isArray(items) ? items : [];
-  const subtotal = calculateDeliverySubtotal(safeItems);
-
-  if (safeCustomer.fulfillment === 'pickup') {
-    return {
-      quote: {
-        status: 'not_required_pickup',
-        provider: 'none',
-        deliveryFee: 0,
-        quoteId: null,
-        expiresAt: null,
-        preparationTimeSeconds: 0,
-        payload: null,
-      },
-    };
-  }
-
-  if (DELIVERY_LOGISTICS_PROVIDER === 'disabled') {
-    return {
-      quote: {
-        status: 'disabled',
-        provider: 'disabled',
-        deliveryFee: 0,
-        quoteId: null,
-        expiresAt: null,
-        preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
-        payload: null,
-      },
-    };
-  }
-
-  if (DELIVERY_LOGISTICS_PROVIDER !== 'ifood') {
-    return {
-      quote: {
-        status: 'available_mock',
-        provider: 'ifood_mock',
-        deliveryFee: subtotal > 0 ? 8 : 0,
-        quoteId: `quote_mock_${createId()}`,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
-        payload: { mode: 'mock', geocode },
-      },
-    };
-  }
-
-  const availabilityEndpoint = `${IFOOD_API_BASE_URL}/shipping/v1.0/merchants/${IFOOD_MERCHANT_ID || '{merchantId}'}/deliveryAvailabilities`;
-  if (!IFOOD_ACCESS_TOKEN || !IFOOD_MERCHANT_ID) {
-    return {
-      quote: {
-        status: 'missing_credentials',
-        provider: 'ifood',
-        deliveryFee: 0,
-        quoteId: null,
-        expiresAt: null,
-        preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
-        payload: { availabilityEndpoint: `${availabilityEndpoint}?latitude={lat}&longitude={lng}`, geocode },
-      },
-    };
-  }
-
-  if (!safeCustomer.latitude || !safeCustomer.longitude) {
-    return {
-      quote: {
-        status: 'missing_coordinates',
-        provider: 'ifood',
-        deliveryFee: 0,
-        quoteId: null,
-        expiresAt: null,
-        preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
-        payload: { availabilityEndpoint: `${availabilityEndpoint}?latitude={lat}&longitude={lng}`, geocode },
-      },
-    };
-  }
-
-  if (IFOOD_SHIPPING_MODE !== 'live') {
-    const quoteId = safeCustomer.quoteId || `quote_dry_run_${createId()}`;
-    return {
-      quote: {
-        status: 'ready_for_homologation',
-        provider: 'ifood',
-        deliveryFee: 0,
-        quoteId,
-        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-        preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
-        payload: {
-          mode: IFOOD_SHIPPING_MODE,
-          availabilityEndpoint: `${availabilityEndpoint}?latitude=${safeCustomer.latitude}&longitude=${safeCustomer.longitude}`,
-          geocode,
-        },
-      },
-    };
-  }
-
-  return {
-    quote: {
-      status: 'ready_for_homologation',
-      provider: 'ifood',
-      deliveryFee: 0,
-      quoteId: safeCustomer.quoteId || null,
-      expiresAt: safeCustomer.quoteExpiresAt || null,
-      preparationTimeSeconds: IFOOD_PREPARATION_TIME_SECONDS,
-      payload: {
-        mode: 'live_not_enabled_in_code_path',
-        availabilityEndpoint: `${availabilityEndpoint}?latitude=${safeCustomer.latitude}&longitude=${safeCustomer.longitude}`,
-        geocode,
-      },
-    },
-  };
-};
+const getDeliveryQuote = input => deliveryCommerce.quote(input);
 
 const {
   assertDeliveryCustomerCodeChannel,
   sendCustomerTabRecoveryCode,
   sendDeliveryCustomerCode,
-  sendDeliveryNotification,
 } = createNotificationServices({
   db,
   createId,
@@ -5188,6 +4926,8 @@ const requestDeliveryLogistics = async ({ orderId, customer, items, totals, paym
     return { status: 'waiting_payment', provider: DELIVERY_LOGISTICS_PROVIDER, externalId: null, payload: null };
   }
 
+  const deliverySettings = await deliveryCommerce.settings();
+  if (deliverySettings.logistics === 'manual') return { status: 'awaiting_dispatch', provider: 'manual', externalId: null, payload: null };
   if (DELIVERY_LOGISTICS_PROVIDER === 'disabled') {
     return { status: 'disabled', provider: 'disabled', externalId: null, payload: null };
   }
@@ -5402,6 +5142,7 @@ const listDeliveryOrders = async ({ limit = 50 } = {}) => {
 
 const materializeDeliveryProductionOrder = async ({ orderId, items, total }) => {
   const productionOrderId = `delivery_prod_${orderId}`;
+  const inventoryEventId = `pdv_order_${productionOrderId}`;
   await db.batch([
     {
       sql: "INSERT OR IGNORE INTO tables (id, number, status, last_activity) VALUES (?, ?, 'ordering', CURRENT_TIMESTAMP)",
@@ -5431,8 +5172,10 @@ const materializeDeliveryProductionOrder = async ({ orderId, items, total }) => 
       sql: "INSERT OR IGNORE INTO service_requests (id, table_id, type, status, message) VALUES (?, ?, 'new_order', 'pending', ?)",
       args: [`new_order_${productionOrderId}`, DELIVERY_VIRTUAL_TABLE_ID, `DELIVERY ${orderId}`],
     },
+    { sql: `INSERT OR IGNORE INTO integration_events(id,type,status,table_id,ref_id,payload,created_at,updated_at) VALUES (?,'pdv_order_inventory','pending_inventory',?,?,?,?,?)`,
+      args: [inventoryEventId, DELIVERY_VIRTUAL_TABLE_ID, productionOrderId, JSON.stringify(inventoryEventPayload({ tableNumber: 0, orderIds: [productionOrderId], reason: `Delivery ${orderId}` })), Date.now(), Date.now()] },
   ], 'write');
-
+  await reconcileInventoryEvent(inventoryEventId);
   return { productionOrderId, kitchenStatus: 'sent_production' };
 };
 
@@ -5442,6 +5185,9 @@ const DELIVERY_TERMINAL_DISPATCH_STATUSES = new Set([
   'requested',
   'not_required_pickup',
   'ready_for_homologation',
+  'awaiting_dispatch',
+  'out_for_delivery',
+  'delivered',
 ]);
 
 const dispatchPaidDeliveryOrder = async ({ orderId, source = 'system' }) => {
@@ -5455,8 +5201,13 @@ const dispatchPaidDeliveryOrder = async ({ orderId, source = 'system' }) => {
   if (!row) throw new Error('Pedido delivery não encontrado.');
   if (row.payment_status !== 'paid') return { dispatched: false, reason: 'payment_not_paid' };
 
+  if (row.payment_provider === 'pagbank') await db.execute({
+    sql: `INSERT OR IGNORE INTO closed_bills(id,table_id,table_number,seller_id,seller_name,subtotal,service_fee,discount,discount_reason,total,payments,closed_at) VALUES (?,? ,0,'delivery','Delivery',?,0,?,'Delivery — frete discriminado em delivery_receipts',?,?,?)`,
+    args: [`delivery_bill_${safeOrderId}`, `delivery_order_${safeOrderId}`, Number(row.subtotal), Number(row.discount), Number(row.total), JSON.stringify([{method:row.payment_method,amount:Number(row.total)}]),row.paid_at || new Date().toISOString()]
+  });
   const alreadyKitchenSent = Boolean(row.kitchen_sent_at) || ['sent_mock', 'sent_production'].includes(row.kitchen_status);
   const alreadyDeliveryRequested = Boolean(row.delivery_requested_at) || DELIVERY_TERMINAL_DISPATCH_STATUSES.has(row.delivery_status);
+  if (row.production_order_id) await reconcileInventoryEvent(`pdv_order_${row.production_order_id}`);
   if (alreadyKitchenSent && alreadyDeliveryRequested) {
     return {
       dispatched: false,
@@ -5498,7 +5249,7 @@ const dispatchPaidDeliveryOrder = async ({ orderId, source = 'system' }) => {
       payload: { source, idempotent: true },
     }
     : await requestDeliveryLogistics({ orderId: safeOrderId, customer, items, totals, paymentStatus: 'paid' });
-  const kitchenStatus = production?.kitchenStatus || (row.kitchen_status === 'sent_mock' ? row.kitchen_status : 'sent_mock');
+  const kitchenStatus = production?.kitchenStatus || row.kitchen_status || 'waiting_payment';
   const kitchenSentAt = row.kitchen_sent_at || now;
   const deliveryStatus = row.delivery_status === 'requested_mock' ? row.delivery_status : logistics.status;
   const deliveryRequestedAt = row.delivery_requested_at || (logistics.status === 'requested_mock' ? now : null);
@@ -5535,7 +5286,7 @@ const getPagBankWebhookStatus = (body = {}) => {
     body.charges?.[0]?.status,
     body.charges?.[0]?.payment_response?.status,
   ].filter(Boolean).map((value) => String(value).toUpperCase());
-  if (candidates.some((status) => ['PAID', 'AUTHORIZED', 'APPROVED'].includes(status))) return 'paid';
+  if (candidates.some((status) => status === 'PAID')) return 'paid';
   if (candidates.some((status) => ['DECLINED', 'CANCELED', 'CANCELLED'].includes(status))) return 'payment_failed';
   return 'payment_pending';
 };
@@ -5604,6 +5355,7 @@ const handlePagBankDeliveryWebhook = async (body, context = {}) => {
     if (!pagBankSignatureOk) throw Object.assign(new Error('Assinatura PagBank inválida.'), { statusCode: 401 });
     return qrPayments.webhook(body);
   }
+  if (String(referenceId).startsWith('delivery_') && await deliveryCommerce.webhook(body)) return { orderId: referenceId, accepted: true };
   const status = getPagBankWebhookStatus(body);
   const paidAt = status === 'paid' ? new Date().toISOString() : null;
 
@@ -5699,194 +5451,7 @@ const handlePagBankCustomerTabWebhook = async ({ referenceId, status, body }) =>
   return { tabId, status, applied: true, paymentId };
 };
 
-const createDeliveryCheckout = async ({ orderId, customer, items, payment }) => {
-  await ensureDatabaseReady();
-  const safeCustomer = normalizeDeliveryCustomer(customer);
-  requireString(safeCustomer.name, 'customer.name');
-  requireString(safeCustomer.phone, 'customer.phone');
-  requireString(safeCustomer.email, 'customer.email');
-  if (['credit', 'debit'].includes(safeCustomer.paymentMethod)) {
-    requireString(safeCustomer.taxId, 'customer.taxId');
-  }
-  if (safeCustomer.fulfillment === 'delivery') {
-    requireString(safeCustomer.street, 'customer.street');
-    requireString(safeCustomer.number, 'customer.number');
-    requireString(safeCustomer.neighborhood, 'customer.neighborhood');
-    requireString(safeCustomer.city, 'customer.city');
-    requireString(safeCustomer.state, 'customer.state');
-    requireString(safeCustomer.postalCode, 'customer.postalCode');
-  }
-
-  const safeItems = Array.isArray(items) ? items : [];
-  if (safeItems.length === 0) throw new Error('Pedido delivery sem itens.');
-  await validateOrderItemsAvailability({
-    items: safeItems,
-    session: null,
-    settings: await getSettings(),
-    isPublicOrigin: 'delivery',
-  });
-
-  const deliveryOrderId = String(orderId || `delivery_${createId()}`);
-  const customerId = createHash('sha256')
-    .update(`${safeCustomer.phone}|${safeCustomer.email}`)
-    .digest('hex')
-    .slice(0, 32);
-  const now = new Date().toISOString();
-  const totals = calculateDeliveryTotals({ items: safeItems, customer: safeCustomer });
-  const { subtotal, deliveryFee, discount, total } = totals;
-  const paymentResult = await prepareDeliveryPayment({ orderId: deliveryOrderId, customer: safeCustomer, items: safeItems, totals, payment });
-  const logistics = await requestDeliveryLogistics({ orderId: deliveryOrderId, customer: safeCustomer, items: safeItems, totals, paymentStatus: paymentResult.status });
-  const isPaid = String(paymentResult.status).startsWith('paid');
-  const paidAt = isPaid ? now : null;
-  const productionOrderId = isPaid && DELIVERY_KITCHEN_DISPATCH_MODE === 'production' ? `delivery_prod_${deliveryOrderId}` : null;
-  const kitchenStatus = isPaid ? (productionOrderId ? 'sent_production' : 'sent_mock') : 'waiting_payment';
-  const kitchenSentAt = isPaid ? now : null;
-  const deliveryRequestedAt = logistics.status === 'requested_mock' ? now : null;
-  const persistedItems = safeItems.map((item) => ({
-    ...item,
-    id: item.id || createId(),
-    orderId: deliveryOrderId,
-  }));
-  const customerSnapshot = JSON.stringify(safeCustomer);
-
-  await db.batch([
-    {
-      sql: `
-        INSERT INTO delivery_customers (id, name, phone, email, street, number, neighborhood, city, state, postal_code, complement, reference, latitude, longitude, join_club, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(id) DO UPDATE SET
-          name = excluded.name,
-          phone = excluded.phone,
-          email = excluded.email,
-          street = excluded.street,
-          number = excluded.number,
-          neighborhood = excluded.neighborhood,
-          city = excluded.city,
-          state = excluded.state,
-          postal_code = excluded.postal_code,
-          complement = excluded.complement,
-          reference = excluded.reference,
-          latitude = excluded.latitude,
-          longitude = excluded.longitude,
-          join_club = excluded.join_club,
-          updated_at = CURRENT_TIMESTAMP
-      `,
-      args: [customerId, safeCustomer.name, safeCustomer.phone, safeCustomer.email, safeCustomer.street, safeCustomer.number, safeCustomer.neighborhood, safeCustomer.city, safeCustomer.state, safeCustomer.postalCode, safeCustomer.complement, safeCustomer.reference, safeCustomer.latitude, safeCustomer.longitude, safeCustomer.joinClub ? 1 : 0],
-    },
-    {
-      sql: `
-        INSERT INTO delivery_orders (
-          id, customer_id, subtotal, delivery_fee, discount, total, coupon_code, fulfillment, payment_method,
-          payment_status, payment_provider, payment_external_id, checkout_url, kitchen_status, delivery_status, delivery_provider, delivery_external_id, production_order_id,
-          customer_snapshot, notes, paid_at, kitchen_sent_at, delivery_requested_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      args: [
-        deliveryOrderId, customerId, subtotal, deliveryFee, discount, total, safeCustomer.coupon, safeCustomer.fulfillment, safeCustomer.paymentMethod,
-        paymentResult.status, paymentResult.provider, paymentResult.externalId, paymentResult.checkoutUrl, kitchenStatus, logistics.status, logistics.provider, logistics.externalId, productionOrderId, customerSnapshot, safeCustomer.notes, paidAt, kitchenSentAt, deliveryRequestedAt,
-      ],
-    },
-    ...persistedItems.map((item) => ({
-      sql: "INSERT INTO delivery_order_items (id, delivery_order_id, product_id, name, quantity, price_at_time, selected_modifiers, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      args: [
-        requireString(item.id, 'item.id'),
-        deliveryOrderId,
-        requireString(item.productId, 'item.productId'),
-        requireString(item.name, 'item.name'),
-        requireNumber(item.quantity, 'item.quantity'),
-        requireNumber(item.price, 'item.price'),
-        JSON.stringify(item.selectedModifiers || []),
-        item.notes || '',
-      ],
-    })),
-    {
-      sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, provider, external_id, payload) VALUES (?, ?, 'payment', ?, ?, ?, ?)",
-      args: [createId(), deliveryOrderId, paymentResult.status, paymentResult.provider, paymentResult.externalId, JSON.stringify({
-        request: paymentResult.payload || { paymentMethod: safeCustomer.paymentMethod, total },
-        instructions: paymentResult.instructions || null,
-      })],
-    },
-    {
-      sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, payload) VALUES (?, ?, 'kitchen', ?, ?)",
-      args: [createId(), deliveryOrderId, kitchenStatus, JSON.stringify({ dispatchMode: 'parallel_after_paid' })],
-    },
-    {
-      sql: "INSERT INTO delivery_events (id, delivery_order_id, type, status, provider, external_id, payload) VALUES (?, ?, 'delivery', ?, ?, ?, ?)",
-      args: [createId(), deliveryOrderId, logistics.status, logistics.provider, logistics.externalId, JSON.stringify(logistics.payload || {})],
-    },
-  ], 'write');
-
-  await syncDeliveryCustomerToOsCrm({
-    orderId: deliveryOrderId,
-    customer: safeCustomer,
-    totalGasto: isPaid ? total : 0,
-    source: isPaid ? 'checkout_paid' : 'checkout_pending',
-  });
-
-  const notificationCustomer = { id: customerId, ...safeCustomer };
-  await Promise.all([
-    sendDeliveryNotification({
-      orderId: deliveryOrderId,
-      customer: notificationCustomer,
-      channel: 'email',
-      type: 'order_created',
-      message: `Recebemos seu pedido ${deliveryOrderId}. Total: ${formatMoneyForNotification(total)}.`,
-    }),
-    sendDeliveryNotification({
-      orderId: deliveryOrderId,
-      customer: notificationCustomer,
-      channel: 'sms',
-      type: 'order_created',
-      message: `Becoartes: pedido ${deliveryOrderId} recebido.`,
-    }),
-    sendDeliveryNotification({
-      orderId: deliveryOrderId,
-      customer: notificationCustomer,
-      channel: 'whatsapp',
-      type: 'order_created',
-      message: `Becoartes: recebemos seu pedido ${deliveryOrderId}.`,
-    }),
-  ]);
-
-  if (productionOrderId) {
-    await materializeDeliveryProductionOrder({ orderId: deliveryOrderId, items: persistedItems, total });
-  }
-
-  const club = await getDeliveryClubSummary(customerId);
-  const trackingToken = createDeliveryOrderTrackingToken({
-    orderId: deliveryOrderId,
-    customerId,
-  });
-
-  return {
-    trackingToken,
-    order: {
-      id: deliveryOrderId,
-      orderId: deliveryOrderId,
-      createdAt: now,
-      total,
-      subtotal,
-      deliveryFee,
-      discount,
-      couponCode: safeCustomer.coupon,
-      customer: safeCustomer,
-      items: persistedItems,
-      paymentStatus: paymentResult.status,
-      paymentProvider: paymentResult.provider,
-      paymentExternalId: paymentResult.externalId,
-      checkoutUrl: paymentResult.checkoutUrl,
-      paymentInstructions: paymentResult.instructions || null,
-      kitchenStatus,
-      deliveryStatus: logistics.status,
-      kitchenSentAt,
-      deliveryRequestedAt,
-      deliveryProvider: logistics.provider,
-      deliveryExternalId: logistics.externalId,
-      integrationMode: getDeliveryIntegrationMode(),
-      club,
-    },
-  };
-};
+const createDeliveryCheckout = input => deliveryCommerce.checkout(input);
 
 const createOrderReadyRequest = async (orderId, { alreadyDelivered = false } = {}) => {
   const orderRes = await db.execute({
@@ -9044,7 +8609,34 @@ const enforceRouteAccess = createRouteAccessEnforcer({
   requirePermission,
 });
 
+const deliveryCommerce = createDeliveryCommerce({
+  db, ensureReady: ensureDatabaseReady, getCatalog: getCatalogData, normalizeCustomer: normalizeDeliveryCustomer,
+  publicStatus: DELIVERY_PUBLIC_STATUS, provider: DELIVERY_PAYMENT_PROVIDER, token: PAGBANK_TOKEN,
+  apiBase: PAGBANK_API_BASE_URL, localDatabase: isLocalLibsqlUrl, validCpf: isValidCpf,
+  simulationAllowed: process.env.DELIVERY_LOCAL_SIMULATION === '1', kitchenMode: DELIVERY_KITCHEN_DISPATCH_MODE,
+  buildPayload: createPagBankDeliveryOrderPayload, instructions: createPagBankPaymentInstructions,
+  trackingToken: createDeliveryOrderTrackingToken, authorizeOrder: getDeliveryOrder, readOrder: getDeliveryOrder,
+  dispatch: dispatchPaidDeliveryOrder,
+});
+const updateDeliveryFulfillment = async ({ orderId, status }, session) => {
+  if (!['preparing','ready','out_for_delivery','delivered'].includes(status)) throw new Error('Status inválido');
+  const row = (await db.execute({sql:'SELECT * FROM delivery_orders WHERE id=?',args:[orderId]})).rows[0];
+  if (!row || row.payment_status !== 'paid') throw new Error('Pedido ainda não pago.');
+  const steps = row.fulfillment === 'pickup' ? ['not_required_pickup','preparing','ready','delivered'] : ['awaiting_dispatch','preparing','ready','out_for_delivery','delivered'];
+  if (steps.indexOf(status) !== steps.indexOf(row.delivery_status) + 1) throw new Error('Avance uma etapa por vez.');
+  const results = await db.batch([{sql:'UPDATE delivery_orders SET delivery_status=? WHERE id=? AND delivery_status=?',args:[status,orderId,row.delivery_status]},
+    {sql:"INSERT INTO delivery_events(id,delivery_order_id,type,status,payload) SELECT ?,?,'fulfillment',?,? WHERE changes()>0",args:[createId(),orderId,status,JSON.stringify({author:session?.name || session?.id})]},
+    ...(status === 'delivered' && row.production_order_id ? [
+      {sql:"UPDATE orders SET status='closed' WHERE id=?",args:[row.production_order_id]},
+      {sql:"UPDATE production_tickets SET status='closed',updated_at=CURRENT_TIMESTAMP WHERE order_id=?",args:[row.production_order_id]},
+      {sql:"UPDATE service_requests SET status='resolved' WHERE id IN (?,?)",args:[`new_order_${row.production_order_id}`,`order_ready_${row.production_order_id}`]},
+    ] : [])],'write');
+  if (!results[0].rowsAffected) throw new Error('Pedido atualizado por outra pessoa. Atualize a tela.');
+  return getDeliveryOrder({orderId,session,includeEvents:true});
+};
+
 const handlers = createRouteHandlers({
+  deliveryCommerce, updateDeliveryFulfillment,
   qrPayments,
   activateOsUserAsSeller,
   addAuditLog,

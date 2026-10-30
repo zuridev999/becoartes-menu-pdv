@@ -1,3 +1,4 @@
+import { DeliverySettingsPanel, DeliveryOperationCards } from '../delivery/DeliverySettingsPanel';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'qrcode';
@@ -2949,6 +2950,8 @@ export function AdminView() {
 
       {activeTab === 'delivery' && canViewSalesTotals && (
         <div className="space-y-6">
+          {canManageSettings && <DeliverySettingsPanel />}
+          <DeliveryOperationCards canRecover={canManageSettings} orders={deliveryOrders} onRefresh={fetchDeliveryOrders} onDetails={openDeliveryOrderDetails} canOperate={can(currentSeller, 'sendOrderToProduction', permissionOverrides, userPermissionOverrides)} />
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="glass-card p-8 border-white/5">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Pedidos delivery</span>
@@ -2957,8 +2960,8 @@ export function AdminView() {
             </div>
             <div className="glass-card p-8 border-white/5">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Pagos</span>
-              <p className="text-4xl font-black text-emerald-400 mt-3">{deliveryOrders.filter((order) => order.paymentStatus.startsWith('paid')).length}</p>
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Cozinha e motoboy acionados</p>
+              <p className="text-4xl font-black text-emerald-400 mt-3">{deliveryOrders.filter((order) => order.paymentStatus === 'paid').length}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Pagamento confirmado — confira a operação</p>
             </div>
             <div className="glass-card p-8 border-white/5">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Aguardando</span>
@@ -2966,8 +2969,8 @@ export function AdminView() {
               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Pagamento pendente</p>
             </div>
             <div className="glass-card p-8 border-white/5">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Total bruto</span>
-              <p className="text-4xl font-black text-primary mt-3">{formatCurrency(deliveryOrders.reduce((acc, order) => acc + Number(order.total || 0), 0))}</p>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Recebido</span>
+              <p className="text-4xl font-black text-primary mt-3">{formatCurrency(deliveryOrders.filter(order => order.paymentStatus === 'paid').reduce((acc, order) => acc + Number(order.total || 0), 0))}</p>
               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600 mt-2">Inclui entregas e descontos</p>
             </div>
           </div>
@@ -2987,7 +2990,7 @@ export function AdminView() {
             </button>
           </div>
 
-          <div className="glass rounded-[3rem] border-white/5 overflow-hidden">
+          <div className="hidden xl:block glass rounded-[3rem] border-white/5 overflow-hidden">
             <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full min-w-[1300px] text-left">
                 <thead className="bg-white/5">

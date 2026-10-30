@@ -43,5 +43,5 @@ for (const [host, path] of [['qr.becoartes.com', '/'], ['qr.becoartes.com', '/me
 }
 const qrView = readFileSync(new URL('../src/views/qr/QRView.tsx', import.meta.url), 'utf8');
 assert.doesNotMatch(qrView, /GoogleAdBanner/);
-assert.equal(loadedScripts('delivery.becoartes.com', '/').appended.length, 1, 'Delivery continua com publicidade.');
-console.log('PDV sem anúncios fixos/automáticos; QR sem anúncios; Delivery preservado.');
+assert.equal(loadedScripts('delivery.becoartes.com', '/').appended.length, 0, 'Delivery não pode carregar publicidade.');
+console.log('PDV, QR e Delivery sem anúncios fixos ou automáticos.');

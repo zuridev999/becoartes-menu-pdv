@@ -108,15 +108,29 @@ assert.match(normalizeStoredPin('9071'), /^scrypt:[a-f0-9]{32}:[a-f0-9]{64}$/);
 
 const calls = [];
 const services = new Proxy({}, {
-  get: (_target, name) => async (...args) => {
-    calls.push({ name, args });
-    return { service: name, args };
-  },
+  get: (_target, name) => name === 'deliveryCommerce'
+    ? new Proxy({}, {
+      get: (_deliveryTarget, operation) => async (...args) => {
+        const serviceName = `deliveryCommerce.${String(operation)}`;
+        calls.push({ name: serviceName, args });
+        return { service: serviceName, args };
+      },
+    })
+    : async (...args) => {
+      calls.push({ name, args });
+      return { service: name, args };
+    },
 });
 const handlers = createRouteHandlers(services);
 
-assert.equal(Object.keys(handlers).length, 114, 'route registry lost or duplicated operational endpoints');
+assert.equal(Object.keys(handlers).length, 120, 'route registry lost or duplicated operational endpoints');
 for (const route of [
+  'GET /api/delivery/settings',
+  'POST /api/delivery/settings',
+  'POST /api/delivery/fulfillment',
+  'POST /api/delivery/payment/recover',
+  'POST /api/delivery/payment/abandon',
+  'POST /api/delivery/payment/simulate',
   'POST /api/qr/payments/summary',
   'POST /api/qr/payments/create',
   'POST /api/qr/payments/status',
@@ -185,7 +199,7 @@ const deliveryContext = {
 };
 await handlers['GET /api/delivery/order']({}, deliveryContext);
 assert.deepEqual(calls.at(-1), {
-  name: 'getDeliveryOrder',
+  name: 'deliveryCommerce.refresh',
   args: [{
     orderId: 'delivery_owner_test',
     session: deliveryContext.session,

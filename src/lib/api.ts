@@ -681,6 +681,7 @@ export const OperationalApi = {
 
 export type DeliveryCheckoutInput = {
   orderId: string;
+  requestKey: string;
   customer: {
     name: string;
     phone: string;
@@ -717,7 +718,9 @@ export type DeliveryCheckoutInput = {
 };
 
 export type DeliveryQuoteResult = {
+  items?: OrderItem[];
   quote: {
+    subtotal: number; discount: number; total: number;
     status: string;
     provider: string;
     deliveryFee: number;
@@ -829,9 +832,23 @@ export type DeliveryCustomerSession = {
   expiresAt: string;
 };
 
+export type DeliverySettings = {
+  acceptingOrders: boolean; pickupEnabled: boolean; deliveryEnabled: boolean; logistics: 'manual' | 'ifood';
+  pickupAddress: string; preparationMinutes: number; minimumOrder: number; deliveryFee: number;
+  postalPrefixes: string[]; hours: { enabled: boolean; start: string; end: string }[];
+  coupons: DeliveryCouponConfig[]; clubEnabled: boolean; ifood: { enabled: boolean; status: string };
+};
+export type DeliveryConfig = { settings: DeliverySettings; openNow: boolean; environment: string; paymentReady: boolean; kitchenReady: boolean; ifoodReady: boolean };
+
 export const DeliveryApi = {
+  settings() { return getJson<DeliveryConfig>('/api/delivery/settings'); },
+  saveSettings(settings: DeliverySettings) { return postJson<DeliveryConfig>('/api/delivery/settings', {settings}); },
+  fulfillment(orderId: string, status: string) { return postJson<{order: DeliveryOrderSummary}>('/api/delivery/fulfillment', {orderId,status}); },
+  changePayment(orderId: string) { return postJson<{order: DeliveryOrderSummary}>('/api/delivery/payment/abandon', {orderId,trackingToken:getDeliveryTrackingToken(orderId)}); },
+  simulate(orderId: string) { return postJson<{order: DeliveryOrderSummary}>('/api/delivery/payment/simulate', {orderId,trackingToken:getDeliveryTrackingToken(orderId)}); },
+
   config() {
-    return getJson<{
+    return getJson<DeliveryConfig & {
       mode: Record<string, unknown>;
       club: {
         enabled: boolean;
@@ -917,6 +934,10 @@ export const DeliveryApi = {
     return getJson<{ orders: DeliveryOrderSummary[] }>(`/api/delivery/orders?limit=${encodeURIComponent(String(limit))}`);
   },
 
+  recoverPayment(orderId: string, externalId: string) {
+    return postJson<{order:DeliveryOrderSummary}>('/api/delivery/payment/recover',{orderId,externalId});
+  },
+
   registerCustomer(input: { customer: DeliveryCheckoutInput['customer']; password: string }) {
     return postJson<{ customer: DeliveryCustomerAccount; verification?: { expiresAt: string } }>('/api/delivery/customer/register', input);
   },
@@ -973,6 +994,14 @@ const hydrateSnapshot = (snapshot: any) => ({
   })),
   tables: (snapshot.tables || []).map((table: any) => ({
     ...table,
+    orders: (table.orders || []).map((item: any) => ({
+      ...item,
+      orderedAt: item.orderedAt ? new Date(item.orderedAt) : undefined,
+    })),
+    cart: (table.cart || []).map((item: any) => ({
+      ...item,
+      orderedAt: item.orderedAt ? new Date(item.orderedAt) : undefined,
+    })),
     customerTab: table.customerTab ? hydrateCustomerTab(table.customerTab) : null,
     payments: (table.payments || []).map((payment: any) => ({
       ...payment,

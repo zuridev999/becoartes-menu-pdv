@@ -1,0 +1,36 @@
+.pdv-order-card {
+  position: relative;
+  border: 1px solid #7045a0;
+  border-radius: 12px;
+  background: #2d1946;
+  box-shadow: inset 3px 0 #c084fc, inset 0 1px rgb(255 255 255 / 9%);
+  transition: border-color .16s ease, background .16s ease;
+}
+.pdv-order-card:hover { border-color:#a66bd7; background:#382054; }
+.pdv-order-card-main { display:flex; width:100%; min-height:0; flex-direction:column; justify-content:flex-start; padding:13px 126px 12px 17px; text-align:left; }
+.pdv-order-card-operator .pdv-order-card-main { min-height:96px; }
+.pdv-order-card-admin.pdv-order-card-simple .pdv-order-card-main { min-height:54px; padding-bottom:7px; }
+.pdv-order-card-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+.pdv-order-card-title { min-width:0; flex:1; color:#fff; font-size:19px; line-height:1.2; font-weight:850; letter-spacing:-.025em; }
+.pdv-order-card-numbers { position:absolute; top:13px; right:13px; display:flex; flex:0 0 auto; flex-direction:column; align-items:flex-end; gap:4px; }
+.pdv-order-card-numbers strong { color:#fff; font-size:17px; line-height:1; font-weight:850; font-variant-numeric:tabular-nums; }
+.pdv-order-card-numbers small { display:inline-flex; align-items:center; gap:4px; color:#f28b8b; font-size:12px; font-weight:850; font-variant-numeric:tabular-nums; }
+.pdv-order-card-meta { display:flex; min-width:0; flex-wrap:wrap; align-items:center; gap:0; margin-top:7px; color:#fff; font-size:13px; line-height:1.25; font-weight:750; }
+.pdv-order-card-meta > span + span::before { content:'·'; margin:0 7px; color:#8d8d92; }
+.pdv-order-card-option { color:#fff; font-size:14px; font-weight:800; }
+.pdv-order-card-note { display:flex; min-width:0; align-items:center; gap:6px; margin-top:7px; color:#fff; }
+.pdv-order-card-note p { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; line-height:1.25; font-weight:650; }
+.pdv-order-card-note span { font-weight:850; }
+.pdv-order-card-actions { position:absolute; right:12px; bottom:11px; display:flex; align-items:center; justify-content:flex-end; gap:7px; }
+.pdv-order-card-actions-admin { position:static; padding:0 12px 12px; }
+.pdv-order-card-actions button { display:inline-flex; min-height:32px; align-items:center; gap:6px; border-radius:8px; padding:7px 10px; font-size:11px; font-weight:850; letter-spacing:.03em; text-transform:uppercase; transition:background .15s ease,border-color .15s ease,color .15s ease; }
+.pdv-order-repeat { border:1px solid #c084fc; background:#f5efff; color:#4c1d95; }
+.pdv-order-repeat:hover { border-color:#a855f7; background:#fff; }
+.pdv-order-edit { border:1px solid #737378; background:#303034; color:#fff; }
+.pdv-order-edit:hover { border-color:#a3a3a8; background:#3c3c40; }
+.pdv-order-card button:focus-visible { outline:3px solid #38bdf8; outline-offset:2px; }
+.light .pdv-order-card { border-color:#c9c9cd; background:#fff; box-shadow:0 1px 4px rgb(0 0 0 / 8%); }
+.light .pdv-order-card:hover { border-color:#8d8d92; background:#f8f8f9; }
+.light .pdv-order-card-title,.light .pdv-order-card-numbers strong,.light .pdv-order-card-option,.light .pdv-order-card-note { color:#17171a; }
+.light .pdv-order-card-numbers small { color:#b4232e; }
+@media(max-width:420px) { .pdv-order-card-main { padding:12px 108px 11px 15px; } .pdv-order-card-operator .pdv-order-card-main { min-height:94px; } .pdv-order-card-title { font-size:18px; } .pdv-order-card-numbers { top:12px; right:11px; } .pdv-order-card-numbers strong { font-size:16px; } .pdv-order-card-actions { right:10px; bottom:10px; } .pdv-order-card-actions button { padding:6px 8px; font-size:10px; } }
