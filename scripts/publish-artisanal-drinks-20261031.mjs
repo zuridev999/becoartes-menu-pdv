@@ -79,6 +79,11 @@ for (const product of products.filter(product => product.spiritId)) {
 const companies = new Set([...stocks.values()].map(stock => stock.empresa_id));
 if (companies.size !== 1) throw new Error('Insumos de empresas diferentes.');
 const companyId = [...companies][0];
+const creatorId = (await db.execute({
+  sql: 'SELECT criado_por_id FROM fichas_tecnicas WHERE pdv_product_id = ? AND empresa_id = ? LIMIT 1',
+  args: ['46gcrhr62', companyId],
+})).rows[0]?.criado_por_id;
+if (!creatorId) throw new Error('Usuário criador das fichas técnicas não encontrado.');
 const maxCode = Number((await db.execute('SELECT COALESCE(MAX(product_code),99) AS n FROM menu WHERE product_code BETWEEN 100 AND 9999')).rows[0].n);
 if (maxCode + products.length > 9999) throw new Error('Códigos de produto esgotados.');
 const preview = products.map((product, index) => ({
@@ -121,9 +126,9 @@ products.forEach((product, index) => {
     const spiritCost = Number(stock.preco_custo) * spiritMl;
     const recipeId = `artisanal_recipe_${product.flavorPrefix}_20261031`;
     statements.push({
-      sql: `INSERT INTO fichas_tecnicas (id,empresa_id,nome_prato,categoria,preco_venda,custo_total,cmv_percentual,modo_preparo,created_at,updated_at,pdv_product_id,pdv_product_name)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [recipeId, companyId, product.name, 'Bebidas', product.price, spiritCost, 100 * spiritCost / product.price, `Parceiro fornece frutas e preparo por R$ 30 por unidade. Casa fornece ${spiritMl} ml de ${stock.nome}.`, now, now, product.id, product.name],
+      sql: `INSERT INTO fichas_tecnicas (id,empresa_id,nome_prato,categoria,preco_venda,custo_total,cmv_percentual,modo_preparo,criado_por_id,created_at,updated_at,pdv_product_id,pdv_product_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      args: [recipeId, companyId, product.name, 'Bebidas', product.price, spiritCost, 100 * spiritCost / product.price, `Parceiro fornece frutas e preparo por R$ 30 por unidade. Casa fornece ${spiritMl} ml de ${stock.nome}.`, creatorId, now, now, product.id, product.name],
     });
     statements.push({
       sql: `INSERT INTO ficha_ingredientes (id,ficha_tecnica_id,nome_ingrediente,preco_pacote,tamanho_pacote,unidade_medida,quantidade_usada,custo_porcao,tipo,created_at,estoque_produto_id,estoque_produto_nome,nome_exibicao,quantidade_estoque_baixa,unidade_estoque_baixa,fator_conversao)
