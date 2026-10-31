@@ -63,6 +63,8 @@ export interface Product {
   stockQuantity?: number | null;
   stockMinimum?: number | null;
   cost?: number;
+  externalFulfillment?: boolean;
+  externalServiceCost?: number;
   costSource?: 'cmv' | 'stock' | 'manual';
   cmvId?: string;
   cmvStatus?: 'complete' | 'empty' | 'incomplete' | 'direct_stock' | 'missing';

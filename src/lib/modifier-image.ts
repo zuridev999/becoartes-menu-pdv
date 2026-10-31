@@ -11,7 +11,19 @@ const references: Record<string, string> = {
   'calabresa pra 2': '/images/calabresa.jpg', 'file de frango pra dois': '/images/file-de-frango.jpg',
   'contra file pra dois': '/images/contra-file-acebolado.jpg', 'omelete pra dois': '/images/omelete.jpg',
 };
+const artisanalFlavorImages: Record<string, string> = {
+  artisanal_cachaca_limoeiro: '/images/artesanais/cachaca-limoeiro.webp',
+  artisanal_cachaca_carioquinha: '/images/artesanais/cachaca-carioquinha.webp',
+  artisanal_cachaca_chuva_do_caju: '/images/artesanais/cachaca-chuva-do-caju.webp',
+  artisanal_vodka_limoeiro: '/images/artesanais/vodka-limoeiro.webp',
+  artisanal_vodka_carioquinha: '/images/artesanais/vodka-carioquinha.webp',
+  artisanal_vodka_chuva_do_caju: '/images/artesanais/vodka-chuva-do-caju.webp',
+  artisanal_saque_limoeiro: '/images/artesanais/saque-limoeiro.webp',
+  artisanal_saque_carioquinha: '/images/artesanais/saque-carioquinha.webp',
+  artisanal_saque_chuva_do_caju: '/images/artesanais/saque-chuva-do-caju.webp',
+};
 export function getModifierImage(modifier: Modifier, products: Product[] = []) {
+  if (artisanalFlavorImages[modifier.id]) return artisanalFlavorImages[modifier.id];
   const linked = products.find(p => p.id === modifier.linkedProductId);
   if (linked?.image) return linked.image;
   const name = normalize(modifier.name);

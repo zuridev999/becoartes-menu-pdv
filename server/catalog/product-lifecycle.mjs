@@ -5,6 +5,8 @@ export const getPdvPublishBlockers = ({
   price,
   categoryFound,
   directStockFound,
+  externalFulfillment,
+  externalServiceCost,
   recipeId,
   ingredientCount,
   unlinkedIngredientCount,
@@ -24,7 +26,11 @@ export const getPdvPublishBlockers = ({
     blockers.push('Vincule o produto a uma categoria válida.');
   }
 
-  if (!directStockFound) {
+  if (externalFulfillment && (!Number.isFinite(Number(externalServiceCost)) || Number(externalServiceCost) <= 0)) {
+    blockers.push('Informe o custo do preparo externo.');
+  }
+
+  if (!directStockFound && !externalFulfillment) {
     if (!normalizeText(recipeId)) {
       blockers.push('Vincule um estoque direto ou cadastre a ficha técnica do produto.');
     } else if (Number(ingredientCount || 0) === 0) {

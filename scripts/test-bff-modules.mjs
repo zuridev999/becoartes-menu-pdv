@@ -293,6 +293,21 @@ assert.deepEqual(getPdvPublishBlockers({
 }), []);
 
 assert.deepEqual(getPdvPublishBlockers({
+  name: 'Caipirinha Artesanal',
+  price: 39.99,
+  categoryFound: true,
+  externalFulfillment: true,
+  externalServiceCost: 30,
+}), []);
+assert.deepEqual(getPdvPublishBlockers({
+  name: 'Caipirinha Artesanal',
+  price: 39.99,
+  categoryFound: true,
+  externalFulfillment: true,
+  externalServiceCost: 0,
+}), ['Informe o custo do preparo externo.']);
+
+assert.deepEqual(getPdvPublishBlockers({
   name: 'Produto incompleto',
   price: 0,
   categoryFound: false,

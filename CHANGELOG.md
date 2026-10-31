@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.32.0 - 2026-10-31
+
+- Permite registrar o custo de um preparo artesanal externo sem criar estoque fictício ou alertas de falta de insumo.
+- Soma o custo do parceiro ao custo da ficha técnica nas versões com vodka e saquê, baixando somente a dose fornecida pela casa.
+- Adiciona fotos específicas para os nove sabores artesanais e traduções de nomes e descrições nos idiomas do cardápio.
+- Prepara a publicação idempotente de Caipirinha, Saquerinha e Caipiroska Artesanal sem alterar os drinks existentes.
+
 ## 1.31.1 - 2026-10-30
 
 - Permite que a Zuri consulte os itens atuais de uma mesa mesmo quando já existe pagamento ativo, informando esse estado sem modificar a cobrança.

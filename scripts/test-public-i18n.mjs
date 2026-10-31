@@ -30,6 +30,9 @@ assert.equal(getPublicLanguages({ publicLanguages: [{ code: 'fr-FR', enabled: fa
 assert.equal(getCatalogBaseTranslation('fr-FR', '  MARACUJÁ '), 'Fruit de la passion');
 assert.equal(getCatalogBaseTranslation('fr-FR', 'Contra Filé Acebolado para 2 (batata inclusa)'), 'Faux-filet aux oignons pour deux (frites incluses)');
 assert.equal(getCatalogBaseTranslation('en-US', 'Escolha o sabor'), 'Choose your flavor');
+assert.equal(getCatalogBaseTranslation('en-US', 'Caipirinha Artesanal'), 'Artisanal Caipirinha');
+assert.equal(getCatalogBaseTranslation('es-ES', 'Sabores artesanais'), 'Sabores artesanales');
+assert.ok(getCatalogBaseTranslation('fr-FR', 'Chuva do Caju — caju, limão-siciliano e gengibre'));
 assert.equal(getCatalogBaseTranslation('fr-FR', 'unknown new product'), undefined, 'Unknown products must keep their source text instead of inventing a translation.');
 
 // Optional read-only snapshot: validate the entire currently visible production catalog.

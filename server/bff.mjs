@@ -749,7 +749,7 @@ const getSessionFromRequest = (req) => {
 const ensureDatabase = async () => {
   await db.batch([
     "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, schedule_config TEXT, sort_order INTEGER DEFAULT 0, visible INTEGER DEFAULT 1)",
-    "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category TEXT, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, delivery_visible INTEGER DEFAULT 1, product_code INTEGER, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0, sort_order INTEGER DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS menu (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, price REAL NOT NULL, category TEXT, category_id TEXT, image TEXT, visible INTEGER DEFAULT 1, delivery_visible INTEGER DEFAULT 1, product_code INTEGER, erp_code TEXT, remote_stock_id TEXT, schedule_config TEXT, cost REAL DEFAULT 0, sort_order INTEGER DEFAULT 0, external_fulfillment INTEGER NOT NULL DEFAULT 0, external_service_cost REAL NOT NULL DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS modifier_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, min_choices INTEGER DEFAULT 0, max_choices INTEGER DEFAULT 1, is_required INTEGER DEFAULT 0, status TEXT DEFAULT 'active')",
     "CREATE TABLE IF NOT EXISTS modifiers (id TEXT PRIMARY KEY, group_id TEXT, linked_product_id TEXT, name TEXT NOT NULL, price REAL NOT NULL, status TEXT DEFAULT 'active', sort_order INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS product_modifier_groups (product_id TEXT, group_id TEXT, sort_order INTEGER DEFAULT 0, PRIMARY KEY(product_id, group_id))",
@@ -3372,6 +3372,14 @@ const appendInventoryPlansForSoldItem = async ({
   const requestedQuantity = toStockAmount(quantity);
   if (requestedQuantity <= 0) return;
 
+  if (sourceKind === 'product' && productId) {
+    const external = await db.execute({
+      sql: 'SELECT external_fulfillment FROM menu WHERE id = ? LIMIT 1',
+      args: [productId],
+    });
+    if (Number(external.rows?.[0]?.external_fulfillment || 0) === 1) return;
+  }
+
   const directSourceId = productId || name;
   if (await hasPdvStockMovement({ orderItemId, sourceItemKind: sourceKind, sourceItemId: directSourceId })) {
     return;
@@ -5646,7 +5654,7 @@ const getPdvProductPublishReadiness = async ({
   categoryId,
   remoteStockId,
 }) => {
-  const [categoryResult, directStockResult, recipeResult] = await Promise.all([
+  const [categoryResult, directStockResult, recipeResult, externalResult] = await Promise.all([
     categoryId
       ? db.execute({
         sql: 'SELECT id FROM categories WHERE id = ? LIMIT 1',
@@ -5717,6 +5725,10 @@ const getPdvProductPublishReadiness = async ({
       `,
       args: [productId],
     }),
+    db.execute({
+      sql: 'SELECT external_fulfillment, external_service_cost FROM menu WHERE id = ? LIMIT 1',
+      args: [productId],
+    }),
   ]);
 
   const recipe = recipeResult.rows[0] || null;
@@ -5725,6 +5737,8 @@ const getPdvProductPublishReadiness = async ({
     price,
     categoryFound: Boolean(categoryResult.rows[0]),
     directStockFound: Boolean(directStockResult.rows[0]),
+    externalFulfillment: Number(externalResult.rows?.[0]?.external_fulfillment || 0) === 1,
+    externalServiceCost: Number(externalResult.rows?.[0]?.external_service_cost || 0),
     recipeId: recipe?.id || '',
     ingredientCount: Number(recipe?.ingredient_count || 0),
     unlinkedIngredientCount: Number(recipe?.unlinked_count || 0),
@@ -5764,7 +5778,7 @@ const upsertProduct = async ({ product }, session = null) => {
   const productId = requireString(p.id, 'product.id');
   const settings = await getSettings();
   const existing = await db.execute({
-    sql: "SELECT name, description, price, cost, category_id, image, visible, delivery_visible, product_code, erp_code, remote_stock_id, schedule_config, sort_order FROM menu WHERE id = ? LIMIT 1",
+    sql: "SELECT name, description, price, cost, category_id, image, visible, delivery_visible, product_code, erp_code, remote_stock_id, schedule_config, sort_order, external_service_cost FROM menu WHERE id = ? LIMIT 1",
     args: [productId],
   });
   const currentProduct = existing.rows[0] || null;
@@ -5795,7 +5809,7 @@ const upsertProduct = async ({ product }, session = null) => {
       requirePermission(session, 'editProductPrice', settings);
     }
 
-    const currentCost = Number(currentProduct.cost || 0);
+    const currentCost = Number(currentProduct.cost || 0) + Number(currentProduct.external_service_cost || 0);
     const nextCost = Number(p.cost || 0);
     if (Math.abs(currentCost - nextCost) > 0.001) {
       requirePermission(session, 'editProductPrice', settings);

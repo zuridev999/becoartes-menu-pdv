@@ -46,11 +46,13 @@ return async (availability = { productBlocked: new Set() }) => {
     remoteStockId: row.remote_stock_id || '',
     stockQuantity: row.remote_stock_id ? Number(row.stock_quantity || 0) : null,
     stockMinimum: row.remote_stock_id ? Number(row.stock_minimum || 0) : null,
-    cost: row.cmv_id
+    cost: (row.cmv_id
       ? Number(row.cmv_cost || 0)
       : row.remote_stock_id
         ? Number(row.stock_cost || 0)
-        : Number(row.cost || 0),
+        : Number(row.cost || 0)) + Number(row.external_service_cost || 0),
+    externalFulfillment: row.external_fulfillment === 1,
+    externalServiceCost: Number(row.external_service_cost || 0),
     costSource: row.cmv_id ? 'cmv' : row.remote_stock_id ? 'stock' : 'manual',
     cmvId: row.cmv_id || '',
     cmvIngredientCount: Number(row.cmv_ingredient_count || 0),
@@ -63,6 +65,8 @@ return async (availability = { productBlocked: new Set() }) => {
           : 'complete'
       : row.remote_stock_id
         ? 'direct_stock'
+      : row.external_fulfillment === 1 && Number(row.external_service_cost || 0) > 0
+        ? 'complete'
         : 'missing',
     modifierGroups: [],
   }));

@@ -12,6 +12,14 @@ const executeSql = (sql) => ({ type: 'execute_sql', sql });
 
 export const SCHEMA_MIGRATIONS = [
   {
+    id: '20261031_0001_artisanal_external_preparation',
+    description: 'Track externally prepared menu items and their per-sale partner cost without fictitious stock.',
+    steps: [
+      addColumn('menu', 'external_fulfillment', 'INTEGER NOT NULL DEFAULT 0'),
+      addColumn('menu', 'external_service_cost', 'REAL NOT NULL DEFAULT 0'),
+    ],
+  },
+  {
     id: '20261029_0001_table_attendance_nickname',
     description: 'Optional internal nickname scoped to the current table attendance.',
     steps: [

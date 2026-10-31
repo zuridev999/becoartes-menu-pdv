@@ -62,7 +62,7 @@ export const persistCanonicalMenuProduct = async ({
       product.erpCode || null,
       product.remoteStockId || null,
       product.schedule ? JSON.stringify(product.schedule) : null,
-      Number(product.cost || 0),
+      Math.max(0, Number(product.cost || 0) - Number(currentProduct?.external_service_cost || 0)),
       Number(product.sortOrder || 0),
     ],
   });
