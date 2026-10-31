@@ -21,6 +21,9 @@ const artisanalFlavorImages: Record<string, string> = {
   artisanal_saque_limoeiro: '/images/artesanais/saque-limoeiro.webp',
   artisanal_saque_carioquinha: '/images/artesanais/saque-carioquinha.webp',
   artisanal_saque_chuva_do_caju: '/images/artesanais/saque-chuva-do-caju.webp',
+  artisanal_gin_limoeiro: '/images/artesanais/gin-limoeiro.webp',
+  artisanal_gin_carioquinha: '/images/artesanais/gin-carioquinha.webp',
+  artisanal_gin_chuva_do_caju: '/images/artesanais/gin-chuva-do-caju.webp',
 };
 export function getModifierImage(modifier: Modifier, products: Product[] = []) {
   if (artisanalFlavorImages[modifier.id]) return artisanalFlavorImages[modifier.id];

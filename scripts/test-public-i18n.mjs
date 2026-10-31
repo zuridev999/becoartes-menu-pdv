@@ -31,6 +31,9 @@ assert.equal(getCatalogBaseTranslation('fr-FR', '  MARACUJÁ '), 'Fruit de la pa
 assert.equal(getCatalogBaseTranslation('fr-FR', 'Contra Filé Acebolado para 2 (batata inclusa)'), 'Faux-filet aux oignons pour deux (frites incluses)');
 assert.equal(getCatalogBaseTranslation('en-US', 'Escolha o sabor'), 'Choose your flavor');
 assert.equal(getCatalogBaseTranslation('en-US', 'Caipirinha Artesanal'), 'Artisanal Caipirinha');
+assert.equal(getCatalogBaseTranslation('en-US', 'Caipirgin Artesanal'), 'Artisanal Gin Caipirinha');
+assert.equal(getCatalogBaseTranslation('fr-FR', 'Caipirgin Artesanal'), 'Caipirgin artisanale');
+assert.equal(getCatalogBaseTranslation('es-ES', 'Caipirgin Artesanal'), 'Caipirgin artesanal');
 assert.equal(getCatalogBaseTranslation('es-ES', 'Sabores artesanais'), 'Sabores artesanales');
 assert.ok(getCatalogBaseTranslation('fr-FR', 'Chuva do Caju — caju, limão-siciliano e gengibre'));
 assert.equal(getCatalogBaseTranslation('fr-FR', 'unknown new product'), undefined, 'Unknown products must keep their source text instead of inventing a translation.');

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.32.1 - 2026-10-31
+
+- Adiciona Caipirgin Artesanal por R$ 64,99 com três fotos do gin Apogee Classic, sabores obrigatórios e ficha de 50 ml vinculada ao estoque real.
+- Ajusta Caipiroska Artesanal para R$ 56,99, preservando os demais drinks visíveis e seus cadastros.
+- Traduz nome e descrição do Caipirgin nos idiomas públicos do cardápio.
+
 ## 1.32.0 - 2026-10-31
 
 - Permite registrar o custo de um preparo artesanal externo sem criar estoque fictício ou alertas de falta de insumo.
