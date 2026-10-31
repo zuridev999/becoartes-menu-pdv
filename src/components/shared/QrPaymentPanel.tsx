@@ -2,26 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { AccountStaffActions } from './AccountStaffActions';
 import QRCode from 'qrcode';
 import { motion, useReducedMotion } from 'framer-motion';
-import { CheckCircle2, CreditCard, Loader2, QrCode } from 'lucide-react';
+import { CheckCircle2, Loader2, QrCode } from 'lucide-react';
 import { QrPaymentsApi, type QrPaymentContext, type QrPaymentIntent, type QrPaymentSummary } from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
 import { usePublicI18n } from '../../lib/public-i18n';
 
-let sdkPromise: Promise<void> | null = null;
-async function loadCardSdk() {
-  if (window.PagSeguro?.encryptCard) return window.PagSeguro;
-  if (!sdkPromise) sdkPromise = new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://assets.pagseguro.com.br/checkout-sdk-js/rc/dist/browser/pagseguro.min.js';
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => { script.remove(); sdkPromise = null; reject(new Error('paymentError')); };
-    document.head.appendChild(script);
-  });
-  await sdkPromise;
-  if (!window.PagSeguro?.encryptCard) throw new Error('paymentError');
-  return window.PagSeguro;
-}
 const inputClass = 'min-h-12 w-full min-w-0 rounded-xl border border-white/15 bg-white/5 px-3 text-base text-white';
 
 export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: { context: QrPaymentContext; onPaid: () => void; expanded: boolean; onExpand: () => void; onBack: () => void }) {
@@ -31,9 +16,7 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: 
   useEffect(() => { if (expanded) headingRef.current?.focus({ preventScroll: true }); }, [expanded]);
   const [summary, setSummary] = useState<QrPaymentSummary | null>(null);
   const [intent, setIntent] = useState<QrPaymentIntent | null>(null);
-  const [method, setMethod] = useState<'pix' | 'credit'>('pix');
   const [customer, setCustomer] = useState({ name: '', email: '', taxId: '' });
-  const [card, setCard] = useState({ number: '', expiry: '', cvv: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [image, setImage] = useState('');
@@ -82,27 +65,13 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: 
     if (lock.current || !summary) return;
     lock.current = true; setBusy(true); setError('');
     try {
-      let encryptedCard: string | undefined;
-      if (method === 'credit') {
-        if (summary.environment === 'simulator') encryptedCard = 'SIMULATED_ENCRYPTED_CARD';
-        else {
-          const key = await QrPaymentsApi.publicKey(context);
-          const sdk = await loadCardSdk();
-          const parts = card.expiry.split('/').map(value => value.trim());
-          const result = sdk.encryptCard({ publicKey: key.publicKey, holder: customer.name,
-            number: card.number.replace(/\D/g, ''), expMonth: parts[0],
-            expYear: parts[1]?.length === 2 ? `20${parts[1]}` : parts[1], securityCode: card.cvv });
-          if (result.hasErrors || !result.encryptedCard) throw new Error('paymentCardInvalid');
-          encryptedCard = result.encryptedCard;
-        }
-      }
-      const next = await QrPaymentsApi.create(context, { method, expectedAmount: summary.balance, customer, encryptedCard });
-      setIntent(next); setCopied(false); setCard({ number: '', expiry: '', cvv: '' });
+      const next = await QrPaymentsApi.create(context, { method: 'pix', expectedAmount: summary.balance, customer });
+      setIntent(next); setCopied(false);
       if (next.status === 'paid') paidCallback.current();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : '';
       const code = cause && typeof cause === 'object' && 'code' in cause ? String(cause.code) : '';
-      setError(['paymentAmountRejected', 'paymentCpfInvalid', 'paymentSetupError'].includes(code) ? code : message === 'paymentCardInvalid' ? message : message.includes('conta foi atualizada') ? 'paymentUpdated' : message.includes('Informe nome') ? 'paymentCustomerRequired' : 'paymentError');
+      setError(['paymentAmountRejected', 'paymentCpfInvalid', 'paymentSetupError'].includes(code) ? code : message.includes('conta foi atualizada') ? 'paymentUpdated' : message.includes('Informe nome') ? 'paymentCustomerRequired' : 'paymentError');
       const current = await QrPaymentsApi.summary(context).catch(() => null);
       if (current) { setSummary(current); setIntent(current.intent); }
     } finally { lock.current = false; setBusy(false); }
@@ -122,7 +91,7 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: 
       if (next.status === 'paid') { setIntent(next); paidCallback.current(); return; }
       if (next.status !== 'abandoned') { setIntent(next); setError(next.status === 'review' ? 'paymentReview' : 'paymentChangeError'); return; }
       const current = await QrPaymentsApi.summary(context);
-      setSummary(current); setIntent(current.intent); setMethod('credit'); setConfirmSwitch(false); setCopied(false); setImage('');
+      setSummary(current); setIntent(current.intent); setConfirmSwitch(false); setCopied(false); setImage('');
     } catch { setError('paymentChangeError'); }
     finally { lock.current = false; setBusy(false); }
   };
@@ -131,7 +100,7 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: 
   if (summary.balance <= 0 && !intent) return null;
   const blocked = intent && ['creating', 'pending', 'unknown', 'review'].includes(intent.status);
   if (!expanded) return <div><button type="button" onClick={onExpand} className="mt-6 flex min-h-16 w-full items-center justify-center gap-3 rounded-2xl bg-white px-4 py-4 text-base font-bold text-red-700 transition hover:bg-red-50 sm:text-lg">
-    <CreditCard size={22} className="shrink-0" />{t(blocked || intent?.status === 'paid' ? 'paymentView' : 'paymentStart')}
+    <QrCode size={22} className="shrink-0" />{t(blocked || intent?.status === 'paid' ? 'paymentView' : 'paymentStart')}
   </button>
     {!blocked && intent?.status !== 'paid' && <p className="mt-3 text-sm leading-relaxed text-zinc-300">{t('paymentCpfNotice')} {t('paymentVisitorNotice')}</p>}
   </div>;
@@ -163,20 +132,14 @@ export function QrPaymentPanel({ context, onPaid, expanded, onExpand, onBack }: 
       {summary.environment === 'simulator' && intent.status === 'pending' && <div className="flex flex-wrap gap-2"><button disabled={busy} type="button" className="min-h-12 rounded-xl bg-emerald-600 p-3 font-bold" onClick={() => void simulate('paid')}>{t('paymentSimulatePaid')}</button><button disabled={busy} type="button" className="min-h-12 rounded-xl bg-white/10 p-3" onClick={() => void simulate('declined')}>{t('paymentSimulateDeclined')}</button></div>}
     </div> : <form aria-busy={busy} onSubmit={submit} className="min-w-0">
       <fieldset disabled={busy} className="min-w-0 space-y-5">
-      <legend className="sr-only">{t('paymentMethod')}</legend>
       {intent && ['failed', 'expired'].includes(intent.status) && <p role="status" className="text-amber-200">{t(intent.status === 'expired' ? 'paymentExpired' : 'paymentDeclined')}</p>}
-      <div className="grid grid-cols-2 gap-3">{(['pix', 'credit'] as const).map(value => <button key={value} type="button" aria-pressed={method === value} onClick={() => { setMethod(value); setError(''); }} className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl border px-2 py-3 text-sm font-bold transition ${method === value ? 'border-red-700 bg-white text-red-700 ring-2 ring-red-700' : 'border-red-200 bg-white text-red-700 hover:bg-red-50'}`}>{value === 'pix' ? <QrCode size={24} /> : <CreditCard size={24} />}{value === 'pix' ? 'Pix' : t('paymentCredit')}</button>)}</div>
+      <div className="flex min-h-16 items-center justify-center gap-3 rounded-2xl border border-red-700 bg-white px-4 py-3 text-base font-bold text-red-700"><QrCode size={24} />Pix</div>
       <div className="space-y-4">
         <label className="block text-sm text-zinc-300">{t('paymentFullName')}<input autoComplete="name" required maxLength={100} className={`${inputClass} mt-2`} value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} /></label>
         <label className="block text-sm text-zinc-300">{t('paymentEmail')}<input type="email" autoComplete="email" autoCapitalize="none" required maxLength={150} className={`${inputClass} mt-2`} value={customer.email} onChange={e => setCustomer({ ...customer, email: e.target.value })} /></label>
         <label className="block text-sm text-zinc-300">{t('paymentCpf')}<input aria-describedby="qr-payment-cpf-notice" inputMode="numeric" required pattern="[0-9]{11}" maxLength={11} placeholder={t('paymentCpfHint')} className={`${inputClass} mt-2`} value={customer.taxId} onChange={e => setCustomer({ ...customer, taxId: e.target.value.replace(/\D/g, '') })} /></label>
       </div>
-      {method === 'credit' && <fieldset className="min-w-0 space-y-4 border-t border-white/10 pt-5"><legend className="sr-only">{t('paymentCredit')}</legend>
-        <label className="block text-sm text-zinc-300">{t('paymentCardNumber')}<input autoComplete="cc-number" inputMode="numeric" required maxLength={23} className={`${inputClass} mt-2`} value={card.number} onChange={e => setCard({ ...card, number: e.target.value.replace(/[^\d ]/g, '') })} /></label>
-        <div className="grid grid-cols-2 gap-3"><label className="block text-sm text-zinc-300">{t('paymentExpiry')}<input autoComplete="cc-exp" inputMode="numeric" placeholder={t('paymentExpiryHint')} required maxLength={7} className={`${inputClass} mt-2`} value={card.expiry} onChange={e => { const digits = e.target.value.replace(/\D/g, '').slice(0, 6); setCard({ ...card, expiry: digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits }); }} /></label><label className="block text-sm text-zinc-300">{t('paymentSecurityCode')}<input type="password" autoComplete="cc-csc" inputMode="numeric" required minLength={3} maxLength={4} className={`${inputClass} mt-2`} value={card.cvv} onChange={e => setCard({ ...card, cvv: e.target.value.replace(/\D/g, '') })} /></label></div>
-        <p className="text-xs leading-relaxed text-zinc-400">{t('paymentCardHint')}</p>
-      </fieldset>}
-      <button disabled={busy} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-lg font-bold text-red-700 hover:bg-red-50 disabled:opacity-50">{busy && <Loader2 className="animate-spin" size={20} />}{busy ? t('paymentProcessing') : method === 'pix' ? t('paymentGeneratePix') : t('paymentPayAmount', { amount: formatCurrency(summary.balance, locale) })}</button>
+      <button disabled={busy} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-lg font-bold text-red-700 hover:bg-red-50 disabled:opacity-50">{busy && <Loader2 className="animate-spin" size={20} />}{busy ? t('paymentProcessing') : t('paymentGeneratePix')}</button>
       </fieldset>
     </form>}
     {blocked && <>
